@@ -50,7 +50,7 @@ const STATIC_POSTS = [
   {
     slug: "best-dispensary-byward-market",
     title: "Why P60 Cannabis is York's Best Dispensary",
-    excerpt: "200+ strains, transparent pricing from $3/g, lab-tested products, and open Open 24 Hours. Here's what makes us different.",
+    excerpt: "200+ strains, transparent pricing from $3/g, lab-tested products, and convenient hours. Here's what makes us different.",
     date: "2026-05-03",
     category: "News",
     emoji: "🔥",
@@ -79,7 +79,7 @@ const STATIC_POSTS = [
 /* ── Google Reviews ── */
 const REVIEWS = [
   { name: "Mike R.", rating: 5, text: "Best dispensary in the York area. Staff is super knowledgeable and the exotic strains are legit fire.", date: "2 weeks ago" },
-  { name: "Sarah L.", rating: 5, text: "Love that they're open Open 24 Hours. The selection is insane — over 200 strains. My go-to spot.", date: "1 month ago" },
+  { name: "Sarah L.", rating: 5, text: "Love their convenient opening hours. The selection is insane — over 200 strains. My go-to spot.", date: "1 month ago" },
   { name: "James T.", rating: 5, text: "Tried the Buy 2g Get 1g Free deal on the AAA+ and it was incredible value.", date: "3 weeks ago" },
   { name: "Priya K.", rating: 5, text: "Clean store, friendly staff, great edible selection. The gummies are perfectly dosed.", date: "1 week ago" },
   { name: "Alex D.", rating: 5, text: "Finally a dispensary that lists everything with actual THC percentages and per-gram pricing.", date: "2 weeks ago" },
@@ -236,7 +236,7 @@ export default function BlogContent() {
         <div className={styles.ctaInner}>
           <h2 className={styles.ctaTitle}>Ready to Shop?</h2>
           <p className={styles.ctaSub}>
-            200+ strains · Exotic to Budget · Open Open 24 Hours
+            200+ strains · Exotic to Budget · Open Daily: 10:00 AM - 03:00 AM
           </p>
           <div className={styles.ctaBtns}>
             <Link href="/exotic" className={styles.ctaBtn}>

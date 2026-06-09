@@ -128,7 +128,7 @@ export default function PostContent() {
 
         <div className={styles.cta}>
           <p>
-            <strong>P60 Cannabis</strong> — 1938 Weston Rd, York · Open 24 Hours · (437) 522-2802
+            <strong>P60 Cannabis</strong> — 1938 Weston Rd, York · Open Daily: 10:00 AM - 03:00 AM · (437) 522-2802
           </p>
           <Link href="/exotic" className={styles.ctaBtn}>Browse Our Menu</Link>
         </div>

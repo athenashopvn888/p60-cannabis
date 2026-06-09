@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s | P60 Cannabis",
   },
   description:
-    "Shop 200+ premium cannabis strains at P60 Cannabis. Exotic, Premium, AAA+, AA & Budget flower from $3/g. York's uplifting dispensary at 1938 Weston Rd. Open 24 Hours.",
+    "Shop 200+ premium cannabis strains at P60 Cannabis. Exotic, Premium, AAA+, AA & Budget flower from $3/g. York's uplifting dispensary at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
   keywords: [
     "cannabis dispensary York",
     "weed store York",
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     siteName: "P60 Cannabis",
     title: "P60 Cannabis — Premium York Cannabis Dispensary",
     description:
-      "200+ strains from $3/g. Exotic to Budget. York's uplifting dispensary at 1938 Weston Rd. Open 24 Hours.",
+      "200+ strains from $3/g. Exotic to Budget. York's uplifting dispensary at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
     images: [
       {
         url: "https://p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg",
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "P60 Cannabis — York's Uplifting Dispensary",
-    description: "200+ strains from $3/g. Open 24 Hours at 1938 Weston Rd, York.",
+    description: "200+ strains from $3/g. Open Daily: 10:00 AM - 03:00 AM at 1938 Weston Rd, York.",
     images: ["https://p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
   robots: {
@@ -75,7 +75,7 @@ const jsonLd = {
   additionalType: "https://schema.org/Store",
   "@id": "https://p60cannabis.com",
   name: "P60 Cannabis",
-  description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open 24 Hours.",
+  description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open Daily: 10:00 AM - 03:00 AM.",
   url: "https://p60cannabis.com",
   telephone: "+14375222802",
   image: "https://p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
@@ -94,13 +94,21 @@ const jsonLd = {
     longitude: -79.5177900,
   },
   openingHoursSpecification: [
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-      opens: "00:00",
-      closes: "23:59",
-    },
-  ],
+  {
+    "@type": "OpeningHoursSpecification",
+    "dayOfWeek": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday"
+    ],
+    "opens": "10:00",
+    "closes": "03:00"
+  }
+],
   sameAs: [
     "https://p60cannabis.com/",
     "https://p60cannabis.com/",

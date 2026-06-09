@@ -14,7 +14,7 @@ export default function Footer() {
             <p className={styles.desc}>
               Your Local Cannabis Dispensary At 1938 Weston Rd, York. Visit
               P60 Cannabis For Premium Flower, Edibles, Vapes &amp; More.
-              Open 24 Hours.
+              Open: Open Daily: 10:00 AM - 03:00 AM.
             </p>
             <div className={styles.buttons}>
               <a
@@ -49,7 +49,7 @@ export default function Footer() {
             </div>
             <div className={styles.infoBlock}>
               <span className={styles.infoLabel}>Hours:</span>
-              <span className={styles.highlight}>Open 24 Hours</span>
+              <span className={styles.highlight}>Open Daily: 10:00 AM - 03:00 AM</span>
             </div>
           </div>
 
