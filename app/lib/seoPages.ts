@@ -8,6 +8,7 @@ export interface SeoPageData {
   icon: string;
   heroTagline: string;
   banner?: string;
+  sections: { heading: string; body: string }[];
   faqs: { q: string; a: string }[];
 }
 
