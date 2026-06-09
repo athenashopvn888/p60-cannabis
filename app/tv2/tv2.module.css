@@ -1,0 +1,431 @@
+/* ================================================================
+   P60 CANNABIS — TV MENU 2: ITEMS (Landscape 3840×2160)
+   Clone of TVMenu2.html — 3×2 grid of item category cards
+   ================================================================ */
+
+/* ── FULLSCREEN RESET ── */
+.tvPage {
+  position: fixed;
+  inset: 0;
+  background: url("/banners/TVbackground.png") no-repeat center center fixed;
+  background-size: cover;
+  color: #ecfdf5;
+  font: 650 clamp(18px,1.25vw,22px)/1.18 'Outfit', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+.tvPage::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 80% at 15% 20%, rgba(16, 185, 129, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 80% at 85% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── CANVAS (3840×2160 auto-fit) ── */
+.wrap {
+  position: fixed;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  z-index: 1;
+  width: 3840px;
+  height: 2160px;
+  transform-origin: top left;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+/* ── STAGE ── */
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 26px;
+  padding: 18px;
+  box-sizing: border-box;
+  margin-left: 90px;
+  margin-right: 90px;
+  background: rgba(255,255,255,.85);
+  border: 2px solid rgba(0,0,0,.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 22px 58px rgba(0,0,0,.10);
+  position: relative;
+}
+.stage::before {
+  content: "";
+  position: absolute;
+  left: 10px; right: 10px; top: 10px;
+  height: 34%;
+  border-radius: 22px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.03) 0%, rgba(0,0,0,.01) 55%, rgba(0,0,0,0) 100%);
+}
+
+/* ── GRID: 3×2 ── */
+.grid {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 48px;
+}
+
+/* ── CARD ── */
+.card {
+  background: #fff;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  overflow: visible;
+  box-shadow: 0 50px 100px -20px rgba(0,0,0,0.95), 0 30px 60px -15px var(--accent), 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent), 0 2px 0 rgba(255,255,255,0.9) inset;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── CARD HEADER ── */
+.cardHeader {
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  padding: 16px 12px;
+  color: #fff;
+  font-size: 36px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--accent, #2563eb) 0%, color-mix(in srgb, var(--accent, #2563eb) 82%, #000 18%) 100%);
+  text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.55);
+}
+.cardHeader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,.35), rgba(255,255,255,0) 40%, rgba(0,0,0,.20));
+  opacity: .55;
+  pointer-events: none;
+}
+.cardHeader::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), var(--accent, #2563eb), rgba(0,0,0,.33));
+  box-shadow: 6px 0 22px rgba(0,0,0,.45);
+}
+
+/* ── CARD MAIN (image left, list right) ── */
+.cardMain {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 14px;
+  padding: 12px;
+  overflow: hidden;
+  min-height: 0;
+  padding-bottom: 18px;
+  box-sizing: border-box;
+}
+
+/* ── MEDIA SIDE (left 44%) ── */
+.mediaSide {
+  flex: 0 0 44%;
+  width: 44%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.mediaFrame {
+  width: 100%;
+  aspect-ratio: 1/1;
+  background: #fff;
+  border: 2px solid rgba(2,6,23,.10);
+  border-radius: 14px;
+  padding: 10px;
+  box-sizing: border-box;
+  box-shadow: 0 10px 20px rgba(2,6,23,.10);
+  overflow: hidden;
+}
+
+.mediaViewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.budImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #fff;
+}
+
+/* Dissolve transitions */
+.budImgFadeIn {
+  opacity: 0;
+  animation: dissolveIn 650ms ease forwards;
+  z-index: 2;
+}
+.budImgFadeOut {
+  opacity: 1;
+  animation: dissolveOut 650ms ease forwards;
+  z-index: 1;
+}
+@keyframes dissolveIn { 0%{opacity:0;} 100%{opacity:1;} }
+@keyframes dissolveOut { 0%{opacity:1;} 100%{opacity:0;} }
+
+/* ── DETAIL CARD ── */
+.detailCard {
+  margin-top: 10px;
+  background: rgba(255,255,255,.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #0b1220;
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 2px solid color-mix(in srgb, var(--accent, #2563eb) 35%, rgba(2,6,23,.10) 65%);
+  box-shadow: 0 12px 22px rgba(2,6,23,.10);
+  height: 150px;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  position: relative;
+}
+.detailAccent {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 10px;
+  opacity: .85;
+  border-radius: 14px 0 0 14px;
+}
+.detailContent {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  line-height: 1.05;
+  padding-left: 12px;
+}
+.detailTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: baseline;
+  font-weight: 900;
+  font-size: 26px;
+}
+.detailName {
+  font-weight: 900;
+  font-size: 30px;
+  letter-spacing: .35px;
+}
+.detailSep {
+  opacity: .35;
+  font-weight: 900;
+}
+.detailThc {
+  color: #2e7d32;
+  font-weight: 900;
+}
+.detailPreset {
+  margin-top: 4px;
+  font-weight: 900;
+  font-size: 20px;
+  color: rgba(2,6,23,.75);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+
+/* ── LIST SIDE (right 56%) ── */
+.listSide {
+  flex: 1 1 56%;
+  width: 56%;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border-radius: 14px;
+  min-width: 0;
+}
+
+/* Column headers */
+.listHead {
+  display: grid;
+  grid-template-columns: 2.40fr 1.00fr;
+  align-items: center;
+  background: rgba(255,255,255,.16);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(2,6,23,.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mh {
+  padding: 12px 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1.0px;
+  font-size: 26px;
+  color: #0b1220;
+  background: linear-gradient(180deg, rgba(2,6,23,.04), rgba(255,255,255,1));
+}
+
+/* ── ROWS ── */
+.listBody {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.row {
+  display: grid;
+  grid-template-columns: 2.40fr 1.00fr;
+  align-items: center;
+  min-height: 66px;
+  border-radius: 12px;
+  margin-top: 8px;
+  background: rgba(0,0,0,.02);
+  border: 2px solid rgba(0,0,0,.06);
+  overflow: hidden;
+  transition: background-color 160ms ease, transform 160ms ease, box-shadow 300ms ease;
+}
+.rowHi {
+  background: rgba(0,0,0,.04) !important;
+  transform: translateY(-1px);
+}
+
+.mcItem {
+  padding: 12px 10px;
+  border-top: 1px solid rgba(2,6,23,.06);
+  color: #0b1220;
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.05;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.submeta {
+  font-weight: 700;
+  font-size: 16px;
+  color: rgba(2,6,23,.55);
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.mcPrice {
+  padding: 12px 10px;
+  border-top: 1px solid rgba(2,6,23,.06);
+  color: #0b1220;
+  font-weight: 900;
+  font-size: 26px;
+  white-space: nowrap;
+  text-align: right;
+}
+/* ── PROMO CARD (daytime cigarette poster) ── */
+.promoMain {
+  flex: 1 1 auto;
+  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.promoViewport {
+  flex: 1 1 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  border: 2px solid rgba(255,255,255,.85);
+  box-shadow: 0 10px 28px rgba(0,0,0,.45);
+  position: relative;
+  min-height: 0;
+}
+.promoImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.promoImg.promoActive {
+  opacity: 1;
+}
+
+/* ── TICKER (vertical scroll, section by section) ── */
+.ticker {
+  height: 100px;
+  border-radius: 18px;
+  width: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 40px 80px -20px rgba(0,0,0,0.95), 0 20px 40px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.1), 0 2px 0 rgba(255,255,255,0.9) inset;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 30px;
+  color: #0b1220;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  font-size: 42px;
+  text-shadow: none;
+}
+
+.tickerInner {
+  width: 100%;
+  overflow: hidden;
+  height: 100px;
+  position: relative;
+}
+
+.tickerSlide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(100%);
+  transition: opacity 500ms ease, transform 500ms ease;
+}
+.tickerSlide.tickerActive {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tickerSlide.tickerExit {
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
+/* ── LAST UPDATED ── */
+.lastUpdated {
+  position: fixed;
+  bottom: 8px;
+  right: 16px;
+  color: rgba(255,255,255,.22);
+  font-size: 14px;
+  z-index: 99;
+}

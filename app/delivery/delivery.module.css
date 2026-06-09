@@ -1,0 +1,186 @@
+.main {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.content {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 140px 24px 80px;
+  text-align: center;
+}
+
+.icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.pageTitle {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.highlight {
+  color: var(--green-mid);
+}
+
+.pageSubtitle {
+  font-size: 17px;
+  color: var(--text-secondary);
+  margin: 0 0 40px;
+  line-height: 1.7;
+}
+
+/* Email form */
+.formSection {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 40px 32px;
+  margin-bottom: 40px;
+}
+
+.formTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.formDesc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+}
+
+.inputRow {
+  display: flex;
+  gap: 10px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.emailInput {
+  flex: 1;
+  padding: 14px 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.emailInput:focus {
+  border-color: var(--green-mid);
+}
+
+.emailInput::placeholder {
+  color: var(--text-muted);
+}
+
+.submitBtn {
+  padding: 14px 24px;
+  background: var(--green-dark);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.submitBtn:hover {
+  background: var(--green-mid);
+  transform: translateY(-1px);
+}
+
+.submitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.successMsg {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green-mid);
+}
+
+.errorMsg {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+/* Info cards */
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 40px;
+}
+
+.infoCard {
+  padding: 24px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.infoIcon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.infoTitle {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.infoDesc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* CTA */
+.ctaSection {
+  padding: 28px;
+  background: rgba(45, 106, 79, 0.06);
+  border: 1px solid rgba(45, 106, 79, 0.15);
+  border-radius: var(--radius-lg);
+}
+
+.ctaText {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.ctaText strong {
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+  .inputRow {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,274 @@
+/* ── Blog Admin Styles ── */
+
+.loginPage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0a0a;
+  padding: 24px;
+}
+
+.loginCard {
+  width: 100%;
+  max-width: 380px;
+  background: #141414;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 48px 36px;
+  text-align: center;
+}
+
+.loginLogo {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.loginTitle {
+  font-size: 24px;
+  font-weight: 900;
+  color: #fff;
+  margin: 0 0 4px;
+}
+
+.loginSub {
+  font-size: 14px;
+  color: rgba(255,255,255,0.4);
+  margin: 0 0 32px;
+}
+
+.loginForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.loginInput {
+  padding: 14px 16px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.loginInput:focus {
+  border-color: #2D6A4F;
+}
+
+.loginInput::placeholder {
+  color: rgba(255,255,255,0.3);
+}
+
+.loginError {
+  color: #f43f5e;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.loginBtn {
+  padding: 14px;
+  background: #2D6A4F;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.loginBtn:hover {
+  background: #40916C;
+  transform: translateY(-1px);
+}
+
+/* ── Dashboard ── */
+.dashboard {
+  min-height: 100vh;
+  background: #0a0a0a;
+  color: #fff;
+  padding: 32px;
+}
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.topLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashTitle {
+  font-size: 22px;
+  font-weight: 900;
+  margin: 0;
+}
+
+.postCount {
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.06);
+  padding: 4px 12px;
+  border-radius: 100px;
+}
+
+.topRight {
+  display: flex;
+  gap: 10px;
+}
+
+.newBtn {
+  padding: 10px 20px;
+  background: #2D6A4F;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.newBtn:hover {
+  background: #40916C;
+}
+
+.logoutBtn {
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logoutBtn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.loading {
+  text-align: center;
+  padding: 60px;
+  color: rgba(255,255,255,0.4);
+  font-size: 15px;
+}
+
+.empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: rgba(255,255,255,0.4);
+}
+
+.empty p {
+  margin: 0 0 20px;
+  font-size: 16px;
+}
+
+/* Post list */
+.postList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.postRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  background: #141414;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.postInfo {
+  flex: 1;
+  min-width: 200px;
+}
+
+.postTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 4px;
+}
+
+.postMeta {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+}
+
+.statusPublished {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.statusDraft {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.postActions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.actionBtn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+.deleteBtn {
+  padding: 8px 14px;
+  background: rgba(244, 63, 94, 0.1);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.deleteBtn:hover {
+  background: rgba(244, 63, 94, 0.2);
+}
+
+.deleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

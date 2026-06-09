@@ -1,0 +1,314 @@
+/* ── Tier Page Styles — P60 Cannabis Master Template ── */
+
+.main {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* ── Banner Image (standalone, no overlay) ── */
+.bannerSection {
+  width: 100%;
+  overflow: hidden;
+  margin-top: 92px;
+}
+
+.bannerImg {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+/* ── Hero Info BELOW Banner ── */
+.heroInfo {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 32px 24px;
+}
+
+.heroInfoInner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.heroLeft {
+  flex: 1;
+  min-width: 280px;
+}
+
+.heroTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.heroIcon {
+  font-size: 36px;
+}
+
+.heroTitle {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 900;
+  margin: 0;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.heroTagline {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 8px 0 12px;
+}
+
+.heroStats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.stat strong {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.statSale {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.08);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.statHot {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+/* Right side — unit price + deal boxes */
+.heroRight {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.unitPriceBox {
+  text-align: right;
+}
+
+.unitPriceLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.unitPriceValue {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--green-dark);
+  line-height: 1.1;
+}
+
+/* Deal boxes */
+.dealRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dealBox {
+  background: rgba(45, 106, 79, 0.06);
+  border: 1px solid rgba(45, 106, 79, 0.15);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  min-width: 180px;
+}
+
+.dealLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2D6A4F;
+}
+
+.dealPrice {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.dealPrice strong {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--green-dark);
+}
+
+/* ── Product grid ── */
+.products {
+  padding: 40px 24px 60px;
+}
+
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.sectionTitle {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 20px;
+  letter-spacing: -0.01em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+/* ── SEO Content Section ── */
+.seoSection {
+  padding: 48px 24px 60px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.seoMainTitle {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+}
+
+.seoIntro {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin: 0 0 28px;
+  max-width: 900px;
+}
+
+.seoBlock {
+  margin-bottom: 24px;
+}
+
+.seoHeading {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.seoBody {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── FAQ Accordion ── */
+.faqSection {
+  margin-top: 32px;
+}
+
+.faqItem {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.faqQuestion {
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  background: var(--bg-primary);
+  transition: background 0.2s;
+}
+
+.faqQuestion:hover {
+  background: var(--bg-secondary);
+}
+
+.faqQuestion::-webkit-details-marker {
+  display: none;
+}
+
+.faqQuestion::after {
+  content: "+";
+  float: right;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.faqItem[open] .faqQuestion::after {
+  content: "−";
+}
+
+.faqAnswer {
+  padding: 0 18px 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  .heroInfoInner {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .heroRight {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .unitPriceBox {
+    text-align: left;
+  }
+
+  .dealRow {
+    width: 100%;
+  }
+
+  .dealBox {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .bannerSection {
+    max-height: none;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+  }
+}

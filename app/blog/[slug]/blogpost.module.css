@@ -1,0 +1,155 @@
+/* ── Individual Blog Post Styles ── */
+
+.main {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.content {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 100px 24px 60px;
+}
+
+.loading, .notFound {
+  text-align: center;
+  padding: 80px 24px;
+  color: var(--text-secondary);
+}
+
+.notFound h1 {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.breadcrumb a:hover { color: var(--green-mid); }
+
+.breadcrumbCurrent {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Header */
+.header {
+  margin-bottom: 40px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.meta {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Body content */
+.body {
+  margin-bottom: 48px;
+}
+
+.contentH2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 32px 0 12px;
+  line-height: 1.3;
+}
+
+.contentH3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 24px 0 8px;
+}
+
+.contentP {
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+
+.contentList {
+  margin: 0 0 16px;
+  padding-left: 24px;
+}
+
+.contentList li {
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+/* CTA */
+.cta {
+  padding: 28px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.cta p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+}
+
+.ctaBtn {
+  display: inline-flex;
+  padding: 12px 28px;
+  background: var(--green-dark);
+  color: white;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.ctaBtn:hover {
+  background: var(--green-mid);
+  transform: translateY(-2px);
+}
+
+.backLink {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+.backLink:hover {
+  color: var(--green-mid);
+}

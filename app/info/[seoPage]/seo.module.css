@@ -1,0 +1,153 @@
+/* ── SEO Landing Page Styles ── */
+
+.main { min-height: 100vh; background: var(--bg-primary); }
+
+/* Banner */
+.bannerSection {
+  padding: 88px 24px 0;
+}
+.bannerImg {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: block;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+/* Hero */
+.hero {
+  padding: 40px 24px 48px;
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  text-align: center;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.heroInner { max-width: 800px; margin: 0 auto; }
+.heroIcon { font-size: 52px; display: block; margin-bottom: 16px; }
+.heroH1 {
+  font-size: clamp(26px, 5vw, 40px);
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.heroTagline {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Content */
+.content { padding: 40px 24px 60px; }
+.container { max-width: 960px; margin: 0 auto; }
+
+.section {
+  margin-bottom: 36px;
+  padding: 28px 32px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+.sectionTitle {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+.sectionBody {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Tier Grid */
+.tierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.tierCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.tierCard:hover {
+  border-color: var(--tier-color);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+}
+.tierLabel { font-size: 16px; font-weight: 800; }
+.tierPrice { font-size: 14px; font-weight: 700; color: var(--green-dark); }
+.tierDesc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin: 0; }
+.tierLink { font-size: 13px; font-weight: 700; color: var(--green-dark); margin-top: 4px; }
+
+/* Map */
+.mapWrap {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  margin-top: 12px;
+}
+.visitBtns {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.visitBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 24px;
+  background: var(--green-dark);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background 0.2s;
+}
+.visitBtn:hover { background: #1B4332; }
+
+/* FAQ */
+.faqItem {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.faqQ {
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+  background: var(--bg-primary);
+  transition: background 0.2s;
+}
+.faqQ:hover { background: var(--bg-secondary); }
+.faqQ::-webkit-details-marker { display: none; }
+.faqQ::after { content: "+"; float: right; font-size: 18px; color: var(--text-muted); }
+.faqItem[open] .faqQ::after { content: "−"; }
+.faqA {
+  padding: 0 18px 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .section { padding: 20px; }
+  .tierGrid { grid-template-columns: 1fr; }
+}

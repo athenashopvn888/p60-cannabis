@@ -1,0 +1,246 @@
+/* ── FlowerCard — Interactive Product Card ── */
+
+.card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Image ── */
+.imageLink {
+  display: block;
+  text-decoration: none;
+}
+.imageWrap {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  cursor: zoom-in;
+}
+.imageWrap::after {
+  content: "🔍";
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  font-size: 18px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+  z-index: 2;
+}
+.card:hover .imageWrap::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.35s ease;
+}
+.card:hover .img {
+  transform: scale(1.12);
+}
+.thcBadge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: #166534;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.saleTag {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #dc2626;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  animation: salePulse 1.5s ease-in-out infinite;
+}
+@keyframes salePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ── Body ── */
+.body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.typeBadge {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badgeIndica {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+.badgeSativa {
+  background: rgba(234, 179, 8, 0.1);
+  color: #a16207;
+  border: 1px solid rgba(234, 179, 8, 0.2);
+}
+.badgeHybrid {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+/* ── Price Row ── */
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.priceGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.priceMain {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--green-dark);
+}
+.priceOld {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.perGramWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.perGramOld {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: line-through;
+  white-space: nowrap;
+}
+.perGram {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+/* Promo line */
+.promoLine {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2D6A4F;
+  padding: 4px 0;
+}
+
+/* ── Weight Pills — CLICKABLE ── */
+.weightPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.pill {
+  appearance: none;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.15s;
+  flex: 1;
+  min-width: 56px;
+}
+.pill:hover {
+  border-color: var(--green-mid);
+  background: rgba(45, 106, 79, 0.06);
+}
+.pillActive {
+  border-color: var(--green-dark);
+  background: rgba(45, 106, 79, 0.1);
+  box-shadow: 0 0 0 1px var(--green-dark);
+}
+.pillLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.pillPrice {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--green-dark);
+}
+.pillActive .pillLabel {
+  color: var(--green-dark);
+}
+
+/* ── View Details CTA ── */
+.viewBtn {
+  display: block;
+  text-align: center;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--green-dark);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  transition: background 0.2s;
+}
+.viewBtn:hover {
+  background: #1B4332;
+}
