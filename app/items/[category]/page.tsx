@@ -128,7 +128,7 @@ export default async function ItemsCategoryPage({
           <div className={styles.visitCta}>
             <h3 className={styles.visitTitle}>Visit P60 Cannabis</h3>
             <p className={styles.visitText}>
-              1938 Weston Rd, York, ON M9N 1W2 · Open 24 Hours
+              1938 Weston Rd, York, ON M9N 1W2 · Open Daily: 10:00 AM - 03:00 AM
             </p>
             <a
               href="https://p60cannabis.com/"
