@@ -227,10 +227,7 @@ export default function TV2Page() {
   return (
     <div className={styles.tvPage}>
       <div className={styles.wrap} ref={wrapRef}>
-        {/* TV BANNER */}
-        <div style={{margin:"-40px -40px 30px -40px", width:"calc(100% + 80px)"}}>
-          <img src="/banners/ItemTv.webp" alt="P60 Cannabis Items TV Menu" style={{width:"100%",display:"block"}} />
-        </div>
+        
         {/* GRID */}
         <div className={styles.stage}>
           <div className={styles.grid}>
@@ -262,7 +259,7 @@ export default function TV2Page() {
             })}
           </div>
         </div>
-        <VerticalTicker />
+        
       </div>
       <div className={styles.lastUpdated}>Updated: {lastUpdate}</div>
     </div>

@@ -841,10 +841,7 @@ export default function TVMenuPage() {
       </div>
       <div className={styles.wrap} ref={wrapRef}>
 
-        {/* TV BANNER */}
-        <div style={{ margin: "-40px -40px 30px -40px", width: "calc(100% + 80px)" }}>
-          <img src="/banners/FlowerTvBanner.webp" alt="P60 Cannabis TV Menu" style={{ width: "100%", display: "block" }} />
-        </div>
+        
 
         {/* GRID */}
         <div className={styles.stage}>
@@ -865,8 +862,7 @@ export default function TVMenuPage() {
           </div>
         </div>
 
-        {/* TICKER */}
-        <VerticalTicker />
+        
       </div>
       <div className={styles.lastUpdated}>Updated: {lastUpdate}</div>
     </div>
