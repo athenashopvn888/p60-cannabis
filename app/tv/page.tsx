@@ -708,6 +708,18 @@ function VerticalTicker() {
    MAIN TV PAGE
    ============================================================ */
 export default function TVMenuPage() {
+  const [bgUrl, setBgUrl] = useState("");
+  useEffect(() => {
+    fetch("https://athena-cannabis-images.vercel.app/backgrounds/list.json")
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.length) {
+          const hourIndex = Math.floor(Date.now() / (3600 * 1000)) % data.length;
+          setBgUrl(`https://athena-cannabis-images.vercel.app/backgrounds/${data[hourIndex]}`);
+        }
+      })
+      .catch(err => console.warn("[BG] Load failed:", err));
+  }, []);
   const [flowers, setFlowers] = useState<Record<string,Flower[]>>({});
   const [ozFlowers, setOzFlowers] = useState<Flower[]>([]);
   const [addOns, setAddOns] = useState<Item[]>([]);
@@ -825,7 +837,7 @@ export default function TVMenuPage() {
   };
 
   return (
-    <div className={styles.tvPage}>
+    <div className={styles.tvPage} style={bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}>
       {/* Floating particles */}
       <div className={styles.particles}>
         {particles.map((p, i) => (

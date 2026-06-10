@@ -169,6 +169,18 @@ function VerticalTicker() {
 
 /* -- MAIN TV2 PAGE -- */
 export default function TV2Page() {
+  const [bgUrl, setBgUrl] = useState("");
+  useEffect(() => {
+    fetch("https://athena-cannabis-images.vercel.app/backgrounds/list.json")
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.length) {
+          const hourIndex = Math.floor(Date.now() / (3600 * 1000)) % data.length;
+          setBgUrl(`https://athena-cannabis-images.vercel.app/backgrounds/${data[hourIndex]}`);
+        }
+      })
+      .catch(err => console.warn("[BG] Load failed:", err));
+  }, []);
   const [items, setItems] = useState<Item[]>([]);
   const [highlights, setHighlights] = useState<Record<string,number>>({});
   const [lastUpdate, setLastUpdate] = useState("");
@@ -225,7 +237,7 @@ export default function TV2Page() {
   }, [items]);
 
   return (
-    <div className={styles.tvPage}>
+    <div className={styles.tvPage} style={bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}>
       <div className={styles.wrap} ref={wrapRef}>
         
         {/* GRID */}
