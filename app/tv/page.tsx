@@ -26,7 +26,7 @@ const TIER_CROWN: Record<string,string> = {
   EXOTIC:"👑", PREMIUM:"👑", "AAA+":"👑", AA:"🏅", BUDGET:"💰", OZ:"🎯"
 };
 const TIER_UNIT: Record<string,string> = {
-  EXOTIC:"$10-$12/g", PREMIUM:"$7-$10/g", "AAA+":"$5-$6/g", AA:"$4/g", BUDGET:"$3/g"
+  EXOTIC:"$20/G", PREMIUM:"$15/G", "AAA+":"$10/G", AA:"$4/g", BUDGET:"$3/g"
 };
 const TIER_DEAL: Record<string,string> = {
   EXOTIC:"Buy 3g Get 3 FREE", PREMIUM:"Buy 3g Get 3 FREE",
