@@ -187,7 +187,7 @@ export default function SnakeMunchiesPage() {
         ctx.fillText("🐍 SNAKE MUNCHIES", W / 2, H / 2 - 25);
         ctx.fillStyle = "rgba(255,255,255,0.5)";
         ctx.font = "15px 'Space Grotesk', sans-serif";
-        ctx.fillText("Arrow keys or WASD · Press Space", W / 2, H / 2 + 15);
+        ctx.fillText("Arrows / WASD / Swipe / D-pad to start", W / 2, H / 2 + 15);
       }
 
       if (gsRef.current === "dead") {
@@ -203,7 +203,7 @@ export default function SnakeMunchiesPage() {
         ctx.fillText(scoreRef.current.toString(), W / 2, H / 2 + 10);
         ctx.fillStyle = "rgba(255,255,255,0.4)";
         ctx.font = "14px 'Space Grotesk', sans-serif";
-        ctx.fillText("Press Space to retry", W / 2, H / 2 + 48);
+        ctx.fillText("Press Space or D-pad to retry", W / 2, H / 2 + 48);
       }
 
       animId = requestAnimationFrame(draw);
@@ -211,6 +211,14 @@ export default function SnakeMunchiesPage() {
 
     animId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animId);
+  }, []);
+
+  const changeDirection = useCallback((newD: Dir) => {
+    const d = dir.current;
+    if (newD === "UP" && d !== "DOWN") nextDir.current = "UP";
+    if (newD === "DOWN" && d !== "UP") nextDir.current = "DOWN";
+    if (newD === "LEFT" && d !== "RIGHT") nextDir.current = "LEFT";
+    if (newD === "RIGHT" && d !== "LEFT") nextDir.current = "RIGHT";
   }, []);
 
   /* ── Controls ── */
@@ -223,22 +231,67 @@ export default function SnakeMunchiesPage() {
       }
 
       const key = e.key.toLowerCase();
-      const d = dir.current;
-      if ((key === "arrowup" || key === "w") && d !== "DOWN") nextDir.current = "UP";
-      if ((key === "arrowdown" || key === "s") && d !== "UP") nextDir.current = "DOWN";
-      if ((key === "arrowleft" || key === "a") && d !== "RIGHT") nextDir.current = "LEFT";
-      if ((key === "arrowright" || key === "d") && d !== "LEFT") nextDir.current = "RIGHT";
+      if (key === "arrowup" || key === "w") { e.preventDefault(); changeDirection("UP"); }
+      if (key === "arrowdown" || key === "s") { e.preventDefault(); changeDirection("DOWN"); }
+      if (key === "arrowleft" || key === "a") { e.preventDefault(); changeDirection("LEFT"); }
+      if (key === "arrowright" || key === "d") { e.preventDefault(); changeDirection("RIGHT"); }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [startGame]);
+  }, [startGame, changeDirection]);
+
+  // Touch swipe support
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!touchStart.current) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current.x;
+    const dy = e.changedTouches[0].clientY - touchStart.current.y;
+    
+    const threshold = 30;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > threshold) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        changeDirection(dx > 0 ? "RIGHT" : "LEFT");
+      } else {
+        changeDirection(dy > 0 ? "DOWN" : "UP");
+      }
+      
+      if (gsRef.current !== "playing") {
+        startGame();
+      }
+    }
+    touchStart.current = null;
+  }, [changeDirection, startGame]);
+
+  const dpadButtonStyle = {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    background: "rgba(30, 41, 59, 0.7)",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    color: "white",
+    fontSize: 20,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    userSelect: "none" as const,
+    touchAction: "manipulation" as const,
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+    backdropFilter: "blur(4px)",
+    transition: "all 0.1s ease",
+  };
 
   return (
     <main>
       <Navbar />
       <ScreenLock />
 
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", paddingTop: 80, paddingBottom: 40 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", paddingTop: 80, paddingBottom: 40, paddingLeft: 16, paddingRight: 16 }}>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 900, marginBottom: 8, color: "white" }}>🐍 Snake Munchies</h1>
         <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 20 }}>
           High Score: <span style={{ color: "#fbbf24", fontWeight: 700 }}>{highScore}</span>
@@ -248,10 +301,9 @@ export default function SnakeMunchiesPage() {
         <div style={{ maxWidth: 400, width: "100%", marginBottom: 16, padding: "12px 16px", background: "rgba(45,106,79,0.08)", border: "1px solid rgba(45,106,79,0.15)", borderRadius: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: "#2D6A4F", marginBottom: 6 }}>📖 How to Play</div>
           <ul style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, margin: 0, paddingLeft: 18 }}>
-            <li>Use <strong>Arrow Keys</strong> or <strong>Swipe</strong> to change direction</li>
-            <li>Eat the food (coloured dots) to grow longer and score points</li>
-            <li>Don&apos;t crash into the walls or your own body!</li>
-            <li>The snake speeds up as you score higher</li>
+            <li>Use <strong>Arrow Keys / WASD</strong>, <strong>Swipe</strong> the game area, or use the <strong>D-pad</strong> below to steer</li>
+            <li>Eat the edibles (cookies, cupcakes, sweets) to grow and score points</li>
+            <li>Avoid crashing into walls or your own tail!</li>
           </ul>
         </div>
 
@@ -259,13 +311,63 @@ export default function SnakeMunchiesPage() {
           ref={canvasRef}
           width={W}
           height={H}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           style={{ border: "1px solid rgba(51,65,85,0.3)", borderRadius: 16, maxWidth: "100%", touchAction: "none" }}
         />
-        <p style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)" }}>
-          Arrow keys / WASD to move · Space to start
+
+        {/* On-screen D-pad */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          marginTop: 20,
+          gap: 6,
+          width: "100%",
+          maxWidth: 220,
+          userSelect: "none",
+        }}>
+          <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+            <button
+              onClick={() => { if (gsRef.current !== "playing") startGame(); else changeDirection("UP"); }}
+              onTouchStart={(e) => { e.preventDefault(); if (gsRef.current !== "playing") startGame(); else changeDirection("UP"); }}
+              style={dpadButtonStyle}
+            >
+              ▲
+            </button>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", width: "100%", gap: 20 }}>
+            <button
+              onClick={() => { if (gsRef.current !== "playing") startGame(); else changeDirection("LEFT"); }}
+              onTouchStart={(e) => { e.preventDefault(); if (gsRef.current !== "playing") startGame(); else changeDirection("LEFT"); }}
+              style={dpadButtonStyle}
+            >
+              ◀
+            </button>
+            <button
+              onClick={() => { if (gsRef.current !== "playing") startGame(); else changeDirection("RIGHT"); }}
+              onTouchStart={(e) => { e.preventDefault(); if (gsRef.current !== "playing") startGame(); else changeDirection("RIGHT"); }}
+              style={dpadButtonStyle}
+            >
+              ▶
+            </button>
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+            <button
+              onClick={() => { if (gsRef.current !== "playing") startGame(); else changeDirection("DOWN"); }}
+              onTouchStart={(e) => { e.preventDefault(); if (gsRef.current !== "playing") startGame(); else changeDirection("DOWN"); }}
+              style={dpadButtonStyle}
+            >
+              ▼
+            </button>
+          </div>
+        </div>
+
+        <p style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)", textAlign: "center" }}>
+          Arrow keys / WASD / Swipe / D-pad to move · Space to start
         </p>
       </div>
-          <Footer />
+      <Footer />
     </main>
   );
 }
