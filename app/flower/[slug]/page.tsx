@@ -42,6 +42,14 @@ export async function generateMetadata({
 }
 
 /* -- JSON-LD Structured Data -- */
+function cleanSku(value: string) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Z0-9_-]/g, "");
+}
+
 function getJsonLd(flower: FlowerProduct) {
   const lowestPrice = [flower.price3g, flower.price5g, flower.price14g, flower.price28g]
     .filter((p): p is PricePoint => p !== null)
@@ -50,21 +58,33 @@ function getJsonLd(flower: FlowerProduct) {
 
   const strainData = getStrainData(flower.name, flower.type, flower.tier, flower.thc);
 
+  const offers: any = {
+    "@type": "Offer",
+    url: `https://p60cannabis.com/flower/${flower.slug}`,
+    priceCurrency: "CAD",
+    availability: "https://schema.org/InStock",
+    itemCondition: "https://schema.org/NewCondition",
+    seller: { "@type": "Organization", name: "P60 Cannabis" },
+    hasMerchantReturnPolicy: {
+      "@type": "MerchantReturnPolicy",
+      applicableCountry: "CA",
+      returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted"
+    }
+  };
+
+  if (lowestPrice !== undefined && lowestPrice !== null) {
+    offers.price = lowestPrice;
+  }
+
   return {
     "@context": "https://schema.org",
     "@type": "Product",
     name: flower.name,
-    image: flower.image,
+    image: flower.image ? [flower.image.startsWith('http') ? flower.image : `https://p60cannabis.com${flower.image.startsWith('/') ? '' : '/'}${flower.image}`] : undefined,
     description: strainData.description,
     brand: { "@type": "Brand", name: "P60 Cannabis" },
-    sku: flower.sku,
-    offers: {
-      "@type": "Offer",
-      price: lowestPrice || 0,
-      priceCurrency: "CAD",
-      availability: "https://schema.org/InStock",
-      seller: { "@type": "Organization", name: "P60 Cannabis" },
-    },
+    sku: cleanSku(flower.sku || flower.slug),
+    offers,
   };
 }
 

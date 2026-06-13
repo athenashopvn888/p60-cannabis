@@ -40,25 +40,45 @@ export async function generateMetadata({
 }
 
 /* -- JSON-LD Structured Data -- */
+function cleanSku(value: string) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Z0-9_-]/g, "");
+}
+
 function getJsonLd(item: ItemProduct) {
   const itemData = getItemData(item.category, item.name);
   const priceNum = item.price ? parseFloat(item.price.replace('$', '')) : 0;
+
+  const offers: any = {
+    "@type": "Offer",
+    url: `https://p60cannabis.com/item/${item.slug}`,
+    priceCurrency: "CAD",
+    availability: "https://schema.org/InStock",
+    itemCondition: "https://schema.org/NewCondition",
+    seller: { "@type": "Organization", name: "P60 Cannabis" },
+    hasMerchantReturnPolicy: {
+      "@type": "MerchantReturnPolicy",
+      applicableCountry: "CA",
+      returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted"
+    }
+  };
+
+  if (priceNum) {
+    offers.price = priceNum;
+  }
 
   return {
     "@context": "https://schema.org",
     "@type": "Product",
     name: item.name,
-    image: item.image,
+    image: item.image ? [item.image.startsWith('http') ? item.image : `https://p60cannabis.com${item.image.startsWith('/') ? '' : '/'}${item.image}`] : undefined,
     description: itemData.description,
     brand: { "@type": "Brand", name: "P60 Cannabis" },
-    sku: item.sku,
-    offers: {
-      "@type": "Offer",
-      price: priceNum || 0,
-      priceCurrency: "CAD",
-      availability: "https://schema.org/InStock",
-      seller: { "@type": "Organization", name: "P60 Cannabis" },
-    },
+    sku: cleanSku(item.sku || item.slug),
+    offers,
   };
 }
 
