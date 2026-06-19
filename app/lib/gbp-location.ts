@@ -24,7 +24,7 @@ export const gbpLocation = {
     "Accessories"
   ],
   menuUrl: "/",
-  directionsUrl: "https://p60cannabis.com/",
+  directionsUrl: "https://www.google.com/maps/search/?api=1&query=1938%20Weston%20Rd%2C%20York%2C%20ON%20M9N%201W2",
   mapEmbedUrl: "https://maps.google.com/maps?q=P60%20Cannabis%201938%20Weston%20Rd%2C%20York%2C%20ON%20M9N%201W2&t=&z=15&ie=UTF8&iwloc=&output=embed",
   latitude: "43.7004400",
   longitude: "-79.5177900",
