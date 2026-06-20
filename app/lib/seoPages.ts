@@ -32,7 +32,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Beyond Flower — Edibles, Vapes, Concentrates & More",
-        body: "P60 Cannabis is more than just a flower shop. We carry a comprehensive selection of cannabis edibles (gummies, chocolates, baked goods), vape pens and disposable vapes, concentrates (shatter, wax, hash, diamonds, live resin), pre-rolled joints, magic mushrooms, native cigarettes, rolling papers, and accessories. Our live digital menu at p60cannabis.com updates in real time so you always know exactly what's in stock before you make the trip.",
+        body: "P60 Cannabis is more than just a flower shop. We carry a comprehensive selection of cannabis edibles (gummies, chocolates, baked goods), vape pens and disposable vapes, concentrates (shatter, wax, hash, diamonds, live resin), pre-rolled joints, native cigarettes, rolling papers, and accessories. Our live digital menu at p60cannabis.com updates in real time so you always know exactly what's in stock before you make the trip.",
       },
       {
         heading: "Open Daily: 10:00 AM - 03:00 AM on 1938 Weston Rd & Nearby Expressway",
@@ -50,7 +50,7 @@ export const SEO_PAGES: SeoPageData[] = [
     faqs: [
       { q: "Where is P60 Cannabis located?", a: "We are located at 1938 Weston Rd, York, ON M9N 1W2 — in the heart of 1938 Weston Rd & Nearby Expressway area — one of York's most accessible areas. We're near major transit bus routes and close to major highways." },
       { q: "What are the hours for P60 Cannabis?", a: "We are open daily from 10:00 AM to 03:00 AM. Walk in anytime — no appointment needed. Whether it's day or night, our staff is here to help." },
-      { q: "What cannabis products does P60 Cannabis carry?", a: "We carry 200+ strains of cannabis flower across 5 quality tiers (Exotic, Premium, AAA+, AA, Budget), plus edibles, vapes, concentrates, pre-rolls, magic mushrooms, native cigarettes, and accessories. Our menu updates in real time online." },
+      { q: "What cannabis products does P60 Cannabis carry?", a: "We carry 200+ strains of cannabis flower across 5 quality tiers (Exotic, Premium, AAA+, AA, Budget), plus edibles, vapes, concentrates, pre-rolls, native cigarettes, and accessories. Our menu updates in real time online." },
       { q: "What is the cheapest weed at P60 Cannabis?", a: "Our Budget tier starts at $3/g with value ounces from $40. Our AA tier is $4/g. Every tier includes our Buy 2g Get 1g FREE promotion, making our prices even more competitive." },
       { q: "Does P60 Cannabis have a live menu?", a: "Yes! Our online menu at p60cannabis.com updates in real time with current stock, prices, and availability. You can see exactly what we have before you visit." },
       { q: "What makes P60 Cannabis different from other York dispensaries?", a: "Three things set us apart: (1) we are open daily from 10:00 AM to 03:00 AM, (2) our transparent 5-tier pricing system means no confusing markups, and (3) every purchase includes our Buy 2g Get 1g FREE promotion. Plus we carry one of York's largest selections with over 200 strains." },
@@ -158,7 +158,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Full Menu — Cannabis, Edibles, Vapes & More",
-        body: "When you make the trip up to York, make it count. P60 Cannabis carries a full selection including 200+ flower strains, edibles, vape pens, disposable vapes, concentrates (shatter, wax, hash, live resin), pre-rolled joints, magic mushrooms, native cigarettes, and accessories. Check our live online menu at p60cannabis.com before you visit to see exactly what's in stock.",
+        body: "When you make the trip up to York, make it count. P60 Cannabis carries a full selection including 200+ flower strains, edibles, vape pens, disposable vapes, concentrates (shatter, wax, hash, live resin), pre-rolled joints, native cigarettes, and accessories. Check our live online menu at p60cannabis.com before you visit to see exactly what's in stock.",
       },
     ],
     faqs: [

@@ -63,13 +63,13 @@ export function getItemData(category: string, name: string): ItemEffects {
   if (cat === "MAGIC & OTHERS") {
     return {
       effects: [
-        { emoji: "🌀", label: "Psychedelic" },
+        { emoji: "🌀", label: "Specialty" },
         { emoji: "🧠", label: "Mind Expanding" },
         { emoji: "✨", label: "Euphoric" },
       ],
-      description: `${name} is a premium psilocybin product curated for quality and consistency. Whether you are micro-dosing for mental clarity or exploring a deeper journey, this product delivers a reliable and profound experience.`,
-      metaDescription: `Shop ${name} magic mushrooms and psilocybin products in York at P60 Cannabis. High quality and consistent. Walk-ins welcome. Open Daily: 10:00 AM - 03:00 AM.`,
-      consume: "For micro-dosing, consume 0.1g - 0.3g. For a full experience, start with 1g - 2g. Always consume in a safe, comfortable environment. Effects can take 30-90 minutes to onset.",
+      description: `${name} is a premium specialty product curated for quality and consistency. Whether you are careful use for mental clarity or exploring a deeper journey, this product delivers a reliable and profound experience.`,
+      metaDescription: `Shop ${name} specialty specialty items in York at P60 Cannabis. High quality and consistent. Walk-ins welcome. Open Daily: 10:00 AM - 03:00 AM.`,
+      consume: "For careful use, consume 0.1g - 0.3g. For a full experience, start with 1g - 2g. Always consume in a safe, comfortable environment. Effects can take 30-90 minutes to onset.",
     };
   }
 

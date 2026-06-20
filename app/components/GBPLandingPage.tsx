@@ -69,11 +69,6 @@ export function GBPLandingPage() {
         <a href={`tel:${gbpLocation.phoneIntl}`} className={`${styles.btn} ${styles.btnSecondary}`}>
           Call Store
         </a>
-        {gbpLocation.directionsUrl && (
-          <a href={gbpLocation.directionsUrl} target="_blank" rel="noopener noreferrer" className={`${styles.btn} ${styles.btnTertiary}`}>
-            Get Directions
-          </a>
-        )}
       </div>
 
       {/* Intro Section */}
@@ -146,7 +141,7 @@ export function GBPLandingPage() {
               />
             ) : (
               <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
-                No map preview available. Use the Get Directions button for navigation.
+                Map preview not available.
               </div>
             )}
           </div>

@@ -26,13 +26,12 @@ const FAQ_CATEGORIES = [
   {
     title: "🌿 Products & Menu",
     faqs: [
-      { q: "What products do you carry?", a: "We carry over 200 strains of cannabis flower across 5 quality tiers (Exotic, Premium, AAA+, AA, Budget), plus edibles (gummies, chocolates, baked goods), vape pens, disposable vapes, concentrates (shatter, wax, hash, diamonds, live resin), pre-rolled joints, magic mushrooms, native cigarettes, and accessories." },
+      { q: "What products do you carry?", a: "We carry over 200 strains of cannabis flower across 5 quality tiers (Exotic, Premium, AAA+, AA, Budget), plus edibles (gummies, chocolates, baked goods), vape pens, disposable vapes, concentrates (shatter, wax, hash, diamonds, live resin), pre-rolled joints, native cigarettes, and accessories." },
       { q: "Do you have a live menu?", a: "Yes! Our online menu at p60cannabis.com updates in real time with current stock, prices, THC levels, and availability. You can check what's in stock before you visit." },
       { q: "What are your flower tiers?", a: "Exotic ($10-$12/g, THC 35-39%) — ultra-rare top-shelf genetics. Premium ($7-$10/g, THC 32-34%) — connoisseur-grade. AAA+ ($5-$6/g, THC 30-32%) — heavy hitters, our most popular tier. AA ($4/g, THC 27-29%) — quality daily drivers. Budget ($3/g, THC 24-27%) — reliable value flower." },
       { q: "Do you sell edibles?", a: "Yes! We carry a variety of edibles including gummies, chocolates, baked goods, and more. THC content varies. Check our live menu for current availability." },
       { q: "Do you sell vapes?", a: "Yes — both disposable vapes and refillable vape pens. We carry both nicotine vapes and THC vapes from top brands." },
       { q: "Do you sell native cigarettes?", a: "Yes! We carry one of the widest selections of native cigarettes in downtown York, including premium and value brands in multiple varieties." },
-      { q: "Do you sell magic mushrooms?", a: "Yes. We carry a selection of magic mushroom products. Visit us in-store or check our live menu for current availability." },
     ],
   },
   {
@@ -116,14 +115,6 @@ export default function FAQPage() {
             <p className={styles.ctaText}>
               Call us at <strong>(437) 522-2802</strong> or visit us at 1938 Weston Rd, York.
             </p>
-            <a
-              href="https://p60cannabis.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.ctaLink}
-            >
-              📍 Get Directions
-            </a>
           </div>
         </div>
         <Footer />

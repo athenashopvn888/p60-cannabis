@@ -118,12 +118,6 @@ const jsonLd = {
     "@type": "City",
     name: "York",
   },
-  aggregateRating: {
-    "@type": "AggregateRating",
-    ratingValue: "5.0",
-    reviewCount: "15",
-    bestRating: "5",
-  },
 };
 
 export default function RootLayout({
