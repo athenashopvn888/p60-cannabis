@@ -76,15 +76,6 @@ const STATIC_POSTS = [
   },
 ];
 
-/* ── Google Reviews ── */
-const REVIEWS = [
-  { name: "Mike R.", rating: 5, text: "Best dispensary in the York area. Staff is super knowledgeable and the exotic strains are legit fire.", date: "2 weeks ago" },
-  { name: "Sarah L.", rating: 5, text: "Love their convenient opening hours. The selection is insane — over 200 strains. My go-to spot.", date: "1 month ago" },
-  { name: "James T.", rating: 5, text: "Tried the Buy 2g Get 1g Free deal on the AAA+ and it was incredible value.", date: "3 weeks ago" },
-  { name: "Priya K.", rating: 5, text: "Clean store, friendly staff, great edible selection. The gummies are perfectly dosed.", date: "1 week ago" },
-  { name: "Alex D.", rating: 5, text: "Finally a dispensary that lists everything with actual THC percentages and per-gram pricing.", date: "2 weeks ago" },
-];
-
 function truncate(text: string, len: number) {
   if (text.length <= len) return text;
   return text.substring(0, len).replace(/\s+\S*$/, "") + "...";
@@ -161,39 +152,6 @@ export default function BlogContent() {
           </div>
         </section>
       )}
-
-      {/* Reviews Section */}
-      <section className={styles.reviewsSection}>
-        <div className={styles.container}>
-          <div className={styles.reviewsHeader}>
-            <h2 className={styles.reviewsTitle}>⭐ What Our Customers Say</h2>
-            <div className={styles.reviewsRating}>
-              <span className={styles.reviewsStars}>★★★★★</span>
-              <span className={styles.reviewsScore}>5.0</span>
-              <span className={styles.reviewsCount}>on Google</span>
-            </div>
-          </div>
-          <div className={styles.reviewsGrid}>
-            {REVIEWS.map((r, i) => (
-              <div key={i} className={styles.reviewCard}>
-                <div className={styles.reviewTop}>
-                  <div className={styles.reviewAvatar}>{r.name.charAt(0)}</div>
-                  <div>
-                    <div className={styles.reviewName}>{r.name}</div>
-                    <div className={styles.reviewDate}>{r.date}</div>
-                  </div>
-                  <div className={styles.reviewStars}>
-                    {"★".repeat(r.rating)}
-                  </div>
-                </div>
-                <p className={styles.reviewText}>{r.text}</p>
-              </div>
-            ))}
-          </div>
-          <div className={styles.reviewsCta}>
-          </div>
-        </div>
-      </section>
 
       {/* Static Blog Posts */}
       <section className={styles.postsSection}>
