@@ -92,10 +92,15 @@ interface Review {
   date: string;
 }
 
+interface ReviewStats {
+  total: number;
+  avg: number;
+}
+
 export default function HomePage() {
   const [featuredStrains, setFeaturedStrains] = useState<any[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewsStats, setReviewsStats] = useState({ total: 14, avg: 5.0 });
+  const [reviewsStats, setReviewsStats] = useState<ReviewStats | null>(null);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [welcomeBannerError, setWelcomeBannerError] = useState(false);
   const welcomeBannerSrc: string = "/banners/welcome_banner.webp";
@@ -129,8 +134,8 @@ export default function HomePage() {
         const dtIdx = colMap["CreateTime"] !== undefined ? colMap["CreateTime"] : 3;
 
         const reviewsPool: Review[] = [];
-        let totalVal = 14;
-        let avgVal = 5.0;
+        let totalVal: number | null = null;
+        let avgVal: number | null = null;
         let hasStats = false;
 
         rows.forEach((row: any) => {
@@ -140,9 +145,13 @@ export default function HomePage() {
 
           const rn = row.c[rnIdx] ? row.c[rnIdx].v || "" : "";
           if (rn === "__STATS__") {
-            totalVal = parseInt(row.c[cmIdx] ? row.c[cmIdx].v : 14) || 14;
-            avgVal = parseFloat(row.c[dtIdx] ? row.c[dtIdx].v : 5.0) || 5.0;
-            hasStats = true;
+            const parsedTotal = parseInt(row.c[cmIdx] ? row.c[cmIdx].v : "", 10);
+            const parsedAvg = parseFloat(row.c[dtIdx] ? row.c[dtIdx].v : "");
+            if (Number.isFinite(parsedTotal) && Number.isFinite(parsedAvg)) {
+              totalVal = parsedTotal;
+              avgVal = parsedAvg;
+              hasStats = true;
+            }
             return;
           }
 
@@ -154,7 +163,9 @@ export default function HomePage() {
         });
 
         setReviews(reviewsPool.slice(0, 6));
-        if (hasStats) setReviewsStats({ total: totalVal, avg: avgVal });
+        if (hasStats && totalVal !== null && avgVal !== null) {
+          setReviewsStats({ total: totalVal, avg: avgVal });
+        }
         setReviewsLoading(false);
       })
       .catch((err) => {
@@ -320,15 +331,17 @@ export default function HomePage() {
         <div className={styles.container}>
           <div className={styles.reviewsHeader}>
             <h2 className={styles.sectionTitle}>What Our Customers Say</h2>
-            <div className={styles.reviewsStarsSummary}>
-              <span className={styles.reviewsStars}>★★★★★</span>
-              <span className={styles.reviewsAvg}>
-                {reviewsStats.avg.toFixed(1)}
-              </span>
-              <span className={styles.reviewsCount}>
-                ({reviewsStats.total} reviews on Google)
-              </span>
-            </div>
+            {reviewsStats && (
+              <div className={styles.reviewsStarsSummary}>
+                <span className={styles.reviewsStars}>★★★★★</span>
+                <span className={styles.reviewsAvg}>
+                  {reviewsStats.avg.toFixed(1)}
+                </span>
+                <span className={styles.reviewsCount}>
+                  ({reviewsStats.total} Google reviews)
+                </span>
+              </div>
+            )}
           </div>
 
           <div className={styles.reviewsGrid}>
@@ -336,7 +349,7 @@ export default function HomePage() {
               <div className={styles.reviewsLoading}>Loading reviews...</div>
             ) : reviews.length === 0 ? (
               <div className={styles.reviewsLoading}>
-                Rated {reviewsStats.avg.toFixed(1)}/5 across {reviewsStats.total} Google reviews
+                Reviews are not available right now.
               </div>
             ) : (
               reviews.map((rv, idx) => (
