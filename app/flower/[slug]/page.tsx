@@ -119,7 +119,7 @@ function getBreadcrumbJsonLd(flower: FlowerProduct) {
   };
 }
 
-/* Top 3 tiers get "6g" label (Buy 3g Get 3g FREE promo), AA stays "5g" */
+/* Top 3 tiers get "6g" label (6g bundle pricing), AA stays "5g" */
 const TOP_TIERS = ["EXOTIC", "PREMIUM", "AAA+"];
 
 /* -- Page -- */
@@ -144,8 +144,8 @@ export default async function FlowerPage({
   const fiveGGrams = isTopTier ? 6 : 5;
 
   const prices = [
-    { label: "3g", grams: 3, p: flower.price3g, promo: "Buy 2g Get 1g FREE" },
-    { label: fiveGLabel, grams: fiveGGrams, p: flower.price5g, promo: isTopTier ? "Buy 3g Get 3g FREE" : null },
+    { label: "3g", grams: 3, p: flower.price3g, promo: "3g bundle pricing" },
+    { label: fiveGLabel, grams: fiveGGrams, p: flower.price5g, promo: isTopTier ? "6g bundle pricing" : null },
     { label: "14g", grams: 14, p: flower.price14g, promo: null },
     { label: "28g", grams: 28, p: flower.price28g, promo: null },
   ].filter((x) => x.p !== null);
