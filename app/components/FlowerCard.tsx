@@ -43,7 +43,7 @@ export default function FlowerCard({
       label: "3g",
       grams: 3,
       price: flower.price3g,
-      promo: isPromoTier ? "Buy 2g Get 1g FREE = 3g" : tierCfg?.deal3g?.label,
+      promo: isPromoTier ? "3g bundle" : tierCfg?.deal3g?.label,
     });
   }
   if (flower.price5g) {
@@ -53,7 +53,7 @@ export default function FlowerCard({
       label: `${grams}g`,
       grams,
       price: flower.price5g,
-      promo: isPromoTier ? "Buy 3g Get 3g FREE = 6g" : undefined,
+      promo: isPromoTier ? "6g bundle" : undefined,
     });
   }
   if (flower.price14g) {
