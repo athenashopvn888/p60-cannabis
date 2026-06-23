@@ -172,12 +172,12 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   "VAPE PENS": {
     banner: "/banners/01_Vape_Pens.webp",
     name: "THC Vape", slug: "vapes", color: "#8b5cf6", icon: "💨",
-    seoTitle: "Vape Pens York — THC & Nicotine Cartridges",
-    seoIntro: "Shop THC and nicotine vape pens at P60 Cannabis, York. Cartridges, 510-thread batteries, and premium vape brands — all in stock.",
-    seoDescription: "P60 Cannabis carries a curated selection of vape pens and cartridges in York. From 510-thread THC cartridges to nicotine vape pods, we stock the most popular brands and flavours. Our knowledgeable budtenders can help you choose the right cartridge and battery setup. Visit us at 1938 Weston Rd for the best vape selection in ByWard Market.",
+    seoTitle: "Vape Pens in York | P60 Cannabis",
+    seoIntro: "Browse vape category information at P60 Cannabis in York.",
+    seoDescription: "Review vape-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
     faqs: [
-      { q: "What vape pens do you sell?", a: "We carry 510-thread THC cartridges, nicotine vape pods, disposable vapes, and compatible batteries from top Canadian brands." },
-      { q: "Do you sell vape batteries?", a: "Yes! We stock 510-thread batteries and pod systems that pair with our cartridge selection." },
+      { q: "What vape information can shoppers review?", a: "Visitors can use this page to review vape category information and then confirm current menu details before visiting P60 Cannabis." },
+      { q: "Does this page guarantee current vape availability?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
     ],
   },
   "VAPE DISPOSABLE": {
@@ -194,22 +194,22 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   CONCENTRATES: {
     banner: "/banners/03_Concentrates.webp",
     name: "Concentrates", slug: "concentrates", color: "#f59e0b", icon: "💎",
-    seoTitle: "Cannabis Concentrates York — Shatter, Wax, Hash & Live Resin",
-    seoIntro: "Premium cannabis concentrates at P60 Cannabis, York. Shatter, wax, hash, live resin, and diamonds — all in stock.",
-    seoDescription: "P60 Cannabis offers a premium selection of cannabis concentrates in York. From traditional hash and kief to modern extracts like shatter, wax, live resin, and THC diamonds, we carry products for every preference and potency level. Our concentrates are sourced from trusted extractors and tested for purity. Visit us at 1938 Weston Rd.",
+    seoTitle: "Cannabis Concentrates in York | P60 Cannabis",
+    seoIntro: "Browse concentrates category information at P60 Cannabis in York.",
+    seoDescription: "Review concentrate-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
     faqs: [
-      { q: "What types of concentrates do you carry?", a: "We stock shatter, wax, budder, live resin, rosin, hash, kief, and THC diamonds from top Canadian extractors." },
-      { q: "How do I consume concentrates?", a: "Concentrates can be dabbed with a rig, vaped with a concentrate pen, or added to flower in a joint or bowl for extra potency." },
+      { q: "What concentrate information can shoppers review?", a: "Visitors can use this page to review concentrates category information and then confirm current menu details before visiting P60 Cannabis." },
+      { q: "Does this page guarantee current concentrate availability?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
     ],
   },
   PREROLLS: {
     banner: "/banners/04_Pre_Rolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "🚬",
-    seoTitle: "Pre-Rolls York — Ready-to-Smoke Cannabis Joints",
-    seoIntro: "Pre-rolled cannabis joints at P60 Cannabis, York. Singles, multi-packs, and infused pre-rolls — ready to light up.",
-    seoDescription: "Skip the rolling and grab a pre-roll from P60 Cannabis in York. We carry singles, multi-packs, and infused pre-rolls from premium flower. Whether you want a quick smoke or a party pack, our pre-roll selection has something for everyone. Visit us at 1938 Weston Rd — we are Open Daily: 10:00 AM - 03:00 AM.",
+    seoTitle: "Pre-Rolls in York | P60 Cannabis",
+    seoIntro: "Browse pre-roll category information at P60 Cannabis in York.",
+    seoDescription: "Review pre-roll menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
     faqs: [
-      { q: "What pre-rolls do you carry?", a: "We stock singles, 3-packs, and multi-packs in various strains and potencies, including infused pre-rolls with concentrates." },
-      { q: "Are your pre-rolls made with quality flower?", a: "Yes! Our pre-rolls are filled with ground flower from our regular menu tiers — not shake or trim." },
+      { q: "What pre-roll information can shoppers review?", a: "Visitors can use this page to review pre-roll category information and then confirm current menu details before visiting P60 Cannabis." },
+      { q: "Does this page guarantee current pre-roll availability?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
     ],
   },
   "ADD ONS": {
