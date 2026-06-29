@@ -5,11 +5,11 @@ import AgeGate from "./components/AgeGate";
 export const metadata: Metadata = {
   metadataBase: new URL("https://p60cannabis.com"),
   title: {
-    default: "P60 Cannabis — Premium Cannabis Dispensary, York",
+    default: "P60 Cannabis | York Cannabis Dispensary",
     template: "%s | P60 Cannabis",
   },
   description:
-    "Shop 200+ premium cannabis strains at P60 Cannabis. Exotic, Premium, AAA+, AA & Budget flower from $3/g. York's uplifting dispensary at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
+    "P60 Cannabis is a York cannabis dispensary on Weston Rd with adult 19+ store info and category browsing for flower, pre-rolls, vapes, edibles, concentrates, and accessories. Open Daily: 10:00 AM - 03:00 AM.",
   keywords: [
     "cannabis dispensary York",
     "weed store York",
