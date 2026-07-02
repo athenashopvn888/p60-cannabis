@@ -1,83 +1,101 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import styles from "./blogpost.module.css";
-
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySrZYxI-NNnXfxY1jXOqHgT2HQi4zst2Fgte6FXTeymat_W_r0o1E3P83EfnVCjEk0/exec";
+import { getStaticPost, STORE_BLOG_CONFIG, type StaticBlogPost } from "../staticPosts";
 
 interface BlogPost {
-  id: string;
+  id?: string;
   title: string;
   slug: string;
+  seo_title?: string;
+  meta_description?: string;
+  h1?: string;
   content: string;
-  author: string;
-  date: string;
+  faq?: string;
+  internal_links_used?: string;
+  author?: string;
+  date?: string;
+  relatedLinks?: StaticBlogPost["relatedLinks"];
 }
 
-/** Simple markdown-like renderer */
+type PostContentProps = {
+  managerPost?: BlogPost | null;
+  slug: string;
+  storeCode?: string;
+  storeName?: string;
+  ctaLine?: string;
+  isManagerPreview?: boolean;
+};
+
+function cleanInternalHref(value: string) {
+  const href = value.trim();
+  if (!href.startsWith("/") || href.startsWith("//") || href.includes("..") || href.includes("\\") || /[\s<>]/.test(href)) return "";
+  return href;
+}
+
+function parseRelatedLinkLine(line: string) {
+  const markdown = line.trim().match(/^\[([^\]]+)\]\((\/[^)]+)\)$/);
+  if (!markdown) return null;
+  const href = cleanInternalHref(markdown[2]);
+  return href ? { title: markdown[1].trim(), url: href, description: "Store-scoped internal link." } : null;
+}
+
+function relatedLinksForPost(post: BlogPost) {
+  if (post.relatedLinks?.length) return post.relatedLinks;
+  return (post.internal_links_used || "")
+    .split("\n")
+    .map(parseRelatedLinkLine)
+    .filter((link): link is NonNullable<ReturnType<typeof parseRelatedLinkLine>> => Boolean(link))
+    .slice(0, 5);
+}
+
+function renderInline(text: string) {
+  const nodes: ReactNode[] = [];
+  const pattern = /(\*\*([^*]+)\*\*)|\[([^\]]+)\]\((\/[^)\s]+)\)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) nodes.push(<span key={`text-${lastIndex}`}>{text.slice(lastIndex, match.index)}</span>);
+    if (match[2]) {
+      nodes.push(<strong key={`bold-${match.index}`}>{match[2]}</strong>);
+    } else if (match[3] && match[4]) {
+      nodes.push(<Link key={`link-${match.index}`} href={match[4]} className={styles.contentLink}>{match[3]}</Link>);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) nodes.push(<span key={`text-${lastIndex}`}>{text.slice(lastIndex)}</span>);
+  return nodes.length ? nodes : text;
+}
+
 function renderContent(raw: string) {
   return raw.split("\n\n").map((block, i) => {
     const trimmed = block.trim();
     if (!trimmed) return null;
 
-    // Heading
     if (trimmed.startsWith("## ")) {
-      return <h2 key={i} className={styles.contentH2}>{trimmed.replace("## ", "")}</h2>;
+      return <h2 key={i} className={styles.contentH2}>{renderInline(trimmed.replace("## ", ""))}</h2>;
     }
     if (trimmed.startsWith("### ")) {
-      return <h3 key={i} className={styles.contentH3}>{trimmed.replace("### ", "")}</h3>;
+      return <h3 key={i} className={styles.contentH3}>{renderInline(trimmed.replace("### ", ""))}</h3>;
     }
-
-    // Bullet list
     if (trimmed.startsWith("- ")) {
-      const items = trimmed.split("\n").filter(l => l.trim().startsWith("- "));
+      const items = trimmed.split("\n").filter((line) => line.trim().startsWith("- "));
       return (
         <ul key={i} className={styles.contentList}>
-          {items.map((item, j) => (
-            <li key={j}>{item.replace(/^-\s*/, "")}</li>
-          ))}
+          {items.map((item, j) => <li key={j}>{renderInline(item.replace(/^-\s*/, ""))}</li>)}
         </ul>
       );
     }
-
-    // Paragraph — handle **bold**
-    const html = trimmed.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    return <p key={i} className={styles.contentP} dangerouslySetInnerHTML={{ __html: html }} />;
+    return <p key={i} className={styles.contentP}>{renderInline(trimmed)}</p>;
   });
 }
 
-export default function PostContent() {
-  const params = useParams();
-  const slug = params.slug as string;
-  const [post, setPost] = useState<BlogPost | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`${APPS_SCRIPT_URL}?action=blog&store=PNY01`)
-      .then((r) => r.json())
-      .then((data) => {
-        const found = (data.posts || []).find((p: BlogPost) => p.slug === slug);
-        setPost(found || null);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [slug]);
-
-  if (loading) {
-    return (
-      <main className={styles.main}>
-        <Navbar />
-        <div className={styles.content}>
-          <div className={styles.loading}>Loading post...</div>
-        </div>
-        <Footer />
-      </main>
-    );
-  }
+export default function PostContent({ managerPost = null, slug, storeName = STORE_BLOG_CONFIG.storeName, ctaLine, isManagerPreview = false }: PostContentProps) {
+  const post = getStaticPost(slug) || managerPost;
 
   if (!post) {
     return (
@@ -86,14 +104,16 @@ export default function PostContent() {
         <div className={styles.content}>
           <div className={styles.notFound}>
             <h1>Post Not Found</h1>
-            <p>This blog post doesn&apos;t exist or has been removed.</p>
-            <Link href="/blog" className={styles.backLink}>← Back to Blog</Link>
+            <p>This blog post does not exist or has been removed.</p>
+            <Link href="/blog" className={styles.backLink}>Back to Blog</Link>
           </div>
         </div>
         <Footer />
       </main>
     );
   }
+
+  const relatedLinks = relatedLinksForPost(post);
 
   return (
     <main className={styles.main}>
@@ -107,33 +127,47 @@ export default function PostContent() {
           <span className={styles.breadcrumbCurrent}>{post.title}</span>
         </nav>
 
+        {isManagerPreview && (
+          <div className={styles.previewNotice}>
+            <strong>Manager preview</strong>
+            <span>This draft or scheduled post is visible only while signed in.</span>
+          </div>
+        )}
+
         <header className={styles.header}>
-          <h1 className={styles.title}>{post.title}</h1>
+          <h1 className={styles.title}>{post.h1 || post.title}</h1>
           <div className={styles.meta}>
-            <span>{post.author}</span>
-            <span>·</span>
-            <span>
-              {new Date(post.date).toLocaleDateString("en-CA", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
-            </span>
+            <span>{post.author || "Store team"}</span>
+            <span>-</span>
+            <span>{post.date ? new Date(post.date).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) : "Store post"}</span>
           </div>
         </header>
 
-        <div className={styles.body}>
-          {renderContent(post.content)}
-        </div>
+        <div className={styles.body}>{renderContent(post.content)}</div>
+
+        {post.faq && <div className={styles.body}>{renderContent(post.faq)}</div>}
+
+        {relatedLinks.length > 0 && (
+          <section className={styles.relatedLinks}>
+            <h2 className={styles.contentH2}>Helpful next steps</h2>
+            <ul className={styles.relatedList}>
+              {relatedLinks.map((link) => (
+                <li key={link.url}>
+                  <a href={link.url}>{link.title}</a>
+                  <p>{link.description}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className={styles.cta}>
-          <p>
-            <strong>P60 Cannabis</strong> — 1938 Weston Rd, York · Open Daily: 10:00 AM - 03:00 AM · (437) 522-2802
-          </p>
-          <Link href="/exotic" className={styles.ctaBtn}>Browse Our Menu</Link>
+          <p><strong>{storeName}</strong> - use the store page for current store details before visiting.</p>
+          {ctaLine && <p>{ctaLine}</p>}
+          <Link href={STORE_BLOG_CONFIG.storePath} className={styles.ctaBtn}>Store Page</Link>
         </div>
 
-        <Link href="/blog" className={styles.backLink}>← Back to Blog</Link>
+        <Link href="/blog" className={styles.backLink}>Back to Blog</Link>
       </article>
       <Footer />
     </main>

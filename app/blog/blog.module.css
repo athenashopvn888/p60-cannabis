@@ -1,114 +1,22 @@
 .main { min-height: 100vh; background: var(--bg-primary); }
 
-/* Hero */
 .hero {
-  padding: 48px 24px 48px;
+  padding: 120px 24px 48px;
   background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
   text-align: center;
   border-bottom: 1px solid var(--border-subtle);
 }
-.heroInner { max-width: 700px; margin: 0 auto; }
+.heroInner { max-width: 760px; margin: 0 auto; }
 .heroH1 {
-  font-size: clamp(28px, 5vw, 42px);
+  font-size: clamp(28px, 5vw, 44px);
   font-weight: 900;
   color: var(--text-primary);
   margin: 0 0 12px;
   line-height: 1.2;
 }
 .heroAccent { color: var(--green-dark); }
-.heroSub { font-size: 16px; color: var(--text-secondary); margin: 0; }
-
-/* Container */
+.heroSub { font-size: 16px; color: var(--text-secondary); margin: 0; line-height: 1.6; }
 .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-
-/* Reviews Section */
-.reviewsSection {
-  padding: 48px 0;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.reviewsHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.reviewsTitle {
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--text-primary);
-  margin: 0;
-}
-.reviewsRating {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.reviewsStars { color: #fbbf24; font-size: 18px; letter-spacing: 2px; }
-.reviewsScore { font-size: 18px; font-weight: 900; color: var(--text-primary); }
-.reviewsCount { font-size: 13px; color: var(--text-muted); }
-
-.reviewsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-}
-.reviewCard {
-  padding: 20px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  transition: transform 0.2s;
-}
-.reviewCard:hover { transform: translateY(-2px); }
-.reviewTop {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.reviewAvatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #2D6A4F, #40916C);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-.reviewName { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-.reviewDate { font-size: 11px; color: var(--text-muted); }
-.reviewStars { margin-left: auto; color: #fbbf24; font-size: 14px; letter-spacing: 1px; }
-.reviewText {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.reviewsCta { text-align: center; margin-top: 24px; }
-.reviewsBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 28px;
-  background: var(--green-dark);
-  color: white;
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 700;
-  transition: background 0.2s;
-}
-.reviewsBtn:hover { background: #1B4332; }
-
-/* Posts Section */
 .postsSection { padding: 48px 0 60px; }
 .sectionTitle {
   font-size: 22px;
@@ -122,25 +30,21 @@
   gap: 16px;
 }
 .postCard {
+  display: block;
   padding: 24px;
   background: var(--bg-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
+  text-decoration: none;
   transition: all 0.2s;
-  cursor: default;
 }
 .postCard:hover {
   border-color: var(--green-dark);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(0,0,0,0.06);
 }
-.postEmoji { font-size: 32px; margin-bottom: 12px; }
-.postMeta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
+.postEmoji { font-size: 14px; font-weight: 900; color: var(--green-dark); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+.postMeta { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .postCategory {
   font-size: 11px;
   font-weight: 800;
@@ -153,65 +57,26 @@
 }
 .postDot { color: var(--text-muted); }
 .postTime { font-size: 12px; color: var(--text-muted); }
-.postTitle {
-  font-size: 17px;
-  font-weight: 800;
-  color: var(--text-primary);
-  margin: 0 0 8px;
-  line-height: 1.3;
-}
-.postExcerpt {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  margin: 0 0 12px;
-}
+.postTitle { font-size: 17px; font-weight: 800; color: var(--text-primary); margin: 0 0 8px; line-height: 1.3; }
+.postExcerpt { font-size: 14px; line-height: 1.6; color: var(--text-secondary); margin: 0 0 12px; }
 .postDate { font-size: 12px; color: var(--text-muted); }
-
-/* CTA */
 .ctaSection {
-  padding: 60px 24px;
+  padding: 56px 24px;
   background: linear-gradient(180deg, var(--bg-primary), var(--bg-secondary));
   text-align: center;
   border-top: 1px solid var(--border-subtle);
 }
-.ctaInner { max-width: 600px; margin: 0 auto; }
-.ctaTitle {
-  font-size: 28px;
-  font-weight: 900;
-  color: var(--text-primary);
-  margin: 0 0 8px;
-}
-.ctaSub { font-size: 15px; color: var(--text-secondary); margin: 0 0 24px; }
+.ctaInner { max-width: 620px; margin: 0 auto; }
+.ctaTitle { font-size: 28px; font-weight: 900; color: var(--text-primary); margin: 0 0 8px; }
+.ctaSub { font-size: 15px; color: var(--text-secondary); margin: 0 0 24px; line-height: 1.6; }
 .ctaBtns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
-.ctaBtn {
-  padding: 14px 32px;
-  background: var(--green-dark);
-  color: white;
+.ctaBtn, .ctaBtnSecondary {
+  padding: 14px 28px;
   border-radius: var(--radius-sm);
   text-decoration: none;
   font-size: 14px;
   font-weight: 800;
-  transition: background 0.2s;
 }
-.ctaBtn:hover { background: #1B4332; }
-.ctaBtnSecondary {
-  padding: 14px 32px;
-  background: transparent;
-  color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 700;
-  transition: all 0.2s;
-}
-.ctaBtnSecondary:hover {
-  border-color: var(--green-dark);
-  color: var(--green-dark);
-}
-
-@media (max-width: 768px) {
-  .reviewsGrid { grid-template-columns: 1fr; }
-  .postsGrid { grid-template-columns: 1fr; }
-}
+.ctaBtn { background: var(--green-dark); color: white; }
+.ctaBtnSecondary { color: var(--text-primary); border: 1px solid var(--border-subtle); }
+@media (max-width: 768px) { .postsGrid { grid-template-columns: 1fr; } }
