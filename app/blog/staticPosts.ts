@@ -25,7 +25,7 @@ export const STORE_BLOG_CONFIG = {
   storeCode: "PNY01",
   storeName: "P60 Cannabis",
   city: "York",
-  domain: "p60cannabis.com",
+  domain: "www.p60cannabis.com",
   storePath: "/weed-dispensary-york",
 };
 

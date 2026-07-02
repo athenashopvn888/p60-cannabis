@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       disallow: ["/api/"],
     },
-    sitemap: "https://p60cannabis.com/sitemap.xml",
+    sitemap: "https://www.p60cannabis.com/sitemap.xml",
   };
 }
