@@ -45,35 +45,35 @@ export const STATIC_POSTS: StaticBlogPost[] = [
     readTime: "4 min",
     content: `## P60 Cannabis Local Store Guide for Adults 19+
 
-P60 Cannabis serves adults 19+ looking for store information around Weston Road / York. This guide helps visitors understand what to check on the official store page before visiting and how to read menu-category language safely.
+P60 Cannabis serves adults 19+ looking for store information around Weston Road / York. Use this guide to get oriented, compare the store page with menu categories, and choose the most useful next step before visiting.
 
 P60 Cannabis is the PNY01 storefront identity. This article must stay separate from Planet 60 Cannabis and Planets 59 Cannabis.
 
-The article does not change business facts, publish item-level details, or make personal-use claims. It is a store-specific guide that points readers back to the official store page.
+The focus is practical and store-specific: confirm the right storefront, browse helpful category links, and use the store page for directions, contact options, and visit planning.
 
 ## Why Local Context Helps
 
-P60 Cannabis is tied to Weston Road and York context in York. Local content should make the page easier to understand without changing the store name, location facts, hours, map details, or license information.
+P60 Cannabis is tied to Weston Road and York context in York. Useful local content should make the page easier for shoppers to understand by connecting the store to nearby streets, neighbourhood language, and visit-planning details already supported by the site.
 
-Searchers often want to confirm that they are looking at the right storefront before they visit. A concise guide can support that decision by explaining the local context and the safest next steps.
+Searchers often want to confirm that they are looking at the right storefront before they visit. A concise guide can support that decision by explaining the local context and the most helpful next steps.
 
-## What To Review Before Visiting
+## Plan A Better Visit
 
-Start with the official P60 Cannabis store page. Useful checks include the store identity, the local landing page, general menu-category navigation, and any current store notes already shown on the site.
+Start with the official P60 Cannabis store page, then use the menu/category links to browse what the site makes easy to compare. Shoppers can confirm the right storefront, directions, contact options, and local visit details in one place.
 
-This guide should not be treated as the source for details that may change. If a visitor needs a specific answer before leaving, the official store page or direct store contact is the safer source.
+If you need a quick answer before heading out, check the store page first and contact the store directly for help from staff.
 
-## Menu Categories Are Navigation
+## Browse Menu Categories With Confidence
 
-Broad category labels help visitors understand how a store page is organized. They are navigation labels, not promises about a specific item at the moment someone reads this article.
+Menu category labels help adults 19+ move quickly from general store research to the product areas they care about. Use them to compare the sections already shown on the site, such as flower, pre-rolls, vapes, edibles, concentrates, accessories, or other store categories.
 
-That distinction keeps the guide accurate over time. It also keeps the content useful for adults 19+ who need general orientation before reviewing the store page.
+That makes the page easier to scan and gives shoppers a cleaner path from local research to the right store page.
 
 ## Adult 19+ Visit Basics
 
-Adults 19+ should bring valid government identification and review the official store page before visiting. The article avoids personal-use advice, rating claims, competitor comparisons, and language that sounds like an advertisement.
+Adults 19+ should bring valid government identification, confirm the store page before leaving, and use the menu/category links to narrow down what they want to ask about in-store.
 
-The goal is simple: help a real visitor confirm the right store page and understand where current details should be checked.
+The goal is simple: help real shoppers feel confident they are on the right store site and know where to find the next useful page.
 
 ## FAQ
 
@@ -81,17 +81,17 @@ The goal is simple: help a real visitor confirm the right store page and underst
 
 Yes. This guide is written for P60 Cannabis and the local York context connected to this website.
 
-### Does this guide confirm current item details?
+### How can shoppers check current menu details?
 
-No. It is a store information guide. The official store page remains the source for current details.
+Use the store page and menu/category links before visiting, then ask staff if you need help comparing options.
 
 ### Who can use this guide?
 
 This guide is for adults 19+ who want to understand the store page before visiting.
 
-### Does this article change store facts?
+### What is the best next step after reading?
 
-No. It does not change store name, location facts, hours, map details, license information, or other locked business facts.`,
+Open the store page, browse the available menu/category sections, and use the contact or directions options when you are ready to plan your visit.`,
     faq: "",
     internal_links_used: "[P60 Cannabis York store page](/weed-dispensary-york)\\n[P60 Cannabis homepage](/)\\n[More P60 Cannabis guides](/blog)",
     relatedLinks: [
