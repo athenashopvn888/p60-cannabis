@@ -39,7 +39,7 @@ export const STATIC_POSTS: StaticBlogPost[] = [
     meta_description: "Adult 19+ guide to P60 Cannabis around Weston Road / York, with local store-page checks, menu-category context, and safe visit planning.",
     h1: "P60 Cannabis Local Store Guide for Adults 19+",
     excerpt: "P60 Cannabis guide for adults 19+ reviewing store information around Weston Road / York.",
-    author: "Athena SEO Team",
+    author: "The P60 Cannabis Team",
     date: "2026-07-02",
     category: "Store Guide",
     readTime: "4 min",

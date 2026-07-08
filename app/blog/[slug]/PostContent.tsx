@@ -137,7 +137,7 @@ export default function PostContent({ managerPost = null, slug, storeName = STOR
         <header className={styles.header}>
           <h1 className={styles.title}>{post.h1 || post.title}</h1>
           <div className={styles.meta}>
-            <span>{post.author || "Store team"}</span>
+            <span>{post.author || `The ${storeName} Team`}</span>
             <span>-</span>
             <span>{post.date ? new Date(post.date).toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }) : "Store post"}</span>
           </div>

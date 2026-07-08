@@ -58,7 +58,7 @@ export default function BlogContent({ managerPosts = [], storeName = STORE_BLOG_
                   <div className={styles.postMeta}>
                     <span className={styles.postCategory}>Blog</span>
                     <span className={styles.postDot}>-</span>
-                    <span className={styles.postTime}>{post.author || "Store team"}</span>
+                    <span className={styles.postTime}>{post.author || `The ${storeName} Team`}</span>
                   </div>
                   <h3 className={styles.postTitle}>{post.title}</h3>
                   <p className={styles.postExcerpt}>{postExcerpt(post)}</p>
