@@ -80,7 +80,7 @@ export default function BlogContent({ managerPosts = [], storeName = STORE_BLOG_
         <div className={styles.container}>
           <h2 className={styles.sectionTitle}>Guides &amp; Resources</h2>
           <div className={styles.postsGrid}>
-            {STATIC_POSTS.map((post) => (
+            {[...STATIC_POSTS].sort((a, b) => b.date.localeCompare(a.date)).map((post) => (
               <Link key={post.slug} href={`/blog/${post.slug}`} className={styles.postCard}>
                 <div className={styles.postEmoji}>Guide</div>
                 <div className={styles.postMeta}>
