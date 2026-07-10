@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import styles from "./blog.module.css";
+import { STATIC_POSTS } from "./staticPosts";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySrZYxI-NNnXfxY1jXOqHgT2HQi4zst2Fgte6FXTeymat_W_r0o1E3P83EfnVCjEk0/exec";
 
@@ -18,64 +19,6 @@ interface BlogPost {
   published: string;
 }
 
-/* ── Static Blog Posts (always shown) ── */
-const STATIC_POSTS = [
-  {
-    slug: "indica-vs-sativa-vs-hybrid",
-    title: "Indica vs Sativa vs Hybrid — What's the Difference?",
-    excerpt: "Not sure which type to pick? We break down the effects, best uses, and top strains for each category so you can shop with confidence.",
-    date: "2026-05-10",
-    category: "Guides",
-    emoji: "🌿",
-    readTime: "5 min",
-  },
-  {
-    slug: "how-to-choose-thc-level",
-    title: "How to Choose the Right THC Level for You",
-    excerpt: "From 24% budget strains to 39% exotic fire — here's how to pick the THC percentage that matches your tolerance and desired experience.",
-    date: "2026-05-08",
-    category: "Guides",
-    emoji: "🔬",
-    readTime: "4 min",
-  },
-  {
-    slug: "edibles-dosing-guide",
-    title: "Edibles Dosing Guide — Start Low, Go Slow",
-    excerpt: "First time trying edibles? Our dosing chart covers everything from 5mg micro-doses to 100mg+ for experienced users.",
-    date: "2026-05-05",
-    category: "Guides",
-    emoji: "🍬",
-    readTime: "6 min",
-  },
-  {
-    slug: "best-dispensary-byward-market",
-    title: "Why P60 Cannabis is York's Best Dispensary",
-    excerpt: "200+ strains, transparent pricing from $3/g, lab-tested products, and convenient hours. Here's what makes us different.",
-    date: "2026-05-03",
-    category: "News",
-    emoji: "🔥",
-    readTime: "3 min",
-  },
-  {
-    slug: "vape-pen-vs-flower",
-    title: "Vape Pen vs Flower — Which Should You Choose?",
-    excerpt: "Convenience vs tradition. We compare effects, cost, discretion, and flavor to help you decide between vaping and smoking.",
-    date: "2026-04-28",
-    category: "Guides",
-    emoji: "💨",
-    readTime: "5 min",
-  },
-  {
-    slug: "brampton-cannabis-laws-2026",
-    title: "York Cannabis Laws in 2026 — What You Need to Know",
-    excerpt: "Age limits, public consumption rules, possession limits, and where you can legally smoke in York. Stay informed.",
-    date: "2026-04-25",
-    category: "News",
-    emoji: "⚖️",
-    readTime: "4 min",
-  },
-];
-
 function truncate(text: string, len: number) {
   if (text.length <= len) return text;
   return text.substring(0, len).replace(/\s+\S*$/, "") + "...";
@@ -87,7 +30,7 @@ export default function BlogContent() {
   useEffect(() => {
     fetch(`${APPS_SCRIPT_URL}?action=blog&store=PNY01`)
       .then((r) => r.json())
-      .then((data) => setDynamicPosts(data.posts || []))
+      .then((data) => setDynamicPosts(Array.isArray(data.posts) ? data.posts : []))
       .catch(() => {});
   }, []);
 
@@ -95,7 +38,6 @@ export default function BlogContent() {
     <main className={styles.main}>
       <Navbar />
 
-      {/* Blog Banner */}
       <section style={{ width: "100%", overflow: "hidden", marginTop: "92px" }}>
         <img
           src="/banners/blog_banner.webp"
@@ -104,20 +46,18 @@ export default function BlogContent() {
         />
       </section>
 
-      {/* Hero */}
       <section className={styles.hero}>
         <div className={styles.heroInner}>
           <h1 className={styles.heroH1}>
-            📝 P60 Cannabis <span className={styles.heroAccent}>Blog</span>
+            P60 Cannabis <span className={styles.heroAccent}>Blog</span>
           </h1>
           <p className={styles.heroSub}>
-            Cannabis guides, strain reviews, and dispensary news from York&apos;s
-            premium dispensary.
+            Useful store notes for adults 19+. No template fluff, no mystery claims,
+            just the stuff worth checking before you head over.
           </p>
         </div>
       </section>
 
-      {/* Dynamic Blog Posts from CMS */}
       {dynamicPosts.length > 0 && (
         <section className={styles.postsSection}>
           <div className={styles.container}>
@@ -129,10 +69,10 @@ export default function BlogContent() {
                   href={`/blog/${post.slug}`}
                   className={styles.postCard}
                 >
-                  <div className={styles.postEmoji}>📰</div>
+                  <div className={styles.postEmoji}>New</div>
                   <div className={styles.postMeta}>
                     <span className={styles.postCategory}>Blog</span>
-                    <span className={styles.postDot}>·</span>
+                    <span className={styles.postDot}>.</span>
                     <span className={styles.postTime}>{post.author}</span>
                   </div>
                   <h3 className={styles.postTitle}>{post.title}</h3>
@@ -153,17 +93,16 @@ export default function BlogContent() {
         </section>
       )}
 
-      {/* Static Blog Posts */}
       <section className={styles.postsSection}>
         <div className={styles.container}>
-          <h2 className={styles.sectionTitle}>Guides &amp; Resources</h2>
+          <h2 className={styles.sectionTitle}>Guides That Actually Help</h2>
           <div className={styles.postsGrid}>
             {STATIC_POSTS.map((post) => (
-              <article key={post.slug} className={styles.postCard}>
-                <div className={styles.postEmoji}>{post.emoji}</div>
+              <Link key={post.slug} href={`/blog/${post.slug}`} className={styles.postCard}>
+                <div className={styles.postEmoji}>Read</div>
                 <div className={styles.postMeta}>
                   <span className={styles.postCategory}>{post.category}</span>
-                  <span className={styles.postDot}>·</span>
+                  <span className={styles.postDot}>.</span>
                   <span className={styles.postTime}>{post.readTime}</span>
                 </div>
                 <h3 className={styles.postTitle}>{post.title}</h3>
@@ -175,18 +114,17 @@ export default function BlogContent() {
                     day: "numeric",
                   })}
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA */}
       <section className={styles.ctaSection}>
         <div className={styles.ctaInner}>
           <h2 className={styles.ctaTitle}>Ready to Shop?</h2>
           <p className={styles.ctaSub}>
-            200+ strains · Exotic to Budget · Open Daily: 10:00 AM - 03:00 AM
+            Check the current menu before heading to 1938 Weston Rd.
           </p>
           <div className={styles.ctaBtns}>
             <Link href="/exotic" className={styles.ctaBtn}>
