@@ -86,6 +86,9 @@ async function main() {
         it.price = '';
         itemsFixed++;
       }
+      if (String(it.sku || '').includes('650') && /GALAXY GUMMIES 6000MG/i.test(it.name || '') && !it.image) {
+        it.image = '/products/640-641-GALAXY-6000.jpg';
+      }
     }
     if (itemsFixed > 0) console.log(`[prebuild] Fixed ${itemsFixed} mangled item prices`);
 
