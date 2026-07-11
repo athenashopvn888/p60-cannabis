@@ -68,12 +68,12 @@ export default async function ItemsCategoryPage({
       <Navbar />
 
       {/* Hero Banner */}
-      <section style={{ width: "100%", overflow: "hidden", marginTop: "92px", marginBottom: "24px" }}>
+      <section className={styles.bannerSection}>
         {config.banner && bannerExists ? (
           <img
             src={config.banner}
             alt={config.name}
-            style={{ width: "100%", height: "auto", display: "block", objectFit: "contain" }}
+            className={styles.bannerImg}
           />
         ) : (
           <div className={styles.heroContent} style={{ background: config.color, padding: "60px 24px", textAlign: "center" }}>

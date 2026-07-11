@@ -4,15 +4,24 @@
 
 /* Banner */
 .bannerSection {
-  padding: 88px 24px 0;
+  padding: 116px 24px 28px;
+  background:
+    radial-gradient(circle at 76% 12%, rgba(166, 255, 24, 0.14), transparent 28rem),
+    linear-gradient(180deg, #020803 0%, #061004 100%);
 }
 .bannerImg {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1440px;
+  aspect-ratio: 1600 / 760;
+  height: auto;
+  max-height: 560px;
   margin: 0 auto;
   display: block;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  object-fit: contain;
+  background: #020803;
+  border-radius: 14px;
+  border: 1px solid rgba(190, 242, 100, 0.24);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45), 0 0 48px rgba(132, 204, 22, 0.13);
 }
 
 /* Hero */
@@ -148,6 +157,15 @@
 }
 
 @media (max-width: 768px) {
+  .bannerSection {
+    padding: 96px 14px 18px;
+  }
+
+  .bannerImg {
+    min-height: 0;
+    object-position: center;
+  }
+
   .section { padding: 20px; }
   .tierGrid { grid-template-columns: 1fr; }
 }

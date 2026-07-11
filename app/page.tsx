@@ -14,56 +14,55 @@ const BENTO_TIERS = [
     name: "EXOTICS",
     slug: "exotic",
     price: "$10-$12/g",
-    banner: "/banners/exotics_banner.webp",
+    banner: "/banners/p60-real/tile-exotic.webp",
     className: styles.bentoExotic,
   },
   {
     name: "PREMIUM",
     slug: "premium",
     price: "$7-$10/g",
-    banner: "/banners/premium_banner.webp",
+    banner: "/banners/p60-real/tile-premium.webp",
     className: styles.bentoPremium,
   },
   {
     name: "AAA+",
     slug: "aaa",
     price: "$5-$6/g",
-    banner: "/banners/aaa_plus_banner.webp",
+    banner: "/banners/p60-real/tile-aaa.webp",
     className: styles.bentoTile,
   },
   {
     name: "AA",
     slug: "aa",
     price: "$4/g",
-    banner: "/banners/aa_banner.webp",
+    banner: "/banners/p60-real/tile-aa.webp",
     className: styles.bentoTile,
   },
   {
     name: "BUDGET",
     slug: "budget",
     price: "$3/g",
-    banner: "/banners/budget_banner.webp",
+    banner: "/banners/p60-real/tile-budget.webp",
     className: styles.bentoTile,
   },
   {
-    name: "EDIBLES • PREROLLS • MORE",
+    name: "EDIBLES + MORE",
     slug: "items/edibles",
-    price: "Shop Tiers",
-    banner: "/banners/edibles_prerolls_more_banner.webp",
+    price: "Shop menu",
+    banner: "/banners/p60-real/tile-menu-plus.webp",
     className: styles.bentoEdibles,
   },
 ];
 
 /* ── Explore Categories Config (New Banners) ── */
 const EXPLORE_CATEGORIES = [
-  { name: "Vape Pens", slug: "items/vapes", banner: "/banners/01_Vape_Pens.webp", icon: "💨" },
-  { name: "Nic Vape", slug: "items/vape-disposables", banner: "/banners/02_Vape_Disposable.webp", icon: "💨" },
-  { name: "Concentrates", slug: "items/concentrates", banner: "/banners/03_Concentrates.webp", icon: "💎" },
-  { name: "Pre-Rolls", slug: "items/prerolls", banner: "/banners/04_Pre_Rolls.webp", icon: "🚬" },
-  { name: "Accessories", slug: "items/add-ons", banner: "/banners/05_Accessories.webp", icon: "➕" },
-  { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/06_Cigarettes.webp", icon: "🏷️" },
-  { name: "Magic Stuff", slug: "items/magic", banner: "/banners/09_Magic_Stuff.webp", icon: "🍄" },
-  { name: "Games Arcade", slug: "games", banner: "/banners/10_Games.webp", icon: "🎮" },
+  { name: "Vape Pens", slug: "items/vapes", banner: "/banners/p60-real/tile-thc-vape.webp", icon: "💨" },
+  { name: "Nic Vape", slug: "items/vape-disposables", banner: "/banners/p60-real/tile-nic-vape.webp", icon: "💨" },
+  { name: "Concentrates", slug: "items/concentrates", banner: "/banners/p60-real/tile-concentrates.webp", icon: "💎" },
+  { name: "Pre-Rolls", slug: "items/prerolls", banner: "/banners/p60-real/tile-prerolls.webp", icon: "🚬" },
+  { name: "Accessories", slug: "items/add-ons", banner: "/banners/p60-real/tile-accessories.webp", icon: "➕" },
+  { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/p60-real/tile-cigarettes.webp", icon: "🏷️" },
+  { name: "Magic Stuff", slug: "items/magic", banner: "/banners/p60-real/tile-magic.webp", icon: "🍄" },
 ];
 
 /* ── Local FAQs for Jane St ── */
@@ -103,7 +102,7 @@ export default function HomePage() {
   const [reviewsStats, setReviewsStats] = useState<ReviewStats | null>(null);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [welcomeBannerError, setWelcomeBannerError] = useState(false);
-  const welcomeBannerSrc: string = "/banners/welcome_banner.webp";
+  const welcomeBannerSrc: string = "/banners/homepage_hero.webp";
   const hasWelcomeBanner = welcomeBannerSrc && welcomeBannerSrc !== "/banners/" && !welcomeBannerSrc.includes("HERO_BANNER") && !welcomeBannerSrc.includes("WELCOME_BANNER") && welcomeBannerSrc !== "";
 
   /* ── 1. Fetch Client-Side Google Reviews ── */
@@ -203,20 +202,6 @@ export default function HomePage() {
       {/* ── NAVBAR ── */}
       <Navbar />
 
-      {/* ── WELCOME BANNER ── */}
-      {hasWelcomeBanner && !welcomeBannerError && (
-        <section className={styles.welcomeBannerSection}>
-          <div className={styles.welcomeBannerContainer}>
-            <img
-              src={welcomeBannerSrc}
-              alt="Welcome to P60 Cannabis — Premium York Cannabis Dispensary"
-              className={styles.welcomeBannerImg}
-              onError={() => setWelcomeBannerError(true)}
-            />
-          </div>
-        </section>
-      )}
-
       {/* ── BENTO MOSAIC HERO ── */}
       <section className={styles.hero}>
         <div className={styles.heroBg} />
@@ -224,15 +209,52 @@ export default function HomePage() {
         <div className={styles.heroStars} />
 
         <div className={styles.heroContent}>
-          {/* Brand branding */}
-          <div className={styles.brandBlock}>
-            <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" style={{ height: "60px", width: "60px", objectFit: "contain", borderRadius: "8px", marginBottom: "8px" }} />
-            <h1 className={styles.brandTitle}>P60 CANNABIS</h1>
-            <p className={styles.brandSub}>Premium Cannabis Dispensary</p>
-            <div className={styles.brandBadge}>Open Daily: 10:00 AM - 03:00 AM</div>
+          <div className={styles.deliveryHeroShell}>
+            <div className={styles.deliveryHeroCopy}>
+              <div className={styles.brandBlock}>
+                <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" className={styles.brandLogo} />
+                <span className={styles.deliveryKicker}>Weston Rd / York</span>
+                <h1 className={styles.brandTitle}>P60 CANNABIS</h1>
+                <p className={styles.brandSub}>Premium Cannabis Dispensary</p>
+                <div className={styles.brandBadge}>Open Daily: 10:00 AM - 03:00 AM</div>
+              </div>
+
+              <div className={styles.deliveryFacts}>
+                <span>1938 Weston Rd</span>
+                <span>Fast pickup flow</span>
+                <span>Adults 19+</span>
+              </div>
+
+              <div className={styles.heroActions}>
+                <Link href="/delivery" className={styles.heroPrimary}>Delivery Info</Link>
+                <Link href="#menu" className={styles.heroSecondary}>Browse Menu</Link>
+              </div>
+            </div>
+
+            {hasWelcomeBanner && !welcomeBannerError && (
+              <div className={styles.deliveryHeroMedia}>
+                <img
+                  src={welcomeBannerSrc}
+                  alt="P60 Cannabis delivery banner"
+                  className={styles.deliveryHeroImg}
+                  onError={() => setWelcomeBannerError(true)}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Bento Grid */}
+          <div className={styles.deliveryPromiseGrid}>
+            <div><strong>Fast Delivery</strong><span>Store-branded delivery presentation</span></div>
+            <div><strong>Open Late</strong><span>10:00 AM - 03:00 AM</span></div>
+            <div><strong>Weston Rd</strong><span>York, ON M9N 1W2</span></div>
+            <div><strong>Menu First</strong><span>Flower tiers and core categories</span></div>
+          </div>
+
+          <div className={styles.bentoHeader}>
+            <span>Flower Tiers</span>
+            <p>Choose by tier, then browse the current menu.</p>
+          </div>
+
           <div className={styles.bentoGrid}>
             {BENTO_TIERS.map((tier) => (
               <Link

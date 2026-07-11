@@ -6,7 +6,9 @@
 .main {
   position: relative;
   z-index: 1;
-  background-color: #020617;
+  background:
+    radial-gradient(circle at 78% 10%, rgba(132, 204, 22, 0.18), transparent 28rem),
+    linear-gradient(180deg, #020803 0%, #061004 34%, #050b06 100%);
   color: #f8fafc;
   font-family: 'Outfit', system-ui, sans-serif;
   overflow-x: hidden;
@@ -17,12 +19,13 @@
 .hero {
   position: relative;
   width: 100%;
-  padding: 40px 24px 80px;
+  padding: 132px 24px 80px;
+  min-height: 820px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: #020617;
+  background-color: #020803;
   animation: heroPulse 6s ease-in-out infinite;
 }
 
@@ -50,18 +53,21 @@
 .heroBg {
   position: absolute;
   inset: 0;
-  background-image: url('https://p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg');
-  background-size: cover;
-  background-position: center;
-  filter: blur(8px) scale(1.05) saturate(0.6);
+  background:
+    linear-gradient(115deg, rgba(132, 204, 22, 0.16), transparent 42%),
+    radial-gradient(circle at 15% 25%, rgba(190, 242, 100, 0.12), transparent 20rem),
+    radial-gradient(circle at 76% 64%, rgba(16, 185, 129, 0.18), transparent 28rem),
+    repeating-linear-gradient(90deg, rgba(132, 204, 22, 0.04) 0 1px, transparent 1px 120px);
   z-index: 1;
-  opacity: 0.35;
+  opacity: 1;
 }
 
 .heroOverlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(2, 6, 23, 0.95) 0%, rgba(15, 6, 30, 0.85) 50%, rgba(2, 6, 23, 0.98) 100%);
+  background:
+    linear-gradient(180deg, rgba(2, 8, 3, 0.82) 0%, rgba(4, 13, 6, 0.62) 45%, rgba(2, 8, 3, 0.96) 100%),
+    linear-gradient(90deg, rgba(2, 8, 3, 0.95), rgba(2, 8, 3, 0.26));
   z-index: 2;
 }
 
@@ -74,8 +80,8 @@
     radial-gradient(1.5px 1.5px at 33% 58%, rgba(255,255,255,0.3), transparent),
     radial-gradient(1px 1px at 55% 12%, rgba(255,255,255,0.5), transparent),
     radial-gradient(1.5px 1.5px at 72% 78%, rgba(255,255,255,0.3), transparent),
-    radial-gradient(2px 2px at 44% 44%, rgba(168,85,247,0.5), transparent),
-    radial-gradient(2px 2px at 66% 72%, rgba(236,72,153,0.4), transparent);
+    radial-gradient(2px 2px at 44% 44%, rgba(132,204,22,0.5), transparent),
+    radial-gradient(2px 2px at 66% 72%, rgba(34,197,94,0.4), transparent);
   animation: twinkling 4s ease-in-out infinite alternate;
 }
 
@@ -83,18 +89,207 @@
   position: relative;
   z-index: 3;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1280px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
+  text-align: left;
+}
+
+.deliveryHeroShell {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  width: 100%;
+  align-items: stretch;
+}
+
+.deliveryHeroCopy {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 0;
+  padding: 18px 22px;
+  gap: 20px;
+  border: 1px solid rgba(190, 242, 100, 0.22);
+  border-left: 5px solid #84cc16;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(11, 20, 8, 0.9), rgba(5, 11, 6, 0.72)),
+    repeating-linear-gradient(135deg, rgba(132, 204, 22, 0.06) 0 1px, transparent 1px 18px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.46);
+}
+
+.deliveryHeroMedia {
+  position: relative;
+  order: -1;
+  aspect-ratio: 1491 / 1055;
+  min-height: 0;
+  max-height: 860px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(190, 242, 100, 0.32);
+  background: #030803;
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.58), 0 0 50px rgba(132, 204, 22, 0.16);
+}
+
+.deliveryHeroMedia::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(2, 8, 3, 0.06), rgba(2, 8, 3, 0));
+  pointer-events: none;
+}
+
+.deliveryHeroImg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+}
+
+.brandLogo {
+  height: 48px;
+  width: 48px;
+  object-fit: contain;
+  border-radius: 8px;
+  margin-bottom: 0;
+}
+
+.deliveryKicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 12px;
+  border: 1px solid rgba(190, 242, 100, 0.28);
+  border-radius: 999px;
+  color: #bef264;
+  background: rgba(132, 204, 22, 0.1);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  grid-column: 2;
+}
+
+.deliveryFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.deliveryFacts span {
+  border: 1px solid rgba(190, 242, 100, 0.24);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #d9f99d;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 0;
+}
+
+.heroPrimary,
+.heroSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.heroPrimary {
+  background: #84cc16;
+  color: #061004;
+  border: 1px solid #a3e635;
+}
+
+.heroSecondary {
+  background: rgba(0, 0, 0, 0.18);
+  color: #f8fafc;
+  border: 1px solid rgba(190, 242, 100, 0.26);
+}
+
+.heroPrimary:hover,
+.heroSecondary:hover {
+  transform: translateY(-2px);
+  border-color: #bef264;
+}
+
+.deliveryPromiseGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+  margin: 22px 0 30px;
+}
+
+.deliveryPromiseGrid div {
+  min-height: 86px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(190, 242, 100, 0.18);
+  background: rgba(3, 16, 7, 0.72);
+}
+
+.deliveryPromiseGrid strong,
+.deliveryPromiseGrid span {
+  display: block;
+}
+
+.deliveryPromiseGrid strong {
+  color: #ecfccb;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.deliveryPromiseGrid span {
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.bentoHeader {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.bentoHeader span {
+  display: block;
+  color: #bef264;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.bentoHeader p {
+  color: #cbd5e1;
+  font-size: 16px;
+  margin: 0;
 }
 
 /* Branding block */
 .brandBlock {
-  text-align: center;
-  margin-bottom: 40px;
+  text-align: left;
+  margin-bottom: 0;
   animation: fadeDown 0.8s ease;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  align-items: center;
 }
 
 .brandIcon {
@@ -105,55 +300,62 @@
 }
 
 .brandTitle {
-  font-size: clamp(32px, 5.5vw, 62px);
+  font-size: 34px;
   font-weight: 900;
   color: white;
   line-height: 1.05;
-  margin: 0 0 8px;
-  letter-spacing: -0.03em;
-  text-shadow: 0 4px 30px rgba(168,85,247,0.35);
+  margin: 0 0 4px;
+  letter-spacing: 0;
+  text-shadow: 0 4px 30px rgba(132,204,22,0.32);
+  grid-column: 2;
 }
 
 .brandSub {
-  font-size: clamp(16px, 2.5vw, 22px);
-  color: #94a3b8;
+  font-size: 15px;
+  color: #d9f99d;
   font-style: italic;
   font-weight: 600;
-  margin: 0 0 16px;
+  margin: 0;
+  grid-column: 2;
 }
 
 .brandBadge {
   display: inline-block;
   padding: 8px 24px;
   border-radius: 999px;
-  background: rgba(168,85,247,0.15);
-  border: 1px solid rgba(168,85,247,0.3);
-  color: #c084fc;
+  background: rgba(132,204,22,0.14);
+  border: 1px solid rgba(190,242,100,0.32);
+  color: #bef264;
   font-weight: 800;
   font-size: 13px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
+  grid-column: 1 / -1;
+  width: fit-content;
+  margin-top: 12px;
 }
 
 /* Bento Mosaic Grid */
 .bentoGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 160px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: auto;
   gap: 16px;
   width: 100%;
-  max-width: 960px;
+  max-width: 1280px;
   margin-bottom: 30px;
   animation: fadeUp 0.8s ease 0.2s both;
 }
 
 .bentoTile {
   position: relative;
-  border-radius: 20px;
+  aspect-ratio: 1200 / 760;
+  min-height: 248px;
+  border-radius: 8px;
   overflow: hidden;
   text-decoration: none;
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(190, 242, 100, 0.14);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
   transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   cursor: pointer;
@@ -161,15 +363,17 @@
 
 .bentoTile:hover {
   transform: translateY(-6px) scale(1.02);
-  border-color: rgba(168, 85, 247, 0.4);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 35px rgba(168, 85, 247, 0.25);
+  border-color: rgba(190, 242, 100, 0.44);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 35px rgba(132, 204, 22, 0.22);
 }
 
 .bentoTileBg {
   position: absolute;
   inset: 0;
-  background-size: cover;
+  background-color: #020803;
+  background-size: contain;
   background-position: center;
+  background-repeat: no-repeat;
   transition: transform 0.6s ease;
 }
 
@@ -180,7 +384,7 @@
 .bentoTileOverlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(2, 6, 23, 0.85) 0%, rgba(2, 6, 23, 0.3) 60%, rgba(2, 6, 23, 0.1) 100%);
+  background: linear-gradient(to top, rgba(2, 8, 3, 0.88) 0%, rgba(2, 8, 3, 0.36) 62%, rgba(2, 8, 3, 0.08) 100%);
 }
 
 .bentoTileContent {
@@ -199,13 +403,13 @@
 .bentoLabel {
   font-weight: 900;
   font-size: 24px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: uppercase;
   text-shadow: 0 2px 10px rgba(0,0,0,0.8);
 }
 
 .bentoExotic .bentoLabel {
-  font-size: 30px;
+  font-size: 24px;
 }
 
 .bentoPrice {
@@ -220,24 +424,25 @@
 
 /* Layout spans */
 .bentoExotic {
-  grid-column: span 2;
-  grid-row: span 2;
+  grid-column: auto;
+  grid-row: auto;
 }
 
 .bentoPremium {
-  grid-row: span 2;
+  grid-row: auto;
 }
 
 .bentoEdibles {
-  grid-column: 1 / -1;
-  grid-row: span 1;
+  grid-column: auto;
+  grid-row: auto;
 }
 
 /* ── EXPLORE CATEGORIES ── */
 .categoriesSection {
   padding: 80px 0;
-  background-color: #030712;
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  background:
+    linear-gradient(180deg, #071107, #030703);
+  border-top: 1px solid rgba(190, 242, 100, 0.08);
 }
 
 .container {
@@ -254,7 +459,7 @@
   font-family: var(--font-display);
   font-size: clamp(28px, 4vw, 42px);
   font-weight: 900;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: white;
   margin-bottom: 12px;
 }
@@ -268,31 +473,34 @@
 
 .categoriesGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .categoryCard {
   position: relative;
-  border-radius: 18px;
+  border-radius: 8px;
   overflow: hidden;
-  height: 120px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  aspect-ratio: 1200 / 760;
+  min-height: 220px;
+  border: 1px solid rgba(190, 242, 100, 0.12);
   transition: all 0.35s ease;
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
 .categoryCard:hover {
   transform: translateY(-5px);
-  border-color: rgba(168, 85, 247, 0.3);
-  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 0 25px rgba(168, 85, 247, 0.15);
+  border-color: rgba(190, 242, 100, 0.36);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 0 25px rgba(132, 204, 22, 0.15);
 }
 
 .categoryCardBg {
   position: absolute;
   inset: 0;
-  background-size: cover;
+  background-color: #020803;
+  background-size: contain;
   background-position: center;
+  background-repeat: no-repeat;
   transition: transform 0.5s ease;
 }
 
@@ -303,7 +511,9 @@
 .categoryCardOverlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(2, 6, 23, 0.85) 0%, rgba(2, 6, 23, 0.4) 100%);
+  background:
+    linear-gradient(to top, rgba(2, 8, 3, 0.88), rgba(2, 8, 3, 0.08) 58%),
+    linear-gradient(135deg, rgba(2, 8, 3, 0.44) 0%, rgba(2, 8, 3, 0.04) 100%);
 }
 
 .categoryCardContent {
@@ -317,9 +527,9 @@
 }
 
 .categoryCardName {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: white;
   display: flex;
   align-items: center;
@@ -328,7 +538,7 @@
 
 .categoryCardArrow {
   font-size: 13px;
-  color: #a855f7;
+  color: #bef264;
   opacity: 0;
   transform: translateX(-5px);
   transition: all 0.25s ease;
@@ -545,7 +755,7 @@
   font-size: 26px;
   font-weight: 900;
   margin-bottom: 18px;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .seoPanelText {
@@ -837,8 +1047,25 @@
 
 /* ── RESPONSIVE MEDIA QUERIES ── */
 @media (max-width: 1024px) {
-  .categoriesGrid {
+  .hero {
+    padding-top: 120px;
+    min-height: auto;
+  }
+  .deliveryHeroShell {
+    grid-template-columns: 1fr;
+  }
+  .deliveryHeroCopy {
+    min-height: 0;
+    flex-wrap: wrap;
+  }
+  .deliveryHeroMedia {
+    min-height: 0;
+  }
+  .deliveryPromiseGrid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .categoriesGrid {
+    grid-template-columns: repeat(3, 1fr);
   }
   .featuredGrid {
     grid-template-columns: repeat(3, 1fr);
@@ -846,12 +1073,48 @@
 }
 
 @media (max-width: 768px) {
+  .hero {
+    padding: 112px 14px 56px;
+  }
+  .deliveryHeroCopy {
+    padding: 24px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .deliveryHeroMedia {
+    min-height: 0;
+  }
+  .brandTitle {
+    font-size: 30px;
+  }
+  .brandSub {
+    font-size: 15px;
+  }
+  .deliveryPromiseGrid {
+    grid-template-columns: 1fr;
+  }
+  .categoriesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .categoryCard {
+    aspect-ratio: auto;
+    min-height: 0;
+    height: 156px;
+  }
+  .categoryCardName {
+    font-size: 16px;
+  }
   .bentoGrid {
     grid-template-columns: repeat(2, 1fr);
-    grid-auto-rows: 140px;
+    grid-auto-rows: auto;
+  }
+  .bentoTile {
+    aspect-ratio: auto;
+    min-height: 0;
+    height: 162px;
   }
   .bentoExotic {
-    grid-column: span 2;
+    grid-column: auto;
     grid-row: span 1;
   }
   .bentoPremium {
@@ -883,26 +1146,57 @@
 }
 
 @media (max-width: 480px) {
+  .deliveryHeroCopy {
+    padding: 20px;
+  }
+  .deliveryHeroMedia {
+    min-height: 0;
+  }
+  .brandTitle {
+    font-size: 28px;
+  }
+  .heroActions {
+    flex-direction: column;
+  }
+  .heroPrimary,
+  .heroSecondary {
+    width: 100%;
+  }
   .bentoGrid {
-    grid-template-columns: 1fr;
-    grid-auto-rows: 120px;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: auto;
+  }
+  .bentoTile {
+    height: 154px;
   }
   .bentoExotic {
-    grid-column: span 1;
+    grid-column: auto;
     grid-row: span 1;
   }
   .bentoPremium {
     grid-row: span 1;
   }
   .bentoEdibles {
-    grid-column: span 1;
+    grid-column: auto;
   }
-  
-  .categoriesGrid {
-    grid-template-columns: 1fr;
+  .bentoLabel {
+    font-size: 15px;
+  }
+  .bentoExotic .bentoLabel {
+    font-size: 18px;
+  }
+  .bentoPrice {
+    font-size: 11px;
+    padding: 4px 10px;
   }
   
   .featuredGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .categoriesGrid {
     grid-template-columns: 1fr;
   }
 }

@@ -23,9 +23,9 @@ export default function ContactPage() {
       <Navbar />
 
       {/* ── Hero ── */}
-      <section className={styles.hero} style={{ paddingTop: "92px" }}>
-        <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 20px" }}>
-          <img src="/banners/08_Contact_Us.webp" alt="Contact Us" style={{ width: "100%", height: "auto", display: "block", borderRadius: "var(--radius-lg)" }} />
+      <section className={styles.hero}>
+        <div className={styles.bannerFrame}>
+          <img src="/banners/p60-real/page-contact.webp" alt="Contact P60 Cannabis" className={styles.bannerImg} />
         </div>
       </section>
 

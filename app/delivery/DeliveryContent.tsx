@@ -31,6 +31,13 @@ export default function DeliveryContent() {
   return (
     <main className={styles.main}>
       <Navbar />
+      <section className={styles.bannerSection}>
+        <img
+          src="/banners/p60-real/page-delivery.webp"
+          alt="P60 Cannabis delivery preview"
+          className={styles.bannerImg}
+        />
+      </section>
       <div className={styles.content}>
         <h1 className={styles.pageTitle}>
           Delivery <span className={styles.highlight}>Coming Soon</span>

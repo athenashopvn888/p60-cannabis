@@ -98,7 +98,7 @@ export const TIER_CONFIG: Record<
     color: "#f59e0b",
     icon: "\uD83D\uDD25",
     tagline: "Ultra-rare, top-shelf genetics \u00B7 THC 35-39%",
-    banner: "/banners/exotics_banner.webp",
+    banner: "/banners/p60-real/tier-exotic.webp",
     unitPrice: 20,
     deal3g: { label: "3g bundle", total: "3G", price: 40 },
     deal6g: { label: "6g bundle", total: "6G", price: 60 },
@@ -109,7 +109,7 @@ export const TIER_CONFIG: Record<
     color: "#a78bfa",
     icon: "\uD83D\uDC8E",
     tagline: "Hand-picked connoisseur grade \u00B7 THC 32-34%",
-    banner: "/banners/premium_banner.webp",
+    banner: "/banners/p60-real/tier-premium.webp",
     unitPrice: 15,
     deal3g: { label: "3g bundle", total: "3G", price: 30 },
     deal6g: { label: "6g bundle", total: "6G", price: 45 },
@@ -120,7 +120,7 @@ export const TIER_CONFIG: Record<
     color: "#22d3ee",
     icon: "\u26A1",
     tagline: "Heavy hitters, proven strains \u00B7 THC 30-32%",
-    banner: "/banners/aaa_plus_banner.webp",
+    banner: "/banners/p60-real/tier-aaa.webp",
     unitPrice: 10,
     deal3g: { label: "3g bundle", total: "3G", price: 20 },
     deal6g: { label: "6g bundle", total: "6G", price: 30 },
@@ -131,7 +131,7 @@ export const TIER_CONFIG: Record<
     color: "#34d399",
     icon: "\u2726",
     tagline: "Quality daily drivers \u00B7 THC 27-29%",
-    banner: "/banners/aa_banner.webp",
+    banner: "/banners/p60-real/tier-aa.webp",
     unitPrice: 4,
     deal3g: null,
     deal6g: null,
@@ -142,7 +142,7 @@ export const TIER_CONFIG: Record<
     color: "#94a3b8",
     icon: "\uD83D\uDCB0",
     tagline: "Shreds & value OZs \u00B7 From $40/oz",
-    banner: "/banners/budget_banner.webp",
+    banner: "/banners/p60-real/tier-budget.webp",
     unitPrice: 3,
     deal3g: { label: "$10 / 3g Special", total: "3G", price: 10 },
     deal6g: null,
@@ -158,7 +158,7 @@ export interface CategoryInfo {
 
 export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   EDIBLES: {
-    banner: "/banners/edibles_prerolls_more_banner.webp",
+    banner: "/banners/p60-real/category-edibles.webp",
     name: "Edibles", slug: "edibles", color: "#f97316", icon: "🍬",
     seoTitle: "Cannabis Edibles York — Gummies, Chocolates & Drinks",
     seoIntro: "Browse the full cannabis edibles menu at P60 Cannabis on York St, York. We carry THC gummies, chocolates, drinks, and more from top Canadian brands.",
@@ -170,7 +170,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   "VAPE PENS": {
-    banner: "/banners/01_Vape_Pens.webp",
+    banner: "/banners/p60-real/category-thc-vape.webp",
     name: "THC Vape", slug: "vapes", color: "#8b5cf6", icon: "💨",
     seoTitle: "Vape Pens in York | P60 Cannabis",
     seoIntro: "Browse vape category information at P60 Cannabis in York.",
@@ -181,7 +181,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   "VAPE DISPOSABLE": {
-    banner: "/banners/02_Vape_Disposable.webp",
+    banner: "/banners/p60-real/category-nic-vape.webp",
     name: "Nic Vape", slug: "vape-disposables", color: "#a78bfa", icon: "💨",
     seoTitle: "Disposable Vapes York — THC Disposable Pens",
     seoIntro: "THC disposable vapes available at P60 Cannabis, York. No charging, no refilling — just open and enjoy.",
@@ -192,7 +192,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   CONCENTRATES: {
-    banner: "/banners/03_Concentrates.webp",
+    banner: "/banners/p60-real/category-concentrates.webp",
     name: "Concentrates", slug: "concentrates", color: "#f59e0b", icon: "💎",
     seoTitle: "Cannabis Concentrates in York | P60 Cannabis",
     seoIntro: "Browse concentrates category information at P60 Cannabis in York.",
@@ -203,7 +203,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   PREROLLS: {
-    banner: "/banners/04_Pre_Rolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "🚬",
+    banner: "/banners/p60-real/category-prerolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "🚬",
     seoTitle: "Pre-Rolls in York | P60 Cannabis",
     seoIntro: "Browse pre-roll category information at P60 Cannabis in York.",
     seoDescription: "Review pre-roll menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
@@ -213,7 +213,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   "ADD ONS": {
-    banner: "/banners/05_Accessories.webp",
+    banner: "/banners/p60-real/category-accessories.webp",
     name: "Accessories", slug: "add-ons", color: "#34d399", icon: "➕",
     seoTitle: "Cannabis Accessories York — Grinders, Papers, Lighters & More",
     seoIntro: "Essential cannabis accessories at P60 Cannabis, York. Grinders, rolling papers, lighters, trays, and more.",
@@ -223,6 +223,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   "MAGIC & OTHERS": {
+    banner: "/banners/p60-real/category-magic.webp",
     name: "Magic Stuff", slug: "magic", color: "#64748b", icon: "*",
     seoTitle: "Magic Stuff - Specialty Items",
     seoIntro: "Browse current menu for available specialty products. Availability may vary by store.",
@@ -233,7 +234,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   CIGARETTES: {
-    banner: "/banners/06_Cigarettes.webp",
+    banner: "/banners/p60-real/category-cigarettes.webp",
     name: "Cigarettes", slug: "cigarettes", color: "#78716c", icon: "🏷️",
     seoTitle: "Native Cigarettes York — Discount Tobacco at P60 Cannabis",
     seoIntro: "Discount native cigarettes at P60 Cannabis, York. Premium and value brands at the best prices on York St.",

@@ -9,14 +9,25 @@
 .bannerSection {
   width: 100%;
   overflow: hidden;
-  margin-top: 92px;
+  padding: 116px 24px 28px;
+  background:
+    radial-gradient(circle at 80% 10%, rgba(166, 255, 24, 0.16), transparent 28rem),
+    linear-gradient(180deg, #020803 0%, #061004 100%);
 }
 
 .bannerImg {
   width: 100%;
+  max-width: 1440px;
+  aspect-ratio: 1600 / 760;
   height: auto;
+  max-height: 560px;
   display: block;
   object-fit: contain;
+  background: #020803;
+  margin: 0 auto;
+  border-radius: 14px;
+  border: 1px solid rgba(190, 242, 100, 0.24);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45), 0 0 48px rgba(132, 204, 22, 0.13);
 }
 
 /* ── Hero Info BELOW Banner ── */
@@ -304,7 +315,12 @@
   }
 
   .bannerSection {
-    max-height: none;
+    padding: 96px 14px 18px;
+  }
+
+  .bannerImg {
+    min-height: 0;
+    object-position: center;
   }
 
   .grid {

@@ -84,11 +84,11 @@ export default function FAQPage() {
         <Navbar />
 
         {/* FAQ Banner */}
-        <section style={{ width: "100%", overflow: "hidden", marginTop: "92px" }}>
+        <section className={styles.bannerSection}>
           <img
-            src="/banners/07_FAQ.webp"
+            src="/banners/p60-real/page-faq.webp"
             alt="P60 Cannabis FAQ — Your Questions Answered"
-            style={{ width: "100%", height: "auto", display: "block", objectFit: "contain" }}
+            className={styles.bannerImg}
           />
         </section>
 

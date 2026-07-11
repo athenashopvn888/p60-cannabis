@@ -20,7 +20,7 @@ export const SEO_PAGES: SeoPageData[] = [
     h1: "York Weed Dispensary — P60 Cannabis",
     icon: "✨",
     heroTagline: "Premium Cannabis on 1938 Weston Rd & Nearby Expressway · Open Daily: 10:00 AM - 03:00 AM · Walk-In Welcome",
-    banner: "",
+    banner: "/banners/p60-real/page-york.webp",
     sections: [
       {
         heading: "York's Premier Cannabis Destination",
@@ -66,7 +66,7 @@ export const SEO_PAGES: SeoPageData[] = [
     h1: "Cheap Weed York — Budget Cannabis Deals",
     icon: "💰",
     heroTagline: "Budget Flower From $3/g · Ounces From $40 · Open Daily: 10:00 AM - 03:00 AM",
-    banner: "",
+    banner: "/banners/p60-real/page-budget.webp",
     sections: [
       {
         heading: "York's Best Prices on Quality Cannabis",
@@ -102,7 +102,7 @@ export const SEO_PAGES: SeoPageData[] = [
     h1: "Native Cigarettes York — Discount Tobacco",
     icon: "🏷️",
     heroTagline: "Premium & Value Brands · Best Prices in York · Open Daily: 10:00 AM - 03:00 AM",
-    banner: "",
+    banner: "/banners/p60-real/page-cigarettes.webp",
     sections: [
       {
         heading: "York's Best Selection of Native Cigarettes",
@@ -138,7 +138,7 @@ export const SEO_PAGES: SeoPageData[] = [
     h1: "Weed Store Near Toronto — P60 Cannabis",
     icon: "🚗",
     heroTagline: "Just Minutes From Mississauga via major highways · Open Daily: 10:00 AM - 03:00 AM",
-    banner: "",
+    banner: "/banners/p60-real/page-near-toronto.webp",
     sections: [
       {
         heading: "The Closest Quality Dispensary to Mississauga",
@@ -179,7 +179,7 @@ export const SEO_PAGES: SeoPageData[] = [
     h1: "Cannabis Dispensary Near Me — York",
     icon: "🗺️",
     heroTagline: "Walk-In Welcome · Open Daily: 10:00 AM - 03:00 AM · 200+ Strains In Stock",
-    banner: "",
+    banner: "/banners/p60-real/page-near-me.webp",
     sections: [
       {
         heading: "Find Premium Cannabis Near You in York",
