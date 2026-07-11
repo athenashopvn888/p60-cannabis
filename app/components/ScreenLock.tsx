@@ -28,7 +28,7 @@ export default function ScreenLock() {
   return (
     <button
       onClick={() => setLocked(!locked)}
-      aria-label={locked ? "Unlock screen scrolling" : "Lock screen for gameplay"}
+      aria-label={locked ? "Unlock screen scrolling" : "Lock screen for viewing"}
       style={{
         position: "fixed",
         bottom: 20,
