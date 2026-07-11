@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import BlogContent from "./BlogContent";
-import { STORE_BLOG_CONFIG } from "./staticPosts";
 
 export const metadata: Metadata = {
-  title: `${STORE_BLOG_CONFIG.storeName} Blog | Adult 19+ Store Guides`,
-  description: `Read adult 19+ store guides and local visit-planning notes from ${STORE_BLOG_CONFIG.storeName}.`,
+  title: "P60 Cannabis Blog | Cannabis Menu Guides",
+  description: "Read P60 Cannabis cannabis menu guides, flower tier notes, and local store checks for York shoppers.",
   alternates: {
-    canonical: `https://${STORE_BLOG_CONFIG.domain}/blog`,
+    canonical: "https://www.p60cannabis.com/blog",
   },
 };
 
