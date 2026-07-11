@@ -20,6 +20,7 @@ const ALL_LINKS = [
   { href: "/items/add-ons", label: "Accessories" },
   { href: "/delivery", label: "🚗 Delivery" },
   { href: "/faq", label: "FAQ" },
+  { href: "/resources", label: "Resources" },
   { href: "/blog", label: "Blog" },
 ];
 
