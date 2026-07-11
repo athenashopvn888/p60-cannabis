@@ -79,6 +79,31 @@ export const AUTHORS: Record<ResourceAuthorKey, ResourceAuthor> = {
 
 const updated = "2026-07-11";
 
+const nativeCigaretteCartonLines = [
+  "Rolled Gold Lights",
+  "Canadian Full",
+  "Canadian Lights",
+  "Canadian Menthol",
+  "Canadian Classics Original",
+  "Canadian Classics Silver",
+  "Canadian Goose Full",
+  "Canadian Goose Lights",
+  "Nexus Full",
+  "Nexus Lights",
+  "Putters",
+  "Time Full",
+];
+
+const nativeCigaretteBrandFamilies = [
+  "Rolled Gold",
+  "Canadian",
+  "Canadian Classics",
+  "Canadian Goose",
+  "Nexus",
+  "Putters",
+  "Time",
+];
+
 export const CATEGORY_PATHS = [
   "/resources/cannabis-101",
   "/resources/flower-guides",
@@ -535,12 +560,17 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Native Smokes and Cigarette Guides",
     seoTitle: "Native Smokes and Cigarette Guides | P60 Cannabis",
     metaDescription:
-      "Informational native cigarette guides from P60 Cannabis covering menu selection, packs, cartons, varieties, and current York store details.",
-    h1: "Native Smokes: Packs, Cartons, and Current Listings",
+      "P60 Cannabis native cigarette guides covering cheap native cigarettes at $25 per carton, brand names, packs, cartons, and current York store details.",
+    h1: "Native Smokes: Cheap Native Cigarettes at $25 Per Carton",
     excerpt:
-      "For adults 19+, this lane keeps cigarette menu terminology clear without pretending static pages know current stock.",
+      "For adults 19+, this lane introduces the current P60 native cigarette carton brands and keeps pack/carton terms clear.",
     primaryKeyword: "native cigarettes York",
-    supportingKeywords: ["native smokes York", "native cigarettes Weston Road", "cigarette packs and cartons"],
+    supportingKeywords: [
+      "cheap native cigarettes York",
+      "native smokes York",
+      "native cigarettes Weston Road",
+      "cigarette packs and cartons",
+    ],
     searchIntent: "Understand native cigarette menu and package terms.",
     author: "mina",
     datePublished: updated,
@@ -550,13 +580,28 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis native cigarette guide",
     },
     intro: [
-      "Native smokes and native cigarettes are common shopper phrases. This section explains pack and carton terminology, current listing checks, and the difference between a static guide and the live cigarette category.",
+      "Native smokes and native cigarettes are common shopper phrases. P60 Cannabis currently has cheap native cigarette carton options listed at $25 per carton, with public-menu brand families including Rolled Gold, Canadian, Canadian Classics, Canadian Goose, Nexus, Putters, and Time.",
+      "This section introduces the available carton names, explains pack and carton terminology, and points adults 19+ back to the live cigarette category before they visit.",
     ],
     sections: [
       {
+        heading: "Cheap Native Cigarettes at $25 Per Carton",
+        body: [
+          "Inventory checked from the public P60 cigarette menu on July 11, 2026. The current native cigarette carton lane is built around $25 per carton options, with these brand families available in the resource list:",
+        ],
+        bullets: nativeCigaretteBrandFamilies,
+      },
+      {
+        heading: "Current $25 Carton Lineup",
+        body: [
+          "The available carton names include full, lights, menthol, original, silver, and ultra-light options depending on the brand. Check the live cigarette page before visiting because tobacco selection can rotate.",
+        ],
+        bullets: nativeCigaretteCartonLines,
+      },
+      {
         heading: "Native Cigarettes Need Current Listing Checks",
         body: [
-          "A static guide should not freeze a rotating shelf. It should tell adults 19+ what details to check before visiting for one specific cigarette product.",
+          "A static guide should not freeze a rotating shelf. It should tell adults 19+ what details to check before visiting for one specific cigarette product: brand, variety, pack or carton, and current posted price.",
         ],
       },
       {
@@ -1185,15 +1230,20 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     kind: "article",
     parent: "/resources/native-smokes",
     categoryLabel: "Native Smokes",
-    title: "Native Cigarettes in York",
-    seoTitle: "Native Cigarettes in York | P60 Cannabis",
+    title: "Cheap Native Cigarettes in York",
+    seoTitle: "Cheap Native Cigarettes in York | P60 Cannabis",
     metaDescription:
-      "An informational guide to checking current native cigarette selection, packs, cartons, varieties, and York store details at P60 Cannabis.",
-    h1: "Native Cigarettes in York: What to Check Before Visiting",
+      "P60 Cannabis has cheap native cigarettes in York at $25 per carton, with current carton names including Rolled Gold, Canadian, Nexus, Putters, and Time.",
+    h1: "Cheap Native Cigarettes in York: $25 Cartons at P60",
     excerpt:
-      "For adults 19+, current brand, unit, price, and availability matter more than old memory.",
-    primaryKeyword: "native cigarettes in York",
-    supportingKeywords: ["native smokes York", "native cigarettes Weston Road", "cigarettes P60 Cannabis"],
+      "For adults 19+, P60 keeps the native cigarette carton offer simple: check the current brand, unit, and $25 carton listing before visiting.",
+    primaryKeyword: "cheap native cigarettes in York",
+    supportingKeywords: [
+      "native cigarettes in York",
+      "native smokes York",
+      "native cigarettes Weston Road",
+      "cigarettes P60 Cannabis",
+    ],
     searchIntent: "Understand native cigarette selection checks before visiting.",
     author: "mina",
     datePublished: updated,
@@ -1203,13 +1253,21 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "Native cigarettes in York guide at P60 Cannabis",
     },
     intro: [
-      "Adults 19+ looking for native cigarettes in York usually need current answers: brand, variety, pack or carton, current price, and whether the item is listed at P60 Cannabis now.",
+      "Adults 19+ looking for cheap native cigarettes in York can start with the P60 carton lane: current inventory shows native cigarette carton options at $25 per carton.",
+      "The names matter because shoppers often ask by brand first. P60 currently shows Rolled Gold, Canadian, Canadian Classics, Canadian Goose, Nexus, Putters, and Time carton options on the public cigarette menu.",
     ],
     sections: [
       {
-        heading: "Brand and Variety Can Change",
+        heading: "Available Native Cigarette Brands",
         body: [
-          "A long brand list can go stale fast. A better native cigarettes guide explains what to check on the current listing instead of pretending the shelf never moves.",
+          "Inventory checked from the public P60 cigarette menu on July 11, 2026. These are the current $25 per carton native cigarette names to know before visiting:",
+        ],
+        bullets: nativeCigaretteCartonLines,
+      },
+      {
+        heading: "Cheap Native Cigarettes at $25 Per Carton",
+        body: [
+          "The resource positioning is simple: cheap native cigarettes at $25 per carton in York, with brand and variety checks handled before the trip. If a shopper wants full, lights, menthol, original, silver, or ultra-light options, the carton name is the first thing to confirm.",
         ],
         bullets: ["Brand", "Variety", "Pack or carton", "Quantity", "Current price", "Current availability"],
       },
@@ -1222,7 +1280,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Use the York Store Page",
         body: [
-          "P60 Cannabis store details should be confirmed on the current store page when hours, phone, or one exact item affects the trip.",
+          "P60 Cannabis store details should be confirmed on the current store page when hours, phone, or one exact item affects the trip. For cigarette shoppers, the live category is the fastest path from brand name to current listing.",
         ],
       },
       {
@@ -1248,7 +1306,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     related: ["/resources/native-smokes/packs-vs-cartons", "/resources/local-guides/weed-dispensary-in-york"],
     secondTake: {
       author: "team",
-      body: "Current brand, package, and price information should be confirmed before visiting for a specific cigarette product.",
+      body: "The $25 carton offer is clean and useful, but brand, package, and current listing information should still be confirmed before visiting for one exact cigarette product.",
     },
   },
   {
@@ -1259,10 +1317,10 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Cigarette Packs vs Cartons",
     seoTitle: "Cigarette Packs vs Cartons | P60 Cannabis",
     metaDescription:
-      "Understand how cigarette packs and cartons differ as listing units, and why quantity, variety, current price, and availability should be checked together.",
-    h1: "Cigarette Packs vs Cartons: What the Listing Means",
+      "Understand cigarette packs vs cartons, including P60 native cigarette carton options currently listed at $25 per carton and pack-only items that use a different unit.",
+    h1: "Cigarette Packs vs Cartons: Read the Unit First",
     excerpt:
-      "Pack and carton prices are not two prices for the same unit. Read the unit first.",
+      "P60 has native cigarette carton options at $25 per carton, but pack-only and loose tobacco listings are different units.",
     primaryKeyword: "cigarette packs vs cartons",
     supportingKeywords: ["native cigarette carton", "native cigarette pack", "cigarette packaging guide"],
     searchIntent: "Understand cigarette package units and comparisons.",
@@ -1274,7 +1332,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "Cigarette packs vs cartons guide at P60 Cannabis",
     },
     intro: [
-      "Cigarette packs vs cartons is a unit question before it is a price question. A pack and a carton are different sales units, and the listing should make that clear.",
+      "Cigarette packs vs cartons is a unit question before it is a price question. P60 currently lists cheap native cigarettes at $25 per carton, while pack-only products and loose tobacco items use different units.",
     ],
     sections: [
       {
@@ -1286,19 +1344,20 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Carton Listings",
         body: [
-          "A carton contains multiple packs. The exact number and packaging details should be confirmed from the current listing or store information.",
+          "A carton contains multiple packs. The current P60 native cigarette carton lineup uses $25 per carton positioning for listed carton names such as Rolled Gold, Canadian, Canadian Classics, Canadian Goose, Nexus, Putters, and Time.",
         ],
+        bullets: nativeCigaretteBrandFamilies,
       },
       {
         heading: "Compare the Same Unit",
         body: [
-          "Do not compare carton price and pack price as if they describe the same amount. Confirm unit, quantity, brand, variety, and current posted price first.",
+          "Do not compare carton price and pack price as if they describe the same amount. Belmont KS pack-only, Backwoods, Grabba, and nicotine pouches are not the same listing unit as a $25 native cigarette carton.",
         ],
       },
       {
         heading: "Why Current Information Matters",
         body: [
-          "Cigarette selection can rotate. Static resources should explain terminology without locking one brand or price into the page forever.",
+          "Cigarette selection can rotate. Static resources can name the inventory checked on July 11, 2026, but adults 19+ should still use the live cigarette category before visiting for one exact brand.",
         ],
       },
       {

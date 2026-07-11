@@ -90,7 +90,7 @@ Status: Implemented locally for Codex build, SEO QA, deployment, and verificatio
 | `/resources/vape-guides/thc-vapes-vs-flower` | THC vapes vs flower | Compare vape and flower formats | `/items/vapes`, `/items/vape-disposables`, flower pages | P60 Cannabis Team |
 | `/resources/value-guides/how-to-compare-flower-prices` | how to compare flower prices | Value math | Flower tier pages | Mina York |
 | `/resources/local-guides/weed-dispensary-in-york` | weed dispensary in York | Local store search | `/weed-dispensary-york`, menu categories | Mina York |
-| `/resources/native-smokes/native-cigarettes-guide` | native cigarettes in York | Cigarette selection checks | `/items/cigarettes`, `/info/native-cigarettes-york` | Mina York |
+| `/resources/native-smokes/native-cigarettes-guide` | cheap native cigarettes in York | $25 native cigarette carton selection | `/items/cigarettes`, `/info/native-cigarettes-york` | Mina York |
 | `/resources/native-smokes/packs-vs-cartons` | cigarette packs vs cartons | Package unit explanation | `/items/cigarettes` | Riley Weston |
 | `/resources/magic-mushroom-guides/magic-mushroom-formats-explained` | magic mushroom formats | Specialty format explanation | `/items/magic` | Riley Weston |
 | `/resources/magic-mushroom-guides/how-to-read-a-magic-mushroom-menu` | how to read a magic mushroom menu | Specialty menu reading | `/items/magic` | Mina York |
@@ -313,16 +313,20 @@ Primary links:
 
 Route: `/resources/native-smokes`  
 SEO title: Native Smokes and Cigarette Guides | P60 Cannabis  
-Meta description: Informational native cigarette guides from P60 Cannabis covering menu selection, packs, cartons, varieties, and current York store details.  
-H1: Native Smokes: Packs, Cartons, and Current Listings  
+Meta description: P60 Cannabis native cigarette guides covering cheap native cigarettes at $25 per carton, brand names, packs, cartons, and current York store details.
+H1: Native Smokes: Cheap Native Cigarettes at $25 Per Carton
 Author: Mina York / @MinaAtP60  
 
 Public copy:
 
-Native smokes and native cigarettes are common shopper phrases. This section explains pack and carton terminology, current listing checks, and the difference between a static guide and the live cigarette category.
+Native smokes and native cigarettes are common shopper phrases. P60 Cannabis currently has cheap native cigarette carton options listed at $25 per carton, with public-menu brand families including Rolled Gold, Canadian, Canadian Classics, Canadian Goose, Nexus, Putters, and Time.
+
+Inventory checked from the public P60 cigarette menu on July 11, 2026. The current $25 per carton lineup includes Rolled Gold Lights, Canadian Full, Canadian Lights, Canadian Menthol, Canadian Classics Original, Canadian Classics Silver, Canadian Goose Full, Canadian Goose Lights, Nexus Full, Nexus Lights, Putters, and Time Full.
 
 H2 sections:
 
+- Cheap Native Cigarettes at $25 Per Carton
+- Current $25 Carton Lineup
 - Native Cigarettes Need Current Listing Checks
 - Tobacco Health Notice
 
@@ -523,21 +527,24 @@ H2 sections:
 
 Second take: Riley Weston / @RileyWestonP60
 
-### 20. Native Cigarettes in York
+### 20. Cheap Native Cigarettes in York
 
 Route: `/resources/native-smokes/native-cigarettes-guide`  
-SEO title: Native Cigarettes in York | P60 Cannabis  
-Meta description: An informational guide to checking current native cigarette selection, packs, cartons, varieties, and York store details at P60 Cannabis.  
-H1: Native Cigarettes in York: What to Check Before Visiting  
+SEO title: Cheap Native Cigarettes in York | P60 Cannabis
+Meta description: P60 Cannabis has cheap native cigarettes in York at $25 per carton, with current carton names including Rolled Gold, Canadian, Nexus, Putters, and Time.
+H1: Cheap Native Cigarettes in York: $25 Cartons at P60
 Author: Mina York / @MinaAtP60  
 
 Public copy:
 
-Adults 19+ looking for native cigarettes in York usually need current answers: brand, variety, pack or carton, current price, and whether the item is listed at P60 Cannabis now.
+Adults 19+ looking for cheap native cigarettes in York can start with the P60 carton lane: current inventory shows native cigarette carton options at $25 per carton.
+
+The current $25 per carton names are Rolled Gold Lights, Canadian Full, Canadian Lights, Canadian Menthol, Canadian Classics Original, Canadian Classics Silver, Canadian Goose Full, Canadian Goose Lights, Nexus Full, Nexus Lights, Putters, and Time Full.
 
 H2 sections:
 
-- Brand and Variety Can Change
+- Available Native Cigarette Brands
+- Cheap Native Cigarettes at $25 Per Carton
 - Native Smokes and Native Cigarettes
 - Use the York Store Page
 - Tobacco Health Notice
@@ -549,13 +556,13 @@ Second take: P60 Cannabis Team / @P60CannabisTeam
 
 Route: `/resources/native-smokes/packs-vs-cartons`  
 SEO title: Cigarette Packs vs Cartons | P60 Cannabis  
-Meta description: Understand how cigarette packs and cartons differ as listing units, and why quantity, variety, current price, and availability should be checked together.  
-H1: Cigarette Packs vs Cartons: What the Listing Means  
+Meta description: Understand cigarette packs vs cartons, including P60 native cigarette carton options currently listed at $25 per carton and pack-only items that use a different unit.
+H1: Cigarette Packs vs Cartons: Read the Unit First
 Author: Riley Weston / @RileyWestonP60  
 
 Public copy:
 
-Cigarette packs vs cartons is a unit question before it is a price question. A pack and a carton are different sales units, and the listing should make that clear.
+Cigarette packs vs cartons is a unit question before it is a price question. P60 currently lists cheap native cigarettes at $25 per carton, while pack-only products and loose tobacco items use different units.
 
 H2 sections:
 

@@ -38,3 +38,11 @@ Canonical host expected: `https://p60cannabis.com`
 ## Route Correction
 
 The footer quick link formerly pointing to `/info/weed-store-near-mississauga` was corrected to the actual P60 SEO route `/info/weed-store-near-toronto`.
+
+## Native Cigarette Inventory Update
+
+- Inventory source checked: public `/items/cigarettes` page against `ITEMS_LIVE.csv`
+- Cigarette carton price phrase added to resources: cheap native cigarettes at $25 per carton
+- Public-menu $25 carton lines documented: Rolled Gold Lights, Canadian Full, Canadian Lights, Canadian Menthol, Canadian Classics Original, Canadian Classics Silver, Canadian Goose Full, Canadian Goose Lights, Nexus Full, Nexus Lights, Putters, Time Full.
+- Non-carton cigarette-category items were not included in the $25/carton claim: Backwoods and Grabba listings on the public page, plus Belmont KS pack-only, nicotine pouches, and 10 X Premium Mix Cigarettes from the master CSV.
+- Master CSV $25/carton rows that were not on the public page during this check were not presented as available: Rolled Gold Full, BB Full Carton, BB Lights Carton, Playfare Ultra Lights, Time Lights.
