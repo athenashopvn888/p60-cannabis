@@ -133,7 +133,7 @@ export function GBPLandingPage() {
         </p>
         <p className={styles.infoText}>
           For a fuller local overview, read the{" "}
-          <Link href="/blog/p60-cannabis-york-store-guide">P60 Cannabis York guide</Link>.
+          <Link href="/resources">Resources</Link>.
         </p>
       </section>
 

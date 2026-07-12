@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 import { TIER_CONFIG, CATEGORY_CONFIG, allFlowers, allItems } from "./lib/products";
 import { SEO_PAGES } from "./lib/seoPages";
-import { STATIC_POSTS } from "./blog/staticPosts";
 import { RESOURCE_PAGES } from "./resources/resourceData";
 
 const BASE = "https://www.p60cannabis.com";
@@ -13,7 +12,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: BASE, lastModified: now, changeFrequency: "daily", priority: 1 },
     { url: `${BASE}/weed-dispensary-york/`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${BASE}/contact`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE}/blog`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${BASE}/resources`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${BASE}/faq`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/delivery`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
@@ -58,13 +56,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
-  /* Blog posts */
-  const blogPosts: MetadataRoute.Sitemap = STATIC_POSTS.map((post) => ({
-    url: `${BASE}/blog/${post.slug}`,
-    lastModified: post.modifiedDate || post.date,
-    changeFrequency: "monthly" as const,
-    priority: 0.6,
-  }));
 
   const resourcePages: MetadataRoute.Sitemap = RESOURCE_PAGES.map((p) => ({
     url: `${BASE}${p.path}`,
@@ -73,5 +64,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: p.kind === "root" ? 0.85 : p.kind === "category" ? 0.75 : 0.7,
   }));
 
-  return [...staticPages, ...resourcePages, ...tierPages, ...itemPages, ...flowerPages, ...itemDetailPages, ...blogPosts, ...seoPages];
+  return [...staticPages, ...resourcePages, ...tierPages, ...itemPages, ...flowerPages, ...itemDetailPages, ...seoPages];
 }

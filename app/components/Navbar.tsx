@@ -21,7 +21,6 @@ const ALL_LINKS = [
   { href: "/delivery", label: "🚗 Delivery" },
   { href: "/faq", label: "FAQ" },
   { href: "/resources", label: "Resources" },
-  { href: "/blog", label: "Blog" },
 ];
 
 export default function Navbar() {
