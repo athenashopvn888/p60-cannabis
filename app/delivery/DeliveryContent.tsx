@@ -43,13 +43,13 @@ export default function DeliveryContent() {
           Delivery <span className={styles.highlight}>Coming Soon</span>
         </h1>
         <p className={styles.pageSubtitle}>
-          P60 Cannabis is launching delivery across York.
-          Sign up below to be the first to know when we go live — and get an exclusive launch-day deal.
+          P60 Cannabis is preparing delivery updates for York shoppers.
+          Sign up below to be the first to know when local delivery details are ready.
         </p>
 
         {/* Email signup */}
         <div className={styles.formSection}>
-          <h2 className={styles.formTitle}>🔔 Get Notified When We Launch</h2>
+          <h2 className={styles.formTitle}>Get Notified When We Launch</h2>
           <p className={styles.formDesc}>
             Enter your email to join our delivery waitlist. We&apos;ll send you one email when delivery goes live.
           </p>
@@ -75,7 +75,7 @@ export default function DeliveryContent() {
           </form>
           {status === "success" && (
             <p className={styles.successMsg}>
-              ✅ You&apos;re on the list! We&apos;ll notify you when delivery launches.
+              You&apos;re on the list. We&apos;ll notify you when delivery launches.
             </p>
           )}
           {status === "error" && (
@@ -88,19 +88,19 @@ export default function DeliveryContent() {
         {/* Info cards */}
         <div className={styles.infoGrid}>
           <div className={styles.infoCard}>
-            <span className={styles.infoIcon}>📦</span>
-            <h3 className={styles.infoTitle}>Same-Day Delivery</h3>
-            <p className={styles.infoDesc}>Order before 6 PM, delivered same day across York.</p>
+            <span className={styles.infoIcon}>BOX</span>
+            <h3 className={styles.infoTitle}>Delivery Updates</h3>
+            <p className={styles.infoDesc}>Watch for local availability updates before planning a delivery order.</p>
           </div>
           <div className={styles.infoCard}>
-            <span className={styles.infoIcon}>🌉</span>
-            <h3 className={styles.infoTitle}>York & Gatineau</h3>
-            <p className={styles.infoDesc}>Serving the entire National Capital Region.</p>
+            <span className={styles.infoIcon}>AREA</span>
+            <h3 className={styles.infoTitle}>York / Weston Rd</h3>
+            <p className={styles.infoDesc}>Built around the P60 Cannabis store at 1938 Weston Rd.</p>
           </div>
           <div className={styles.infoCard}>
-            <span className={styles.infoIcon}>💰</span>
-            <h3 className={styles.infoTitle}>Same Great Prices</h3>
-            <p className={styles.infoDesc}>All in-store promotions apply to delivery orders too.</p>
+            <span className={styles.infoIcon}>INFO</span>
+            <h3 className={styles.infoTitle}>Menu First</h3>
+            <p className={styles.infoDesc}>Use the current menu or staff for product, price, and availability details.</p>
           </div>
         </div>
 

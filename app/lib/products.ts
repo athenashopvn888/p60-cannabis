@@ -33,14 +33,14 @@ export interface ItemProduct {
   promoImage: string | null;
 }
 
-/* ── Data imports (static fallback) ── */
+/* Data imports (static fallback) */
 import flowersJson from "./flowers.json";
 import itemsJson from "./items.json";
 
 export const allFlowers: FlowerProduct[] = flowersJson as FlowerProduct[];
 export const allItems: ItemProduct[] = itemsJson as ItemProduct[];
 
-/* ── Live stock fetch from Apps Script ── */
+/* Live stock fetch from Apps Script */
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "";
 
 interface LiveStockResponse {
@@ -97,7 +97,7 @@ export const TIER_CONFIG: Record<
     slug: "exotic",
     color: "#f59e0b",
     icon: "\uD83D\uDD25",
-    tagline: "Ultra-rare, top-shelf genetics \u00B7 THC 35-39%",
+    tagline: "Higher-tier genetics \u00B7 THC 35-39%",
     banner: "/banners/p60-real/tier-exotic.webp",
     unitPrice: 20,
     deal3g: { label: "3g bundle", total: "3G", price: 40 },
@@ -149,7 +149,7 @@ export const TIER_CONFIG: Record<
   },
 };
 
-/* ── Item category config ── */
+/* Item category config */
 export interface CategoryInfo {
   name: string; slug: string; color: string; icon: string; banner?: string;
   seoTitle: string; seoIntro: string; seoDescription: string;
@@ -159,10 +159,10 @@ export interface CategoryInfo {
 export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   EDIBLES: {
     banner: "/banners/p60-real/category-edibles.webp",
-    name: "Edibles", slug: "edibles", color: "#f97316", icon: "🍬",
-    seoTitle: "Cannabis Edibles York — Gummies, Chocolates & Drinks",
-    seoIntro: "Browse the full cannabis edibles menu at P60 Cannabis on York St, York. We carry THC gummies, chocolates, drinks, and more from top Canadian brands.",
-    seoDescription: "Looking for cannabis edibles in York? P60 Cannabis stocks a wide range of THC-infused gummies, chocolates, beverages, and baked goods. Our edibles range from micro-dose options for beginners to high-potency products for experienced consumers. All products are lab-tested and sourced from licensed Canadian producers. Visit us at 1938 Weston Rd — we are Open Daily: 10:00 AM - 03:00 AM.",
+    name: "Edibles", slug: "edibles", color: "#f97316", icon: "ED",
+    seoTitle: "Cannabis Edibles York - Gummies, Chocolates & Drinks",
+    seoIntro: "Browse the cannabis edibles category at P60 Cannabis on Weston Rd in York. Check the current menu for today's edible listings.",
+    seoDescription: "Looking for cannabis edibles in York? Use the P60 Cannabis edibles category to compare current menu listings, then confirm product details before visiting 1938 Weston Rd.",
     faqs: [
       { q: "What cannabis edibles do you carry?", a: "We stock THC gummies, chocolates, beverages, capsules, and baked goods from top Canadian brands. Potencies range from 10mg to 1000mg+ THC." },
       { q: "How long do edibles take to kick in?", a: "Cannabis edibles typically take 30-90 minutes to take effect. Start with a low dose (5-10mg) and wait at least 2 hours before consuming more." },
@@ -171,7 +171,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   },
   "VAPE PENS": {
     banner: "/banners/p60-real/category-thc-vape.webp",
-    name: "THC Vape", slug: "vapes", color: "#8b5cf6", icon: "💨",
+    name: "THC Vape", slug: "vapes", color: "#8b5cf6", icon: "VP",
     seoTitle: "Vape Pens in York | P60 Cannabis",
     seoIntro: "Browse vape category information at P60 Cannabis in York.",
     seoDescription: "Review vape-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
@@ -182,10 +182,10 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   },
   "VAPE DISPOSABLE": {
     banner: "/banners/p60-real/category-nic-vape.webp",
-    name: "Nic Vape", slug: "vape-disposables", color: "#a78bfa", icon: "💨",
-    seoTitle: "Disposable Vapes York — THC Disposable Pens",
-    seoIntro: "THC disposable vapes available at P60 Cannabis, York. No charging, no refilling — just open and enjoy.",
-    seoDescription: "Disposable THC vapes are the easiest way to enjoy cannabis on the go. P60 Cannabis stocks a wide selection of pre-charged, pre-filled disposable vape pens with various strain profiles and potencies. Perfect for beginners and experienced users alike. Visit us at 1938 Weston Rd, York.",
+    name: "Nic Vape", slug: "vape-disposables", color: "#a78bfa", icon: "NV",
+    seoTitle: "Disposable Vapes York - THC Disposable Pens",
+    seoIntro: "Browse disposable vape category information at P60 Cannabis in York.",
+    seoDescription: "Use the P60 Cannabis disposable vape category to compare current menu listings, then confirm product details before visiting 1938 Weston Rd in York.",
     faqs: [
       { q: "How long does a disposable vape last?", a: "Most disposable THC vapes contain 0.5g-1g of distillate and last between 100-300 puffs depending on usage." },
       { q: "Are disposable vapes rechargeable?", a: "Most are designed for single use, but some models include a USB-C charging port to ensure you can use the full cartridge." },
@@ -193,7 +193,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   },
   CONCENTRATES: {
     banner: "/banners/p60-real/category-concentrates.webp",
-    name: "Concentrates", slug: "concentrates", color: "#f59e0b", icon: "💎",
+    name: "Concentrates", slug: "concentrates", color: "#f59e0b", icon: "CO",
     seoTitle: "Cannabis Concentrates in York | P60 Cannabis",
     seoIntro: "Browse concentrates category information at P60 Cannabis in York.",
     seoDescription: "Review concentrate-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
@@ -203,7 +203,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   PREROLLS: {
-    banner: "/banners/p60-real/category-prerolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "🚬",
+    banner: "/banners/p60-real/category-prerolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "PR",
     seoTitle: "Pre-Rolls in York | P60 Cannabis",
     seoIntro: "Browse pre-roll category information at P60 Cannabis in York.",
     seoDescription: "Review pre-roll menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product availability.",
@@ -214,10 +214,10 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   },
   "ADD ONS": {
     banner: "/banners/p60-real/category-accessories.webp",
-    name: "Accessories", slug: "add-ons", color: "#34d399", icon: "➕",
-    seoTitle: "Cannabis Accessories York — Grinders, Papers, Lighters & More",
+    name: "Accessories", slug: "add-ons", color: "#34d399", icon: "+",
+    seoTitle: "Cannabis Accessories York - Grinders, Papers, Lighters & More",
     seoIntro: "Essential cannabis accessories at P60 Cannabis, York. Grinders, rolling papers, lighters, trays, and more.",
-    seoDescription: "P60 Cannabis carries all the accessories you need for the perfect smoke session. From premium grinders and rolling papers to lighters, trays, and storage containers, we have everything in stock. Visit us at 1938 Weston Rd, York.",
+    seoDescription: "Use the P60 Cannabis accessories category to compare current menu listings, then confirm product details before visiting 1938 Weston Rd in York.",
     faqs: [
       { q: "What accessories do you sell?", a: "We carry grinders, rolling papers, filter tips, lighters, rolling trays, storage jars, and more." },
     ],
@@ -235,19 +235,19 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   },
   CIGARETTES: {
     banner: "/banners/p60-real/category-cigarettes.webp",
-    name: "Cigarettes", slug: "cigarettes", color: "#78716c", icon: "🏷️",
-    seoTitle: "Native Cigarettes York — Discount Tobacco at P60 Cannabis",
-    seoIntro: "Discount native cigarettes at P60 Cannabis, York. Premium and value brands at the best prices on York St.",
-    seoDescription: "P60 Cannabis is your go-to source for affordable native cigarettes in York. We carry a wide selection of premium and value tobacco brands at competitive prices. Located at 1938 Weston Rd in the heart of 1938 Weston Rd & Nearby Expressway, we're Open Daily: 10:00 AM - 03:00 AM.",
+    name: "Cigarettes", slug: "cigarettes", color: "#78716c", icon: "SM",
+    seoTitle: "Native Cigarettes York - P60 Cannabis",
+    seoIntro: "Browse cigarette category information at P60 Cannabis on Weston Rd in York.",
+    seoDescription: "Use the P60 Cannabis cigarette category to compare current listings, then confirm today's product details before visiting 1938 Weston Rd in York.",
     faqs: [
       { q: "Do you sell cigarettes at P60 Cannabis?", a: "Yes! We carry a wide selection of native cigarette brands at competitive prices." },
       { q: "What cigarette brands do you carry?", a: "We stock a variety of premium and value native cigarette brands. Visit us to see our full in-store selection." },
-      { q: "Are your cigarette prices competitive?", a: "Absolutely. We offer some of the best cigarette prices in the 1938 Weston Rd & Nearby Expressway area of York." },
+      { q: "How should shoppers confirm cigarette prices?", a: "Use the current menu or ask staff for today's cigarette prices and availability." },
     ],
   },
 };
 
-/* ── Helper functions ── */
+/* Helper functions */
 export function getFlowersByTier(tier: string): FlowerProduct[] {
   return allFlowers.filter(
     (f) => f.tier.toUpperCase() === tier.toUpperCase()
@@ -292,7 +292,7 @@ export function getLowestPrice(flower: FlowerProduct): number | null {
 }
 
 export function formatPrice(p: PricePoint | null): string {
-  if (!p) return "—";
+  if (!p) return "-";
   if (p.sale !== null) return `$${p.sale}`;
   return `$${p.regular}`;
 }

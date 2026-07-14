@@ -334,9 +334,9 @@ export default function HomePage() {
       <section className={styles.seoSection}>
         <div className={styles.container}>
           <div className={styles.seoPanel}>
-            <h2 className={styles.seoPanelTitle}>1938 Weston Rd & Nearby Expressway's Premier Cannabis Dispensary — Open Daily: 10:00 AM - 03:00 AM</h2>
+            <h2 className={styles.seoPanelTitle}>P60 Cannabis On Weston Rd In York - Open Daily: 10:00 AM - 03:00 AM</h2>
             <p className={styles.seoPanelText}>
-              Welcome to <strong>P60 Cannabis</strong>, York's premier cannabis destination at 1938 Weston Rd. We carry an electrifying selection of top-shelf strains — from ultra-rare exotics to solid everyday budget picks.
+              Welcome to <strong>P60 Cannabis</strong> at 1938 Weston Rd in York. Use the current menu to compare flower tiers, pre-rolls, edibles, vapes, concentrates, cigarettes, and accessories before visiting.
             </p>
             <p className={styles.seoPanelText}>
               We are open Open Daily: 10:00 AM - 03:00 AM — P60 Cannabis is here to serve you. Our live menu is constantly refreshed with the freshest drops, premium prerolls, artisan edibles, and everything in between. Whether you're winding down or stocking up for the weekend, our knowledgeable staff can help during listed store hours.
@@ -450,7 +450,7 @@ export default function HomePage() {
               <p className={styles.storeCardText}>
                 No appointment needed
                 <br />
-                <span className={styles.storeHighlight}>1938 Weston Rd & Nearby Expressway, York</span>
+                <span className={styles.storeHighlight}>1938 Weston Rd, York</span>
               </p>
             </div>
           </div>
