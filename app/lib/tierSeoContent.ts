@@ -1,5 +1,3 @@
-/* ── Tier-specific SEO content for below-the-fold sections ── */
-
 export interface TierSeoData {
   seoTitle: string;
   seoIntro: string;
@@ -9,110 +7,105 @@ export interface TierSeoData {
 
 export const TIER_SEO: Record<string, TierSeoData> = {
   EXOTIC: {
-    seoTitle: "Exotic Cannabis Flower York — Ultra-Rare, Top-Shelf Genetics",
-    seoIntro: "Explore the Exotic tier at P60 Cannabis — our most exclusive cannabis flower selection. Hand-picked strains with THC levels up to 39%, stunning bag appeal, and unique terpene profiles you won't find anywhere else in York.",
+    seoTitle: "Exotic Cannabis Flower York | P60 Cannabis",
+    seoIntro: "Use the Exotic flower page at P60 Cannabis to compare current higher-tier flower listings in York.",
     sections: [
       {
-        heading: "What Makes Exotic Flower Special?",
-        body: "Exotic cannabis flower represents the absolute pinnacle of cannabis cultivation. These strains are grown by elite craft cultivators, hand-trimmed to perfection, and selected for their exceptional terpene profiles, bag appeal, and potency. At P60 Cannabis, our Exotic tier features strains with THC levels ranging from 35% to 39% — the highest potency flower available in York.",
+        heading: "Start With The Exotic Tier",
+        body: "Exotic is the higher-tier flower path on the P60 Cannabis menu. Use the current product name, strain notes, size, posted price, and availability details before choosing.",
       },
       {
-        heading: "Exotic Pricing — $20/g with 3g bundle pricing",
-        body: "Our Exotic flower starts at $20 per gram. With our 3g bundle pricing, you get 3 grams for just $40 — that's $13.33/g. For even better value, our 6g bundle offer gives you 6 grams for $60 — just $10.00/g. 14g is available for $140 ($10/g) and full ounces (28g) for $250 ($8.93/g).",
+        heading: "Check Current Bundle Notes",
+        body: "The site may show gram and bundle notes for this tier. Confirm current pricing and availability on the menu or with staff before purchase.",
       },
       {
-        heading: "Why Shop Exotic at P60 Cannabis?",
-        body: "P60 Cannabis is located at 1938 Weston Rd in the heart of York's ByWard Market neighbourhood. Our live digital menu is updated in real time, so you can check exactly what Exotic strains are in stock before you visit. Our knowledgeable budtenders can help you find the perfect strain based on your preferred effects, aroma, and potency level.",
+        heading: "Visit P60 Cannabis On Weston Rd",
+        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use the store page for directions, contact options, and listed hours.",
       },
     ],
     faqs: [
-      { q: "What is Exotic cannabis flower?", a: "Exotic flower is our top-tier cannabis, featuring ultra-rare genetics with THC levels from 35% to 39%. These strains are hand-selected for exceptional bag appeal, unique terpene profiles, and maximum potency." },
-      { q: "How much does Exotic flower cost?", a: "Exotic flower is $20/g. With our 3g bundle pricing, 3g is just $40. 6g bundle pricing gives you 6g for $60. 14g is $140 and 28g is $250." },
-      { q: "What strains are available in the Exotic tier?", a: "Our Exotic selection rotates frequently. Check our live online menu for the current strains in stock — it updates in real time." },
-      { q: "Is Exotic worth the price?", a: "If you value the highest potency, rarest genetics, and best bag appeal, Exotic is absolutely worth it. Our bundle pricing brings the per-gram price down significantly — as low as $8.93/g for an ounce." },
+      { q: "What is the Exotic flower tier?", a: "Exotic is the higher-tier flower category on the P60 Cannabis menu. Check current listings for today's options." },
+      { q: "How should shoppers compare Exotic flower?", a: "Compare the current item name, size, posted price, and menu notes, then ask staff if one detail matters." },
+      { q: "Are Exotic listings always the same?", a: "No. Flower listings can rotate, so use the current menu before visiting." },
     ],
   },
-
   PREMIUM: {
-    seoTitle: "Premium Cannabis Flower York — Hand-Picked Connoisseur Grade",
-    seoIntro: "Shop Premium cannabis flower at P60 Cannabis, York. Connoisseur-grade strains with THC 32-34%, exceptional flavour, and smooth smoke. Starting at $15/g.",
+    seoTitle: "Premium Cannabis Flower York | P60 Cannabis",
+    seoIntro: "Use the Premium flower page at P60 Cannabis to compare current higher-shelf flower listings in York.",
     sections: [
       {
-        heading: "What is Premium Cannabis Flower?",
-        body: "Premium flower sits just below Exotic in our quality hierarchy. These are connoisseur-grade strains with THC levels between 32% and 34%, offering exceptional flavour, smooth smoke, and consistent potency. Premium is the sweet spot for cannabis enthusiasts who want top-quality flower without the Exotic price tag.",
+        heading: "Compare Premium Flower Clearly",
+        body: "Premium sits below Exotic in the flower navigation. It is a useful category for York shoppers who want to compare higher-shelf listings without starting at the top tier.",
       },
       {
-        heading: "Premium Pricing — $15/g with Bundle Pricing",
-        body: "Premium flower starts at $15 per gram. Our 3g bundle pricing gets you 3 grams for $30 ($10/g). The 6g bundle offer delivers 6 grams for just $45 ($7.50/g). 14g is available for $100 ($7.14/g) and 28g for $180 ($6.43/g).",
+        heading: "Read The Current Item Notes",
+        body: "Use the current menu for strain names, sizes, posted prices, and availability. Menu details can change, so old examples should not make the decision.",
       },
       {
-        heading: "Best Value in ByWard Market",
-        body: "At P60 Cannabis on York St, our Premium tier offers the best quality-to-price ratio in the neighbourhood. Every strain in this tier has been personally vetted by our team for potency, flavour, and bag appeal.",
+        heading: "Premium Flower On Weston Rd",
+        body: "P60 Cannabis is at 1938 Weston Rd in York. Use the store page and current menu together when planning the visit.",
       },
     ],
     faqs: [
-      { q: "What is Premium cannabis flower?", a: "Premium is our connoisseur-grade tier featuring strains with THC 32-34%. Hand-picked for exceptional flavour, smooth smoke, and consistent quality." },
-      { q: "How much does Premium flower cost?", a: "Premium starts at $15/g. 3g bundle pricing = $30/3g. 6g bundle pricing = $45/6g. 14g = $100. 28g = $180." },
-      { q: "What's the difference between Exotic and Premium?", a: "Exotic features ultra-rare genetics with THC 35-39%, while Premium offers excellent connoisseur-grade strains at THC 32-34% — still top-shelf, but at a lower price point." },
+      { q: "What is Premium flower at P60 Cannabis?", a: "Premium is one of the flower tiers on the P60 Cannabis menu. Use current listings to compare available options." },
+      { q: "How is Premium different from Exotic?", a: "They are separate menu tiers. Compare the current products and posted details in each tier before choosing." },
+      { q: "Where can shoppers confirm current prices?", a: "Use the current menu or ask staff for current product and price details." },
     ],
   },
-
   "AAA+": {
-    seoTitle: "AAA+ Cannabis Flower York — Heavy Hitters at Great Prices",
-    seoIntro: "Shop AAA+ cannabis flower at P60 Cannabis, York. Strong, reliable strains with THC 30-32% starting at just $10/g. The best value for experienced smokers.",
+    seoTitle: "AAA+ Cannabis Flower York | P60 Cannabis",
+    seoIntro: "Use the AAA+ flower page at P60 Cannabis to compare current mid-to-high flower listings in York.",
     sections: [
       {
-        heading: "What is AAA+ Cannabis Flower?",
-        body: "AAA+ is where potency meets value. These heavy-hitting strains deliver THC levels from 30% to 32%, making them perfect for daily smokers who want solid potency without paying the premium markup. AAA+ flower at P60 Cannabis is sourced from trusted Canadian craft growers.",
+        heading: "Use AAA+ For A Focused Comparison",
+        body: "AAA+ is a flower tier for shoppers who want to compare stronger menu listings without mixing every flower category together.",
       },
       {
-        heading: "AAA+ Pricing — $10/g with Bundle Pricing",
-        body: "AAA+ flower starts at just $10 per gram. Our 3g bundle pricing delivers 3 grams for $20 ($6.67/g). The 6g bundle offer gives you 6 grams for $30 — just $5.00/g. 14g is $60 ($4.29/g) and full ounces (28g) start at $100 ($3.57/g).",
+        heading: "Compare Size, Price, And Notes",
+        body: "Start with the current product name, then compare size, posted price, and item notes. If availability or format matters, confirm before visiting.",
       },
     ],
     faqs: [
-      { q: "What is AAA+ cannabis flower?", a: "AAA+ is our value-potency tier featuring strains with THC 30-32%. Heavy hitters with proven genetics at unbeatable prices." },
-      { q: "How much does AAA+ flower cost?", a: "AAA+ starts at $10/g. 3g bundle pricing = $20/3g. 6g bundle pricing = $30/6g. 14g = $60. 28g from $100." },
-      { q: "Is AAA+ good quality?", a: "Absolutely. AAA+ strains deliver THC 30-32% with excellent potency and smoke quality. They're the best value-to-potency ratio in our lineup." },
+      { q: "What is AAA+ flower?", a: "AAA+ is one of the P60 Cannabis flower tiers. Check the current menu for today's listings." },
+      { q: "How should shoppers compare AAA+?", a: "Compare current item names, sizes, posted prices, and menu notes." },
+      { q: "Does this page guarantee current availability?", a: "No. Use the current menu or ask staff for live details." },
     ],
   },
-
   AA: {
-    seoTitle: "AA Cannabis Flower York — Quality Daily Drivers",
-    seoIntro: "Shop AA cannabis flower at P60 Cannabis, York. Solid everyday strains with THC 27-29% at just $5/g. Perfect for regular smokers on a budget.",
+    seoTitle: "AA Cannabis Flower York | P60 Cannabis",
+    seoIntro: "Use the AA flower page at P60 Cannabis to compare current everyday flower listings in York.",
     sections: [
       {
-        heading: "What is AA Cannabis Flower?",
-        body: "AA flower is designed for the everyday smoker. These quality daily drivers deliver consistent THC levels between 27% and 29%, providing reliable effects at an affordable price. AA is perfect for regular smokers who want quality without overspending.",
+        heading: "AA Flower For Everyday Browsing",
+        body: "AA is a value-minded flower category on the P60 Cannabis menu. It helps shoppers compare current listings without jumping across every tier.",
       },
       {
-        heading: "AA Pricing — $5/g, 5g bundle for $20",
-        body: "AA flower is just $5 per gram. Our 5g bundle for $20 gives you 5 grams total ($4.00/g). 14g is available for $50 ($3.57/g) and 28g for $90 ($3.21/g). Great value for daily use.",
+        heading: "Confirm The Current Details",
+        body: "Use the menu or staff for current product names, sizes, posted prices, and availability before choosing.",
       },
     ],
     faqs: [
-      { q: "What is AA cannabis flower?", a: "AA is our everyday-value tier with strains at THC 27-29%. Reliable quality at an affordable price point." },
-      { q: "How much does AA flower cost?", a: "AA starts at $5/g. 5g bundle = $20/5g ($4.00/g). 14g = $50. 28g = $90." },
+      { q: "What is AA flower?", a: "AA is one of the P60 Cannabis flower tiers for shoppers comparing current value-minded listings." },
+      { q: "Where should shoppers confirm AA pricing?", a: "Use the current menu or ask staff for today's posted pricing." },
     ],
   },
-
   BUDGET: {
-    seoTitle: "Budget Cannabis York — Cheap Weed From $3/g",
-    seoIntro: "Cheap weed in York starting at $3/g. P60 Cannabis Budget tier features shreds and value ounces for cost-conscious smokers. Check current store hours before visiting P60 Cannabis.",
+    seoTitle: "Budget Cannabis York | P60 Cannabis",
+    seoIntro: "Use the Budget flower page at P60 Cannabis to compare lower-spend flower listings in York.",
     sections: [
       {
-        heading: "Affordable Cannabis Without Compromise",
-        body: "Our Budget tier proves that affordable cannabis doesn't mean low quality. With THC levels from 24% to 27%, these value strains deliver solid effects at rock-bottom prices. Whether you're looking for shreds or value ounces, P60 Cannabis has the cheapest weed in York's ByWard Market neighbourhood.",
+        heading: "Start Here For Lower-Spend Flower",
+        body: "The Budget tier is for York shoppers comparing lower-spend flower options around Weston Rd. Start with the current menu and confirm today's product details before choosing.",
       },
       {
-        heading: "Budget Pricing — From $3/g, OZs from $40",
-        body: "Budget flower starts at just $3 per gram. Value ounces start from $40 — some of the best prices you'll find in York. Our 3g bundle pricing applies here too, giving you even more savings.",
+        heading: "Check Sizes And Posted Prices",
+        body: "Budget listings can change. Compare the current size, posted price, and item notes, then ask staff if one detail decides the visit.",
       },
     ],
     faqs: [
-      { q: "What is the cheapest weed at P60 Cannabis?", a: "Our Budget tier starts at $3/g with value ounces from $40. These are quality strains at the lowest possible price." },
-      { q: "Is budget flower still good quality?", a: "Yes! Budget strains still deliver THC 24-27%. They're perfect for daily smokers who want value without sacrificing potency." },
-      { q: "Do you have shreds?", a: "Yes, our Budget tier includes shredded flower options — great for rolling and value pricing." },
+      { q: "What is the Budget flower tier?", a: "Budget is the lower-spend flower category on the P60 Cannabis menu." },
+      { q: "Does this page guarantee current Budget listings?", a: "No. Use the current menu or ask staff for current details." },
+      { q: "Where is P60 Cannabis?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
     ],
   },
 };

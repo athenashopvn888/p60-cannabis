@@ -42,7 +42,7 @@ export default function ContactPage() {
                 <br />
                 York, ON M9N 1W2
                 <br />
-                <span className={styles.infoMuted}>1938 Weston Rd & Nearby Expressway</span>
+                <span className={styles.infoMuted}>Weston Rd / York</span>
               </p>
             </div>
 
