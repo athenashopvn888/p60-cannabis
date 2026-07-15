@@ -66,9 +66,9 @@ function TypeTag({ type }: { type: string }) {
 
 /* -- Vibe card -- */
 const VIBE_MAP: Record<string, [string,string][]> = {
-  indica: [["🛋️","Couch Lock"],["😌","Relax"],["🌙","Sleepy"]],
-  sativa: [["⚡","Energy"],["🧠","Cerebral"],["🚀","Uplift"]],
-  hybrid: [["🧘","Balance"],["🌿","Calm"],["✨","Creative"]],
+  indica: [["🌿","Indica"],["📦","Package Details"],["📋","Current Menu"]],
+  sativa: [["🌿","Sativa"],["📦","Package Details"],["📋","Current Menu"]],
+  hybrid: [["🌿","Hybrid"],["📦","Package Details"],["📋","Current Menu"]],
 };
 function VibeCard({ type }: { type: string }) {
   const t = type?.toLowerCase();
