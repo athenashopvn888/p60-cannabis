@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./page.module.css";
 import Navbar from "./components/Navbar";
+import HiringCallout from "./components/HiringCallout";
 import Footer from "./components/Footer";
 import FlowerCard from "./components/FlowerCard";
 import { allFlowers } from "./lib/products";
@@ -201,6 +202,7 @@ export default function HomePage() {
     <main className={styles.main}>
       {/* ── NAVBAR ── */}
       <Navbar />
+      <HiringCallout />
 
       {/* ── BENTO MOSAIC HERO ── */}
       <section className={styles.hero}>

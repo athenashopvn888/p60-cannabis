@@ -25,7 +25,7 @@ const FAQ_CATEGORIES = [
   {
     title: "Products & Menu",
     faqs: [
-      { q: "What products do you carry?", a: "The site has menu paths for flower tiers, edibles, vape categories, concentrates, pre-rolls, cigarettes, and accessories. Check the current menu for today's listings." },
+      { q: "What products do you carry?", a: "The site has menu sections for flower tiers, edibles, vape categories, concentrates, pre-rolls, cigarettes, and accessories. Check the current menu for today's listings." },
       { q: "Do you have a live menu?", a: "Use p60cannabis.com to review current menu details before visiting. Product names, prices, and availability can change." },
       { q: "What are your flower tiers?", a: "Flower is organized by tier: Exotic, Premium, AAA+, AA, and Budget. Use the tier pages to compare current listings." },
       { q: "Do you sell edibles?", a: "The site has an edibles category. Check the current menu for available edible listings." },

@@ -5,6 +5,7 @@ import Link from "next/link";
 import styles from "./Navbar.module.css";
 
 const ALL_LINKS = [
+  { href: "/careers/budtender", label: "Join Team" },
   { href: "/exotic", label: "Exotic" },
   { href: "/premium", label: "Premium" },
   { href: "/aaa", label: "AAA+" },

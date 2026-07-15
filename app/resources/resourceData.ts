@@ -307,7 +307,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis pre-roll guide",
     },
     intro: [
-      "Pre-rolls win on convenience. That does not mean every listing is the same. Pack count, product notes, and whether an item is standard or infused can change the read.",
+      "Pre-rolls win on convenience. That does not mean every listing is the same. Pack count, listing details, and whether an item is standard or infused can change the read.",
     ],
     sections: [
       {
@@ -387,7 +387,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis THC vape guide",
     },
     intro: [
-      "THC vapes have their own menu logic. The first question is usually the format, then compatibility, product notes, and current listing details.",
+      "THC vapes have their own menu logic. The first question is usually the format, then compatibility, listing details, and current listing details.",
     ],
     sections: [
       {
@@ -444,7 +444,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Cheap Weed Value Is More Than One Number",
         body: [
-          "A useful comparison includes weight, current price, flower section, and product notes. One low number without context can trick the eye.",
+          "A useful comparison includes weight, current price, flower section, and listing details. One low number without context can trick the eye.",
         ],
       },
       {
@@ -716,7 +716,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Match Item Categories to the Visit",
         body: [
-          "If the visit is about edibles, pre-rolls, THC vapes, concentrates, cigarettes, or Magic Stuff, use that category first. Category-first browsing saves time.",
+          "If the visit is about edibles, pre-rolls, THC vapes, concentrates, cigarettes, or Magic Stuff, use that category first. Category-guided browsing saves time.",
         ],
       },
       {
@@ -828,8 +828,8 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Budget vs Premium Flower",
     seoTitle: "Budget vs Premium Flower | P60 Cannabis",
     metaDescription:
-      "Compare Budget and Premium flower at P60 Cannabis by reading current price, weight, section, product notes, and the shopper goal behind each lane.",
-    h1: "Budget vs Premium Flower: Pick the Lane Before the Strain",
+      "Compare Budget and Premium flower at P60 Cannabis by reading current price, weight, section, listing details, and the shopper goal behind each lane.",
+    h1: "Budget vs Premium Flower: Choose the Section Before the Strain",
     excerpt:
       "Budget and Premium are not enemies. They answer different shopping moods.",
     primaryKeyword: "Budget vs Premium flower",
@@ -895,7 +895,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Pre-Rolls vs Flower",
     seoTitle: "Pre-Rolls vs Flower | P60 Cannabis",
     metaDescription:
-      "Compare pre-rolls vs flower at P60 Cannabis by looking at convenience, control, pack details, current product notes, and the live menu.",
+      "Compare pre-rolls vs flower at P60 Cannabis by looking at convenience, control, pack details, current listing details, and the live menu.",
     h1: "Pre-Rolls vs Flower: Which Format Fits the Visit?",
     excerpt:
       "Pre-rolls bring convenience. Flower gives more control. The right pick depends on the job.",
@@ -1055,7 +1055,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Flower Starts With Tier and Weight",
         body: [
-          "Flower comparison usually starts with tier, weight, current price, and product notes. That is a different read from a vape listing.",
+          "Flower comparison usually starts with tier, weight, current price, and listing details. That is a different read from a vape listing.",
         ],
       },
       {
@@ -1169,7 +1169,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       "Find P60 Cannabis at 1938 Weston Rd in York, with current store information, menu categories, local visit planning, and helpful links.",
     h1: "Weed Dispensary in York: A Weston Road Guide",
     excerpt:
-      "Confirm the right P60 store page first, then go straight to the menu lane that matches the visit.",
+      "Confirm the right P60 store page first, then go straight to the menu section that matches the visit.",
     primaryKeyword: "weed dispensary in York",
     supportingKeywords: ["cannabis store near Weston Road", "York weed store", "P60 Cannabis"],
     searchIntent: "Find local P60 Cannabis store and menu information.",
@@ -1222,7 +1222,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     ],
     secondTake: {
       author: "riley",
-      body: "A local guide earns its spot when it removes friction: the right store, the right page, and the right category.",
+      body: "A local guide earns its spot when it removes friction: the right store, the right page, and the best category.",
     },
   },
   {
@@ -1456,8 +1456,8 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "How to Read a Magic Mushroom Menu",
     seoTitle: "How to Read a Magic Mushroom Menu | P60 Cannabis",
     metaDescription:
-      "Read magic mushroom menu listings by checking format, package amount, listed strength, serving information, product notes, and current availability.",
-    h1: "How to Read a Magic Mushroom Menu Without Guessing",
+      "Read magic mushroom menu listings by checking format, package amount, listed strength, serving information, listing details, and current availability.",
+    h1: "How to Read a Magic Mushroom Menu With Confidence",
     excerpt:
       "Specialty-product listings should be read in layers: format, package, listed amount, notes, and current availability.",
     primaryKeyword: "how to read a magic mushroom menu",
@@ -1471,7 +1471,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "How to read a magic mushroom menu at P60 Cannabis",
     },
     intro: [
-      "Knowing how to read a magic mushroom menu is about slowing the title down. Start with format, then package information, listed amount, product notes, and current availability.",
+      "Knowing how to read a magic mushroom menu is about slowing the title down. Start with format, then package information, listed amount, listing details, and current availability.",
     ],
     sections: [
       {

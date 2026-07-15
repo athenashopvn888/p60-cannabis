@@ -64,7 +64,7 @@ export const SEO_PAGES: SeoPageData[] = [
     faqs: [
       { q: "Where should value shoppers start at P60 Cannabis?", a: "Start with Budget and AA flower, then compare the current menu details." },
       { q: "Does this page guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and availability details." },
-      { q: "Can shoppers compare other categories too?", a: "Yes. Use the menu paths for flower, pre-rolls, edibles, vapes, concentrates, accessories, and cigarettes where listed." },
+      { q: "Can shoppers compare other categories too?", a: "Yes. Use the menu sections for flower, pre-rolls, edibles, vapes, concentrates, accessories, and cigarettes where listed." },
     ],
   },
   {
@@ -134,7 +134,7 @@ export const SEO_PAGES: SeoPageData[] = [
     sections: [
       {
         heading: "Make The Near-Me Search Useful",
-        body: "A near-me search should get you to the right store page and the right category. P60 Cannabis gives York shoppers a path to store details, menu categories, and resources.",
+        body: "A near-me search should get you to the right store page and the best category. P60 Cannabis gives York shoppers a path to store details, menu categories, and resources.",
       },
       {
         heading: "Compare Categories Clearly",
@@ -147,7 +147,7 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Is P60 Cannabis useful for a near-me search in York?", a: "Yes. Start with the P60 Cannabis store page, then open the menu category that matches the visit." },
-      { q: "What categories can shoppers compare?", a: "Use the menu paths for flower, pre-rolls, edibles, THC vapes, concentrates, accessories, and cigarettes where listed." },
+      { q: "What categories can shoppers compare?", a: "Use the menu sections for flower, pre-rolls, edibles, THC vapes, concentrates, accessories, and cigarettes where listed." },
       { q: "Where is P60 Cannabis located?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
     ],
   },
