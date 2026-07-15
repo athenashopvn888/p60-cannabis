@@ -120,7 +120,7 @@ export const SEO_PAGES: SeoPageData[] = [
     faqs: [
       { q: "Is P60 Cannabis near Toronto?", a: "P60 Cannabis is located in York at 1938 Weston Rd. Use the store page for directions from your starting point." },
       { q: "Can shoppers browse before visiting?", a: "Yes. Use the current menu and category pages before heading to the store." },
-      { q: "Does this page list live inventory?", a: "No. Check the current menu or ask staff for live product details." },
+      { q: "How do I check current product listings?", a: "Check the current menu or ask staff for today's product details." },
     ],
   },
   {
