@@ -75,7 +75,7 @@ function VibeCard({ type }: { type: string }) {
   const vibes = VIBE_MAP[t] || VIBE_MAP.hybrid;
   return (
     <div className={styles.vibeSection}>
-      <div className={styles.vibeHead}>EFFECTS</div>
+      <div className={styles.vibeHead}>DETAILS</div>
       <div className={styles.vibePills}>
         {vibes.map(([emoji, label]) => (
           <span key={label} className={styles.vibePill}>
@@ -672,7 +672,7 @@ function AddOnsCard({ items, hiIdx }: { items: Item[]; hiIdx: number }) {
    ============================================================ */
 const TICKER_SLIDES = [
   "🔥 P60 Cannabis — 1938 Weston Rd, York",
-  "200+ Strains In Stock",
+  "Browse Current Flower Menu",
   "Open Daily: 10:00 AM - 03:00 AM",
   "ALL SALES ARE FINAL",
 ];

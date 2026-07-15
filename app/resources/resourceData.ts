@@ -52,7 +52,7 @@ export interface ResourcePage {
 export const SITE = {
   name: "P60 Cannabis",
   domain: "p60cannabis.com",
-  baseUrl: "https://p60cannabis.com",
+  baseUrl: "https://www.p60cannabis.com",
   storePage: "/weed-dispensary-york",
   address: "1938 Weston Rd, York, ON M9N 1W2",
   phone: "(437) 522-2802",
@@ -128,7 +128,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       "Explore P60 Cannabis resources for flower, pre-rolls, edibles, THC vapes, value shopping, cigarettes, specialty products, and York store information.",
     h1: "P60 Cannabis Resource Centre",
     excerpt:
-      "A cleaner way for adults 19+ to read the menu, compare categories, and move toward the right live P60 Cannabis page.",
+      "A cleaner way for adults 19+ to read the menu, compare categories, and move toward the right current P60 Cannabis page.",
     primaryKeyword: "P60 Cannabis resources",
     supportingKeywords: [
       "cannabis guides York",
@@ -146,7 +146,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     },
     intro: [
       "The P60 Cannabis Resource Centre brings the useful stuff into one clean place: flower, pre-rolls, edibles, THC vapes, value comparisons, cigarettes, specialty items, and local York store information.",
-      "These pages help adults 19+ shop the current menu with sharper eyes. Product names, prices, weights, and availability can move, so the live menu and store staff stay the source for current details.",
+      "These pages help adults 19+ shop the current menu with sharper eyes. Product names, prices, weights, and selection can move, so the current menu and store staff stay the source for current details.",
     ],
     sections: [
       {
@@ -158,7 +158,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Current Menu Details Stay Current",
         body: [
-          "Resources explain how to shop. The live menu shows what is listed now. When one product, price, weight, or hour decides the trip, check the current page or call the store before moving.",
+          "Resources explain how to shop. The current menu shows what is listed now. When one product, price, weight, or hour decides the trip, check the current page or call the store before moving.",
         ],
       },
     ],
@@ -184,7 +184,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       "Cannabis 101 resources from P60 Cannabis explain menu categories, product formats, listing details, and smarter ways to browse current information.",
     h1: "Cannabis 101: Read the Menu Before the Hype",
     excerpt:
-      "Begin with format, listing details, and the live category page instead of guessing from product names alone.",
+      "Begin with format, listing details, and the current category page instead of guessing from product names alone.",
     primaryKeyword: "cannabis 101 guide",
     supportingKeywords: [
       "cannabis menu guide",
@@ -212,7 +212,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Use the Current Page for Current Answers",
         body: [
-          "Resource pages explain how to shop the menu. The live category page answers what is listed now.",
+          "Resource pages explain how to shop the menu. The current category page answers what is listed now.",
         ],
         links: [
           { label: "Read the cannabis menu guide", href: "/resources/cannabis-101/how-to-read-a-cannabis-menu" },
@@ -263,7 +263,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "The Section Narrows the Shelf",
         body: [
-          "Budget, AA, AAA+, Premium, and Exotic help shoppers move faster. After that, compare the actual listing: product name, weight, posted price, type, and item notes.",
+          "Budget, AA, AAA+, Premium, and Exotic help shoppers move faster. After that, compare the actual listing: product name, weight, posted price, type, and listing details.",
         ],
       },
       {
@@ -318,7 +318,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
       {
         heading: "Current Pre-Roll Category",
-        body: ["Use the live category for current names, pack information, prices, and availability."],
+        body: ["Use the current category for current names, pack information, prices, and selection."],
         links: [{ label: "Browse current pre-rolls", href: "/items/prerolls" }],
       },
     ],
@@ -332,7 +332,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Cannabis Edibles Guides",
     seoTitle: "Cannabis Edibles Guides | P60 Cannabis",
     metaDescription:
-      "Read P60 Cannabis edible guides covering delayed onset, product labels, serving information, current menu details, and careful browsing.",
+      "Read P60 Cannabis edible guides covering product formats, package labels, counts, current menu details, and careful browsing.",
     h1: "Edibles Guides: Read the Label Before the Flex",
     excerpt:
       "Edibles need a slower read than flower, pre-rolls, or THC vapes.",
@@ -358,7 +358,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
       {
         heading: "Current Edible Category",
-        body: ["Use the live page for current edible listings and package details."],
+        body: ["Use the current page for current edible listings and package details."],
         links: [{ label: "Explore current edibles", href: "/items/edibles" }],
       },
     ],
@@ -398,7 +398,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
       {
         heading: "Current Vape Categories",
-        body: ["Check the live pages when a specific vape item matters."],
+        body: ["Check the current pages when a specific vape item matters."],
         links: [
           { label: "Browse THC vapes", href: "/items/vapes" },
           { label: "Browse vape disposables", href: "/items/vape-disposables" },
@@ -449,7 +449,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
       {
         heading: "Useful Flower Paths",
-        body: ["Start with the live P60 flower lanes when value is the mission."],
+        body: ["Start with the current P60 flower lanes when value is the mission."],
         links: [
           { label: "Browse Budget flower", href: "/budget" },
           { label: "Browse AA flower", href: "/aa" },
@@ -520,10 +520,10 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "P60 Cannabis Store Updates",
     seoTitle: "Store Updates | P60 Cannabis",
     metaDescription:
-      "Read verified P60 Cannabis updates about resources, store information, services, menu changes, and important York announcements.",
+      "Read P60 Cannabis updates about resources, store information, services, menu changes, and important York announcements.",
     h1: "P60 Cannabis Store Updates",
     excerpt:
-      "Official updates live here when something verified changes or a permanent resource goes live.",
+      "Store updates appear here when information changes or a permanent shopper resource is published.",
     primaryKeyword: "P60 Cannabis updates",
     supportingKeywords: ["P60 Cannabis hours", "P60 Cannabis news", "store announcements York"],
     searchIntent: "Find official P60 Cannabis announcements.",
@@ -535,18 +535,18 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis official store updates",
     },
     intro: [
-      "This lane is for official P60 Cannabis updates. It is not a dumping ground for filler posts. Updates belong here when something verified needs a clean public home.",
+      "This section shares useful P60 Cannabis updates when store information, services, or shopper resources change.",
     ],
     sections: [
       {
         heading: "What Belongs in Store Updates",
         body: [
-          "Resource launches, store information changes, service updates, menu navigation changes, closures, holiday notes, and other verified store announcements can live here.",
+          "Resource launches, store information changes, service updates, menu navigation changes, closures, holiday notes, and other useful store announcements can appear here.",
         ],
       },
       {
         heading: "Current Update",
-        body: ["The first update announces the P60 Cannabis Resource Centre after the section is built and verified."],
+        body: ["The first update announces the P60 Cannabis Resource Centre when the section is ready for shoppers."],
         links: [{ label: "Read the Resource Centre launch update", href: "/resources/store-updates/resource-centre-launch" }],
       },
     ],
@@ -581,20 +581,20 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     },
     intro: [
       "Native smokes and native cigarettes are common shopper phrases. P60 Cannabis currently has cheap native cigarette carton options listed at $25 per carton, with public-menu brand families including Rolled Gold, Canadian, Canadian Classics, Canadian Goose, Nexus, Putters, and Time.",
-      "This section introduces the available carton names, explains pack and carton terminology, and points adults 19+ back to the live cigarette category before they visit.",
+      "This section introduces the listed carton names, explains pack and carton terminology, and points adults 19+ back to the live cigarette category before they visit.",
     ],
     sections: [
       {
         heading: "Cheap Native Cigarettes at $25 Per Carton",
         body: [
-          "Inventory checked from the public P60 cigarette menu on July 11, 2026. The current native cigarette carton lane is built around $25 per carton options, with these brand families available in the resource list:",
+          "Inventory checked from the public P60 cigarette menu on July 11, 2026. The current native cigarette carton lane is built around $25 per carton options, with these brand families listed in the resource list:",
         ],
         bullets: nativeCigaretteBrandFamilies,
       },
       {
         heading: "Current $25 Carton Lineup",
         body: [
-          "The available carton names include full, lights, menthol, original, silver, and ultra-light options depending on the brand. Check the live cigarette page before visiting because tobacco selection can rotate.",
+          "The listed carton names include full, lights, menthol, original, silver, and ultra-light options depending on the brand. Check the live cigarette page before visiting because tobacco selection can rotate.",
         ],
         bullets: nativeCigaretteCartonLines,
       },
@@ -605,9 +605,9 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         ],
       },
       {
-        heading: "Tobacco Health Notice",
+        heading: "Tobacco Menu Notice",
         body: [
-          "Smoking and nicotine use carry serious health risks. These resources provide menu-navigation information only and do not make safety or health claims.",
+          "These resources focus on cigarette category navigation, package terms, and current menu details.",
         ],
       },
     ],
@@ -644,7 +644,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis Magic Stuff specialty-product guide",
     },
     intro: [
-      "The P60 Magic Stuff lane is for specialty-product menu reading. These guides explain formats and labels only. They do not provide dosing, consumption, medical, therapeutic, or legal advice.",
+      "The P60 Magic Stuff section helps shoppers read specialty-product formats, package labels, and current menu details.",
     ],
     sections: [
       {
@@ -655,7 +655,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
       {
         heading: "Current Magic Stuff Category",
-        body: ["Use the live category when availability, package details, or one exact product matters."],
+        body: ["Use the current category when selection, package details, or one exact product matters."],
         links: [{ label: "Browse current Magic Stuff", href: "/items/magic" }],
       },
     ],
@@ -700,7 +700,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Read the Complete Listing",
         body: [
-          "A strong menu read includes the product name, section, type, weight or package size, posted price, and any item notes. Do not let one bold number do all the thinking.",
+          "A strong menu read includes the product name, section, type, weight or package size, posted price, and any listing details. Do not let one bold number do all the thinking.",
         ],
       },
       {
@@ -722,7 +722,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Confirm the Current Detail",
         body: [
-          "A resource can teach the menu logic. It cannot promise current stock. When one exact item decides the trip, check the live page or call P60 Cannabis.",
+          "A resource can explain menu organization. When one exact item decides the trip, check the current page or call P60 Cannabis.",
         ],
       },
     ],
@@ -775,7 +775,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "AA and AAA+ Keep the Comparison Grounded",
         body: [
-          "AA and AAA+ are often where shoppers compare everyday value, current weight, and posted price with less drama. Read the live item card before making the call.",
+          "AA and AAA+ are often where shoppers compare everyday value, current weight, and posted price with less drama. Read the current item card before making the call.",
         ],
         links: [
           { label: "Browse AA flower", href: "/aa" },
@@ -795,7 +795,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Do Not Compare Labels Without Weights",
         body: [
-          "A tier comparison gets sharper when weight, current price, and item notes are visible together. That is where the real menu read happens.",
+          "A tier comparison gets sharper when weight, current price, and listing details are visible together. That is where the real menu read happens.",
         ],
       },
       {
@@ -856,7 +856,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "When Premium Gets the First Click",
         body: [
-          "Premium flower is the lane for shoppers who want to browse higher-shelf options first. It still deserves the same comparison: weight, current price, type, and item notes.",
+          "Premium flower is the lane for shoppers who want to browse higher-shelf options first. It still deserves the same comparison: weight, current price, type, and listing details.",
         ],
         links: [{ label: "Browse Premium flower", href: "/premium" }],
       },
@@ -867,9 +867,9 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         ],
       },
       {
-        heading: "Use the Live Menu Before Calling It",
+        heading: "Check the Current Menu Before Choosing",
         body: [
-          "Stock and pricing can shift. If one specific flower decides the visit, use the live P60 page first.",
+          "Listings and prices can change. If one specific flower decides the visit, use the current P60 page first.",
         ],
       },
     ],
@@ -895,7 +895,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "Pre-Rolls vs Flower",
     seoTitle: "Pre-Rolls vs Flower | P60 Cannabis",
     metaDescription:
-      "Compare pre-rolls vs flower at P60 Cannabis by looking at convenience, control, pack details, current listing details, and the live menu.",
+      "Compare pre-rolls vs flower at P60 Cannabis by looking at convenience, control, pack details, current listing details, and the current menu.",
     h1: "Pre-Rolls vs Flower: Which Format Fits the Visit?",
     excerpt:
       "Pre-rolls bring convenience. Flower gives more control. The right pick depends on the job.",
@@ -959,31 +959,31 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     kind: "article",
     parent: "/resources/edibles-guides",
     categoryLabel: "Edibles Guides",
-    title: "How Long Do Edibles Take?",
-    seoTitle: "How Long Do Edibles Take? | P60 Cannabis",
+    title: "How to Read Edible Package Details",
+    seoTitle: "How to Read Edible Package Details | P60 Cannabis",
     metaDescription:
-      "Learn why cannabis edibles can take longer than inhaled products, which label details to check, and how to use the current P60 edibles menu.",
-    h1: "How Long Do Edibles Take?",
+      "Learn which edible format and package details to check while browsing the current P60 Cannabis edibles menu.",
+    h1: "How to Read Edible Package Details",
     excerpt:
-      "Edibles are slower to read and slower to judge. Start with the package, not the guess.",
+      "Start with the product format, package count, and label details rather than guessing from the title.",
     primaryKeyword: "how long do edibles take",
     supportingKeywords: ["cannabis edibles guide York", "edible label guide", "P60 Cannabis edibles"],
-    searchIntent: "Understand edible onset timing and label-reading basics.",
+    searchIntent: "Understand edible package and label-reading basics.",
     author: "riley",
     datePublished: updated,
     dateModified: updated,
     image: {
       src: "/banners/edibles_prerolls_more_banner.webp",
-      alt: "How long do edibles take guide at P60 Cannabis",
+      alt: "Edible package details guide at P60 Cannabis",
     },
     intro: [
-      "How long do edibles take? Longer than many shoppers expect. Edible cannabis is absorbed differently than inhaled cannabis, so the practical move is to read the package carefully and avoid rushing the decision.",
+      "Edible listings can use different formats, counts, and package descriptions. Read the current listing and the product package carefully before choosing.",
     ],
     sections: [
       {
-        heading: "Edibles Can Have Delayed Onset",
+        heading: "Start With the Product Format",
         body: [
-          "Edible cannabis can take a while before effects are noticeable, and package directions matter. This page is informational only and does not replace package instructions or health advice.",
+          "First identify whether the listing is a gummy, chocolate, beverage, capsule, baked item, or another format.",
         ],
       },
       {
@@ -1067,7 +1067,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Confirm Current Details",
         body: [
-          "Product formats, compatibility, and availability can change. Use the live category before planning around one exact vape item.",
+          "Product formats, compatibility, and selection can change. Use the current category before planning around one exact vape item.",
         ],
       },
     ],
@@ -1111,7 +1111,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Keep Price and Weight Together",
         body: [
-          "Before judging value, confirm the listed weight, current posted price, flower section, and item notes. A smaller amount and a larger amount are not the same comparison.",
+          "Before judging value, confirm the listed weight, current posted price, flower section, and listing details. A smaller amount and a larger amount are not the same comparison.",
         ],
       },
       {
@@ -1127,14 +1127,14 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         ],
       },
       {
-        heading: "Search Language Can Stay Direct",
+        heading: "Use Clear Shopping Language",
         body: [
-          "Cheap weed, budget weed, affordable weed, and value flower are real shopper phrases. The answer should be direct: current price, current weight, and the right live category.",
+          "Cheap weed, budget weed, affordable weed, and value flower are real shopper phrases. The answer should be direct: current price, current weight, and the right current category.",
         ],
       },
       {
         heading: "Browse Current Flower Sections",
-        body: ["Use the live P60 Cannabis flower lanes for the current listing details."],
+        body: ["Use the current P60 Cannabis flower lanes for the current listing details."],
         links: [
           { label: "Browse Budget flower", href: "/budget" },
           { label: "Browse AA flower", href: "/aa" },
@@ -1194,11 +1194,11 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "York and Weston Road Context",
         body: [
-          "The store is connected to York and Weston Road search intent. Nearby-area language should help orientation, not become a pasted list in every paragraph.",
+          "The store is connected to York and Weston Road shopping question. Nearby-area language should help orientation, not become a pasted list in every paragraph.",
         ],
       },
       {
-        heading: "Move From Local Search to Category",
+        heading: "Move From Store Details to a Category",
         body: [
           "Once the store is confirmed, open the category that matches the trip: flower, pre-rolls, edibles, THC vapes, concentrates, cigarettes, accessories, or Magic Stuff.",
         ],
@@ -1206,7 +1206,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Check Current Details Before Travelling for One Item",
         body: [
-          "Product availability, posted prices, and category listings can change. If one exact item decides the trip, confirm the current page or call the store.",
+          "Product selection, posted prices, and category listings can change. If one exact item decides the trip, confirm the current page or call the store.",
         ],
       },
     ],
@@ -1258,7 +1258,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     ],
     sections: [
       {
-        heading: "Available Native Cigarette Brands",
+        heading: "Listed Native Cigarette Brands",
         body: [
           "Inventory checked from the public P60 cigarette menu on July 11, 2026. These are the current $25 per carton native cigarette names to know before visiting:",
         ],
@@ -1269,7 +1269,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         body: [
           "The resource positioning is simple: cheap native cigarettes at $25 per carton in York, with brand and variety checks handled before the trip. If a shopper wants full, lights, menthol, original, silver, or ultra-light options, the carton name is the first thing to confirm.",
         ],
-        bullets: ["Brand", "Variety", "Pack or carton", "Quantity", "Current price", "Current availability"],
+        bullets: ["Brand", "Variety", "Pack or carton", "Quantity", "Current price", "Current selection"],
       },
       {
         heading: "Native Smokes and Native Cigarettes",
@@ -1280,13 +1280,13 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Use the York Store Page",
         body: [
-          "P60 Cannabis store details should be confirmed on the current store page when hours, phone, or one exact item affects the trip. For cigarette shoppers, the live category is the fastest path from brand name to current listing.",
+          "P60 Cannabis store details should be confirmed on the current store page when hours, phone, or one exact item affects the trip. For cigarette shoppers, the current category is the fastest path from brand name to current listing.",
         ],
       },
       {
-        heading: "Tobacco Health Notice",
+        heading: "Tobacco Menu Notice",
         body: [
-          "Smoking and nicotine use carry serious health risks. This guide provides store and menu-navigation information only. It does not make safety or health claims.",
+          "This guide focuses on cigarette category navigation, package terms, and current menu details.",
         ],
       },
       {
@@ -1338,7 +1338,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Cigarette Packs vs Cartons Start With the Unit",
         body: [
-          "A pack listing refers to an individual retail pack. Check brand, variety, pack size where shown, current price, and current availability.",
+          "A pack listing refers to an individual retail pack. Check brand, variety, pack size where shown, current price, and current selection.",
         ],
       },
       {
@@ -1357,13 +1357,13 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Why Current Information Matters",
         body: [
-          "Cigarette selection can rotate. Static resources can name the inventory checked on July 11, 2026, but adults 19+ should still use the live cigarette category before visiting for one exact brand.",
+          "Cigarette selection can rotate. Static resources can name the items previously listed on the menu, but adults 19+ should still use the live cigarette category before visiting for one exact brand.",
         ],
       },
       {
-        heading: "Tobacco Health Notice",
+        heading: "Tobacco Menu Notice",
         body: [
-          "Smoking and nicotine use carry serious health risks. This page is informational and intended for adults 19+.",
+          "This page provides cigarette category and package-navigation information for adults 19+.",
         ],
       },
     ],
@@ -1400,7 +1400,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "Magic mushroom formats guide at P60 Cannabis",
     },
     intro: [
-      "Magic mushroom formats can show up as dried products, chocolates, gummies, capsules, beverages, or other specialty items. The format explains packaging, not dosing, effects, medicine, or legality.",
+      "Magic mushroom formats can show up as dried products, chocolates, gummies, capsules, beverages, or other specialty items. The format helps shoppers understand how each item is packaged and listed.",
     ],
     sections: [
       {
@@ -1436,7 +1436,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Important Boundary",
         body: [
-          "This guide explains menu formats only. It does not provide dosing, consumption, therapeutic, medical, or legal advice.",
+          "This guide focuses on menu formats, package labels, and current listing details.",
         ],
         links: [{ label: "Browse current Magic Stuff", href: "/items/magic" }],
       },
@@ -1445,7 +1445,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     related: ["/resources/magic-mushroom-guides/how-to-read-a-magic-mushroom-menu", "/resources/cannabis-101/how-to-read-a-cannabis-menu"],
     secondTake: {
       author: "team",
-      body: "Specialty-product availability can vary. Use the current Magic Stuff category before planning a visit around a specific item.",
+      body: "Specialty-product selection can vary. Use the current Magic Stuff category before planning a visit around a specific item.",
     },
   },
   {
@@ -1456,10 +1456,10 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     title: "How to Read a Magic Mushroom Menu",
     seoTitle: "How to Read a Magic Mushroom Menu | P60 Cannabis",
     metaDescription:
-      "Read magic mushroom menu listings by checking format, package amount, listed strength, serving information, listing details, and current availability.",
+      "Read magic mushroom menu listings by checking format, package amount, listed strength, serving information, listing details, and current selection.",
     h1: "How to Read a Magic Mushroom Menu With Confidence",
     excerpt:
-      "Specialty-product listings should be read in layers: format, package, listed amount, notes, and current availability.",
+      "Specialty-product listings should be read in layers: format, package, listed amount, notes, and current selection.",
     primaryKeyword: "how to read a magic mushroom menu",
     supportingKeywords: ["magic mushroom menu York", "mushroom chocolate menu", "mushroom gummy menu", "specialty products York"],
     searchIntent: "Learn specialty-product menu reading and label checks.",
@@ -1471,7 +1471,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "How to read a magic mushroom menu at P60 Cannabis",
     },
     intro: [
-      "Knowing how to read a magic mushroom menu is about slowing the title down. Start with format, then package information, listed amount, listing details, and current availability.",
+      "Knowing how to read a magic mushroom menu is about slowing the title down. Start with format, then package information, listed amount, listing details, and current selection.",
     ],
     sections: [
       {
@@ -1493,16 +1493,16 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         ],
       },
       {
-        heading: "Check Current Availability",
+        heading: "Check Current Selection",
         body: [
-          "Specialty-product listings can rotate. Use the live P60 Magic Stuff category for current products.",
+          "Specialty-product listings can rotate. Use the current P60 Magic Stuff category for current products.",
         ],
         links: [{ label: "Browse current Magic Stuff", href: "/items/magic" }],
       },
       {
         heading: "Important Boundary",
         body: [
-          "This resource is menu-navigation information for adults 19+. It does not provide dosing, consumption, medical, therapeutic, or legal advice.",
+          "This resource helps adults 19+ compare menu formats, package labels, and current listing details.",
         ],
       },
     ],
@@ -1554,7 +1554,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Where to Begin",
         body: [
-          "Visit the Resource Centre and choose the category that matches the question. Use the store page for current visit information and the live menu for current products, prices, weights, and availability.",
+          "Visit the Resource Centre and choose the category that matches the question. Use the store page for current visit information and the current menu for current products, prices, weights, and selection.",
         ],
         links: [
           { label: "Open the Resource Centre", href: "/resources" },
@@ -1564,7 +1564,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "What Happens Next",
         body: [
-          "New resources should be added when there is a real customer question, a useful search opportunity, a verified store change, or a topic that deserves a complete answer.",
+          "New resources should be added when there is a real customer question, a useful shopper topic, a meaningful store change, or a shopper topic that deserves a complete answer.",
         ],
       },
     ],

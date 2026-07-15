@@ -6,7 +6,7 @@ import BudtenderApplicationForm from "./BudtenderApplicationForm";
 import styles from "./budtender.module.css";
 
 export const metadata: Metadata = {
-  title: "Budtender Or Manager Application | P60 Cannabis",
+  title: { absolute: "Budtender Or Manager Application | P60 Cannabis" },
   description:
     "Apply online for budtender or manager opportunities at P60 Cannabis in York. Submit availability, experience, motivation, determination, and customer-service answers.",
   alternates: {

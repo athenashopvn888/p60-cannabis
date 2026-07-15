@@ -38,8 +38,8 @@ export default function NotFound() {
             lineHeight: 1.6,
           }}
         >
-          This page doesn&apos;t exist — but our shelves are fully stocked.
-          Browse 200+ strains at York&apos;s most fire dispensary.
+          This page doesn&apos;t exist, but the current menu is still here.
+          Browse the current P60 Cannabis menu.
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
           <Link

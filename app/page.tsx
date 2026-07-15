@@ -318,7 +318,7 @@ export default function HomePage() {
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Featured Strains</h2>
             <p className={styles.sectionSubtitle}>
-              Staff picks and top sellers dynamically updated from our real-time stock sheet.
+              A rotating sample from the current flower menu.
             </p>
           </div>
 
@@ -341,10 +341,10 @@ export default function HomePage() {
               Welcome to <strong>P60 Cannabis</strong> at 1938 Weston Rd in York. Use the current menu to compare flower tiers, pre-rolls, edibles, vapes, concentrates, cigarettes, and accessories before visiting.
             </p>
             <p className={styles.seoPanelText}>
-              We are open Open Daily: 10:00 AM - 03:00 AM — P60 Cannabis is here to serve you. Our live menu is constantly refreshed with the freshest drops, premium prerolls, artisan edibles, and everything in between. Whether you're winding down or stocking up for the weekend, our knowledgeable staff can help during listed store hours.
+              We are open Open Daily: 10:00 AM - 03:00 AM — P60 Cannabis is here to serve you. The current menu brings together flower, pre-rolls, edibles, vapes, and other categories. Our staff can help shoppers compare those categories during listed store hours.
             </p>
             <p className={styles.seoPanelText}>
-              Searching for a cannabis dispensary in York or the surrounding area? P60 Cannabis is your go-to destination for premium flower, potent prerolls, and artisan edibles. Our six-tier pricing system means quality cannabis at every budget level — starting from just $3/g.
+              Searching for a cannabis dispensary in York or the surrounding area? P60 Cannabis offers flower, pre-rolls, edibles, vapes, and other menu categories. Clear flower tiers help shoppers compare listed prices before visiting.
             </p>
           </div>
         </div>

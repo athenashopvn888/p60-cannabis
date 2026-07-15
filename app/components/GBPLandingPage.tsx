@@ -1,4 +1,3 @@
-// Auto-generated Google Business Profile Local SEO Landing Page Component
 import Link from "next/link";
 import styles from "./GBPLandingPage.module.css";
 import { gbpLocation } from "../lib/gbp-location";
@@ -101,15 +100,15 @@ export function GBPLandingPage() {
 
       {/* Intro Section */}
       <section className={styles.section}>
-        <h2 className={styles.h2}>Your Trusted Local Weed Dispensary</h2>
+        <h2 className={styles.h2}>A Local Weed Dispensary</h2>
         <p className={styles.introText}>{gbpLocation.introVariant}</p>
       </section>
 
       {/* Product Section */}
       <section className={styles.section}>
-        <h2 className={styles.h2}>Weed and Cannabis Products Available</h2>
+        <h2 className={styles.h2}>Browse Weed and Cannabis Categories</h2>
         <p className={styles.infoText}>
-          At {gbpLocation.storeName}, we offer a curated selection of weed and cannabis products for adults 19+ in {gbpLocation.city}. Enjoy some of Ontario&apos;s finest quality and value in the following categories:
+          At {gbpLocation.storeName}, adults 19+ can browse the following general menu categories. Check the current menu before visiting:
         </p>
         <div className={styles.productGrid}>
           {gbpLocation.products.map((p) => {
@@ -208,7 +207,7 @@ export function GBPLandingPage() {
       <section className={styles.section}>
         <h2 className={styles.h2}>Compare Menu Categories Before You Visit</h2>
         <p className={styles.infoText}>
-          These category links help adults 19+ browse general menu sections before visiting. Product selection can change, so use the live menu for current details rather than assuming availability from this guide.
+          These category links help adults 19+ browse general menu sections before visiting. Product selection can change, so use the current menu for current details.
         </p>
         <div className={styles.productGrid}>
           {categoryGuideLinks.map((category) => (

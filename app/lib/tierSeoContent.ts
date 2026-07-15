@@ -12,11 +12,11 @@ export const TIER_SEO: Record<string, TierSeoData> = {
     sections: [
       {
         heading: "Start With The Exotic Tier",
-        body: "Exotic is the higher-tier flower path on the P60 Cannabis menu. Use the current product name, strain notes, size, posted price, and availability details before choosing.",
+        body: "Exotic is the higher-tier flower path on the P60 Cannabis menu. Use the current product name, strain notes, size, posted price, and selection details before choosing.",
       },
       {
         heading: "Check Current Bundle Notes",
-        body: "The site may show gram and bundle notes for this tier. Confirm current pricing and availability on the menu or with staff before purchase.",
+        body: "The site may show gram and bundle notes for this tier. Confirm current pricing and selection on the menu or with staff before purchase.",
       },
       {
         heading: "Visit P60 Cannabis On Weston Rd",
@@ -39,7 +39,7 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
       {
         heading: "Read The Current Item Notes",
-        body: "Use the current menu for strain names, sizes, posted prices, and availability. Menu details can change, so old examples should not make the decision.",
+        body: "Use the current menu for strain names, sizes, posted prices, and selection. Menu details can change, so old examples should not make the decision.",
       },
       {
         heading: "Premium Flower On Weston Rd",
@@ -47,7 +47,7 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is Premium flower at P60 Cannabis?", a: "Premium is one of the flower tiers on the P60 Cannabis menu. Use current listings to compare available options." },
+      { q: "What is Premium flower at P60 Cannabis?", a: "Premium is one of the flower tiers on the P60 Cannabis menu. Use current listings to compare listed options." },
       { q: "How is Premium different from Exotic?", a: "They are separate menu tiers. Compare the current products and posted details in each tier before choosing." },
       { q: "Where can shoppers confirm current prices?", a: "Use the current menu or ask staff for current product and price details." },
     ],
@@ -62,13 +62,13 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
       {
         heading: "Compare Size, Price, And Notes",
-        body: "Start with the current product name, then compare size, posted price, and item notes. If availability or format matters, confirm before visiting.",
+        body: "Start with the current product name, then compare size, posted price, and listing details. If selection or format matters, confirm before visiting.",
       },
     ],
     faqs: [
       { q: "What is AAA+ flower?", a: "AAA+ is one of the P60 Cannabis flower tiers. Check the current menu for today's listings." },
       { q: "How should shoppers compare AAA+?", a: "Compare current item names, sizes, posted prices, and menu notes." },
-      { q: "Does this page guarantee current availability?", a: "No. Use the current menu or ask staff for live details." },
+      { q: "Does this page guarantee current selection?", a: "No. Use the current menu or ask staff for current details." },
     ],
   },
   AA: {
@@ -81,7 +81,7 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
       {
         heading: "Confirm The Current Details",
-        body: "Use the menu or staff for current product names, sizes, posted prices, and availability before choosing.",
+        body: "Use the menu or staff for current product names, sizes, posted prices, and selection before choosing.",
       },
     ],
     faqs: [
@@ -99,7 +99,7 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
       {
         heading: "Check Sizes And Posted Prices",
-        body: "Budget listings can change. Compare the current size, posted price, and item notes, then ask staff if one detail decides the visit.",
+        body: "Budget listings can change. Compare the current size, posted price, and listing details, then ask staff if one detail decides the visit.",
       },
     ],
     faqs: [

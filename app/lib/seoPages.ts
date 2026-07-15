@@ -22,7 +22,7 @@ export const SEO_PAGES: SeoPageData[] = [
     sections: [
       {
         heading: "Visit P60 Cannabis On Weston Rd",
-        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use this page for the basic store context, then use the current menu or staff for product names, posted prices, and availability details that can change.",
+        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use this page for the basic store context, then use the current menu or staff for product names, posted prices, and selection details that can change.",
       },
       {
         heading: "Shop By Category First",
@@ -54,7 +54,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Compare Current Menu Details",
-        body: "Use the current product name, format, size, posted price, and item notes when comparing value options. Menus can change, so this page is a shopping guide rather than a promise of live availability.",
+        body: "Use the current product name, format, size, posted price, and listing details when comparing value options. Menus can change, so this page is a shopping guide rather than a promise of live selection.",
       },
       {
         heading: "Move Up Only If It Fits The Visit",
@@ -63,7 +63,7 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Where should value shoppers start at P60 Cannabis?", a: "Start with Budget and AA flower, then compare the current menu details." },
-      { q: "Does this page guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and availability details." },
+      { q: "Does this page guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and selection details." },
       { q: "Can shoppers compare other categories too?", a: "Yes. Use the menu sections for flower, pre-rolls, edibles, vapes, concentrates, accessories, and cigarettes where listed." },
     ],
   },
@@ -91,7 +91,7 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Does P60 Cannabis list cigarette options?", a: "The site includes a cigarette category. Check the current menu or ask staff for today's listings." },
-      { q: "Are cigarette prices current on this page?", a: "Confirm current prices and availability with the menu or staff." },
+      { q: "Are cigarette prices current on this page?", a: "Confirm current prices and selection with the menu or staff." },
       { q: "Where is the store?", a: "P60 Cannabis is at 1938 Weston Rd, York, ON M9N 1W2." },
     ],
   },
@@ -114,7 +114,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Plan Around Current Details",
-        body: "For product names, posted prices, and availability, use the current menu or ask staff. This page is for orientation and local visit planning.",
+        body: "For product names, posted prices, and selection, use the current menu or ask staff. This page is for orientation and local visit planning.",
       },
     ],
     faqs: [
@@ -142,7 +142,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Check Current Details",
-        body: "For product names, prices, and availability, use the current menu or ask staff. This page is for orientation and visit planning.",
+        body: "For product names, prices, and selection, use the current menu or ask staff. This page is for orientation and visit planning.",
       },
     ],
     faqs: [

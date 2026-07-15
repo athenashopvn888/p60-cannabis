@@ -1,7 +1,6 @@
-// Auto-generated Google Business Profile Local SEO Location Configuration
 export const gbpLocation = {
   storeName: "P60 Cannabis",
-  domain: "p60cannabis.com",
+  domain: "www.p60cannabis.com",
   city: "York",
   province: "ON",
   country: "CA",
@@ -32,7 +31,7 @@ export const gbpLocation = {
   seoTitle: "P60 Cannabis | Weed Dispensary in York",
   metaDescription: "P60 Cannabis is a local weed dispensary in York offering flower, pre-rolls, edibles, vapes, concentrates, CBD, and service for adults 19+.",
   localLandmarks: ["Weston Road", "York", "Mount Dennis"],
-  introVariant: "Welcome to P60 Cannabis, your premier weed dispensary in York situated right on 1938 Weston Rd. We are dedicated to providing adults 19+ with top-tier weed, premium cannabis flower, pre-rolls, edibles, THC vapes, concentrates, and CBD products. If you are looking for a trusted cannabis store near Weston Road / York or a weed shop near York, stop by today to consult with our knowledgeable staff.",
+  introVariant: "P60 Cannabis is a local weed dispensary in York at 1938 Weston Rd. Adults 19+ can browse menu categories including cannabis flower, pre-rolls, edibles, THC vapes, concentrates, CBD products, and accessories before visiting.",
   neighborhoodDescription: "Located in the vibrant Weston Road / York district, our cannabis store fits right into this active and historic community, surrounded by local retail shops and convenient transit links.",
   parkingNote: "Street parking and municipal parking spaces are available nearby",
   transitNote: "Accessible by local TTC bus and transit routes serving Weston Road.",

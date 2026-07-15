@@ -3,7 +3,7 @@ import "./globals.css";
 import AgeGate from "./components/AgeGate";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://p60cannabis.com"),
+  metadataBase: new URL("https://www.p60cannabis.com"),
   title: {
     default: "P60 Cannabis | York Cannabis Dispensary",
     template: "%s | P60 Cannabis",
@@ -29,14 +29,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_CA",
-    url: "https://p60cannabis.com",
+    url: "https://www.p60cannabis.com",
     siteName: "P60 Cannabis",
     title: "P60 Cannabis — Premium York Cannabis Dispensary",
     description:
-      "200+ strains from $3/g. Exotic to Budget. York's uplifting dispensary at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
+      "Browse flower tiers and menu categories at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
     images: [
       {
-        url: "https://p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg",
+        url: "https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg",
         width: 1200,
         height: 630,
         alt: "P60 Cannabis — Premium Cannabis Dispensary York",
@@ -46,8 +46,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "P60 Cannabis — York's Uplifting Dispensary",
-    description: "200+ strains from $3/g. Open Daily: 10:00 AM - 03:00 AM at 1938 Weston Rd, York.",
-    images: ["https://p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
+    description: "Browse current menu categories. Open Daily: 10:00 AM - 03:00 AM at 1938 Weston Rd, York.",
+    images: ["https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
   robots: {
     index: true,
@@ -61,7 +61,7 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: "https://p60cannabis.com",
+    canonical: "https://www.p60cannabis.com",
   },
   verification: {
     // google: "your-google-verification-code",
@@ -73,12 +73,12 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Store",
   additionalType: "https://schema.org/Store",
-  "@id": "https://p60cannabis.com",
+  "@id": "https://www.p60cannabis.com",
   name: "P60 Cannabis",
   description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open Daily: 10:00 AM - 03:00 AM.",
-  url: "https://p60cannabis.com",
+  url: "https://www.p60cannabis.com",
   telephone: "+14375222802",
-  image: "https://p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
+  image: "https://www.p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
   priceRange: "$3 - $12/g",
   address: {
     "@type": "PostalAddress",
@@ -110,10 +110,10 @@ const jsonLd = {
   }
 ],
   sameAs: [
-    "https://p60cannabis.com/",
-    "https://p60cannabis.com/",
+    "https://www.p60cannabis.com/",
+    "https://www.p60cannabis.com/",
   ],
-  hasMap: "https://p60cannabis.com/",
+  hasMap: "https://www.p60cannabis.com/",
   areaServed: {
     "@type": "City",
     name: "York",

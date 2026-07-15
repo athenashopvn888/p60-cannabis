@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description:
     "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. We are open daily from 10:00 AM to 03:00 AM. Walk-ins welcome.",
   alternates: {
-    canonical: "https://p60cannabis.com/contact",
+    canonical: "https://www.p60cannabis.com/contact",
   },
   openGraph: {
     title: "Contact P60 Cannabis — York Dispensary",
@@ -74,16 +74,16 @@ export default function ContactPage() {
                 <br />
                 Just walk in and our staff will
                 <br />
-                help you find the perfect strain.
+                help you compare current menu options.
               </p>
               <div className={styles.featureList}>
                 <div className={styles.featureItem}>
                   <span className={styles.featureCheck}>✓</span>
-                  200+ strains in stock
+                  Browse the current flower menu
                 </div>
                 <div className={styles.featureItem}>
                   <span className={styles.featureCheck}>✓</span>
-                  Lab-tested &amp; safe
+                  Ask staff about product labels
                 </div>
                 <div className={styles.featureItem}>
                   <span className={styles.featureCheck}>✓</span>

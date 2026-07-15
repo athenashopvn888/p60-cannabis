@@ -62,7 +62,7 @@ export default function Footer() {
               <Link href="/weed-dispensary-york/">P60 Cannabis Weed Dispensary in York</Link>
               <Link href="/contact">Contact Us</Link>
               <a
-                href="https://p60cannabis.com/"
+                href="https://www.p60cannabis.com/"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -75,7 +75,7 @@ export default function Footer() {
         <div className={styles.bottom}>
           <p>
             © {new Date().getFullYear()} P60 Cannabis. Must be 19+ to
-            enter. Please consume responsibly.
+            enter. Please follow applicable laws and product labels.
           </p>
         </div>
       </div>

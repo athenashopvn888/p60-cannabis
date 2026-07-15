@@ -34,11 +34,11 @@ export async function generateMetadata({
     title: seo?.seoTitle || `${tierInfo.config.name} Cannabis Flower — ${flowers.length} Strains`,
     description: seo?.seoIntro || `Shop ${flowers.length} ${tierInfo.config.name.toLowerCase()} cannabis strains at P60 Cannabis.`,
     alternates: {
-      canonical: `https://p60cannabis.com/${tierSlug}`,
+      canonical: `https://www.p60cannabis.com/${tierSlug}`,
     },
     openGraph: {
       title: `${tierInfo.config.name} Flower | P60 Cannabis`,
-      description: `${flowers.length} curated ${tierInfo.config.name.toLowerCase()} strains in stock now. From $${tierInfo.config.unitPrice}/g.`,
+      description: `Browse the current ${tierInfo.config.name.toLowerCase()} flower menu. Listed prices start from $${tierInfo.config.unitPrice}/g.`,
     },
   };
 }

@@ -34,7 +34,7 @@ export async function generateMetadata({
     title: catInfo.config.seoTitle || `${catInfo.config.name} — ${items.length} Products`,
     description: catInfo.config.seoIntro || `Shop ${items.length} ${catInfo.config.name.toLowerCase()} at P60 Cannabis.`,
     alternates: {
-      canonical: `https://p60cannabis.com/items/${catSlug}`,
+      canonical: `https://www.p60cannabis.com/items/${catSlug}`,
     },
   };
 }
@@ -81,7 +81,7 @@ export default async function ItemsCategoryPage({
             <h1 className={styles.heroTitle}>
               <span style={{ color: "#fff" }}>{config.name}</span>
             </h1>
-            <p className={styles.heroSub} style={{ color: "rgba(255,255,255,0.8)" }}>{items.length} products available</p>
+            <p className={styles.heroSub} style={{ color: "rgba(255,255,255,0.8)" }}>{items.length} menu items listed</p>
           </div>
         )}
       </section>
@@ -99,7 +99,7 @@ export default async function ItemsCategoryPage({
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>🌱</span>
               <h3>Coming Soon</h3>
-              <p>We&apos;re stocking this category. Check back soon!</p>
+              <p>No items are listed in this category right now. Check back soon.</p>
             </div>
           )}
         </div>
