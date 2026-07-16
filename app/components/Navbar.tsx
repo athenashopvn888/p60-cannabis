@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import styles from "./Navbar.module.css";
@@ -26,6 +27,45 @@ const ALL_LINKS = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const scrollBarRef = useRef<HTMLDivElement>(null);
+  const [canAdvance, setCanAdvance] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const scrollBar = scrollBarRef.current;
+    if (!scrollBar) return;
+
+    setCanAdvance(scrollBar.scrollWidth - scrollBar.clientWidth - scrollBar.scrollLeft > 2);
+  }, []);
+
+  useEffect(() => {
+    const scrollBar = scrollBarRef.current;
+    if (!scrollBar) return;
+
+    updateScrollState();
+    scrollBar.addEventListener("scroll", updateScrollState, { passive: true });
+    window.addEventListener("resize", updateScrollState);
+
+    const resizeObserver = new ResizeObserver(updateScrollState);
+    resizeObserver.observe(scrollBar);
+    if (scrollBar.firstElementChild) resizeObserver.observe(scrollBar.firstElementChild);
+
+    return () => {
+      scrollBar.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", updateScrollState);
+      resizeObserver.disconnect();
+    };
+  }, [pathname, updateScrollState]);
+
+  const advanceScrollBar = () => {
+    const scrollBar = scrollBarRef.current;
+    if (!scrollBar) return;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollBar.scrollBy({
+      left: Math.max(180, scrollBar.clientWidth * 0.75),
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  };
 
   return (
     <nav className={styles.navbar} id="main-nav">
@@ -53,8 +93,9 @@ export default function Navbar() {
       </div>
 
       {/* Scrollable link bar */}
-      <div className={styles.scrollBar}>
-        <div className={styles.scrollInner}>
+      <div className={styles.scrollShell}>
+        <div ref={scrollBarRef} id="p60-menu-scrollbar" className={styles.scrollBar}>
+          <div className={styles.scrollInner}>
           {ALL_LINKS.map((link) => {
             const isActive = pathname === link.href;
             return (
@@ -67,7 +108,19 @@ export default function Navbar() {
               </Link>
             );
           })}
+          </div>
         </div>
+        {canAdvance && (
+          <button
+            type="button"
+            className={styles.scrollAdvance}
+            aria-label="Show more navigation links"
+            aria-controls="p60-menu-scrollbar"
+            onClick={advanceScrollBar}
+          >
+            <span aria-hidden="true">›</span>
+          </button>
+        )}
       </div>
     </nav>
   );
