@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:staff-photo": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/staff-photo.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",

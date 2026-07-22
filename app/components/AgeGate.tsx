@@ -10,13 +10,15 @@ export default function AgeGate() {
   useEffect(() => {
     // Skip age verification for TV menu retail displays
     const path = window.location.pathname;
-    if (path === "/tv" || path === "/tv2" || path.startsWith("/tv/") || path.startsWith("/tv2/")) {
+    if (path === "/tv" || path === "/tv2" || path.startsWith("/tv/") || path.startsWith("/tv2/") || path.startsWith("/staff-photo")) {
       return;
     }
 
     // Check local storage for previous verification
     const verified = localStorage.getItem("PNY01_age_verified");
     if (verified !== "true") {
+      // This client-only gate must initialize from browser storage after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShow(true);
     }
   }, []);
@@ -49,6 +51,7 @@ export default function AgeGate() {
         ) : (
           <div className={styles.promptState}>
             <div className={styles.logoWrap}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/storeFavicon.webp"
                 alt="P60 Cannabis"
