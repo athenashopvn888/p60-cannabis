@@ -8,7 +8,7 @@ import {
   loginAllowed,
   mimeMatchesKind,
   operationalDayContext,
-  PHOTO_TTL_MS,
+  MEDIA_RETRY_WINDOW_MS,
   SHOT_PROMPTS,
 } from "../app/lib/staffPhotoCore.ts";
 import { dailyPin, verifyDailyPin } from "../app/lib/staffPhotoPin.ts";
@@ -108,9 +108,16 @@ test("magic bytes must agree with MIME", () => {
   assert.equal(detectImageKind(Uint8Array.from([1, 2, 3])), null);
 });
 
-test("object expiry is exactly 24 hours", () => {
-  const created = new Date("2026-07-23T12:00:00Z");
-  assert.equal(expiryFor(created).getTime() - created.getTime(), PHOTO_TTL_MS);
+test("media expires after the full following operational day", () => {
+  const early = new Date("2026-07-14T10:01:00Z");
+  const late = new Date("2026-07-15T09:59:00Z");
+  const expected = new Date("2026-07-16T10:00:00Z");
+  assert.equal(expiryFor(early).toISOString(), expected.toISOString());
+  assert.equal(expiryFor(late).toISOString(), expected.toISOString());
+  assert.equal(
+    expiryFor(early).getTime() - operationalDayContext(early).validUntil.getTime(),
+    MEDIA_RETRY_WINDOW_MS,
+  );
 });
 
 test("rate limit blocks the seventh failed attempt in a 15 minute window", () => {
@@ -127,7 +134,10 @@ test("client source does not contain server secret names or PIN formula", () => 
 
 test("deployment cleanup is scheduled and keeps separate cron authorization", () => {
   const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.deepEqual(config.crons, [{ path: "/api/staff-photo/maintenance/cleanup", schedule: "15 11 * * *" }]);
+  assert.deepEqual(config.crons, [
+    { path: "/api/staff-photo/maintenance/cleanup?window=edt", schedule: "15 10 * * *" },
+    { path: "/api/staff-photo/maintenance/cleanup?window=est", schedule: "15 11 * * *" },
+  ]);
   const route = readFileSync(new URL("../app/api/staff-photo/maintenance/cleanup/route.ts", import.meta.url), "utf8");
   assert.match(route, /export async function GET/);
   assert.match(route, /process\.env\.CRON_SECRET/);
@@ -135,14 +145,42 @@ test("deployment cleanup is scheduled and keeps separate cron authorization", ()
   assert.match(route, /PNY_STAFF_CLEANUP_TOKEN/);
 });
 
-test("Supabase setup grants least-privilege server access and no browser access", () => {
-  const sql = readFileSync(new URL("../supabase/staff-photo-pilot.sql", import.meta.url), "utf8");
-  assert.match(sql, /grant select on table public\.staff_photo_settings to service_role;/);
-  assert.match(sql, /grant select, insert, delete on table public\.staff_photo_login_attempts to service_role;/);
-  assert.match(sql, /grant select, insert, update on table public\.staff_photo_submissions to service_role;/);
-  assert.match(sql, /grant select, insert, update on table public\.staff_photo_issues to service_role;/);
-  assert.match(sql, /grant select, insert, update on table public\.staff_photo_random_checks to service_role;/);
-  assert.match(sql, /grant usage, select on sequence public\.staff_photo_login_attempts_id_seq to service_role;/);
-  assert.match(sql, /revoke all on table public\.staff_photo_settings from anon, authenticated;/);
-  assert.doesNotMatch(sql, /create policy/i);
+test("private Vercel Blob state uses fresh reads and optimistic concurrency", () => {
+  const store = readFileSync(new URL("../app/lib/staffPhotoStore.ts", import.meta.url), "utf8");
+  assert.match(store, /STAFF_STATE_PATH = "staff-photo\/state\/v1\.json"/);
+  assert.match(store, /access: "private"/);
+  assert.match(store, /useCache: false/);
+  assert.match(store, /BlobPreconditionFailedError/);
+  assert.match(store, /ifMatch: etag/);
+  assert.doesNotMatch(store, /NEXT_PUBLIC_/);
+});
+
+test("staff-photo runtime and package have no Supabase dependency", () => {
+  const packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8");
+  const runtimeFiles = [
+    "../app/lib/staffPhotoAuth.ts",
+    "../app/lib/staffPhotoStore.ts",
+    "../app/api/staff-photo/auth/route.ts",
+    "../app/api/staff-photo/status/route.ts",
+    "../app/api/staff-photo/submissions/route.ts",
+    "../app/api/staff-photo/issues/route.ts",
+    "../app/api/staff-photo/random-check/route.ts",
+    "../app/api/staff-photo/collector/status/route.ts",
+    "../app/api/staff-photo/collector/media/[id]/route.ts",
+    "../app/api/staff-photo/collector/ack/route.ts",
+    "../app/api/staff-photo/collector/credentials/route.ts",
+    "../app/api/staff-photo/collector/credentials/rotate/route.ts",
+    "../app/api/staff-photo/maintenance/cleanup/route.ts",
+  ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
+  assert.match(packageJson, /"@vercel\/blob"/);
+  assert.doesNotMatch(packageJson, /@supabase/);
+  assert.doesNotMatch(runtimeFiles, /supabase/i);
+});
+
+test("collector streams private media without browser caching or Blob URL exposure", () => {
+  const route = readFileSync(new URL("../app/api/staff-photo/collector/media/[id]/route.ts", import.meta.url), "utf8");
+  assert.match(route, /getStaffMedia/);
+  assert.match(route, /"cache-control": "private, no-store"/);
+  assert.match(route, /"x-content-type-options": "nosniff"/);
+  assert.doesNotMatch(route, /\\.url/);
 });

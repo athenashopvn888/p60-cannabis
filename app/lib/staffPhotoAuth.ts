@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { staffDb } from "./staffPhotoDb";
+import { readStaffState } from "./staffPhotoStore";
 import { pinWindow } from "./staffPhotoPin";
 import { signStaffSession, validateStaffSession } from "./staffPhotoSessionToken";
 
@@ -30,9 +30,8 @@ export function verifySessionToken(token: string, expectedVersion: number, now =
 export async function hasStaffSession() {
   const token = (await cookies()).get(COOKIE_NAME)?.value || "";
   try {
-    const { data, error } = await staffDb().from("staff_photo_settings").select("pin_version").eq("id", true).single();
-    if (error || !data) return false;
-    return verifySessionToken(token, data.pin_version);
+    const state = await readStaffState();
+    return verifySessionToken(token, state.pinVersion);
   } catch { return false; }
 }
 

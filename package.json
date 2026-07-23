@@ -11,7 +11,7 @@
     "test:staff-photo": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/staff-photo.test.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.4",
+    "@vercel/blob": "^2.6.1",
     "next": "16.2.6",
     "papaparse": "^5.5.3",
     "react": "19.2.4",

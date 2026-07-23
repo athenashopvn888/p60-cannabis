@@ -1,5 +1,5 @@
 import { hasStaffSession, isSameOrigin } from "@/app/lib/staffPhotoAuth";
-import { publicError, STAFF_BUCKET, staffDb } from "@/app/lib/staffPhotoDb";
+import { deleteStaffMedia, mutateStaffState, publicError, uploadStaffMedia } from "@/app/lib/staffPhotoStore";
 import { expiryFor, operationalDayKey, SHOT_PROMPTS, torontoWeekKey } from "@/app/lib/staffPhotoCore";
 import { inspectImage } from "@/app/lib/staffPhotoUpload";
 
@@ -14,26 +14,34 @@ export async function POST(request: Request) {
     if (!SHOT_PROMPTS.some((prompt) => prompt.key === promptKey)) return Response.json({ ok: false, error: "Choose a valid shot type." }, { status: 400 });
     const image = await inspectImage(form.get("photo"), "daily");
     if ("error" in image) return Response.json({ ok: false, error: image.error }, { status: 400 });
-    const db = staffDb();
     const dayKey = operationalDayKey();
     const weekKey = torontoWeekKey();
-    const { data: today, error: todayError } = await db.from("staff_photo_submissions").select("slot,prompt_key").eq("day_key", dayKey).in("status", ["pending", "retrieved", "posted"]).order("slot");
-    if (todayError) throw todayError;
-    if ((today?.length || 0) >= 2) return Response.json({ ok: false, error: "Today already has two photos." }, { status: 409 });
-    const { data: used, error: usedError } = await db.from("staff_photo_submissions").select("id").eq("week_key", weekKey).eq("prompt_key", promptKey).in("status", ["pending", "retrieved", "posted"]).limit(1);
-    if (usedError) throw usedError;
-    if (used?.length) return Response.json({ ok: false, error: "That shot type was already used this week." }, { status: 409 });
-    const slot = (today?.length || 0) + 1;
-    const { error: uploadError } = await db.storage.from(STAFF_BUCKET).upload(image.objectPath, image.bytes, { contentType: image.mime, upsert: false, cacheControl: "0" });
-    if (uploadError) throw uploadError;
-    const { error: insertError } = await db.from("staff_photo_submissions").insert({
-      id: image.id, day_key: dayKey, week_key: weekKey, slot, prompt_key: promptKey,
-      object_path: image.objectPath, original_name: image.originalName, mime_type: image.mime,
-      byte_size: image.size, status: "pending", expires_at: expiryFor().toISOString(),
-    });
-    if (insertError) {
-      await db.storage.from(STAFF_BUCKET).remove([image.objectPath]);
-      throw insertError;
+    const objectPath = await uploadStaffMedia(image.objectPath, image.bytes, image.mime);
+    let slot = 0;
+    try {
+      slot = await mutateStaffState((state) => {
+        const activeStates = new Set(["pending", "retrieved", "posted"]);
+        const today = state.submissions.filter((row) => row.day_key === dayKey && activeStates.has(row.status));
+        if (today.length >= 2) throw new Error("daily-limit");
+        const promptUsed = state.submissions.some((row) =>
+          row.week_key === weekKey && row.prompt_key === promptKey && activeStates.has(row.status)
+        );
+        if (promptUsed) throw new Error("prompt-used");
+        const nextSlot = today.some((row) => row.slot === 1) ? 2 : 1;
+        const now = new Date().toISOString();
+        state.submissions.push({
+          id: image.id, day_key: dayKey, week_key: weekKey, slot: nextSlot, prompt_key: promptKey,
+          object_path: objectPath, original_name: image.originalName, mime_type: image.mime,
+          byte_size: image.size, status: "pending", created_at: now, expires_at: expiryFor().toISOString(),
+          retrieved_at: null, posted_at: null, validation_note: null,
+        });
+        return nextSlot;
+      });
+    } catch (error) {
+      await deleteStaffMedia(objectPath).catch(() => undefined);
+      if (error instanceof Error && error.message === "daily-limit") return Response.json({ ok: false, error: "Today already has two photos." }, { status: 409 });
+      if (error instanceof Error && error.message === "prompt-used") return Response.json({ ok: false, error: "That shot type was already used this week." }, { status: 409 });
+      throw error;
     }
     return Response.json({ ok: true, slot });
   } catch (error) { return publicError(error); }

@@ -4,7 +4,7 @@ export const STORE_CODE = "PNY01";
 export const STORE_NAME = "P60 Cannabis";
 export const MAX_DAILY_PHOTOS = 2;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const PHOTO_TTL_MS = 24 * 60 * 60 * 1000;
+export const MEDIA_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const LOGIN_WINDOW_MINUTES = 15;
 export const MAX_LOGIN_ATTEMPTS = 6;
 export function loginAllowed(recentAttempts: number) { return recentAttempts < MAX_LOGIN_ATTEMPTS; }
@@ -107,8 +107,9 @@ export function torontoWeekKey(date = new Date()) {
   return `week-${utcDate.toISOString().slice(0, 10)}`;
 }
 
-export function expiryFor(createdAt = new Date()) {
-  return new Date(createdAt.getTime() + PHOTO_TTL_MS);
+export function expiryFor(createdAt = new Date(), boundaryHour = 6) {
+  const operationalDayEnd = operationalDayContext(createdAt, boundaryHour).validUntil;
+  return new Date(operationalDayEnd.getTime() + MEDIA_RETRY_WINDOW_MS);
 }
 
 export function availablePrompts(usedKeys: readonly string[]) {
