@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/staff-photo/maintenance/cleanup?window=edt",
+      "schedule": "15 10 * * *"
+    },
+    {
+      "path": "/api/staff-photo/maintenance/cleanup?window=est",
+      "schedule": "15 11 * * *"
+    }
+  ]
+}
