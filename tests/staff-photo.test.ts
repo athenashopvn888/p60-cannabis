@@ -13,6 +13,11 @@ import {
 } from "../app/lib/staffPhotoCore.ts";
 import { dailyPin, verifyDailyPin } from "../app/lib/staffPhotoPin.ts";
 import { signStaffSession, validateStaffSession } from "../app/lib/staffPhotoSessionToken.ts";
+import {
+  SIGNED_MEDIA_MAX_AGE_SECONDS,
+  createSignedStaffMediaUrl,
+  verifyStaffMediaSignature,
+} from "../app/lib/staffPhotoSignedMedia.ts";
 
 const secret = "test-secret-that-is-at-least-thirty-two-characters-long";
 
@@ -125,6 +130,72 @@ test("rate limit blocks the seventh failed attempt in a 15 minute window", () =>
   assert.equal(loginAllowed(6), false);
 });
 
+test("enhanced-media responses use a five-minute signed public-media URL", () => {
+  const id = "123e4567-e89b-12d3-a456-426614174000";
+  const nowSeconds = 1_785_000_000;
+  const signed = createSignedStaffMediaUrl({
+    origin: "https://example.com",
+    id,
+    secret,
+    nowSeconds,
+  });
+  const url = new URL(signed.url);
+  assert.equal(url.pathname, `/api/staff-photo/collector/public-media/${id}`);
+  assert.equal(url.searchParams.get("exp"), String(nowSeconds + 300));
+  assert.equal(
+    verifyStaffMediaSignature({
+      id,
+      exp: url.searchParams.get("exp") || "",
+      signature: url.searchParams.get("sig") || "",
+      secret,
+      nowSeconds,
+    }),
+    true,
+  );
+  assert.throws(
+    () =>
+      createSignedStaffMediaUrl({
+        origin: "https://example.com",
+        id,
+        secret,
+        nowSeconds,
+        maxAgeSeconds: SIGNED_MEDIA_MAX_AGE_SECONDS + 1,
+      }),
+    /Invalid signed media lifetime/,
+  );
+});
+
+test("public media route streams signed original or enhanced private media", () => {
+  const route = readFileSync(
+    new URL("../app/api/staff-photo/collector/public-media/[id]/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /verifyStaffMediaSignature/);
+  assert.match(route, /PNY_STAFF_RETRIEVAL_TOKEN/);
+  assert.match(route, /state\.enhancedMedia\.find/);
+  assert.match(route, /getStaffMedia/);
+  assert.match(route, /"content-type": mimeType/);
+  assert.match(route, /"cache-control": "private, no-store"/);
+  assert.match(route, /"x-robots-tag": "noindex, nofollow, noarchive"/);
+  assert.doesNotMatch(route, /mutateStaffState|status\s*=/);
+});
+
+test("collector enhanced upload is bearer-authenticated, private, and source-bound", () => {
+  const route = readFileSync(
+    new URL("../app/api/staff-photo/collector/enhanced/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /verifyBearer\(request, process\.env\.PNY_STAFF_RETRIEVAL_TOKEN\)/);
+  assert.match(route, /inspectImage\(form\.get\("photo"\), "enhanced"\)/);
+  assert.match(route, /uploadStaffMedia/);
+  assert.match(route, /source_submission_id: sourceSubmissionId/);
+  assert.match(route, /sha256/);
+  assert.match(route, /createSignedStaffMediaUrl/);
+  assert.match(route, /Math\.min\(5 \* 60, remainingSeconds\)/);
+  assert.match(route, /"cache-control": "no-store"/);
+  assert.doesNotMatch(route, /NEXT_PUBLIC_|BLOB_READ_WRITE_TOKEN/);
+});
+
 test("client source does not contain server secret names or PIN formula", () => {
   const client = readFileSync(new URL("../app/staff-photo/StaffPhotoApp.tsx", import.meta.url), "utf8");
   assert.equal(client.includes("PNY_STAFF_"), false);
@@ -143,6 +214,7 @@ test("deployment cleanup is scheduled and keeps separate cron authorization", ()
   assert.match(route, /process\.env\.CRON_SECRET/);
   assert.match(route, /export async function POST/);
   assert.match(route, /PNY_STAFF_CLEANUP_TOKEN/);
+  assert.match(route, /expiredEnhanced/);
 });
 
 test("private Vercel Blob state uses fresh reads and optimistic concurrency", () => {
@@ -151,8 +223,25 @@ test("private Vercel Blob state uses fresh reads and optimistic concurrency", ()
   assert.match(store, /access: "private"/);
   assert.match(store, /useCache: false/);
   assert.match(store, /BlobPreconditionFailedError/);
-  assert.match(store, /ifMatch: etag/);
+  assert.match(store, /ifMatch: current\.etag/);
+  assert.match(store, /head\(STAFF_STATE_PATH\)/);
+  assert.match(store, /normalizeBlobEtag\(current\.etag\) !== normalizeBlobEtag\(etag\)/);
+  assert.match(store, /waitForMutationRetry\(attempt\)/);
   assert.doesNotMatch(store, /NEXT_PUBLIC_/);
+});
+
+test("state mutation retries use bounded exponential backoff with jitter", async () => {
+  const { mutationRetryDelay, normalizeBlobEtag } = await import(
+    "../app/lib/staffPhotoMutation.ts"
+  );
+  assert.equal(mutationRetryDelay(0, 0), 35);
+  assert.equal(mutationRetryDelay(1, 0), 70);
+  assert.equal(mutationRetryDelay(20, 1), 1_250);
+  assert.equal(mutationRetryDelay(-1, -1), 35);
+  assert.equal(normalizeBlobEtag("abc123"), "abc123");
+  assert.equal(normalizeBlobEtag('"abc123"'), "abc123");
+  assert.equal(normalizeBlobEtag('W/"abc123"'), "abc123");
+  assert.throws(() => normalizeBlobEtag("  "), /ETag is missing/);
 });
 
 test("staff-photo runtime and package have no Supabase dependency", () => {
@@ -170,6 +259,7 @@ test("staff-photo runtime and package have no Supabase dependency", () => {
     "../app/api/staff-photo/collector/ack/route.ts",
     "../app/api/staff-photo/collector/credentials/route.ts",
     "../app/api/staff-photo/collector/credentials/rotate/route.ts",
+    "../app/api/staff-photo/collector/enhanced/route.ts",
     "../app/api/staff-photo/maintenance/cleanup/route.ts",
   ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
   assert.match(packageJson, /"@vercel\/blob"/);

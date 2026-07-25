@@ -9,13 +9,16 @@ async function runCleanup() {
     const now = Date.now();
     const expiredSubmissions = snapshot.submissions.filter((row) => row.object_path && Date.parse(row.expires_at) <= now);
     const expiredIssues = snapshot.issues.filter((row) => row.attachment_path && row.attachment_expires_at && Date.parse(row.attachment_expires_at) <= now);
+    const expiredEnhanced = snapshot.enhancedMedia.filter((row) => Date.parse(row.expires_at) <= now);
     const paths = [
       ...expiredSubmissions.map((row) => row.object_path),
       ...expiredIssues.map((row) => row.attachment_path),
+      ...expiredEnhanced.map((row) => row.object_path),
     ].filter((path): path is string => Boolean(path));
     if (paths.length) await deleteStaffMedia(paths);
     const submissionIds = new Set(expiredSubmissions.map((row) => row.id));
     const issueIds = new Set(expiredIssues.map((row) => row.id));
+    const enhancedIds = new Set(expiredEnhanced.map((row) => row.id));
     await mutateStaffState((state) => {
       for (const row of state.submissions) {
         if (submissionIds.has(row.id)) {
@@ -26,9 +29,10 @@ async function runCleanup() {
       for (const row of state.issues) {
         if (issueIds.has(row.id)) row.attachment_path = null;
       }
+      state.enhancedMedia = state.enhancedMedia.filter((row) => !enhancedIds.has(row.id));
       state.loginAttempts = state.loginAttempts.filter((attempt) => Date.parse(attempt.created_at) >= now - 24 * 60 * 60_000);
     });
-    return Response.json({ ok: true, removedObjects: paths.length, expiredSubmissions: submissionIds.size, expiredIssueAttachments: issueIds.size });
+    return Response.json({ ok: true, removedObjects: paths.length, expiredSubmissions: submissionIds.size, expiredIssueAttachments: issueIds.size, expiredEnhancedMedia: enhancedIds.size });
   } catch (error) { return publicError(error); }
 }
 

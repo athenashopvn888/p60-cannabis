@@ -136,7 +136,7 @@ export function mimeMatchesKind(mime: string, kind: ImageKind | null) {
   return (mime === "image/jpeg" && kind === "jpeg") || (mime === "image/png" && kind === "png") || (mime === "image/webp" && kind === "webp");
 }
 
-export function safeObjectPath(kind: ImageKind, purpose: "daily" | "issue", id: string, date = new Date()) {
+export function safeObjectPath(kind: ImageKind, purpose: "daily" | "issue" | "enhanced", id: string, date = new Date()) {
   const extension = kind === "jpeg" ? "jpg" : kind;
   return `${purpose}/${torontoDayKey(date)}/${id}.${extension}`;
 }
