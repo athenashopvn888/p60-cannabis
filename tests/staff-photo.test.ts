@@ -203,6 +203,14 @@ test("client source does not contain server secret names or PIN formula", () => 
   assert.equal(client.includes("DAILY_PIN_SECRET"), false);
 });
 
+test("staff login retains the submitted form across async authentication", () => {
+  const client = readFileSync(new URL("../app/staff-photo/StaffPhotoApp.tsx", import.meta.url), "utf8");
+  const loginSource = client.slice(client.indexOf("async function login"), client.indexOf("async function choosePhoto"));
+  assert.match(loginSource, /const form = event\.currentTarget;\s*const pin = String\(new FormData\(form\)/);
+  assert.match(loginSource, /await apiJson\("\/api\/staff-photo\/auth"[\s\S]*?form\.reset\(\)/);
+  assert.doesNotMatch(loginSource, /await apiJson\("\/api\/staff-photo\/auth"[\s\S]*?event\.currentTarget\.reset\(\)/);
+});
+
 test("deployment cleanup is scheduled and keeps separate cron authorization", () => {
   const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
   assert.deepEqual(config.crons, [

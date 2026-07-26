@@ -90,10 +90,11 @@ export default function StaffPhotoApp({ previewMode = null }: { previewMode?: "l
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
     if (isPreview) { setAuthenticated(true); setStatus(previewStatus()); setBusy(false); return; }
-    const pin = String(new FormData(event.currentTarget).get("pin") || "");
+    const form = event.currentTarget;
+    const pin = String(new FormData(form).get("pin") || "");
     try {
       await apiJson("/api/staff-photo/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pin }) });
-      event.currentTarget.reset(); await loadStatus();
+      form.reset(); await loadStatus();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not sign in."); }
     finally { setBusy(false); }
   }
