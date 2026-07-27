@@ -1,0 +1,1059 @@
+{
+  "source": "Farmers Link Google Sheet (FLOWERS_RAW + FlowersFlags_POS)",
+  "importedAt": "2026-07-27T17:04:22.276995Z",
+  "store": {
+    "id": "P60",
+    "code": "PNY01",
+    "name": "P60 Cannabis",
+    "pod": "POD01"
+  },
+  "status": "production",
+  "products": [
+    {
+      "sourceProductId": 207,
+      "sku": "207",
+      "name": "GOD GREEN CRACK",
+      "category": "Indica Hybrid",
+      "thc": "27%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/207_GOD_GREEN_CRACK_showcase_600x600.webp"
+    },
+    {
+      "sourceProductId": 209,
+      "sku": "209",
+      "name": "SUPER LEMON HAZE",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 50
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/209_super_lemon_haze_showcase_600x600.webp"
+    },
+    {
+      "sourceProductId": 261,
+      "sku": "261",
+      "name": "DAYDREAM DIESEL",
+      "category": "Sativa Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/261-DAYDREAM-DIESEL-99140.jpg"
+    },
+    {
+      "sourceProductId": 269,
+      "sku": "269",
+      "name": "OREO COOKIES",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99149-OREO-COOKIES.webp"
+    },
+    {
+      "sourceProductId": 271,
+      "sku": "271",
+      "name": "DANTE INFERNO",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 40
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99146-271-DANTE-INFERNO.webp"
+    },
+    {
+      "sourceProductId": 275,
+      "sku": "275",
+      "name": "SUGAR COOKIES",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99244-275-SUGAR-COOKIES.webp"
+    },
+    {
+      "sourceProductId": 278,
+      "sku": "278",
+      "name": "SLURRICANE",
+      "category": "Indica Hybrid",
+      "thc": "27%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/278-SLURRICANE.webp"
+    },
+    {
+      "sourceProductId": 288,
+      "sku": "288",
+      "name": "FROSTED COOKIES",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99243-288-FROSTED-COOKIES.webp"
+    },
+    {
+      "sourceProductId": 290,
+      "sku": "290",
+      "name": "SWEET KUSH",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99263-290-SWEET-KUSH.webp"
+    },
+    {
+      "sourceProductId": 291,
+      "sku": "291",
+      "name": "DIAMOND OG",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/291-DIAMOND-KUSH.webp"
+    },
+    {
+      "sourceProductId": 292,
+      "sku": "292",
+      "name": "QUANTUM KUSH",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/292-QUANTUM-KUSH.webp"
+    },
+    {
+      "sourceProductId": 293,
+      "sku": "293",
+      "name": "VANILLA ICE KUSH",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "priceOptions": [
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 20
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/293-VANILLA-ICE-KUSH.webp"
+    },
+    {
+      "sourceProductId": 339,
+      "sku": "339",
+      "name": "PURPLE PUNCH",
+      "category": "Indica Hybrid",
+      "thc": "30%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99296-PURPLE-PUNCH-339.webp"
+    },
+    {
+      "sourceProductId": 340,
+      "sku": "340",
+      "name": "FROZEN GRAPES",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99298-FROZEN-GRAPES-340.webp"
+    },
+    {
+      "sourceProductId": 341,
+      "sku": "341",
+      "name": "MENDO KUSH",
+      "category": "Indica Hybrid",
+      "thc": "30%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99299-MENDO-KUSH-341.webp"
+    },
+    {
+      "sourceProductId": 343,
+      "sku": "343",
+      "name": "PINK HOLY GRAIL",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/343_PINK_HOLY_GRAIL.webp"
+    },
+    {
+      "sourceProductId": 344,
+      "sku": "344",
+      "name": "WHITE TRUFFLE",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/344_WHITE_TRUFFLE.webp"
+    },
+    {
+      "sourceProductId": 345,
+      "sku": "345",
+      "name": "BLACK MAMBA",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/345_BLACK_MAMBA.webp"
+    },
+    {
+      "sourceProductId": 346,
+      "sku": "346",
+      "name": "FORBIDDEN FRUITS",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/346_FORBIDDEN_FRUITS.webp"
+    },
+    {
+      "sourceProductId": 347,
+      "sku": "347",
+      "name": "PINK JEFE",
+      "category": "Indica Hybrid",
+      "thc": "30%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/347PINKJEFE.webp"
+    },
+    {
+      "sourceProductId": 348,
+      "sku": "348",
+      "name": "PINK SKYWALKER",
+      "category": "Indica Hybrid",
+      "thc": "30%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/348PINKSKYWALKER.webp"
+    },
+    {
+      "sourceProductId": 393,
+      "sku": "393",
+      "name": "PINK KUSH",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 20
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 30
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 70
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/393-PINK-KUSH-99212.webp"
+    },
+    {
+      "sourceProductId": 415,
+      "sku": "415",
+      "name": "DEATH VALLEY",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99254-415-DEATH-VALLEY.webp"
+    },
+    {
+      "sourceProductId": 416,
+      "sku": "416",
+      "name": "PINK DEATH",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99266-415-PINK-DEATH.webp"
+    },
+    {
+      "sourceProductId": 473,
+      "sku": "473",
+      "name": "GMO COOKIES",
+      "category": "Indica Hybrid",
+      "thc": "33%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/473-GMO-COOKIES.jpg"
+    },
+    {
+      "sourceProductId": 475,
+      "sku": "475",
+      "name": "SUPER MARIO KUSH",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99225-475-SUPER-MARIO-KUSH.webp"
+    },
+    {
+      "sourceProductId": 480,
+      "sku": "480",
+      "name": "LEMON CHERRY GELATO",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/480-Lemon-Cherry-Gelato.webp"
+    },
+    {
+      "sourceProductId": 481,
+      "sku": "481",
+      "name": "PINK PANTIES",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99235-481-PINK-PANTIES.webp"
+    },
+    {
+      "sourceProductId": 482,
+      "sku": "482",
+      "name": "MENDO BREATHE",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99238-482-MENDO-BREATHE.webp"
+    },
+    {
+      "sourceProductId": 483,
+      "sku": "483",
+      "name": "PINK KOSHER",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99239-483-PINK-KOSHER.webp"
+    },
+    {
+      "sourceProductId": 484,
+      "sku": "484",
+      "name": "PINK CHAPO",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99246-484-PINK-CHAPO.webp"
+    },
+    {
+      "sourceProductId": 490,
+      "sku": "490",
+      "name": "PINK JOKER",
+      "category": "Indica Hybrid",
+      "thc": "33%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99255-490-PINK-JOKER.webp"
+    },
+    {
+      "sourceProductId": 492,
+      "sku": "492",
+      "name": "PLATINUM TUNA",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/492-PLATINUM-TUNA.webp"
+    },
+    {
+      "sourceProductId": 493,
+      "sku": "493",
+      "name": "O PINK",
+      "category": "Indica Hybrid",
+      "thc": "33%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/493-O-PINK.webp"
+    },
+    {
+      "sourceProductId": 494,
+      "sku": "494",
+      "name": "PINK ATOMIC BOMB",
+      "category": "Indica Hybrid",
+      "thc": "33%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/494-PINK-ATOMIC-BOMB.webp"
+    },
+    {
+      "sourceProductId": 504,
+      "sku": "504",
+      "name": "PINK BELLAGIO",
+      "category": "Indica Hybrid",
+      "thc": "36%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99205-504PINK-BELLAGIO.webp"
+    },
+    {
+      "sourceProductId": 507,
+      "sku": "507",
+      "name": "PINK DEATHSTAR",
+      "category": "Indica Hybrid",
+      "thc": "36%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99216-507PINK-DEATHSTAR.webp"
+    },
+    {
+      "sourceProductId": 513,
+      "sku": "513",
+      "name": "PINK TOMFORD",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 140
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99240-513-PINK-TOMFORD.webp"
+    },
+    {
+      "sourceProductId": 514,
+      "sku": "514",
+      "name": "PINK PERMANENT MARKER",
+      "category": "Indica Hybrid",
+      "thc": "35%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 140
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/544-PINK-PERMANENT-MARKER.webp"
+    },
+    {
+      "sourceProductId": 538,
+      "sku": "538",
+      "name": "PINK TUNA",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/538-PINK-TUNA-99137N.jpg"
+    },
+    {
+      "sourceProductId": 539,
+      "sku": "539",
+      "name": "PEANUT BUTTER ROCKSTAR",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99258-539-PEANUT-BUTTER-ROCKSTAR.webp"
+    },
+    {
+      "sourceProductId": 540,
+      "sku": "540",
+      "name": "PINK ICKY STICKY",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99260-540-PINK-ICKY-STICKY.webp"
+    },
+    {
+      "sourceProductId": 543,
+      "sku": "543",
+      "name": "PINK SUPREME",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99257-543-PINK-SUPREME.webp"
+    },
+    {
+      "sourceProductId": 550,
+      "sku": "550",
+      "name": "PINK STARKILLER",
+      "category": "Indica Hybrid",
+      "thc": "35%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/550-PINK-STARKILLER.webp"
+    },
+    {
+      "sourceProductId": 560,
+      "sku": "560",
+      "name": "ASTRO PINK",
+      "category": "Indica Hybrid",
+      "thc": "36%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/560ASTROPINK.webp"
+    },
+    {
+      "sourceProductId": 561,
+      "sku": "561",
+      "name": "RED CONGOLESE",
+      "category": "Sativa Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30,
+          "regularPrice": 40
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/561-RED-CONGOLESE.webp"
+    },
+    {
+      "sourceProductId": 562,
+      "sku": "562",
+      "name": "DONNIE BURGER",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99234-562-DONNIE-BURGER.webp"
+    },
+    {
+      "sourceProductId": 593,
+      "sku": "593",
+      "name": "MIKE TYSON KO *SUPER EXOTICS*",
+      "category": "Indica Hybrid",
+      "thc": "39%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 140
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/593-MIKE-TYSON-KO-99138.jpg"
+    },
+    {
+      "sourceProductId": 594,
+      "sku": "594",
+      "name": "PINEAPPLE EXPRESS",
+      "category": "Sativa Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/594-PINEAPPLE-EXPRESS2.webp"
+    },
+    {
+      "sourceProductId": 595,
+      "sku": "595",
+      "name": "PURPLE SPACE QUEEN",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30,
+          "regularPrice": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45,
+          "regularPrice": 60
+        },
+        {
+          "key": "half_oz",
+          "label": "14g",
+          "price": 95,
+          "regularPrice": 140
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99224-595-PURPLE-SPACE-QUEEN.webp"
+    },
+    {
+      "sourceProductId": 596,
+      "sku": "596",
+      "name": "PINK GOOEY FROST",
+      "category": "Indica Hybrid",
+      "thc": "39%",
+      "priceOptions": [
+        {
+          "key": "three_grams",
+          "label": "3g",
+          "price": 30,
+          "regularPrice": 40
+        },
+        {
+          "key": "five_grams",
+          "label": "5g",
+          "price": 45,
+          "regularPrice": 60
+        }
+      ],
+      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/596-PINK-GOEY-FROST2.webp"
+    }
+  ]
+}
