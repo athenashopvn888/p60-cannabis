@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import menu from "./delivery-menu.json";
 import ProductDetailsDrawer from "./ProductDetailsDrawer";
@@ -98,7 +99,7 @@ export default function Catalog() {
   return (
     <div className="pny-original-shell">
       <header className="store-header pny-store-header">
-        <div className="header-main"><a className="brand-lockup" href="#top"><span className="brand-mark">P60</span><span><strong>P60 Cannabis</strong><small>York delivery menu</small></span></a><nav className="desktop-nav"><a href="#menu">Menu</a><a href="#delivery-steps">How to order</a></nav><div className="header-actions"><a className="pny-search-jump" href="#menu">Search</a></div></div>
+        <div className="header-main"><Link className="brand-lockup" href="/" aria-label="P60 Cannabis home"><span className="brand-mark">P60</span><span><strong>P60 Cannabis</strong><small>York delivery menu</small></span></Link><nav className="desktop-nav"><a href="#menu">Menu</a><a href="#delivery-steps">How to order</a></nav><div className="header-actions"><a className="pny-search-jump" href="#menu">Search</a></div></div>
         <div className="category-strip pny-category-strip" aria-label="Flower tier filters">{tierFilters.map((item) => <button type="button" key={item} className={activeTier === item ? "active" : ""} onClick={() => setActiveTier(item)}>{item === "ALL" ? "ALL" : item.toUpperCase()}</button>)}</div>
       </header>
 
@@ -135,7 +136,7 @@ export default function Catalog() {
             })}</div>
           </section>
         </section>
-        <section className="pny-delivery-steps" id="delivery-steps" aria-labelledby="delivery-steps-title">
+        <section className="pny-delivery-steps" id="delivery-steps" tabIndex={-1} aria-labelledby="delivery-steps-title">
           <p className="eyebrow">HOW TO ORDER</p>
           <h2 id="delivery-steps-title">Web Chat connects you with the P60 dispatcher.</h2>
           <ol><li>Browse the menu and note the product names and weights.</li><li>Open Web Chat and send the dispatcher your choices.</li><li>New customers complete private selfie-with-ID verification in Web Chat.</li><li>The dispatcher confirms availability, delivery details, and next steps.</li></ol>

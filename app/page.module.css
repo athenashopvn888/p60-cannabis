@@ -122,9 +122,10 @@
 }
 
 .deliveryHeroMedia {
+  display: block;
   position: relative;
   order: -1;
-  aspect-ratio: 1491 / 1055;
+  aspect-ratio: 1774 / 887;
   min-height: 0;
   max-height: 860px;
   overflow: hidden;
@@ -132,6 +133,11 @@
   border: 1px solid rgba(190, 242, 100, 0.32);
   background: #030803;
   box-shadow: 0 26px 90px rgba(0, 0, 0, 0.58), 0 0 50px rgba(132, 204, 22, 0.16);
+}
+
+.deliveryHeroMedia:focus-visible {
+  outline: 3px solid #bef264;
+  outline-offset: 4px;
 }
 
 .deliveryHeroMedia::after {

@@ -44,6 +44,7 @@ export default function Footer() {
             <h3 className={styles.colTitle}>Quick Links</h3>
             <nav className={styles.links}>
               <Link href="/">Home</Link>
+              <Link href="/delivery">Delivery Menu</Link>
               <Link href="/exotic">Exotic Flower</Link>
               <Link href="/premium">Premium Flower</Link>
               <Link href="/aaa">AAA+ Flower</Link>

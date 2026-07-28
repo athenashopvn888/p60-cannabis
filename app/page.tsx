@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import styles from "./page.module.css";
 import Navbar from "./components/Navbar";
@@ -103,7 +104,7 @@ export default function HomePage() {
   const [reviewsStats, setReviewsStats] = useState<ReviewStats | null>(null);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [welcomeBannerError, setWelcomeBannerError] = useState(false);
-  const welcomeBannerSrc: string = "/banners/homepage_hero.webp";
+  const welcomeBannerSrc: string = "/p60-home-delivery-banner.webp";
   const hasWelcomeBanner = welcomeBannerSrc && welcomeBannerSrc !== "/banners/" && !welcomeBannerSrc.includes("HERO_BANNER") && !welcomeBannerSrc.includes("WELCOME_BANNER") && welcomeBannerSrc !== "";
 
   /* ── 1. Fetch Client-Side Google Reviews ── */
@@ -233,14 +234,22 @@ export default function HomePage() {
             </div>
 
             {hasWelcomeBanner && !welcomeBannerError && (
-              <div className={styles.deliveryHeroMedia}>
-                <img
+              <Link
+                href="/delivery"
+                className={styles.deliveryHeroMedia}
+                aria-label="Open the P60 Cannabis delivery menu"
+              >
+                <Image
                   src={welcomeBannerSrc}
                   alt="P60 Cannabis delivery banner"
+                  width={1774}
+                  height={887}
+                  priority
+                  sizes="(max-width: 1024px) calc(100vw - 28px), 58vw"
                   className={styles.deliveryHeroImg}
                   onError={() => setWelcomeBannerError(true)}
                 />
-              </div>
+              </Link>
             )}
           </div>
 
