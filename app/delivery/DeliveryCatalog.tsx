@@ -5,9 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import menu from "./delivery-menu.json";
 
 type Option = { key: string; label: string; price: number; regularPrice?: number };
-type PrimeOffer = { kind: "prime_time"; title: string; price: number; weight: string; bonus: string; label: string };
+type MemberOffer = { kind: "prime_time"; title: string; price: number; weight: string; bonus: string; label: string };
 type MultiOunceOffer = { kind: "multi_ounce"; quantity: number; unitWeight: "28g"; perUnitPrice?: number; totalPrice: number; label: string };
-type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; offers: (PrimeOffer | MultiOunceOffer)[]; image: string | null };
+type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; offers: (MemberOffer | MultiOunceOffer)[]; image: string | null };
 type Tier = "SHREDS" | "Budget" | "BC Premium" | "CRAFTS" | "Exotics";
 type TierFilter = "ALL" | Tier;
 const bundledProducts = menu.products as Product[];
@@ -88,7 +88,25 @@ export default function Catalog() {
       <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
 
       <main className="delivery-page" id="top">
-        <section className="store-hero pny-cinematic-hero"><Image src="/pny-original/p60-delivery-banner.jpg" alt="P60 Cannabis York delivery menu" fill priority sizes="100vw" /><div className="store-hero-copy"><p>P60 Cannabis Delivery</p><h1>York delivery menu.</h1><span>Browse the current flower selection, then use Web Chat to contact the dispatcher.</span></div></section>
+        <section className="store-hero pny-cinematic-hero"><Image src="/p60-delivery-menu-banner.webp" alt="P60 Cannabis delivery banner" width={1774} height={887} priority sizes="(max-width: 1500px) 100vw, 1444px" /></section>
+
+        <section className="member-loyalty" aria-labelledby="member-loyalty-title">
+          <div className="member-loyalty-heading">
+            <p className="eyebrow">SAVE ON A LATER ORDER</p>
+            <h2 id="member-loyalty-title">Member Loyalty Savings</h2>
+            <p>Qualify with an eligible regular-price 28g purchase in BC Premium, Crafts, or Exotics, or with a selected 2 × 28g tier offer. Rewards and coupons apply to a later order—not the qualifying purchase.</p>
+          </div>
+          <ol className="member-loyalty-steps">
+            <li><span>1</span><div><strong>Qualify</strong><p>Purchase an eligible regular-price ounce or selected two-ounce tier offer.</p></div></li>
+            <li><span>2</span><div><strong>Return</strong><p>On your next visit, receive $30 off an eligible regular-price 28g item in the selected tier.</p></div></li>
+            <li><span>3</span><div><strong>Use your coupon later</strong><p>A 3g Craft coupon requires a qualifying spend of $120 or more and is redeemed on your next order.</p></div></li>
+            <li><span>4</span><div><strong>Keep access active</strong><p>Make a purchase of $50 or more within 14 days, or requalify with a full-price purchase.</p></div></li>
+          </ol>
+          <div className="member-loyalty-conditions">
+            <strong>Important conditions</strong>
+            <p>Complimentary items apply only to regular-price Craft or Exotic ounces—not BC Premium. Loyalty prices are firm and cannot be reduced with points. Loyalty-price orders do not include extra complimentary items. Dispatcher confirms current eligibility and any included item before checkout.</p>
+          </div>
+        </section>
 
         <section className="service-strip pny-eight-tile-strip" aria-label="P60 delivery menu features">{features.map(([image, label]) => <article key={label}><Image src={`/pny-original/${image}`} alt="" width={180} height={180} /><strong>{label}</strong></article>)}</section>
 
@@ -96,7 +114,7 @@ export default function Catalog() {
           <section className="menu-main pny-menu-main"><div className="menu-tools"><div><p className="eyebrow">P60 FLOWER MENU</p><h2>{activeTier === "ALL" ? "Flowers" : activeTier}</h2></div><label className="menu-search"><span>Search</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product, SKU, strain" /></label></div><p className="result-summary">{filtered.length} flower products.</p>
             <div className="product-grid pny-tile-grid">{filtered.map((product) => {
               const productTier = tier(product);
-              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 50vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><strong className="all-weight-label">Available weights</strong><div className="price-matrix card-matrix">{product.priceOptions.map((option) => <div key={option.key} className="matrix-pill"><span>{option.label}</span>{option.regularPrice && <del>${option.regularPrice}</del>}<strong>${option.price}</strong></div>)}</div>{product.offers.length > 0 && <div className="product-offers">{product.offers.map((offer, index) => offer.kind === "prime_time" ? <div className="prime-offer" key={`${offer.kind}-${index}`}><strong>{offer.title}</strong><span>{offer.label}</span></div> : <div className="bundle-offer" key={`${offer.kind}-${offer.quantity}`}><strong>Bundle special</strong><span>{offer.label}</span></div>)}</div>}</div></article>;
+              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 50vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><strong className="all-weight-label">Standard prices</strong><div className="price-matrix card-matrix">{product.priceOptions.map((option) => <div key={option.key} className="matrix-pill"><span>{option.label}</span>{option.regularPrice && <del>${option.regularPrice}</del>}<strong>${option.price}</strong></div>)}</div>{product.offers.length > 0 && <div className="product-offers">{product.offers.map((offer, index) => offer.kind === "prime_time" ? <div className="member-offer" key={`${offer.kind}-${index}`}><strong>Member Loyalty</strong><span>${offer.price} / {offer.weight} · {offer.bonus} for your next order</span></div> : <div className="bundle-offer" key={`${offer.kind}-${offer.quantity}`}><strong>Multi-ounce total</strong><span>{offer.label}</span></div>)}</div>}</div></article>;
             })}</div>
           </section>
         </section>

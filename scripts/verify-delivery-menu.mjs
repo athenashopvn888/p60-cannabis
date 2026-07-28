@@ -2,17 +2,26 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { validateMenu } from "./farmerslink-menu.mjs";
 
-const path = new URL("../app/delivery/delivery-menu.json", import.meta.url);
-const menu = JSON.parse(await readFile(path, "utf8"));
+const menu = JSON.parse(await readFile(new URL("../app/delivery/delivery-menu.json", import.meta.url), "utf8"));
 const component = await readFile(new URL("../app/delivery/DeliveryCatalog.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../app/delivery/delivery.css", import.meta.url), "utf8");
+const banner = await readFile(new URL("../public/p60-delivery-menu-banner.webp", import.meta.url));
 const products = menu.products;
 
-assert.equal(menu.store.id, "P60");
-assert.equal(menu.store.code, "PNY01");
-assert.equal(menu.store.pod, "POD01");
+assert.deepEqual([menu.store.id, menu.store.code, menu.store.pod], ["P60", "PNY01", "POD01"]);
 assert.equal(menu.source, "Farmers Link public live catalog");
 assert.equal(products.length, 63);
 assert(component.includes("milestone-1-demo.vercel.app/api/catalog?store=P60"));
+assert(component.includes('src="/p60-delivery-menu-banner.webp"'));
+assert(component.includes("width={1774}") && component.includes("height={887}"));
+assert(component.includes("Member Loyalty Savings"));
+assert(component.includes("Rewards and coupons apply to a later order"));
+assert(component.includes("<strong>Member Loyalty</strong>"));
+assert(!component.includes("<strong>{offer.title}</strong>"));
+assert(css.includes(".member-offer") && css.includes("#0b3a63"));
+assert(css.includes("object-fit:contain"));
+assert(css.includes("@media(max-width:560px)"));
+assert(banner.length < 2277385);
 validateMenu(menu);
 
 const tierCounts = Object.fromEntries(["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"].map((name) => [
@@ -33,4 +42,10 @@ assert.deepEqual(budget184.offers.map((offer) => offer.label), ["2 × 28g — $9
 const shred106 = products.find((product) => product.sku === "106");
 assert.equal(shred106.offers[0].label, "3 × 28g — $95 total");
 
-console.log(`Verified ${products.length} live-source P60 delivery products`, tierCounts);
+for (const product of products) {
+  for (const offer of product.offers.filter((item) => item.kind === "multi_ounce")) {
+    assert.match(offer.label, /^\d+ × 28g(?: at \$\d+ each)? — \$\d+ total$/);
+  }
+}
+
+console.log(`Verified ${products.length} P60 products, store banner, loyalty UI, and offer semantics`, tierCounts);
