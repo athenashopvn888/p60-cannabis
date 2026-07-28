@@ -1,8 +1,4 @@
 {
-  "source": "Farmers Link public live catalog",
-  "sourceUrl": "https://farmerslink.ca/",
-  "importedAt": "2026-07-28T06:16:25.622Z",
-  "catalogScope": "Global public Farmers Link catalog; no PNY01 store dimension is exposed by the public page.",
   "store": {
     "id": "P60",
     "code": "PNY01",
@@ -12,12 +8,23 @@
   "status": "production",
   "products": [
     {
-      "sourceProductId": 7513672,
-      "sku": "563",
+      "publicProductId": "prd_gIviOUKpB9JAeXdgWn",
       "name": "PURPLE SKUNK(EXOTIC)",
+      "tier": "Exotics",
       "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
       "thc": "36%",
-      "tier": "Exotics",
+      "effects": [
+        "Energy",
+        "Happy",
+        "Cerebral",
+        "Euphoria",
+        "Sociable"
+      ],
+      "description": "Loud Terps + Relaxed Euphoria PURPLE SKUNK delivers a bold mix of sweet berry notes, earthy funk, and that classic skunky kick on the finish. Expect a smooth euphoric head change followed by a mellow body calm that makes it easy to settle in and enjoy the moment. Great for evening sessions, laid-back hangs, or whenever you want something flavorful, relaxing, and full of character.",
+      "images": [
+        "/delivery-products/563-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -52,17 +59,20 @@
           "totalPrice": 320,
           "label": "2 × 28g at $160 each — $320 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/563-purple-skunk.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-el-camino/"
+      ]
     },
     {
-      "sourceProductId": 7517669,
-      "sku": "540",
+      "publicProductId": "prd_-emcI6K9OhDgih88WK",
       "name": "PINK STICKY ICKY (EXOTIC)",
+      "tier": "Exotics",
       "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
       "thc": "38%",
-      "tier": "Exotics",
+      "effects": [],
+      "description": null,
+      "images": [
+        "/delivery-products/540-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -97,17 +107,25 @@
           "totalPrice": 320,
           "label": "2 × 28g at $160 each — $320 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99260-540-PINK-ICKY-STICKY-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/540pink-sticky-icky-exotic/"
+      ]
     },
     {
-      "sourceProductId": 7516607,
-      "sku": "550",
+      "publicProductId": "prd_5nnj_nwhi3lcrBOBFa",
       "name": "PINK STARKILLER (EXOTIC)",
-      "category": "Indica Hybrid",
-      "thc": "39%",
       "tier": "Exotics",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "39%",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Sleepy",
+        "Relaxed"
+      ],
+      "description": "Candy Gas + Heavy Exotic Punch PINK STARKILLER brings a bold sweet pink aroma , rich gassy notes , and a powerful exotic finish that lands smooth but heavy. Expect a strong euphoric head change followed by a deep relaxing body melt that makes this one perfect for late-night sessions, stress relief, and anyone chasing that strong exotic smoke with a clean, heavy punch.",
+      "images": [
+        "/delivery-products/550-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -142,17 +160,26 @@
           "totalPrice": 320,
           "label": "2 × 28g at $160 each — $320 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2025/02/550-PINK-STARKILLER-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-starkiller/"
+      ]
     },
     {
-      "sourceProductId": 7516336,
-      "sku": "546",
+      "publicProductId": "prd_NOzGVi4tkFVaFqqZT_",
       "name": "24K GOLD(EXOTIC)",
-      "category": "Indica Hybrid",
-      "thc": "36%",
       "tier": "Exotics",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "36%",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Sleepy",
+        "Relaxed",
+        "Calm"
+      ],
+      "description": "Golden Exotic Flavor + Smooth Heavy Finish 24K GOLD is a smooth exotic pick with a rich, sweet profile, light citrus notes, and a clean gassy finish. Expect a happy head lift that slowly settles into a relaxing body calm — great for evening sessions, laid-back vibes, or winding down with something smooth and satisfying.",
+      "images": [
+        "/delivery-products/546-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -187,17 +214,24 @@
           "totalPrice": 380,
           "label": "2 × 28g at $190 each — $380 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/546-24K-Gold-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/24k-gold/"
+      ]
     },
     {
-      "sourceProductId": 7515377,
-      "sku": "513",
+      "publicProductId": "prd_rpcaXX7gly38Hn-nDS",
       "name": "PINK TOMFORD (EXOTIC)",
-      "category": "Indica Hybrid",
-      "thc": "38%",
       "tier": "Exotics",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "38%",
+      "effects": [
+        "Body High",
+        "Drowsiness",
+        "Relaxed"
+      ],
+      "description": "Sweet Gas + Heavy Exotic Vibes PINK TOMFORD is a heavy-hitting exotic known for its sweet floral aroma , rich gassy kush notes , and a smooth finish with a subtle earthy punch. Expect a potent head change followed by a deep body relaxation that settles in nicely without losing that premium exotic feel. Perfect for winding down, evening sessions, laid-back vibes, or anytime you want that strong, flavorful smoke with serious bag appeal.",
+      "images": [
+        "/delivery-products/513-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -232,17 +266,25 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/99240-513-PINK-TOMFORD-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-tomford/"
+      ]
     },
     {
-      "sourceProductId": 7515801,
-      "sku": "593",
+      "publicProductId": "prd_7GexeXZzMZ-VIxiNdl",
       "name": "MIKE TYSON KO * LIMITED STOCK * (EXOTIC)",
-      "category": "Indica",
-      "thc": "39%",
       "tier": "Exotics",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "39%",
+      "effects": [
+        "Couch-Locked",
+        "Sleepy",
+        "Drowsiness",
+        "Calm"
+      ],
+      "description": "Knockout Power + Heavy Relax MIKE TYSON KO is a heavy-hitting, premium pick built for serious wind-down. Expect a strong body melt with a calm, quiet headspace — perfect for evenings, stress relief, and shutting things off after a long day. Bold, gassy, and potent — this one lives up to the name.",
+      "images": [
+        "/delivery-products/593-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -277,17 +319,23 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/09/593-MIKE-TYSON-KO-99138-600x600.jpg",
-      "sourceUrl": "https://farmerslink.ca/product/mike-tyson-ko-super-exotics/"
+      ]
     },
     {
-      "sourceProductId": 7517643,
-      "sku": "539",
+      "publicProductId": "prd_x1i_bRUbktOFvaW0Yj",
       "name": "PEANUT BUTTER ROCKSTAR (EXOTIC)",
+      "tier": "Exotics",
       "category": "IH",
+      "strain": "IH",
       "thc": "38%",
-      "tier": "Exotics",
+      "effects": [
+        "Body High",
+        "Sociable"
+      ],
+      "description": "Creamy Nutty Gas + Heavy Relaxation PEANUT BUTTER ROCKSTAR brings a rich nutty earthy profile with creamy notes, smooth smoke, and a strong gassy kush finish . Expect a euphoric head change up front that settles into a deep body-heavy calm , making it a strong choice for evening sessions, stress relief, or full-on unwind mode. If you like strains that feel flavorful, potent, and heavy-hitting — this one delivers.",
+      "images": [
+        "/delivery-products/539-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -322,17 +370,22 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99258-539-PEANUT-BUTTER-ROCKSTAR-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/539peanut-butter-rockstar-exotic/"
+      ]
     },
     {
-      "sourceProductId": 7517611,
-      "sku": "542",
+      "publicProductId": "prd_XuFyiePBg8x8NkYHaj",
       "name": "PINK VELVET (EXOTIC)",
-      "category": "Indica Hybrid",
-      "thc": "38%",
       "tier": "Exotics",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "38%",
+      "effects": [
+        "Sociable"
+      ],
+      "description": "Tropical Terps + Energetic Lift PINK VELVET is a crowd-favorite with a sweet tropical pineapple aroma, citrusy notes, and a light gassy finish . Expect a happy, uplifting head buzz with a smooth body ease that keeps the vibe balanced — great for daytime sessions, social hangouts, creative focus, or anytime you want a clean, feel-good lift without feeling too heavy.",
+      "images": [
+        "/delivery-products/542-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -367,17 +420,26 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/505-542PINK-VELVET-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-velvet/"
+      ]
     },
     {
-      "sourceProductId": 7514943,
-      "sku": "551",
+      "publicProductId": "prd_Svw_VaiKZ07mAxitms",
       "name": "DEVIL DRIVER (EXOTIC)",
+      "tier": "Exotics",
       "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
       "thc": "38%",
-      "tier": "Exotics",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Sleepy",
+        "Drowsiness",
+        "Calm"
+      ],
+      "description": "Heavy Exotic Flavor + Smooth Power DEVIL DRIVER brings a bold exotic profile with sweet gas, deep earthy notes, and a smooth heavy finish. Expect a strong, flavorful smoke with a lifted head change that eases into a relaxed body calm. Great for night sessions, heavy chill mode, or anyone looking for a loud super exotic with real presence.",
+      "images": [
+        "/delivery-products/551-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -412,17 +474,24 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/02/551_DEVIL_DRIVER_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/devil-driver/"
+      ]
     },
     {
-      "sourceProductId": 7515448,
-      "sku": "516",
+      "publicProductId": "prd_cxEilBE8NrWy4m6ZM6",
       "name": "BUBBA STAR (EXOTIC)",
+      "tier": "Exotics",
       "category": "Indica",
+      "strain": "Indica",
       "thc": "37%",
-      "tier": "Exotics",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Relaxed"
+      ],
+      "description": "Heavy Bubba Gas + Smooth Exotic Finish BUBBA STAR brings a heavy exotic profile with deep Bubba gas , earthy notes, and a smooth, rich finish. Expect a strong relaxing body feel with a calm, mellow head buzz — great for evening sessions, deep relaxation, or anyone looking for a potent, smooth-burning, and heavy-hitting exotic smoke .",
+      "images": [
+        "/delivery-products/516-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -457,17 +526,24 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/516-BUBBA-STAR-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/bubba-star/"
+      ]
     },
     {
-      "sourceProductId": 7517711,
-      "sku": "515",
+      "publicProductId": "prd_lGGiyV4FVjECbzWyb2",
       "name": "PURE MICHIGAN (EXOTIC)",
-      "category": "Indica",
-      "thc": "38%",
       "tier": "Exotics",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "38%",
+      "effects": [
+        "Couch-Locked",
+        "Sleepy",
+        "Drowsiness"
+      ],
+      "description": "Loud Exotic Gas + Heavy Smooth Finish PINK PERMANENT MARKER brings a loud exotic profile with pink gas , smooth earthy notes, and a bold marker-style funk. Expect a strong, relaxing body feel with a mellow head lift — great for evening sessions, deep relaxation, or winding down after a long day.",
+      "images": [
+        "/delivery-products/515-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -502,17 +578,24 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/545-PURE-MICHIGAN-1-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pure-michigan/"
+      ]
     },
     {
-      "sourceProductId": 7517709,
-      "sku": "514",
+      "publicProductId": "prd_5Xu_J5KWxKcr3MKoAn",
       "name": "PINK PERMANENT MARKER (EXOTIC)",
-      "category": "Indica",
-      "thc": "39%",
       "tier": "Exotics",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "39%",
+      "effects": [
+        "Couch-Locked",
+        "Sleepy",
+        "Drowsiness"
+      ],
+      "description": "Loud Exotic Gas + Heavy Smooth Finish PINK PERMANENT MARKER brings a loud exotic profile with pink gas , smooth earthy notes, and a bold marker-style funk. Expect a strong, relaxing body feel with a mellow head lift — great for evening sessions, deep relaxation, or winding down after a long day.",
+      "images": [
+        "/delivery-products/514-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -547,17 +630,25 @@
           "totalPrice": 410,
           "label": "2 × 28g at $205 each — $410 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/544-PINK-PERMANENT-MARKER-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-permanent-marker/"
+      ]
     },
     {
-      "sourceProductId": 7517948,
-      "sku": "571",
+      "publicProductId": "prd_ZPbWOyeyslk1TN9WLf",
       "name": "PINK FENDI FIRE (EXOTIC)",
+      "tier": "Exotics",
       "category": "Indica",
+      "strain": "Indica",
       "thc": "38%",
-      "tier": "Exotics",
+      "effects": [
+        "Couch-Locked",
+        "Sleepy",
+        "Drowsiness",
+        "Euphoria"
+      ],
+      "description": "Designer Pink Gas + Loud Exotic Fire PINK FENDI FIRE brings that premium pink-style smoke with sweet gas, creamy earth, and a loud exotic finish. Expect a smooth flavorful pull with a strong head change that settles into a relaxed body calm. Great for night sessions, heavy chill mode, or anyone looking for a designer-level exotic with bold flavour and strong presence.",
+      "images": [
+        "/delivery-products/571-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -592,17 +683,23 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/571-PINK-FENDI-FIRE.webp",
-      "sourceUrl": "https://farmerslink.ca/product/571pink-fendi-fire-exotic/"
+      ]
     },
     {
-      "sourceProductId": 7517937,
-      "sku": "572",
+      "publicProductId": "prd_YjjNmDepOotyvNbLHY",
       "name": "TEQUILA SUNRISE (EXOTIC)",
-      "category": "Sativa Hybrid",
-      "thc": "38%",
       "tier": "Exotics",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "38%",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "Bright Citrus Gas + Uplifting Sativa Energy TEQUILA SUNRISE brings a bright sativa-style profile with sweet citrus, tropical fruit notes, and a smooth gassy finish. Expect an uplifting head change with a clean, energetic feel that keeps the mood light and the flavour loud. Great for daytime sessions, social vibes, creative flow, or anyone looking for a flavorful exotic sativa with a bright finish.",
+      "images": [
+        "/delivery-products/572-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_7g",
@@ -637,17 +734,23 @@
           "totalPrice": 400,
           "label": "2 × 28g at $200 each — $400 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/572-TEQUILA-SUNRISE-S-1.webp",
-      "sourceUrl": "https://farmerslink.ca/product/tequila-sunrise/"
+      ]
     },
     {
-      "sourceProductId": 7517949,
-      "sku": "423",
+      "publicProductId": "prd_3NLXJVDzrZ-wwXrUdD",
       "name": "PINK DIAMONDS (SALE)(CRAFT)",
-      "category": "Indica Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Body High",
+        "Drowsiness"
+      ],
+      "description": "Premium Pink Gas Pressure (Craft) PINK DIAMOND delivers a smooth craft-style smoke with classic pink gas, sweet floral notes, and a rich kushy finish. Expect a strong head change followed by a deep relaxing body calm that settles in nicely for laid-back sessions. This one is a great pick for evening smoke, chill nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you enjoy pink-style strains with a premium diamond finish — this one shines.",
+      "images": [
+        "/delivery-products/423-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -677,17 +780,26 @@
           "totalPrice": 214,
           "label": "2 × 28g at $107 each — $214 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/423-PINK-DIAMOND-SALE-1.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-diamond/"
+      ]
     },
     {
-      "sourceProductId": 7515698,
-      "sku": "408",
+      "publicProductId": "prd_MMKMzfKDIhbsleZFG4",
       "name": "PINK ESCOBAR (CRAFT)",
-      "category": "Indica Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Happy",
+        "Euphoria",
+        "Sociable",
+        "Uplifting",
+        "Relaxed"
+      ],
+      "description": "Premium Pink Gas Pressure (Craft) PINK ESCOBAR delivers a smooth craft-style smoke with classic pink gas, light floral sweetness, and a rich kushy finish. Expect a strong head change followed by a calm, heavy body feel that settles in nicely for laid-back sessions. This one is a great pick for evening smoke, relaxing nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you enjoy pink-style strains with heavy kush pressure — this one checks all the boxes.",
+      "images": [
+        "/delivery-products/408-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -717,17 +829,24 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/408_PINK_ESCOBAR_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-escobar-4/"
+      ]
     },
     {
-      "sourceProductId": 7518004,
-      "sku": "426",
+      "publicProductId": "prd_hEtyWhgJ1GEf2hH5Nj",
       "name": "PINK CADILAC (CRAFT)",
-      "category": "Indica Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Euphoria",
+        "Sociable",
+        "Relaxed"
+      ],
+      "description": "Smooth Pink Gas Ride (Craft) PINK CADILAC brings a smooth craft-style smoke with classic pink gas, light floral sweetness, and a rich kushy finish. Expect a strong head change followed by a calm, heavy body feel that settles in nicely for laid-back sessions. This one is a great pick for evening smoke, relaxing nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you enjoy pink-style strains with heavy kush pressure and a smooth luxury finish — this one rides clean.",
+      "images": [
+        "/delivery-products/426-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -757,17 +876,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/426-pink-cadillac-showcase-600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-cadilac/"
+      ]
     },
     {
-      "sourceProductId": 7517578,
-      "sku": "424",
+      "publicProductId": "prd_OCwfXxETc-OVpiUdkX",
       "name": "CRACK PINK (CRAFT)",
-      "category": "Indica Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Powerful Pink Gas Pressure (Craft) CRACK PINK brings a bold craft-style smoke with classic pink gas, sweet kush notes, and a smooth heavy finish. Expect a strong head change followed by a deep relaxing body calm that settles in nicely for laid-back sessions. This one is a great pick for evening smoke, chill nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you enjoy pink-style strains with strong kush pressure and heavy relaxing vibes — this one delivers.",
+      "images": [
+        "/delivery-products/424-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -797,17 +922,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/424-CRACK-PINK.webp",
-      "sourceUrl": "https://farmerslink.ca/product/crack-pink/"
+      ]
     },
     {
-      "sourceProductId": 7517964,
-      "sku": "425",
+      "publicProductId": "prd_s40mdg0J73-yl1U5wp",
       "name": "COSMIC COOKIES (CRAFT)",
-      "category": "Indica Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Cosmic Cookie Gas (Craft) COSMIC COOKIES brings a smooth craft-style smoke with sweet cookie notes, light creaminess, and a rich kushy finish. Expect a strong head change with a relaxing body feel that settles in nicely without losing that tasty dessert-style flavour. This one is a great pick for evening sessions, chill nights, or anyone looking for something flavourful, smooth, and satisfyingly relaxing . If you enjoy cookie-style strains with a gassy craft finish — this one is out of this world.",
+      "images": [
+        "/delivery-products/425-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -837,17 +968,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/425-COSMIC-COOKIES.webp",
-      "sourceUrl": "https://farmerslink.ca/product/cosmic-cookies/"
+      ]
     },
     {
-      "sourceProductId": 7517568,
-      "sku": "409",
+      "publicProductId": "prd_e6O3aptQpAMcJAsF7l",
       "name": "PINK ROYAL (CRAFT)",
-      "category": "Indica",
-      "thc": "33%",
       "tier": "CRAFTS",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "33%",
+      "effects": [
+        "Body High",
+        "Drowsiness"
+      ],
+      "description": "Royal Pink Gas (Craft) PINK ROYAL delivers a smooth craft-style smoke with classic pink gas, light floral sweetness, and a rich kushy finish. Expect a strong relaxing head change followed by a calm body feel that settles in nicely without losing that premium flavour. This one is a great pick for evening sessions, laid-back nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you like pink-style strains with a clean royal finish — this one checks all the boxes.",
+      "images": [
+        "/delivery-products/409-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_3g",
@@ -882,17 +1019,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/close_up_product_style_macro_photograph_illustrati_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-chapo/"
+      ]
     },
     {
-      "sourceProductId": 7517813,
-      "sku": "410",
+      "publicProductId": "prd_ZhX583f1TaBFmZ-JZS",
       "name": "PINEAPPLE HAZE (CRAFT)",
-      "category": "Sativa Hybrid",
-      "thc": "31%",
       "tier": "CRAFTS",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "31%",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "Tropical Haze Energy (Craft) PINEAPPLE HAZE brings a bright tropical profile with sweet pineapple notes, light citrus, and a smooth hazy finish. Expect an uplifting head change with a clean, energetic feel that keeps the vibe positive and easygoing. This one is a great pick for daytime sessions, social smoke, creative flow, or anyone looking for something flavourful, smooth, and refreshing . If you enjoy fruity strains with a lively haze kick — this one hits the spot.",
+      "images": [
+        "/delivery-products/410-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_3g",
@@ -927,17 +1070,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/10/410-PineappleHaze-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pineapple-haze/"
+      ]
     },
     {
-      "sourceProductId": 7517801,
-      "sku": "417",
+      "publicProductId": "prd_hIrUFhi_dGgilQNAQY",
       "name": "DEATH STAR BUBBA (CRAFT)",
-      "category": "Indica",
-      "thc": "33%",
       "tier": "CRAFTS",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "33%",
+      "effects": [
+        "Body High",
+        "Drowsiness"
+      ],
+      "description": "Heavy Kush Pressure (Craft) DEATH STAR BUBBA brings a bold craft-style profile with deep kush notes, smooth earthy gas, and a heavy relaxing finish. Expect a strong body-heavy feel with a calm, spacey head change that settles in nicely after each session. This one is made for evening use, chill nights, or anyone looking for something potent, smooth, and satisfyingly heavy . If you enjoy strains with rich kush flavour and strong relaxing vibes — this one delivers.",
+      "images": [
+        "/delivery-products/417-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_3g",
@@ -972,17 +1121,26 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/417-DEATH-STAR-BUBBA-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/417-death-star-bubba/"
+      ]
     },
     {
-      "sourceProductId": 7515163,
-      "sku": "493",
+      "publicProductId": "prd_jAoI8-PiXY11hRRaZa",
       "name": "O PINK (CRAFT)",
-      "category": "Indica",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "32%",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Uplifting",
+        "Relaxed",
+        "Calm"
+      ],
+      "description": "Smooth Pink Kush Power (Craft) O PINK brings classic Pink Kush style with a smooth, gassy finish and a relaxing body-heavy vibe. Expect a calm, mellow lift followed by a deep body chill that makes it great for evening wind-down, movie nights, or relaxing after a long day. If you like strains that feel smooth, potent, and satisfying — this one hits the spot.",
+      "images": [
+        "/delivery-products/493-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1012,17 +1170,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/03/493-O-PINK-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/o-pink/"
+      ]
     },
     {
-      "sourceProductId": 7515363,
-      "sku": "420",
+      "publicProductId": "prd_rpJnB6G1OFI8RnRB7h",
       "name": "CHOCOLATE CHIP COOKIES (CRAFT)",
-      "category": "Sativa Hybrid",
-      "thc": "33%",
       "tier": "CRAFTS",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "33%",
+      "effects": [
+        "Energy",
+        "Uplifting"
+      ],
+      "description": "Sweet Cookie Lift (Craft Sativa) CHOCOLATE CHIP COOKIES brings a sweet craft-style profile with cookie dough notes, light chocolate sweetness, and a smooth creamy finish. Expect an uplifting head change with a positive, easygoing feel that keeps the vibe bright without feeling too heavy. This one is a great pick for daytime sessions, social smoke, creative flow, or anyone looking for something flavourful, smooth, and lightly energizing . If you like sweet cookie-style strains with a sativa kick — this one is a tasty choice.",
+      "images": [
+        "/delivery-products/420-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_3g",
@@ -1057,17 +1221,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/420-CHOCOLATE-CHIP-COOKIES-S.webp",
-      "sourceUrl": "https://farmerslink.ca/product/chocolate-chip-cookies/"
+      ]
     },
     {
-      "sourceProductId": 7515524,
-      "sku": "495",
+      "publicProductId": "prd_QLqy7alAcFt3fn2tgp",
       "name": "KING LOUIS XIII (CRAFT)",
+      "tier": "CRAFTS",
       "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
       "thc": "31%",
-      "tier": "CRAFTS",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Classic Heavy Gas + Royal Craft Relaxation KING LOUIS XIII brings a bold classic gas-forward profile with rich earthy notes, smooth smoke, and a heavy craft-style finish. Expect a deep relaxing body buzz with a calm, laid-back head feel that makes it perfect for evening sessions, winding down, or anyone looking for a potent, smooth-burning, and heavy-hitting craft smoke with that royal old-school gas vibe.",
+      "images": [
+        "/delivery-products/495-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1097,17 +1267,25 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/495-KING-LOUIS-XIII-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/king-louie-xiii/"
+      ]
     },
     {
-      "sourceProductId": 7515699,
-      "sku": "421",
+      "publicProductId": "prd_Tm7QhGVFRKBNvLLHkc",
       "name": "PINK DEATH GUCCI (CRAFT)",
+      "tier": "CRAFTS",
       "category": "Indica",
+      "strain": "Indica",
       "thc": "33%",
-      "tier": "CRAFTS",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Drowsiness",
+        "Relaxed"
+      ],
+      "description": "Designer Pink Gas Pressure (Craft) PINK GUCCI DEATH brings a bold craft-style smoke with classic pink gas, rich kush notes, and a smooth heavy finish. Expect a strong head change followed by a deep relaxing body calm that settles in with serious nighttime vibes. This one is a great pick for evening sessions, laid-back nights, or anyone looking for something potent, smooth, and satisfyingly gassy . If you enjoy pink-style strains with designer kush flavour and heavy relaxing pressure — this one delivers.",
+      "images": [
+        "/delivery-products/421-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1137,17 +1315,23 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/421-PINK-GUCCI-DEATH.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-death-gucci/"
+      ]
     },
     {
-      "sourceProductId": 7516617,
-      "sku": "411",
+      "publicProductId": "prd_ODMMMJomcKg469dh4c",
       "name": "SUPER SILVER HAZE (CRAFT)",
-      "category": "Sativa Hybrid",
-      "thc": "32%",
       "tier": "CRAFTS",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "32%",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "Bright Haze Energy (Craft) SUPER SILVER HAZE brings a clean craft-style haze profile with bright citrus, light spice, and a smooth herbal finish. Expect an uplifting head change with a clear, energetic feel that keeps the vibe lively and focused. This one is a great pick for daytime sessions, creative flow, social smoke, or anyone looking for something flavourful, smooth, and refreshing . If you enjoy classic haze strains with a bright energetic kick — this one delivers.",
+      "images": [
+        "/delivery-products/411-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1177,17 +1361,25 @@
           "totalPrice": 280,
           "label": "2 × 28g at $140 each — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/411-SUPER-SILVER-HAZE.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-joker/"
+      ]
     },
     {
-      "sourceProductId": 7516329,
-      "sku": "399",
+      "publicProductId": "prd_i9glrmYmXcCA_ONxpO",
       "name": "SUPER LEMON HAZE",
-      "category": "Sativa",
-      "thc": "28%",
       "tier": "BC Premium",
+      "category": "Sativa",
+      "strain": "Sativa",
+      "thc": "28%",
+      "effects": [
+        "Energy",
+        "Happy",
+        "Sociable",
+        "Uplifting"
+      ],
+      "description": "Bright Lemon Haze Profile SUPER LEMON HAZE delivers a smooth premium-style profile with bright citrus notes, sweet lemon zest, and a clean uplifting finish. The effect comes in balanced and easygoing, giving a light mental lift with a smooth relaxed body feel. Great for daytime sessions, casual hangs, or staying lifted without going too heavy.",
+      "images": [
+        "/delivery-products/399-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1217,17 +1409,24 @@
           "totalPrice": 164,
           "label": "2 × 28g at $82 each — $164 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/12/399_super_lemon_haze_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/super-lemon-haze/"
+      ]
     },
     {
-      "sourceProductId": 7516241,
-      "sku": "339",
+      "publicProductId": "prd_2hez1TBAO6trvqE-QJ",
       "name": "PURPLE PUNCH",
-      "category": "Indica Hybrid",
-      "thc": "30%",
       "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "30%",
+      "effects": [
+        "Happy",
+        "Euphoria",
+        "Sociable"
+      ],
+      "description": "Sweet Relaxing Punch PURPLE PUNCH is known for its sweet grape-style aroma, dessert-like smoothness, and relaxing indica-style finish. Expect a mellow body calm with a happy, laid-back vibe that makes it a solid choice for evening sessions,",
+      "images": [
+        "/delivery-products/339-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1257,17 +1456,24 @@
           "totalPrice": 180,
           "label": "2 × 28g at $90 each — $180 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/11/99296-PURPLE-PUNCH-339.webp",
-      "sourceUrl": "https://farmerslink.ca/product/purple-punch-2/"
+      ]
     },
     {
-      "sourceProductId": 7517022,
-      "sku": "362",
+      "publicProductId": "prd_TMJq_1sKql9olBMm_D",
       "name": "SPICY PINK",
-      "category": "IH",
-      "thc": "30%",
       "tier": "BC Premium",
+      "category": "IH",
+      "strain": "IH",
+      "thc": "30%",
+      "effects": [
+        "Happy",
+        "Creative",
+        "Drowsiness"
+      ],
+      "description": "Smooth Spicy Pink Profile SPICY PINK delivers a smooth premium-style profile with sweet pink notes, a light spicy kick, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/362-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1297,17 +1503,23 @@
           "totalPrice": 194,
           "label": "2 × 28g at $97 each — $194 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2025/07/362-SPICY-PINK.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-skywalker/"
+      ]
     },
     {
-      "sourceProductId": 7516036,
-      "sku": "357",
+      "publicProductId": "prd_oL-y6T3X7tuHZ9LL-j",
       "name": "EL CHAPO",
-      "category": "Indica Hybrid",
-      "thc": "31%",
       "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "31%",
+      "effects": [
+        "Energy",
+        "Body High"
+      ],
+      "description": "Bold Premium Profile EL CHAPO delivers a smooth premium-style profile with bold earthy notes, light sweetness, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/357-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1337,17 +1549,24 @@
           "totalPrice": 204,
           "label": "2 × 28g at $102 each — $204 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/357-EL-CHAPO.webp",
-      "sourceUrl": "https://farmerslink.ca/product/el-chapo/"
+      ]
     },
     {
-      "sourceProductId": 7517782,
-      "sku": "360",
+      "publicProductId": "prd_kDacyncCXCO1eD2O4g",
       "name": "JACK HERRER",
-      "category": "Sativa",
-      "thc": "31%",
       "tier": "BC Premium",
+      "category": "Sativa",
+      "strain": "Sativa",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Bold Mamba Smoothness BLACK MAMBA brings a bold premium-style profile with smooth sweetness, light gas, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/360-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1377,17 +1596,24 @@
           "totalPrice": 204,
           "label": "2 × 28g at $102 each — $204 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/360-JACK-HERER.webp",
-      "sourceUrl": "https://farmerslink.ca/product/jack-herrer/"
+      ]
     },
     {
-      "sourceProductId": 7517974,
-      "sku": "361",
+      "publicProductId": "prd_NC4eX9tit60JZ3olMR",
       "name": "COASTAL PINK (BC PREMIUM)",
-      "category": "Indica Hybrid",
-      "thc": "31%",
       "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Smooth Coastal Pink Profile COASTAL PINK delivers a smooth premium-style profile with sweet pink notes, earthy depth, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/361-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1417,17 +1643,25 @@
           "totalPrice": 204,
           "label": "2 × 28g at $102 each — $204 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/361-COASTAL-PINK.webp",
-      "sourceUrl": "https://farmerslink.ca/product/361-coastal-pink-copy/"
+      ]
     },
     {
-      "sourceProductId": 7516750,
-      "sku": "371",
+      "publicProductId": "prd_BbFl16rirg479V7Yo-",
       "name": "PURPLE GRAPES",
+      "tier": "BC Premium",
       "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
       "thc": "31%",
-      "tier": "BC Premium",
+      "effects": [
+        "Energy",
+        "Happy",
+        "Euphoria",
+        "Sociable"
+      ],
+      "description": "Sweet Purple Grape Profile PURPLE GRAPES delivers a smooth premium-style profile with sweet grape notes, fruity depth, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/371-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1457,17 +1691,24 @@
           "totalPrice": 204,
           "label": "2 × 28g at $102 each — $204 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/371-PURPLE-GRAPES-S.webp",
-      "sourceUrl": "https://farmerslink.ca/product/purple-grapes/"
+      ]
     },
     {
-      "sourceProductId": 7517960,
-      "sku": "373",
+      "publicProductId": "prd_rZXMFTErFZnnK5sy5l",
       "name": "CANDY KRUSH",
-      "category": "Sativa",
-      "thc": "31%",
       "tier": "BC Premium",
+      "category": "Sativa",
+      "strain": "Sativa",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Sweet Candy Profile CANDY KRUSH delivers a smooth premium-style profile with sweet candy notes, fruity depth, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/373-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1497,17 +1738,25 @@
           "totalPrice": 204,
           "label": "2 × 28g at $102 each — $204 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/373-CANDY-KRUSH-S.webp",
-      "sourceUrl": "https://farmerslink.ca/product/candy-krush/"
+      ]
     },
     {
-      "sourceProductId": 7518003,
-      "sku": "301",
+      "publicProductId": "prd_EhV5vt2Ng6_f5Y0mPA",
       "name": "MKU (BC PREMIUM)",
-      "category": "Indica",
-      "thc": "31%",
       "tier": "BC Premium",
+      "category": "Indica",
+      "strain": "Indica",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Euphoria",
+        "Sociable",
+        "Calm"
+      ],
+      "description": "Smooth Premium Profile MKU delivers a smooth premium-style profile with earthy notes, light sweetness, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/301-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1537,17 +1786,25 @@
           "totalPrice": 214,
           "label": "2 × 28g at $107 each — $214 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/301-mku-showcase-600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/301-mku/"
+      ]
     },
     {
-      "sourceProductId": 7517973,
-      "sku": "372",
+      "publicProductId": "prd_tUTAwb-X77jjjthEwR",
       "name": "PINK TORNADO(BC PREMIUM)",
+      "tier": "BC Premium",
       "category": "Indica",
+      "strain": "Indica",
       "thc": "31%",
-      "tier": "BC Premium",
+      "effects": [
+        "Happy",
+        "Euphoria",
+        "Sociable",
+        "Calm"
+      ],
+      "description": "Deep Bubba Profile DEATH BUBBA delivers a bold premium-style profile with heavy gas, earthy pine notes, and a smooth kush finish. The effects settle in deeply with a calming body feel and a quiet, relaxed state of mind.",
+      "images": [
+        "/delivery-products/372-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_14g",
@@ -1577,255 +1834,312 @@
           "totalPrice": 214,
           "label": "2 × 28g at $107 each — $214 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/372-PINK-TORNADO.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-tornado/"
+      ]
     },
     {
-      "sourceProductId": 7516285,
-      "sku": "344",
+      "publicProductId": "prd_c9p45VciZD8_O84SzM",
       "name": "WHITE TRUFFLE",
-      "category": "Indica Hybrid",
-      "thc": "31%",
       "tier": "BC Premium",
-      "priceOptions": [
-        {
-          "key": "weight_14g",
-          "label": "14g",
-          "price": 70
-        },
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 137
-        }
-      ],
-      "offers": [
-        {
-          "kind": "prime_time",
-          "title": "PRIME TIME",
-          "price": 107,
-          "weight": "28g",
-          "bonus": "3g CRAFT COUPON",
-          "label": "$107/28g + 3g CRAFT COUPON"
-        },
-        {
-          "kind": "multi_ounce",
-          "quantity": 2,
-          "unitWeight": "28g",
-          "perUnitPrice": 107,
-          "totalPrice": 214,
-          "label": "2 × 28g at $107 each — $214 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/05/344_WHITE_TRUFFLE.webp",
-      "sourceUrl": "https://farmerslink.ca/product/white-truffle/"
-    },
-    {
-      "sourceProductId": 7517799,
-      "sku": "348",
-      "name": "PINK SKYWALKER",
       "category": "Indica Hybrid",
-      "thc": "31%",
-      "tier": "BC Premium",
-      "priceOptions": [
-        {
-          "key": "weight_14g",
-          "label": "14g",
-          "price": 70
-        },
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 137
-        }
-      ],
-      "offers": [
-        {
-          "kind": "prime_time",
-          "title": "PRIME TIME",
-          "price": 107,
-          "weight": "28g",
-          "bonus": "3g CRAFT COUPON",
-          "label": "$107/28g + 3g CRAFT COUPON"
-        },
-        {
-          "kind": "multi_ounce",
-          "quantity": 2,
-          "unitWeight": "28g",
-          "perUnitPrice": 107,
-          "totalPrice": 214,
-          "label": "2 × 28g at $107 each — $214 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/348-PINK-SKYWALKER-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/348-pink-skywalker/"
-    },
-    {
-      "sourceProductId": 7516242,
-      "sku": "368",
-      "name": "PINK GUCCI",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "tier": "BC Premium",
-      "priceOptions": [
-        {
-          "key": "weight_14g",
-          "label": "14g",
-          "price": 70
-        },
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 137
-        }
-      ],
-      "offers": [
-        {
-          "kind": "prime_time",
-          "title": "PRIME TIME",
-          "price": 107,
-          "weight": "28g",
-          "bonus": "3g CRAFT COUPON",
-          "label": "$107/28g + 3g CRAFT COUPON"
-        },
-        {
-          "kind": "multi_ounce",
-          "quantity": 2,
-          "unitWeight": "28g",
-          "perUnitPrice": 107,
-          "totalPrice": 214,
-          "label": "2 × 28g at $107 each — $214 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/11/368-PINK-GUCCI-1-600x600.png",
-      "sourceUrl": "https://farmerslink.ca/product/pink-gucci/"
-    },
-    {
-      "sourceProductId": 7517788,
-      "sku": "370",
-      "name": "BLUEBERRY JUNKY",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "tier": "BC Premium",
-      "priceOptions": [
-        {
-          "key": "weight_14g",
-          "label": "14g",
-          "price": 70
-        },
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 137
-        }
-      ],
-      "offers": [
-        {
-          "kind": "prime_time",
-          "title": "PRIME TIME",
-          "price": 107,
-          "weight": "28g",
-          "bonus": "3g CRAFT COUPON",
-          "label": "$107/28g + 3g CRAFT COUPON"
-        },
-        {
-          "kind": "multi_ounce",
-          "quantity": 2,
-          "unitWeight": "28g",
-          "perUnitPrice": 107,
-          "totalPrice": 214,
-          "label": "2 × 28g at $107 each — $214 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/370-BLUEBERRY-JUNKY-1.webp",
-      "sourceUrl": "https://farmerslink.ca/product/347-pink-jefe/"
-    },
-    {
-      "sourceProductId": 7514896,
-      "sku": "106",
-      "name": "GRANDADDY PURPLE (SHREDS)",
-      "category": "Indica Hybrid",
-      "thc": "25%",
-      "tier": "SHREDS",
-      "priceOptions": [
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 35
-        }
-      ],
-      "offers": [
-        {
-          "kind": "multi_ounce",
-          "quantity": 3,
-          "unitWeight": "28g",
-          "totalPrice": 95,
-          "label": "3 × 28g — $95 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/106-GRANDADDY-PURPLE-SHREDS.webp",
-      "sourceUrl": "https://farmerslink.ca/product/grandaddy-puprle/"
-    },
-    {
-      "sourceProductId": 7515668,
-      "sku": "105",
-      "name": "SPACE COOKIES (SHREDS)",
-      "category": "Indica Hybrid",
-      "thc": "24%",
-      "tier": "SHREDS",
-      "priceOptions": [
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 35
-        }
-      ],
-      "offers": [
-        {
-          "kind": "multi_ounce",
-          "quantity": 3,
-          "unitWeight": "28g",
-          "totalPrice": 95,
-          "label": "3 × 28g — $95 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/105-SPACE-COOKIES-SHREDS.webp",
-      "sourceUrl": "https://farmerslink.ca/product/space-cookies-shreds/"
-    },
-    {
-      "sourceProductId": 7515008,
-      "sku": "107",
-      "name": "NORTHERN LIGHS(SHREDS)",
-      "category": "Indica Hybrid",
-      "thc": "25%",
-      "tier": "SHREDS",
-      "priceOptions": [
-        {
-          "key": "weight_28g",
-          "label": "28g",
-          "price": 35
-        }
-      ],
-      "offers": [
-        {
-          "kind": "multi_ounce",
-          "quantity": 3,
-          "unitWeight": "28g",
-          "totalPrice": 95,
-          "label": "3 × 28g — $95 total"
-        }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/107-NORTHERN-LIGHTS-SHREDS.webp",
-      "sourceUrl": "https://farmerslink.ca/product/northern-lightsshreds/"
-    },
-    {
-      "sourceProductId": 7517978,
-      "sku": "376",
-      "name": "OG KUSH (BC PREMIUM SALE!)",
-      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
       "thc": "30%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Cosmic Kush Profile ALIEN WALKER delivers a smooth premium-style profile with earthy kush notes, subtle sweetness, and a lightly gassy finish. The effect comes in calm and balanced, offering a relaxing body feel with a clear and easygoing mental lift. Great for laid-back evenings, casual sessions, or winding down without feeling overly heavy.",
+      "images": [
+        "/delivery-products/344-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_ITKr5k0nMRZvAa4hGD",
+      "name": "PINK SKYWALKER",
       "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "30%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Classic Kush Profile MASTER KUSH delivers a smooth premium-style profile with earthy kush notes, subtle spice, and a clean relaxing finish. The effect comes in balanced and steady, offering a calm body feel with a mellow, easygoing headspace. Great for quiet evenings, laid-back sessions, or winding down without feeling too heavy.",
+      "images": [
+        "/delivery-products/348-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_FxiqjUPUsJ5Vf-Ocei",
+      "name": "PINK GUCCI",
+      "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Body High"
+      ],
+      "description": "Smooth Pink Profile PINK GUCCI delivers a smooth premium-style profile with sweet pink notes, earthy depth, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/368-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_aXcTbzPkp9kxt3SrFy",
+      "name": "BLUEBERRY JUNKY",
+      "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "31%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Sweet Blueberry Profile BLUEBERRY JUNKY delivers a smooth premium-style profile with sweet blueberry notes, fruity depth, and a clean relaxing finish. The effect comes in balanced and easygoing, giving a calm body feel with a light mental lift. Great for relaxed evenings, casual hangs, or winding down without going too heavy.",
+      "images": [
+        "/delivery-products/370-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_ZIvoTkg5JCocMDN7Ms",
+      "name": "GRANDADDY PURPLE (SHREDS)",
+      "tier": "SHREDS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "25%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Uplifting",
+        "Relaxed",
+        "Calm"
+      ],
+      "description": null,
+      "images": [
+        "/delivery-products/106-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_scuTx5IwUmP6r7j16Z",
+      "name": "SPACE COOKIES (SHREDS)",
+      "tier": "SHREDS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "24%",
+      "effects": [
+        "Body High",
+        "Drowsiness",
+        "Relaxed"
+      ],
+      "description": null,
+      "images": [
+        "/delivery-products/105-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_N3pLWAcl7UGO4YRcSC",
+      "name": "NORTHERN LIGHS(SHREDS)",
+      "tier": "SHREDS",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "25%",
+      "effects": [
+        "Body High",
+        "Relaxed",
+        "Calm"
+      ],
+      "description": null,
+      "images": [
+        "/delivery-products/107-bootstrap.webp"
+      ],
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ]
+    },
+    {
+      "publicProductId": "prd_peiQ07lxfXwW7XX03M",
+      "name": "OG KUSH (BC PREMIUM SALE!)",
+      "tier": "BC Premium",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "30%",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Sleepy"
+      ],
+      "description": "BC KUSH is a smooth and flavourful hybrid with a relaxing body feel and a calm, uplifting head buzz. It begins with an easy mental lift before settling into a comfortable, laid-back finish. Expect rich earthy pulls with notes of pine, citrus and classic kush gas. Flavor notes: earthy pine • fresh citrus • classic kush gas",
+      "images": [
+        "/delivery-products/376-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -1856,17 +2170,23 @@
           "bonus": "",
           "label": "$60/28g"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/376-og-kush-showcase-600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/376og-kush-bc-premium-sale/"
+      ]
     },
     {
-      "sourceProductId": 7517906,
-      "sku": "184",
+      "publicProductId": "prd_C3qzsZtn5B3YHxXzKf",
       "name": "APPLE KUSH(BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "26%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "26%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Apple Kush brings a smooth fruity profile with crisp apple sweetness, light earthy kush, and a soft herbal finish. It delivers a mellow, easygoing smoke that is great for budget buyers who still want flavor and a relaxing effect. Expect a calm body feel, a gentle head buzz, and a clean kush finish that makes this strain simple, smooth, and easy to enjoy.",
+      "images": [
+        "/delivery-products/184-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -1889,17 +2209,23 @@
           "totalPrice": 160,
           "label": "4 × 28g — $160 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/184_APPLE_KUSH_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/184apple-kushbudget/"
+      ]
     },
     {
-      "sourceProductId": 7517908,
-      "sku": "186",
+      "publicProductId": "prd_mdzqpw5S2gGUYLQDoF",
       "name": "HOLLYWOOD KUSH",
-      "category": "Indica Hybrid",
-      "thc": "26%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "26%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Hollywood Kush features classic kush aromas with earthy pine, herbal spice, and a touch of citrus on the finish. The smoke is smooth and flavorful, delivering a calming head buzz that gradually settles into a relaxing full-body effect. Its traditional kush profile and dependable potency make it an excellent everyday strain for those who enjoy rich flavor and laid-back sessions without breaking the budget. Tip: Perfect for evening relaxation, movie nights, or anytime you want a smooth classic kush experience.",
+      "images": [
+        "/delivery-products/186-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -1922,17 +2248,23 @@
           "totalPrice": 160,
           "label": "4 × 28g — $160 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/186_HOLLYWOOD_KUSH_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/hollywood-kush/"
+      ]
     },
     {
-      "sourceProductId": 7517913,
-      "sku": "187",
+      "publicProductId": "prd_F-uo6LsrrIqopUjLhg",
       "name": "CHOCOLATE KUSH",
-      "category": "Indica Hybrid",
-      "thc": "26%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "26%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Chocolate Kush is a rich, flavorful kush with notes of cocoa, roasted coffee, earthy pine, and subtle sweet spice. Its smooth smoke delivers a calming cerebral buzz that melts into a relaxing body high, making it an excellent choice for unwinding after a long day. With its classic kush character and dessert-like finish, Chocolate Kush offers premium flavor at an outstanding Budget OZ value. Tip: Perfect for evening sessions, relaxing with a movie, or anytime you want a smooth, chocolatey kush experience.",
+      "images": [
+        "/delivery-products/187-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -1955,17 +2287,23 @@
           "totalPrice": 160,
           "label": "4 × 28g — $160 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/187-CHOCOLATE-KUSH.webp",
-      "sourceUrl": "https://farmerslink.ca/product/187-chocolate-kush/"
+      ]
     },
     {
-      "sourceProductId": 7517977,
-      "sku": "172",
+      "publicProductId": "prd_QOxNkdHPEI7WHwvLNh",
       "name": "LAVENDER KUSH (BUDGET)",
+      "tier": "Budget",
       "category": "Indica",
+      "strain": "Indica",
       "thc": "26%",
-      "tier": "Budget",
+      "effects": [
+        "Body High",
+        "Calm"
+      ],
+      "description": "Lavender Kush brings a smooth floral kush profile with soft lavender notes, earthy herbs, and a calm sweet finish. The smoke is easygoing and relaxing, delivering a mellow head buzz followed by a soothing body feel. Its gentle floral flavor and classic kush character make it a great Budget OZ pick for anyone who wants something smooth, calming, and easy to enjoy. A solid choice for relaxing evenings, slower sessions, or stocking up with strong value. Tip: Great for evening relaxation, calm sessions, or winding down with a smooth floral kush.",
+      "images": [
+        "/delivery-products/172-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -1988,17 +2326,23 @@
           "totalPrice": 180,
           "label": "4 × 28g — $180 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/172-Lavender-Kush.webp",
-      "sourceUrl": "https://farmerslink.ca/product/172lavender-kush-budget/"
+      ]
     },
     {
-      "sourceProductId": 7517907,
-      "sku": "185",
+      "publicProductId": "prd_E6zodmr7STgjp9ILDt",
       "name": "HALIE BERRY (BUDGET)",
-      "category": "Sativa",
-      "thc": "26%",
       "tier": "Budget",
+      "category": "Sativa",
+      "strain": "Sativa",
+      "thc": "26%",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "Halie Berry brings a smooth berry-forward profile with sweet fruit notes, light earthiness, and a soft herbal finish. It delivers an easygoing smoke with a calm, relaxing feel that makes it a solid pick for everyday sessions. Expect a mellow head buzz, gentle body comfort, and a flavorful finish that keeps it simple, smooth, and enjoyable. A great Budget OZ choice for anyone looking for fruity flavor and strong value.",
+      "images": [
+        "/delivery-products/185-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2021,17 +2365,24 @@
           "totalPrice": 180,
           "label": "4 × 28g — $180 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/185_HALIE_BERRY_S_showcase_600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/halie-berry/"
+      ]
     },
     {
-      "sourceProductId": 7516288,
-      "sku": "204",
+      "publicProductId": "prd_Sd7tqxKfsq2jJmxfD3",
       "name": "ROYAL GORILLA(BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "27%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "27%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Royal Gorilla (Indica) brings a bold earthy kush profile with smooth notes of herbal spice , light gas , and a clean heavy finish. The smoke is smooth and satisfying, giving that classic Gorilla-style body feel with a calm, relaxing indica effect. Great for evening sessions, relaxing after work, movie nights, or whenever you want something smooth, mellow, and budget-friendly. Tip: Great for relaxing — smooth taste, calm body feel, and heavy Gorilla-style finish.",
+      "images": [
+        "/delivery-products/204-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2054,17 +2405,23 @@
           "totalPrice": 220,
           "label": "4 × 28g — $220 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2024/12/204-ROYAL-GORILLA2-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/royal-gorilla/"
+      ]
     },
     {
-      "sourceProductId": 7517803,
-      "sku": "206",
+      "publicProductId": "prd_R47j_DNf__98u4EKxa",
       "name": "GAS MONKEY (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "28%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "28%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Gas Monkey (Indica Hybrid) brings a bold gassy kush profile with smooth notes of diesel fuel , earthy pine , and a light sweet herbal finish . The smoke is rich, heavy, and satisfying, giving that classic gas-forward taste that stands out right away. The high comes on with a calm head buzz before melting into a relaxed body feel, making it a solid choice for slowing down, getting comfortable, and enjoying a smooth evening session. Tip: A strong budget pick for gas lovers who want flavour, calm, and full-body relaxation without overthinking it.",
+      "images": [
+        "/delivery-products/206-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2087,17 +2444,23 @@
           "totalPrice": 220,
           "label": "4 × 28g — $220 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/206-GASMONKEY-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/206-gas-monkey/"
+      ]
     },
     {
-      "sourceProductId": 7517528,
-      "sku": "292",
+      "publicProductId": "prd_hszfur4DmAECnTox39",
       "name": "QAUNTUM KUSH (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "28%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "28%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Quantum Kush (Indica) brings a deep classic kush profile with smooth notes of earthy pine , light gas , and a subtle woody finish . The smoke is rich and relaxing, giving that old-school heavy feel kush lovers usually look for. The high starts with a calm head change, then settles into a deep body relaxation that can leave you feeling loose, quiet, and ready to fully unwind. night-time sessions , stress relief , and slowing everything down after a long day. Tip: A solid late-night pick for kicking back, zoning out, and getting into full chill mode.",
+      "images": [
+        "/delivery-products/292-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2120,17 +2483,25 @@
           "totalPrice": 220,
           "label": "4 × 28g — $220 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/02/292-QUANTUM-KUSH-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/quantum-kush/"
+      ]
     },
     {
-      "sourceProductId": 7516052,
-      "sku": "277",
+      "publicProductId": "prd_OKMiQJXkd9bm4CSlHF",
       "name": "NYC SOUR DIESEL (BUDGET)",
-      "category": "Sativa Hybrid",
-      "thc": "27%",
       "tier": "Budget",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "27%",
+      "effects": [
+        "Happy",
+        "Sociable",
+        "Uplifting",
+        "Relaxed"
+      ],
+      "description": "NYC Sour Diesel (Sativa-Leaning Hybrid) brings that classic sharp sour fuel profile with a bright, energetic lift that hits fast and stays lively. Expect bold citrus-diesel aroma, a touch of skunky earth , and a heady buzz that keeps you feeling alert , motivated , and socially switched on. daytime use , creative focus , and getting through the day without feeling too heavy.",
+      "images": [
+        "/delivery-products/277-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2153,17 +2524,22 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/261-277-NYC-SOUR-DIESEL-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/nyc-sour-diesel/"
+      ]
     },
     {
-      "sourceProductId": 7517310,
-      "sku": "269",
+      "publicProductId": "prd_GpCQPBowXzflPTDtpk",
       "name": "OREO COOKIES (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "29%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "29%",
+      "effects": [
+        "Body High"
+      ],
+      "description": null,
+      "images": [
+        "/delivery-products/269-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2186,17 +2562,22 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2025/12/99149-OREO-COOKIES-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/oreo-cookies/"
+      ]
     },
     {
-      "sourceProductId": 7517428,
-      "sku": "271",
+      "publicProductId": "prd_3-NroBED4z5qdd0B4D",
       "name": "DANTE INFERNO (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "29%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "29%",
+      "effects": [
+        "Body High"
+      ],
+      "description": "Dante Inferno (Indica) is a heavy, dessert-style smoke with deep cookie-gas flavor and a warm spicy finish. It hits with a slow, calming body melt and a quiet, relaxed headspace — ideal for late-night wind-down,",
+      "images": [
+        "/delivery-products/271-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2219,17 +2600,24 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/01/99146-271-DANTE-INFERNO-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/dante-inferno/"
+      ]
     },
     {
-      "sourceProductId": 7517564,
-      "sku": "275",
+      "publicProductId": "prd_-KweBYvc-VTv9FDk6_",
       "name": "SUGAR COOKIES (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "28%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "28%",
+      "effects": [
+        "Body High",
+        "Drowsiness",
+        "Relaxed"
+      ],
+      "description": "Cosmic Sativa brings an uplifting daytime vibe with bright citrusy notes, light herbal sweetness, and a smooth clean finish. Expect an energetic head buzz that feels happy, motivating, and easy to enjoy, making it a solid pick for daytime sessions , social hangs , creative moments, or whenever you want a fresh, feel-good lift without anything too heavy. Tip: Great for daytime — upbeat mood, light focus, and easygoing energy.",
+      "images": [
+        "/delivery-products/275-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2252,17 +2640,23 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2023/07/99244-275-SUGAR-COOKIES-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/7517564/"
+      ]
     },
     {
-      "sourceProductId": 7517676,
-      "sku": "215",
+      "publicProductId": "prd_a4YnOobADvfw1c9DMS",
       "name": "GRAPE FRUIT(BUDGET)",
-      "category": "Sativa Hybrid",
-      "thc": "27%",
       "tier": "Budget",
+      "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
+      "thc": "27%",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "GRAPE FRUIT delivers a bright fruit-forward profile with sweet grape notes , tangy citrus, and a smooth earthy finish. Expect an uplifting, easy-going head buzz followed by a comfortable body feel that keeps the experience balanced and enjoyable. Its juicy flavor and smooth smoke make it a solid choice for daytime sessions, social settings, or anyone looking for a flavorful Budget OZ with strong value. Tip: Great for daytime sessions, socializing, or whenever you want a sweet grape-and-citrus smoke.",
+      "images": [
+        "/delivery-products/215-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2285,17 +2679,24 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/215-Grape-Fruit-600x600-1.webp",
-      "sourceUrl": "https://farmerslink.ca/product/grape-fruit/"
+      ]
     },
     {
-      "sourceProductId": 7517764,
-      "sku": "205",
+      "publicProductId": "prd_YXSmsthV3pfA3YS4C5",
       "name": "PINK STICKY ALIEN(BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "27%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "27%",
+      "effects": [
+        "Happy",
+        "Body High",
+        "Calm"
+      ],
+      "description": "Pink Sticky Alien brings a smooth sweet pink profile with earthy herbal notes and a relaxing indica-style feel. Expect a calm, mellow body buzz with a clean finish, making this a solid pick for evening sessions, relaxing after work, movie nights, or whenever you want something smooth, tasty, and budget-friendly. Tip: Great for relaxing — sweet pink taste, calm body feel, and smooth alien-style finish.",
+      "images": [
+        "/delivery-products/205-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2318,17 +2719,23 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/05/205-PINK-STICKY-ALIEN-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/pink-sticky-alien/"
+      ]
     },
     {
-      "sourceProductId": 7517998,
-      "sku": "216",
+      "publicProductId": "prd_JhzZJk41p8qgrbP8q-",
       "name": "PURPLE DRAGON(BUDGET)",
+      "tier": "Budget",
       "category": "Sativa Hybrid",
+      "strain": "Sativa Hybrid",
       "thc": "27%",
-      "tier": "Budget",
+      "effects": [
+        "Energy",
+        "Cerebral"
+      ],
+      "description": "PURPLE DRAGON offers a rich grape-forward profile with sweet berry notes , earthy kush, and a light spicy finish. The smoke starts smooth and flavorful before settling into a calm, relaxing body feel with a mellow head buzz. Its deep purple-style flavor and laid-back effects make it a strong choice for evening sessions, quiet nights, or anyone looking for a flavorful Budget OZ with dependable value. Tip: Great for evening relaxation, movie nights, or winding down with a sweet grape-and-kush smoke.",
+      "images": [
+        "/delivery-products/216-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2351,17 +2758,24 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/216-PURPLE-DRAGON-S.webp",
-      "sourceUrl": "https://farmerslink.ca/product/purple-dragon/"
+      ]
     },
     {
-      "sourceProductId": 7517443,
-      "sku": "278",
+      "publicProductId": "prd_pfu16LFaTm_iq3X_qu",
       "name": "SLURRICANE (BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "28%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "28%",
+      "effects": [
+        "Body High",
+        "Couch-Locked",
+        "Relaxed"
+      ],
+      "description": "SLURRICANE is known for a sweet creamy profile with rich dessert-like notes and a smooth, heavy finish. Expect a relaxing body feel paired with a calm, dreamy vibe, making it a great choice for laid-back evenings, slow sessions, and anyone who likes flavorful smoke with a deeper, more soothing effect. Tip: Great for chill nights, mellow moods, and full-body relaxation.",
+      "images": [
+        "/delivery-products/278-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2384,17 +2798,23 @@
           "totalPrice": 260,
           "label": "4 × 28g — $260 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/278-SLURRICANE-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/slurricane/"
+      ]
     },
     {
-      "sourceProductId": 7517450,
-      "sku": "291",
+      "publicProductId": "prd_J-mxtXnUQoaTy6qRDW",
       "name": "DIAMOND OG(BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "29%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "29%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Diamond OG (Indica) brings a smooth, relaxing body high with a classic earthy pine profile and a clean kush-style finish. The vibe is calm, mellow, and body-forward — a solid choice for evenings , de-stressing , and kicking back after a long day.",
+      "images": [
+        "/delivery-products/291-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2417,17 +2837,23 @@
           "totalPrice": 280,
           "label": "4 × 28g — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/01/291-DIAMOND-KUSH-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/diamond-og/"
+      ]
     },
     {
-      "sourceProductId": 7517685,
-      "sku": "290",
+      "publicProductId": "prd_GnlvdNy9Vo2yeqqFc-",
       "name": "SWEET KUSH(BUDGET)",
-      "category": "Indica Hybrid",
-      "thc": "28%",
       "tier": "Budget",
+      "category": "Indica Hybrid",
+      "strain": "Indica Hybrid",
+      "thc": "28%",
+      "effects": [
+        "Body High",
+        "Relaxed"
+      ],
+      "description": "Sweet Kush brings a smooth, sweet herbal profile with a relaxing indica-style feel. Expect a calm, easygoing body buzz with soft sweetness, earthy notes, and a clean finish. This is a solid pick for evening sessions, relaxing after work, movie nights, or whenever you want something smooth, mellow, and budget-friendly. Tip: Great for relaxing — sweet taste, calm body feel, and smooth Kush-style finish.",
+      "images": [
+        "/delivery-products/290-bootstrap.webp"
+      ],
       "priceOptions": [
         {
           "key": "weight_28g",
@@ -2450,9 +2876,7 @@
           "totalPrice": 280,
           "label": "4 × 28g — $280 total"
         }
-      ],
-      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99263-290-SWEET-KUSH-600x600.webp",
-      "sourceUrl": "https://farmerslink.ca/product/290sweet-kush-budget/"
+      ]
     }
   ]
 }
