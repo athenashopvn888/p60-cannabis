@@ -1,6 +1,8 @@
 {
-  "source": "Farmers Link Google Sheet (FLOWERS_RAW + FlowersFlags_POS)",
-  "importedAt": "2026-07-27T17:04:22.276995Z",
+  "source": "Farmers Link public live catalog",
+  "sourceUrl": "https://farmerslink.ca/",
+  "importedAt": "2026-07-28T06:16:25.622Z",
+  "catalogScope": "Global public Farmers Link catalog; no PNY01 store dimension is exposed by the public page.",
   "store": {
     "id": "P60",
     "code": "PNY01",
@@ -10,1050 +12,2383 @@
   "status": "production",
   "products": [
     {
-      "sourceProductId": 207,
-      "sku": "207",
-      "name": "GOD GREEN CRACK",
-      "category": "Indica Hybrid",
-      "thc": "27%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/207_GOD_GREEN_CRACK_showcase_600x600.webp"
-    },
-    {
-      "sourceProductId": 209,
-      "sku": "209",
-      "name": "SUPER LEMON HAZE",
-      "category": "Indica Hybrid",
-      "thc": "28%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 50
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/209_super_lemon_haze_showcase_600x600.webp"
-    },
-    {
-      "sourceProductId": 261,
-      "sku": "261",
-      "name": "DAYDREAM DIESEL",
+      "sourceProductId": 7513672,
+      "sku": "563",
+      "name": "PURPLE SKUNK(EXOTIC)",
       "category": "Sativa Hybrid",
-      "thc": "29%",
+      "thc": "36%",
+      "tier": "Exotics",
       "priceOptions": [
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/261-DAYDREAM-DIESEL-99140.jpg"
-    },
-    {
-      "sourceProductId": 269,
-      "sku": "269",
-      "name": "OREO COOKIES",
-      "category": "Indica Hybrid",
-      "thc": "29%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99149-OREO-COOKIES.webp"
-    },
-    {
-      "sourceProductId": 271,
-      "sku": "271",
-      "name": "DANTE INFERNO",
-      "category": "Indica Hybrid",
-      "thc": "29%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 60
         },
         {
-          "key": "half_oz",
+          "key": "weight_14g",
           "label": "14g",
-          "price": 40
+          "price": 100
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 190
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99146-271-DANTE-INFERNO.webp"
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 160,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$160/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/563-purple-skunk.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-el-camino/"
     },
     {
-      "sourceProductId": 275,
-      "sku": "275",
-      "name": "SUGAR COOKIES",
+      "sourceProductId": 7517669,
+      "sku": "540",
+      "name": "PINK STICKY ICKY (EXOTIC)",
       "category": "Indica Hybrid",
-      "thc": "29%",
+      "thc": "38%",
+      "tier": "Exotics",
       "priceOptions": [
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 60
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 100
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 190
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99244-275-SUGAR-COOKIES.webp"
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 160,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$160/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99260-540-PINK-ICKY-STICKY-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/540pink-sticky-icky-exotic/"
     },
     {
-      "sourceProductId": 278,
-      "sku": "278",
-      "name": "SLURRICANE",
+      "sourceProductId": 7516607,
+      "sku": "550",
+      "name": "PINK STARKILLER (EXOTIC)",
       "category": "Indica Hybrid",
-      "thc": "27%",
+      "thc": "39%",
+      "tier": "Exotics",
       "priceOptions": [
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 60
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 100
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 190
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/278-SLURRICANE.webp"
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 160,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$160/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2025/02/550-PINK-STARKILLER-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-starkiller/"
     },
     {
-      "sourceProductId": 288,
-      "sku": "288",
-      "name": "FROSTED COOKIES",
+      "sourceProductId": 7516336,
+      "sku": "546",
+      "name": "24K GOLD(EXOTIC)",
       "category": "Indica Hybrid",
+      "thc": "36%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 70
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 130
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 220
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 190,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$190/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/546-24K-Gold-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/24k-gold/"
+    },
+    {
+      "sourceProductId": 7515377,
+      "sku": "513",
+      "name": "PINK TOMFORD (EXOTIC)",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/99240-513-PINK-TOMFORD-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-tomford/"
+    },
+    {
+      "sourceProductId": 7515801,
+      "sku": "593",
+      "name": "MIKE TYSON KO * LIMITED STOCK * (EXOTIC)",
+      "category": "Indica",
+      "thc": "39%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/09/593-MIKE-TYSON-KO-99138-600x600.jpg",
+      "sourceUrl": "https://farmerslink.ca/product/mike-tyson-ko-super-exotics/"
+    },
+    {
+      "sourceProductId": 7517643,
+      "sku": "539",
+      "name": "PEANUT BUTTER ROCKSTAR (EXOTIC)",
+      "category": "IH",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99258-539-PEANUT-BUTTER-ROCKSTAR-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/539peanut-butter-rockstar-exotic/"
+    },
+    {
+      "sourceProductId": 7517611,
+      "sku": "542",
+      "name": "PINK VELVET (EXOTIC)",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/505-542PINK-VELVET-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-velvet/"
+    },
+    {
+      "sourceProductId": 7514943,
+      "sku": "551",
+      "name": "DEVIL DRIVER (EXOTIC)",
+      "category": "Indica Hybrid",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/02/551_DEVIL_DRIVER_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/devil-driver/"
+    },
+    {
+      "sourceProductId": 7515448,
+      "sku": "516",
+      "name": "BUBBA STAR (EXOTIC)",
+      "category": "Indica",
+      "thc": "37%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/516-BUBBA-STAR-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/bubba-star/"
+    },
+    {
+      "sourceProductId": 7517711,
+      "sku": "515",
+      "name": "PURE MICHIGAN (EXOTIC)",
+      "category": "Indica",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/545-PURE-MICHIGAN-1-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pure-michigan/"
+    },
+    {
+      "sourceProductId": 7517709,
+      "sku": "514",
+      "name": "PINK PERMANENT MARKER (EXOTIC)",
+      "category": "Indica",
+      "thc": "39%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 235
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 205,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$205/28g + 3g CRAFT COUPON"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/544-PINK-PERMANENT-MARKER-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-permanent-marker/"
+    },
+    {
+      "sourceProductId": 7517948,
+      "sku": "571",
+      "name": "PINK FENDI FIRE (EXOTIC)",
+      "category": "Indica",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/571-PINK-FENDI-FIRE.webp",
+      "sourceUrl": "https://farmerslink.ca/product/571pink-fendi-fire-exotic/"
+    },
+    {
+      "sourceProductId": 7517937,
+      "sku": "572",
+      "name": "TEQUILA SUNRISE (EXOTIC)",
+      "category": "Sativa Hybrid",
+      "thc": "38%",
+      "tier": "Exotics",
+      "priceOptions": [
+        {
+          "key": "weight_7g",
+          "label": "7g",
+          "price": 75
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 140
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 230
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 200,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/572-TEQUILA-SUNRISE-S-1.webp",
+      "sourceUrl": "https://farmerslink.ca/product/tequila-sunrise/"
+    },
+    {
+      "sourceProductId": 7517949,
+      "sku": "423",
+      "name": "PINK DIAMONDS (SALE)(CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 71
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/423-PINK-DIAMOND-SALE-1.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-diamond/"
+    },
+    {
+      "sourceProductId": 7515698,
+      "sku": "408",
+      "name": "PINK ESCOBAR (CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 75
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/408_PINK_ESCOBAR_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-escobar-4/"
+    },
+    {
+      "sourceProductId": 7518004,
+      "sku": "426",
+      "name": "PINK CADILAC (CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 75
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/426-pink-cadillac-showcase-600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-cadilac/"
+    },
+    {
+      "sourceProductId": 7517578,
+      "sku": "424",
+      "name": "CRACK PINK (CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/424-CRACK-PINK.webp",
+      "sourceUrl": "https://farmerslink.ca/product/crack-pink/"
+    },
+    {
+      "sourceProductId": 7517964,
+      "sku": "425",
+      "name": "COSMIC COOKIES (CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/425-COSMIC-COOKIES.webp",
+      "sourceUrl": "https://farmerslink.ca/product/cosmic-cookies/"
+    },
+    {
+      "sourceProductId": 7517568,
+      "sku": "409",
+      "name": "PINK ROYAL (CRAFT)",
+      "category": "Indica",
+      "thc": "33%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_3g",
+          "label": "3g",
+          "price": 50
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/close_up_product_style_macro_photograph_illustrati_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-chapo/"
+    },
+    {
+      "sourceProductId": 7517813,
+      "sku": "410",
+      "name": "PINEAPPLE HAZE (CRAFT)",
+      "category": "Sativa Hybrid",
+      "thc": "31%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_3g",
+          "label": "3g",
+          "price": 50
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/10/410-PineappleHaze-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pineapple-haze/"
+    },
+    {
+      "sourceProductId": 7517801,
+      "sku": "417",
+      "name": "DEATH STAR BUBBA (CRAFT)",
+      "category": "Indica",
+      "thc": "33%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_3g",
+          "label": "3g",
+          "price": 50
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/417-DEATH-STAR-BUBBA-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/417-death-star-bubba/"
+    },
+    {
+      "sourceProductId": 7515163,
+      "sku": "493",
+      "name": "O PINK (CRAFT)",
+      "category": "Indica",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/03/493-O-PINK-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/o-pink/"
+    },
+    {
+      "sourceProductId": 7515363,
+      "sku": "420",
+      "name": "CHOCOLATE CHIP COOKIES (CRAFT)",
+      "category": "Sativa Hybrid",
+      "thc": "33%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_3g",
+          "label": "3g",
+          "price": 50
+        },
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/420-CHOCOLATE-CHIP-COOKIES-S.webp",
+      "sourceUrl": "https://farmerslink.ca/product/chocolate-chip-cookies/"
+    },
+    {
+      "sourceProductId": 7515524,
+      "sku": "495",
+      "name": "KING LOUIS XIII (CRAFT)",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/05/495-KING-LOUIS-XIII-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/king-louie-xiii/"
+    },
+    {
+      "sourceProductId": 7515699,
+      "sku": "421",
+      "name": "PINK DEATH GUCCI (CRAFT)",
+      "category": "Indica",
+      "thc": "33%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/421-PINK-GUCCI-DEATH.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-death-gucci/"
+    },
+    {
+      "sourceProductId": 7516617,
+      "sku": "411",
+      "name": "SUPER SILVER HAZE (CRAFT)",
+      "category": "Sativa Hybrid",
+      "thc": "32%",
+      "tier": "CRAFTS",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 85
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 170
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 140,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$140/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 140,
+          "totalPrice": 280,
+          "label": "2 × 28g at $140 each — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/411-SUPER-SILVER-HAZE.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-joker/"
+    },
+    {
+      "sourceProductId": 7516329,
+      "sku": "399",
+      "name": "SUPER LEMON HAZE",
+      "category": "Sativa",
       "thc": "28%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 55
         },
         {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 45
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 112
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99243-288-FROSTED-COOKIES.webp"
-    },
-    {
-      "sourceProductId": 290,
-      "sku": "290",
-      "name": "SWEET KUSH",
-      "category": "Indica Hybrid",
-      "thc": "28%",
-      "priceOptions": [
+      "offers": [
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99263-290-SWEET-KUSH.webp"
-    },
-    {
-      "sourceProductId": 291,
-      "sku": "291",
-      "name": "DIAMOND OG",
-      "category": "Indica Hybrid",
-      "thc": "29%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/291-DIAMOND-KUSH.webp"
-    },
-    {
-      "sourceProductId": 292,
-      "sku": "292",
-      "name": "QUANTUM KUSH",
-      "category": "Indica Hybrid",
-      "thc": "29%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 82,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$82/28g + 3g CRAFT COUPON"
         },
         {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 45
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 82,
+          "totalPrice": 164,
+          "label": "2 × 28g at $82 each — $164 total"
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/292-QUANTUM-KUSH.webp"
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/12/399_super_lemon_haze_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/super-lemon-haze/"
     },
     {
-      "sourceProductId": 293,
-      "sku": "293",
-      "name": "VANILLA ICE KUSH",
-      "category": "Indica Hybrid",
-      "thc": "29%",
-      "priceOptions": [
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 20
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/293-VANILLA-ICE-KUSH.webp"
-    },
-    {
-      "sourceProductId": 339,
+      "sourceProductId": 7516241,
       "sku": "339",
       "name": "PURPLE PUNCH",
       "category": "Indica Hybrid",
       "thc": "30%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
+          "key": "weight_14g",
           "label": "14g",
-          "price": 70
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 120
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99296-PURPLE-PUNCH-339.webp"
-    },
-    {
-      "sourceProductId": 340,
-      "sku": "340",
-      "name": "FROZEN GRAPES",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "priceOptions": [
+      "offers": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 90,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$90/28g + 3g CRAFT COUPON"
         },
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 90,
+          "totalPrice": 180,
+          "label": "2 × 28g at $90 each — $180 total"
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99298-FROZEN-GRAPES-340.webp"
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/11/99296-PURPLE-PUNCH-339.webp",
+      "sourceUrl": "https://farmerslink.ca/product/purple-punch-2/"
     },
     {
-      "sourceProductId": 341,
-      "sku": "341",
-      "name": "MENDO KUSH",
-      "category": "Indica Hybrid",
+      "sourceProductId": 7517022,
+      "sku": "362",
+      "name": "SPICY PINK",
+      "category": "IH",
       "thc": "30%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
+          "key": "weight_14g",
           "label": "14g",
           "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 127
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99299-MENDO-KUSH-341.webp"
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 97,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$97/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 97,
+          "totalPrice": 194,
+          "label": "2 × 28g at $97 each — $194 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2025/07/362-SPICY-PINK.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-skywalker/"
     },
     {
-      "sourceProductId": 343,
-      "sku": "343",
-      "name": "PINK HOLY GRAIL",
+      "sourceProductId": 7516036,
+      "sku": "357",
+      "name": "EL CHAPO",
       "category": "Indica Hybrid",
       "thc": "31%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
+          "key": "weight_14g",
           "label": "14g",
-          "price": 70
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 132
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/343_PINK_HOLY_GRAIL.webp"
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 102,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$102/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 102,
+          "totalPrice": 204,
+          "label": "2 × 28g at $102 each — $204 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/357-EL-CHAPO.webp",
+      "sourceUrl": "https://farmerslink.ca/product/el-chapo/"
     },
     {
-      "sourceProductId": 344,
+      "sourceProductId": 7517782,
+      "sku": "360",
+      "name": "JACK HERRER",
+      "category": "Sativa",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 132
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 102,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$102/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 102,
+          "totalPrice": 204,
+          "label": "2 × 28g at $102 each — $204 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/360-JACK-HERER.webp",
+      "sourceUrl": "https://farmerslink.ca/product/jack-herrer/"
+    },
+    {
+      "sourceProductId": 7517974,
+      "sku": "361",
+      "name": "COASTAL PINK (BC PREMIUM)",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 132
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 102,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$102/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 102,
+          "totalPrice": 204,
+          "label": "2 × 28g at $102 each — $204 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/361-COASTAL-PINK.webp",
+      "sourceUrl": "https://farmerslink.ca/product/361-coastal-pink-copy/"
+    },
+    {
+      "sourceProductId": 7516750,
+      "sku": "371",
+      "name": "PURPLE GRAPES",
+      "category": "Sativa Hybrid",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 132
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 102,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$102/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 102,
+          "totalPrice": 204,
+          "label": "2 × 28g at $102 each — $204 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/371-PURPLE-GRAPES-S.webp",
+      "sourceUrl": "https://farmerslink.ca/product/purple-grapes/"
+    },
+    {
+      "sourceProductId": 7517960,
+      "sku": "373",
+      "name": "CANDY KRUSH",
+      "category": "Sativa",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 65
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 132
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 102,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$102/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 102,
+          "totalPrice": 204,
+          "label": "2 × 28g at $102 each — $204 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/373-CANDY-KRUSH-S.webp",
+      "sourceUrl": "https://farmerslink.ca/product/candy-krush/"
+    },
+    {
+      "sourceProductId": 7518003,
+      "sku": "301",
+      "name": "MKU (BC PREMIUM)",
+      "category": "Indica",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/301-mku-showcase-600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/301-mku/"
+    },
+    {
+      "sourceProductId": 7517973,
+      "sku": "372",
+      "name": "PINK TORNADO(BC PREMIUM)",
+      "category": "Indica",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/372-PINK-TORNADO.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-tornado/"
+    },
+    {
+      "sourceProductId": 7516285,
       "sku": "344",
       "name": "WHITE TRUFFLE",
       "category": "Indica Hybrid",
       "thc": "31%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
+          "key": "weight_14g",
           "label": "14g",
           "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/344_WHITE_TRUFFLE.webp"
-    },
-    {
-      "sourceProductId": 345,
-      "sku": "345",
-      "name": "BLACK MAMBA",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "priceOptions": [
+      "offers": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
         },
         {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/345_BLACK_MAMBA.webp"
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/05/344_WHITE_TRUFFLE.webp",
+      "sourceUrl": "https://farmerslink.ca/product/white-truffle/"
     },
     {
-      "sourceProductId": 346,
-      "sku": "346",
-      "name": "FORBIDDEN FRUITS",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/346_FORBIDDEN_FRUITS.webp"
-    },
-    {
-      "sourceProductId": 347,
-      "sku": "347",
-      "name": "PINK JEFE",
-      "category": "Indica Hybrid",
-      "thc": "30%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/347PINKJEFE.webp"
-    },
-    {
-      "sourceProductId": 348,
+      "sourceProductId": 7517799,
       "sku": "348",
       "name": "PINK SKYWALKER",
       "category": "Indica Hybrid",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/348-PINK-SKYWALKER-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/348-pink-skywalker/"
+    },
+    {
+      "sourceProductId": 7516242,
+      "sku": "368",
+      "name": "PINK GUCCI",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/11/368-PINK-GUCCI-1-600x600.png",
+      "sourceUrl": "https://farmerslink.ca/product/pink-gucci/"
+    },
+    {
+      "sourceProductId": 7517788,
+      "sku": "370",
+      "name": "BLUEBERRY JUNKY",
+      "category": "Indica Hybrid",
+      "thc": "31%",
+      "tier": "BC Premium",
+      "priceOptions": [
+        {
+          "key": "weight_14g",
+          "label": "14g",
+          "price": 70
+        },
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 137
+        }
+      ],
+      "offers": [
+        {
+          "kind": "prime_time",
+          "title": "PRIME TIME",
+          "price": 107,
+          "weight": "28g",
+          "bonus": "3g CRAFT COUPON",
+          "label": "$107/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 107,
+          "totalPrice": 214,
+          "label": "2 × 28g at $107 each — $214 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/370-BLUEBERRY-JUNKY-1.webp",
+      "sourceUrl": "https://farmerslink.ca/product/347-pink-jefe/"
+    },
+    {
+      "sourceProductId": 7514896,
+      "sku": "106",
+      "name": "GRANDADDY PURPLE (SHREDS)",
+      "category": "Indica Hybrid",
+      "thc": "25%",
+      "tier": "SHREDS",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/106-GRANDADDY-PURPLE-SHREDS.webp",
+      "sourceUrl": "https://farmerslink.ca/product/grandaddy-puprle/"
+    },
+    {
+      "sourceProductId": 7515668,
+      "sku": "105",
+      "name": "SPACE COOKIES (SHREDS)",
+      "category": "Indica Hybrid",
+      "thc": "24%",
+      "tier": "SHREDS",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/105-SPACE-COOKIES-SHREDS.webp",
+      "sourceUrl": "https://farmerslink.ca/product/space-cookies-shreds/"
+    },
+    {
+      "sourceProductId": 7515008,
+      "sku": "107",
+      "name": "NORTHERN LIGHS(SHREDS)",
+      "category": "Indica Hybrid",
+      "thc": "25%",
+      "tier": "SHREDS",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 35
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 3,
+          "unitWeight": "28g",
+          "totalPrice": 95,
+          "label": "3 × 28g — $95 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/07/107-NORTHERN-LIGHTS-SHREDS.webp",
+      "sourceUrl": "https://farmerslink.ca/product/northern-lightsshreds/"
+    },
+    {
+      "sourceProductId": 7517978,
+      "sku": "376",
+      "name": "OG KUSH (BC PREMIUM SALE!)",
+      "category": "Indica Hybrid",
       "thc": "30%",
+      "tier": "BC Premium",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 90
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/348PINKSKYWALKER.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 120,
+          "label": "2 × 28g — $120 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 220,
+          "label": "4 × 28g — $220 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/376-og-kush-showcase-600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/376og-kush-bc-premium-sale/"
     },
     {
-      "sourceProductId": 393,
-      "sku": "393",
-      "name": "PINK KUSH",
+      "sourceProductId": 7517906,
+      "sku": "184",
+      "name": "APPLE KUSH(BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "31%",
+      "thc": "26%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 20
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 30
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 70
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 75
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/393-PINK-KUSH-99212.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 90,
+          "label": "2 × 28g — $90 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 160,
+          "label": "4 × 28g — $160 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/184_APPLE_KUSH_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/184apple-kushbudget/"
     },
     {
-      "sourceProductId": 415,
-      "sku": "415",
-      "name": "DEATH VALLEY",
+      "sourceProductId": 7517908,
+      "sku": "186",
+      "name": "HOLLYWOOD KUSH",
       "category": "Indica Hybrid",
-      "thc": "32%",
+      "thc": "26%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 75
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99254-415-DEATH-VALLEY.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 90,
+          "label": "2 × 28g — $90 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 160,
+          "label": "4 × 28g — $160 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/186_HOLLYWOOD_KUSH_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/hollywood-kush/"
     },
     {
-      "sourceProductId": 416,
-      "sku": "416",
-      "name": "PINK DEATH",
+      "sourceProductId": 7517913,
+      "sku": "187",
+      "name": "CHOCOLATE KUSH",
       "category": "Indica Hybrid",
-      "thc": "32%",
+      "thc": "26%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 75
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99266-415-PINK-DEATH.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 90,
+          "label": "2 × 28g — $90 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 160,
+          "label": "4 × 28g — $160 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/187-CHOCOLATE-KUSH.webp",
+      "sourceUrl": "https://farmerslink.ca/product/187-chocolate-kush/"
     },
     {
-      "sourceProductId": 473,
-      "sku": "473",
-      "name": "GMO COOKIES",
+      "sourceProductId": 7517977,
+      "sku": "172",
+      "name": "LAVENDER KUSH (BUDGET)",
+      "category": "Indica",
+      "thc": "26%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 80
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 100,
+          "label": "2 × 28g — $100 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 180,
+          "label": "4 × 28g — $180 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/07/172-Lavender-Kush.webp",
+      "sourceUrl": "https://farmerslink.ca/product/172lavender-kush-budget/"
+    },
+    {
+      "sourceProductId": 7517907,
+      "sku": "185",
+      "name": "HALIE BERRY (BUDGET)",
+      "category": "Sativa",
+      "thc": "26%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 80
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 100,
+          "label": "2 × 28g — $100 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 180,
+          "label": "4 × 28g — $180 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/185_HALIE_BERRY_S_showcase_600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/halie-berry/"
+    },
+    {
+      "sourceProductId": 7516288,
+      "sku": "204",
+      "name": "ROYAL GORILLA(BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "33%",
+      "thc": "27%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 90
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/473-GMO-COOKIES.jpg"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 120,
+          "label": "2 × 28g — $120 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 220,
+          "label": "4 × 28g — $220 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2024/12/204-ROYAL-GORILLA2-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/royal-gorilla/"
     },
     {
-      "sourceProductId": 475,
-      "sku": "475",
-      "name": "SUPER MARIO KUSH",
+      "sourceProductId": 7517803,
+      "sku": "206",
+      "name": "GAS MONKEY (BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "32%",
+      "thc": "28%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 90
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99225-475-SUPER-MARIO-KUSH.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 120,
+          "label": "2 × 28g — $120 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 220,
+          "label": "4 × 28g — $220 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/06/206-GASMONKEY-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/206-gas-monkey/"
     },
     {
-      "sourceProductId": 480,
-      "sku": "480",
-      "name": "LEMON CHERRY GELATO",
+      "sourceProductId": 7517528,
+      "sku": "292",
+      "name": "QAUNTUM KUSH (BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "32%",
+      "thc": "28%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 90
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/480-Lemon-Cherry-Gelato.webp"
-    },
-    {
-      "sourceProductId": 481,
-      "sku": "481",
-      "name": "PINK PANTIES",
-      "category": "Indica Hybrid",
-      "thc": "31%",
-      "priceOptions": [
+      "offers": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 120,
+          "label": "2 × 28g — $120 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 220,
+          "label": "4 × 28g — $220 total"
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99235-481-PINK-PANTIES.webp"
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/02/292-QUANTUM-KUSH-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/quantum-kush/"
     },
     {
-      "sourceProductId": 482,
-      "sku": "482",
-      "name": "MENDO BREATHE",
-      "category": "Indica Hybrid",
-      "thc": "32%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99238-482-MENDO-BREATHE.webp"
-    },
-    {
-      "sourceProductId": 483,
-      "sku": "483",
-      "name": "PINK KOSHER",
-      "category": "Indica Hybrid",
-      "thc": "32%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99239-483-PINK-KOSHER.webp"
-    },
-    {
-      "sourceProductId": 484,
-      "sku": "484",
-      "name": "PINK CHAPO",
-      "category": "Indica Hybrid",
-      "thc": "32%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99246-484-PINK-CHAPO.webp"
-    },
-    {
-      "sourceProductId": 490,
-      "sku": "490",
-      "name": "PINK JOKER",
-      "category": "Indica Hybrid",
-      "thc": "33%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99255-490-PINK-JOKER.webp"
-    },
-    {
-      "sourceProductId": 492,
-      "sku": "492",
-      "name": "PLATINUM TUNA",
-      "category": "Indica Hybrid",
-      "thc": "32%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/492-PLATINUM-TUNA.webp"
-    },
-    {
-      "sourceProductId": 493,
-      "sku": "493",
-      "name": "O PINK",
-      "category": "Indica Hybrid",
-      "thc": "33%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/493-O-PINK.webp"
-    },
-    {
-      "sourceProductId": 494,
-      "sku": "494",
-      "name": "PINK ATOMIC BOMB",
-      "category": "Indica Hybrid",
-      "thc": "33%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/494-PINK-ATOMIC-BOMB.webp"
-    },
-    {
-      "sourceProductId": 504,
-      "sku": "504",
-      "name": "PINK BELLAGIO",
-      "category": "Indica Hybrid",
-      "thc": "36%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99205-504PINK-BELLAGIO.webp"
-    },
-    {
-      "sourceProductId": 507,
-      "sku": "507",
-      "name": "PINK DEATHSTAR",
-      "category": "Indica Hybrid",
-      "thc": "36%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99216-507PINK-DEATHSTAR.webp"
-    },
-    {
-      "sourceProductId": 513,
-      "sku": "513",
-      "name": "PINK TOMFORD",
-      "category": "Indica Hybrid",
-      "thc": "38%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 140
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99240-513-PINK-TOMFORD.webp"
-    },
-    {
-      "sourceProductId": 514,
-      "sku": "514",
-      "name": "PINK PERMANENT MARKER",
-      "category": "Indica Hybrid",
-      "thc": "35%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 140
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/544-PINK-PERMANENT-MARKER.webp"
-    },
-    {
-      "sourceProductId": 538,
-      "sku": "538",
-      "name": "PINK TUNA",
-      "category": "Indica Hybrid",
-      "thc": "38%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/538-PINK-TUNA-99137N.jpg"
-    },
-    {
-      "sourceProductId": 539,
-      "sku": "539",
-      "name": "PEANUT BUTTER ROCKSTAR",
-      "category": "Indica Hybrid",
-      "thc": "38%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99258-539-PEANUT-BUTTER-ROCKSTAR.webp"
-    },
-    {
-      "sourceProductId": 540,
-      "sku": "540",
-      "name": "PINK ICKY STICKY",
-      "category": "Indica Hybrid",
-      "thc": "38%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99260-540-PINK-ICKY-STICKY.webp"
-    },
-    {
-      "sourceProductId": 543,
-      "sku": "543",
-      "name": "PINK SUPREME",
-      "category": "Indica Hybrid",
-      "thc": "38%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99257-543-PINK-SUPREME.webp"
-    },
-    {
-      "sourceProductId": 550,
-      "sku": "550",
-      "name": "PINK STARKILLER",
-      "category": "Indica Hybrid",
-      "thc": "35%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/550-PINK-STARKILLER.webp"
-    },
-    {
-      "sourceProductId": 560,
-      "sku": "560",
-      "name": "ASTRO PINK",
-      "category": "Indica Hybrid",
-      "thc": "36%",
-      "priceOptions": [
-        {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        }
-      ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/560ASTROPINK.webp"
-    },
-    {
-      "sourceProductId": 561,
-      "sku": "561",
-      "name": "RED CONGOLESE",
+      "sourceProductId": 7516052,
+      "sku": "277",
+      "name": "NYC SOUR DIESEL (BUDGET)",
       "category": "Sativa Hybrid",
-      "thc": "38%",
+      "thc": "27%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30,
-          "regularPrice": 40
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/561-RED-CONGOLESE.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/03/261-277-NYC-SOUR-DIESEL-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/nyc-sour-diesel/"
     },
     {
-      "sourceProductId": 562,
-      "sku": "562",
-      "name": "DONNIE BURGER",
+      "sourceProductId": 7517310,
+      "sku": "269",
+      "name": "OREO COOKIES (BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "38%",
+      "thc": "29%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99234-562-DONNIE-BURGER.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2025/12/99149-OREO-COOKIES-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/oreo-cookies/"
     },
     {
-      "sourceProductId": 593,
-      "sku": "593",
-      "name": "MIKE TYSON KO *SUPER EXOTICS*",
+      "sourceProductId": 7517428,
+      "sku": "271",
+      "name": "DANTE INFERNO (BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "39%",
+      "thc": "29%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 140
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/593-MIKE-TYSON-KO-99138.jpg"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/01/99146-271-DANTE-INFERNO-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/dante-inferno/"
     },
     {
-      "sourceProductId": 594,
-      "sku": "594",
-      "name": "PINEAPPLE EXPRESS",
+      "sourceProductId": 7517564,
+      "sku": "275",
+      "name": "SUGAR COOKIES (BUDGET)",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2023/07/99244-275-SUGAR-COOKIES-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/7517564/"
+    },
+    {
+      "sourceProductId": 7517676,
+      "sku": "215",
+      "name": "GRAPE FRUIT(BUDGET)",
       "category": "Sativa Hybrid",
-      "thc": "38%",
+      "thc": "27%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 60
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/594-PINEAPPLE-EXPRESS2.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/215-Grape-Fruit-600x600-1.webp",
+      "sourceUrl": "https://farmerslink.ca/product/grape-fruit/"
     },
     {
-      "sourceProductId": 595,
-      "sku": "595",
-      "name": "PURPLE SPACE QUEEN",
+      "sourceProductId": 7517764,
+      "sku": "205",
+      "name": "PINK STICKY ALIEN(BUDGET)",
       "category": "Indica Hybrid",
-      "thc": "38%",
+      "thc": "27%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30,
-          "regularPrice": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45,
-          "regularPrice": 60
-        },
-        {
-          "key": "half_oz",
-          "label": "14g",
-          "price": 95,
-          "regularPrice": 140
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/99224-595-PURPLE-SPACE-QUEEN.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/05/205-PINK-STICKY-ALIEN-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/pink-sticky-alien/"
     },
     {
-      "sourceProductId": 596,
-      "sku": "596",
-      "name": "PINK GOOEY FROST",
-      "category": "Indica Hybrid",
-      "thc": "39%",
+      "sourceProductId": 7517998,
+      "sku": "216",
+      "name": "PURPLE DRAGON(BUDGET)",
+      "category": "Sativa Hybrid",
+      "thc": "27%",
+      "tier": "Budget",
       "priceOptions": [
         {
-          "key": "three_grams",
-          "label": "3g",
-          "price": 30,
-          "regularPrice": 40
-        },
-        {
-          "key": "five_grams",
-          "label": "5g",
-          "price": 45,
-          "regularPrice": 60
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
         }
       ],
-      "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/596-PINK-GOEY-FROST2.webp"
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/216-PURPLE-DRAGON-S.webp",
+      "sourceUrl": "https://farmerslink.ca/product/purple-dragon/"
+    },
+    {
+      "sourceProductId": 7517443,
+      "sku": "278",
+      "name": "SLURRICANE (BUDGET)",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 100
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 140,
+          "label": "2 × 28g — $140 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 260,
+          "label": "4 × 28g — $260 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/278-SLURRICANE-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/slurricane/"
+    },
+    {
+      "sourceProductId": 7517450,
+      "sku": "291",
+      "name": "DIAMOND OG(BUDGET)",
+      "category": "Indica Hybrid",
+      "thc": "29%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 105
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 150,
+          "label": "2 × 28g — $150 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 280,
+          "label": "4 × 28g — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/01/291-DIAMOND-KUSH-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/diamond-og/"
+    },
+    {
+      "sourceProductId": 7517685,
+      "sku": "290",
+      "name": "SWEET KUSH(BUDGET)",
+      "category": "Indica Hybrid",
+      "thc": "28%",
+      "tier": "Budget",
+      "priceOptions": [
+        {
+          "key": "weight_28g",
+          "label": "28g",
+          "price": 105
+        }
+      ],
+      "offers": [
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "totalPrice": 150,
+          "label": "2 × 28g — $150 total"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 4,
+          "unitWeight": "28g",
+          "totalPrice": 280,
+          "label": "4 × 28g — $280 total"
+        }
+      ],
+      "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99263-290-SWEET-KUSH-600x600.webp",
+      "sourceUrl": "https://farmerslink.ca/product/290sweet-kush-budget/"
     }
   ]
 }
