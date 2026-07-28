@@ -102,7 +102,7 @@ export default function Catalog() {
         <div className="category-strip pny-category-strip" aria-label="Flower tier filters">{tierFilters.map((item) => <button type="button" key={item} className={activeTier === item ? "active" : ""} onClick={() => setActiveTier(item)}>{item === "ALL" ? "ALL" : item.toUpperCase()}</button>)}</div>
       </header>
 
-      <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
+      <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span><span>DELIVERY HOURS 10:00 a.m.–10:00 p.m.</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
 
       <main className="delivery-page" id="top">
         <section className="store-hero pny-cinematic-hero"><Image src="/p60-delivery-menu-banner.webp" alt="P60 Cannabis delivery banner" width={1774} height={887} priority sizes="(max-width: 1500px) 100vw, 1444px" /></section>
