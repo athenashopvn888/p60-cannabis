@@ -65,17 +65,27 @@ function ProductPricing({ product }: { product: Product }) {
   const regular28 = product.priceOptions.find((option) => option.label === "28g");
   const compact = product.priceOptions.filter((option) => option.label !== "28g");
   const member = product.offers.find((offer): offer is MemberOffer => offer.kind === "prime_time");
-  const bundles = product.offers.filter((offer): offer is MultiOunceOffer => offer.kind === "multi_ounce");
+  const eligible = ["Exotics", "CRAFTS", "BC Premium"].includes(tier(product) || "");
+  const explicitLoyalty = Number(member?.price);
+  const loyaltyPrice = Number.isFinite(explicitLoyalty) && explicitLoyalty > 0
+    ? explicitLoyalty
+    : eligible && regular28 ? regular28.price - 30 : null;
+  const bundles: MultiOunceOffer[] = eligible && loyaltyPrice
+    ? [
+      { kind: "multi_ounce", quantity: 2, unitWeight: "28g", perUnitPrice: loyaltyPrice, totalPrice: loyaltyPrice * 2, label: `2 × 28g at $${loyaltyPrice} each — $${loyaltyPrice * 2} total` },
+      ...product.offers.filter((offer): offer is MultiOunceOffer => offer.kind === "multi_ounce" && offer.quantity !== 2)
+    ]
+    : product.offers.filter((offer): offer is MultiOunceOffer => offer.kind === "multi_ounce");
   return (
     <div className="product-pricing">
       {compact.length > 0 && <div className="compact-price-section"><strong className="pricing-kicker">Other weights</strong><div className="compact-price-grid">{compact.map((option) => <div key={option.key} className="compact-price"><span>{option.label}</span><strong>${option.price}</strong></div>)}</div></div>}
       {(regular28 || member || bundles.length > 0) && <div className="decision-prices">
-        {regular28 && <div className="decision-tile standard-28"><span>STANDARD 28g</span><strong>${regular28.price}</strong><small>Regular price</small></div>}
-        {member && <div className="decision-tile member-28"><span>MEMBER LOYALTY 28g</span><strong>${member.price}</strong><small>Member price</small><p>{member.bonus ? `${member.bonus} applies on a later order when eligible.` : "Coupon or add-on eligibility is confirmed separately."}</p></div>}
+        {loyaltyPrice !== null && <div className="decision-tile member-28"><span>MEMBER LOYALTY 28g</span><strong>${loyaltyPrice}</strong><small>Member price</small><p>{member?.bonus ? `${member.bonus} applies on a later order when eligible.` : "Coupon or add-on eligibility is confirmed separately."}</p></div>}
         {bundles.map((offer) => {
           const each = offer.perUnitPrice || (offer.totalPrice / offer.quantity);
           return <div className="decision-tile bundle-decision" key={`${offer.kind}-${offer.quantity}`}><span>{offer.quantity} × 28g DEAL</span><div className="bundle-numbers"><strong>${each} <small>each</small></strong><b>${offer.totalPrice} <small>total</small></b></div></div>;
         })}
+        {regular28 && <div className="decision-tile standard-28"><span>STANDARD 28g</span><strong>${regular28.price}</strong><small>Regular price</small></div>}
       </div>}
     </div>
   );

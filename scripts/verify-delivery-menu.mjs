@@ -16,7 +16,10 @@ assert(component.includes("STANDARD 28g") && component.includes("MEMBER LOYALTY 
 assert(component.includes("<small>each</small>") && component.includes("<small>total</small>"));
 assert(!component.includes("PRIME TIME") && !component.includes("2oz promo"));
 assert(css.includes(".member-28") && css.includes("#0b3a63"));
-assert(css.includes(".bundle-decision") && css.includes("grid-template-columns:1fr"));
+assert(css.includes(".bundle-decision") && css.includes(".pny-tile-grid { grid-template-columns:repeat(2,minmax(0,1fr));"));
+assert(component.includes("totalPrice: loyaltyPrice * 2") && component.includes("offer.quantity !== 2"));
+assert(component.indexOf("MEMBER LOYALTY 28g") < component.indexOf("STANDARD 28g"));
+assert(css.includes("background:linear-gradient(145deg,#3b0764,#6b21a8)") && !css.includes("background:linear-gradient(145deg,#2a1c08,#49300b)"));
 assert(css.includes("min-height:44px") && css.includes("@media(max-width:560px)"));
 assert(component.includes('src="/p60-delivery-menu-banner.webp"') && component.includes("width={1774}") && component.includes("height={887}"));
 assert(css.includes("object-fit:contain"));
