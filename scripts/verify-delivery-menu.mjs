@@ -30,7 +30,8 @@ assert(component.includes("<small>each</small>") && component.includes("<small>t
 assert(!component.includes("PRIME TIME") && !component.includes("2oz promo"));
 assert(css.includes(".member-28") && css.includes("#0b3a63"));
 assert(css.includes("@keyframes p60-live-order-pulse") && css.includes("@media(prefers-reduced-motion:reduce)"));
-assert(css.includes("border:2px solid #b42318") && css.includes("background:#fff;color:#8f1d14"));
+assert(css.includes("background:#b42318;color:#fff") && css.includes('.sod-chat-launcher[aria-expanded="false"]{animation:p60-live-order-pulse'));
+assert(css.includes('.sod-chat-launcher[aria-expanded="true"]{background:#fff;color:#8f1d14') && css.includes("transform:scale(1.06)"));
 assert(css.includes(".bundle-decision") && css.includes(".pny-tile-grid { grid-template-columns:repeat(2,minmax(0,1fr));"));
 assert(component.includes("totalPrice: loyaltyPrice * 2") && component.includes("offer.quantity !== 2"));
 assert(component.indexOf("MEMBER LOYALTY 28g") < component.indexOf("STANDARD 28g"));
