@@ -8,6 +8,15 @@ const css = await readFile(new URL("../app/delivery/delivery.css", import.meta.u
 const drawer = await readFile(new URL("../app/delivery/ProductDetailsDrawer.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const banner = await readFile(new URL("../public/p60-delivery-menu-banner.webp", import.meta.url));
+const home = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const homeCss = await readFile(new URL("../app/page.module.css", import.meta.url), "utf8");
+const nav = await readFile(new URL("../app/components/Navbar.tsx", import.meta.url), "utf8");
+const navCss = await readFile(new URL("../app/components/Navbar.module.css", import.meta.url), "utf8");
+const footer = await readFile(new URL("../app/components/Footer.tsx", import.meta.url), "utf8");
+const faq = await readFile(new URL("../app/faq/page.tsx", import.meta.url), "utf8");
+const deliveryPage = await readFile(new URL("../app/delivery/page.tsx", import.meta.url), "utf8");
+const sitemap = await readFile(new URL("../app/sitemap.ts", import.meta.url), "utf8");
+const homeBanner = await readFile(new URL("../public/p60-home-delivery-banner.webp", import.meta.url));
 const products = menu.products;
 
 assert.deepEqual([menu.store.id, menu.store.code, menu.store.pod], ["P60", "PNY01", "POD01"]);
@@ -40,6 +49,20 @@ assert(css.includes("min-height:44px") && css.includes("@media(max-width:560px)"
 assert(component.includes('src="/p60-delivery-menu-banner.webp"') && component.includes("width={1774}") && component.includes("height={887}"));
 assert(css.includes("object-fit:contain"));
 assert(banner.length === 331936);
+assert(home.includes('const welcomeBannerSrc: string = "/p60-home-delivery-banner.webp"'));
+assert(home.includes('href="/delivery"') && home.includes("width={1774}") && home.includes("height={887}") && home.includes("priority"));
+assert(homeCss.includes("aspect-ratio: 1774 / 887") && homeCss.includes(".deliveryHeroMedia:focus-visible"));
+assert.equal(homeBanner.length, 192774);
+assert(nav.includes('{ href: "/delivery", label: "Delivery" }'));
+assert(nav.includes('pathname === "/"') && nav.includes("NEW DELIVERY MENU") && nav.includes("ORDER NOW"));
+assert(navCss.includes("@keyframes deliveryCtaRing") && navCss.includes("@media (prefers-reduced-motion: reduce)") && navCss.includes("@media (max-width: 620px)"));
+assert(footer.includes('<Link href="/delivery">Delivery Menu</Link>'));
+assert(faq.includes("10:00 AM to 10:00 PM") && faq.includes("LIVE ORDER") && !faq.includes("Delivery is listed as coming soon"));
+assert(component.includes('href="/" aria-label="P60 Cannabis home"'));
+assert(component.includes('href="#delivery-steps"') && component.includes('id="delivery-steps" tabIndex={-1}'));
+assert(css.includes("scroll-margin-top: 140px") && css.includes(".pny-delivery-steps:focus-visible"));
+assert(deliveryPage.includes('canonical: "https://www.p60cannabis.com/delivery"') && !deliveryPage.includes("noindex"));
+assert(sitemap.includes("`${BASE}/delivery`"));
 
 const tierCounts = Object.fromEntries(["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"].map((name) => [name, products.filter((product) => product.tier === name).length]));
 assert.deepEqual(tierCounts, { Exotics: 14, CRAFTS: 13, "BC Premium": 15, Budget: 18, SHREDS: 3 });

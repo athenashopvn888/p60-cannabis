@@ -6,7 +6,7 @@ import styles from "./faq.module.css";
 export const metadata: Metadata = {
   title: "FAQ - P60 Cannabis | York Dispensary Questions",
   description:
-    "Frequently asked questions about P60 Cannabis in York, including location, listed hours, product categories, menu notes, and delivery updates.",
+    "Frequently asked questions about P60 Cannabis in York, including location, listed hours, product categories, menu notes, and delivery ordering.",
   alternates: {
     canonical: "https://www.p60cannabis.com/faq",
   },
@@ -47,7 +47,7 @@ const FAQ_CATEGORIES = [
     faqs: [
       { q: "Do I need an appointment?", a: "The public site presents P60 Cannabis as a walk-in store. Check current store details before visiting." },
       { q: "Can I order online?", a: "Use the online menu for browsing. Contact the store if you need to confirm ordering options." },
-      { q: "Do you offer delivery?", a: "Delivery is listed as coming soon. Visit the delivery page to sign up for updates." },
+      { q: "Do you offer delivery?", a: "Yes. Use the P60 delivery menu from 10:00 AM to 10:00 PM and open LIVE ORDER to chat with the dispatcher, who confirms availability and delivery details." },
       { q: "What payment methods do you accept?", a: "Ask staff or check the store page for current payment details before visiting." },
       { q: "Can staff help me choose a product?", a: "Ask staff when a current product detail, format, or category choice needs clarification." },
     ],

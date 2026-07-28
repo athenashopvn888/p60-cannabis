@@ -7,6 +7,7 @@ import styles from "./Navbar.module.css";
 
 const ALL_LINKS = [
   { href: "/careers/budtender", label: "Join Team" },
+  { href: "/delivery", label: "Delivery" },
   { href: "/exotic", label: "Exotic" },
   { href: "/premium", label: "Premium" },
   { href: "/aaa", label: "AAA+" },
@@ -84,6 +85,11 @@ export default function Navbar() {
           </span>
         </Link>
         <div className={styles.topBarRight}>
+          {pathname === "/" && (
+            <Link href="/delivery" className={styles.deliveryCta}>
+              NEW DELIVERY MENU <span aria-hidden="true">—</span> ORDER NOW
+            </Link>
+          )}
           <span className={styles.open}>
             <span className={styles.dot}></span>
             Open Now

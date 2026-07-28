@@ -1328,7 +1328,8 @@ body.product-open .product-drawer {
 .member-loyalty-conditions { border-left:4px solid #93c5fd; padding:12px 16px; background:rgba(0,0,0,.18); }
 .member-loyalty-conditions strong { color:#bfdbfe; }
 .member-loyalty-conditions p { margin:5px 0 0; color:#eaf4ff; font-size:13px; line-height:1.55; }
-.pny-delivery-steps { max-width: 980px; margin: 18px auto 48px; border: 1px solid rgba(101,232,255,.24); border-radius: 18px; padding: clamp(20px,4vw,36px); background: linear-gradient(145deg,#110b20,#071c25); }
+.pny-delivery-steps { max-width: 980px; margin: 18px auto 48px; scroll-margin-top: 140px; border: 1px solid rgba(101,232,255,.24); border-radius: 18px; padding: clamp(20px,4vw,36px); background: linear-gradient(145deg,#110b20,#071c25); }
+.pny-delivery-steps:focus-visible { outline: 3px solid #65e8ff; outline-offset: 4px; }
 .pny-delivery-steps h2 { margin: 0 0 18px; color: #f8f6ff; font-size: clamp(22px,3vw,34px); }
 .pny-delivery-steps ol { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: #d9d0e8; line-height: 1.55; }
 .pny-add { width: 100%; min-height: 44px; margin-top: auto; border: 0; border-radius: 10px; background: linear-gradient(105deg,#65e8ff,#b263ff); color: #090511; font-weight: 900; cursor: pointer; }
