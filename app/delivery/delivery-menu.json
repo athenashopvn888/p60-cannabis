@@ -43,6 +43,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$160/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 160,
+          "totalPrice": 320,
+          "label": "2 × 28g at $160 each — $320 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2026/04/563-purple-skunk.webp",
@@ -80,6 +88,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$160/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 160,
+          "totalPrice": 320,
+          "label": "2 × 28g at $160 each — $320 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2026/04/99260-540-PINK-ICKY-STICKY-600x600.webp",
@@ -117,6 +133,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$160/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 160,
+          "totalPrice": 320,
+          "label": "2 × 28g at $160 each — $320 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2025/02/550-PINK-STARKILLER-600x600.webp",
@@ -154,6 +178,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$190/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 190,
+          "totalPrice": 380,
+          "label": "2 × 28g at $190 each — $380 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2024/05/546-24K-Gold-600x600.webp",
@@ -191,6 +223,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2024/05/99240-513-PINK-TOMFORD-600x600.webp",
@@ -363,6 +403,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$200/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 200,
+          "totalPrice": 400,
+          "label": "2 × 28g at $200 each — $400 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2024/02/551_DEVIL_DRIVER_showcase_600x600.webp",
@@ -490,6 +538,14 @@
           "weight": "28g",
           "bonus": "3g CRAFT COUPON",
           "label": "$205/28g + 3g CRAFT COUPON"
+        },
+        {
+          "kind": "multi_ounce",
+          "quantity": 2,
+          "unitWeight": "28g",
+          "perUnitPrice": 205,
+          "totalPrice": 410,
+          "label": "2 × 28g at $205 each — $410 total"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2026/04/544-PINK-PERMANENT-MARKER-600x600.webp",
@@ -1791,6 +1847,14 @@
           "unitWeight": "28g",
           "totalPrice": 220,
           "label": "4 × 28g — $220 total"
+        },
+        {
+          "kind": "prime_time",
+          "title": "MEMBER LOYALTY",
+          "price": 60,
+          "weight": "28g",
+          "bonus": "",
+          "label": "$60/28g"
         }
       ],
       "image": "https://farmerslink.ca/wp-content/uploads/2026/07/376-og-kush-showcase-600.webp",

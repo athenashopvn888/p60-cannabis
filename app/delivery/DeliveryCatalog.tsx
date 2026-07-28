@@ -61,6 +61,26 @@ function compareProducts(a: Product, b: Product) {
   return skuDifference || a.name.localeCompare(b.name, "en", { sensitivity: "base" });
 }
 
+function ProductPricing({ product }: { product: Product }) {
+  const regular28 = product.priceOptions.find((option) => option.label === "28g");
+  const compact = product.priceOptions.filter((option) => option.label !== "28g");
+  const member = product.offers.find((offer): offer is MemberOffer => offer.kind === "prime_time");
+  const bundles = product.offers.filter((offer): offer is MultiOunceOffer => offer.kind === "multi_ounce");
+  return (
+    <div className="product-pricing">
+      {compact.length > 0 && <div className="compact-price-section"><strong className="pricing-kicker">Other weights</strong><div className="compact-price-grid">{compact.map((option) => <div key={option.key} className="compact-price"><span>{option.label}</span><strong>${option.price}</strong></div>)}</div></div>}
+      {(regular28 || member || bundles.length > 0) && <div className="decision-prices">
+        {regular28 && <div className="decision-tile standard-28"><span>STANDARD 28g</span><strong>${regular28.price}</strong><small>Regular price</small></div>}
+        {member && <div className="decision-tile member-28"><span>MEMBER LOYALTY 28g</span><strong>${member.price}</strong><small>Member price</small><p>{member.bonus ? `${member.bonus} applies on a later order when eligible.` : "Coupon or add-on eligibility is confirmed separately."}</p></div>}
+        {bundles.map((offer) => {
+          const each = offer.perUnitPrice || (offer.totalPrice / offer.quantity);
+          return <div className="decision-tile bundle-decision" key={`${offer.kind}-${offer.quantity}`}><span>{offer.quantity} × 28g DEAL</span><div className="bundle-numbers"><strong>${each} <small>each</small></strong><b>${offer.totalPrice} <small>total</small></b></div></div>;
+        })}
+      </div>}
+    </div>
+  );
+}
+
 export default function Catalog() {
   const [products, setProducts] = useState<Product[]>(bundledProducts);
   const [activeTier, setActiveTier] = useState<TierFilter>("ALL");
@@ -114,7 +134,7 @@ export default function Catalog() {
           <section className="menu-main pny-menu-main"><div className="menu-tools"><div><p className="eyebrow">P60 FLOWER MENU</p><h2>{activeTier === "ALL" ? "Flowers" : activeTier}</h2></div><label className="menu-search"><span>Search</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product, SKU, strain" /></label></div><p className="result-summary">{filtered.length} flower products.</p>
             <div className="product-grid pny-tile-grid">{filtered.map((product) => {
               const productTier = tier(product);
-              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 50vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><strong className="all-weight-label">Standard prices</strong><div className="price-matrix card-matrix">{product.priceOptions.map((option) => <div key={option.key} className="matrix-pill"><span>{option.label}</span>{option.regularPrice && <del>${option.regularPrice}</del>}<strong>${option.price}</strong></div>)}</div>{product.offers.length > 0 && <div className="product-offers">{product.offers.map((offer, index) => offer.kind === "prime_time" ? <div className="member-offer" key={`${offer.kind}-${index}`}><strong>Member Loyalty</strong><span>${offer.price} / {offer.weight} · {offer.bonus} for your next order</span></div> : <div className="bundle-offer" key={`${offer.kind}-${offer.quantity}`}><strong>Multi-ounce total</strong><span>{offer.label}</span></div>)}</div>}</div></article>;
+              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 100vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><ProductPricing product={product} /></div></article>;
             })}</div>
           </section>
         </section>
