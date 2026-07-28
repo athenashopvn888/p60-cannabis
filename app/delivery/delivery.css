@@ -1386,6 +1386,22 @@ body.product-open .product-drawer {
 .sod-chat-start input,.sod-chat-start textarea,.sod-chat-composer textarea { width:100%; border:1px solid #aebdb5; border-radius:9px; padding:10px; background:#fff; color:#17221d; font:inherit; box-sizing:border-box; }
 .sod-chat-start button,.sod-id-upload button,.sod-chat-composer button { min-height:42px; border:0; border-radius:9px; background:#146b48; color:#fff; font-weight:850; }
 .sod-chat-start button:disabled,.sod-id-upload button:disabled,.sod-chat-composer button:disabled { opacity:.55; }
+.sod-chat-welcome { display:grid; gap:8px; padding:2px 0 4px; }
+.sod-chat-welcome h2 { margin:0; color:#102a1f; font-size:24px; line-height:1.15; }
+.sod-chat-welcome p { color:#344e42; font-size:14px; line-height:1.5; }
+.sod-intent-options { display:grid; gap:9px; min-width:0; margin:0; border:0; padding:0; }
+.sod-intent-options legend { margin-bottom:7px; color:#233d31; font-size:13px; font-weight:850; }
+.sod-intent-options label { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:10px; min-height:72px; border:2px solid #aebdb5; border-radius:12px; padding:11px 12px; background:#fff; color:#17221d; cursor:pointer; }
+.sod-intent-options label.checked { border-color:#146b48; background:#eef8f2; box-shadow:0 0 0 2px rgba(20,107,72,.12); }
+.sod-intent-options input { width:20px; height:20px; margin:0; accent-color:#146b48; }
+.sod-intent-options span { display:grid; gap:4px; }
+.sod-intent-options strong { font-size:15px; }
+.sod-intent-options small,.sod-chat-start label > small { color:#475c50; font-size:12px; font-weight:500; line-height:1.4; }
+.sod-chat-start input,.sod-chat-start textarea { min-height:46px; font-size:16px; }
+.sod-chat-start textarea { min-height:92px; resize:vertical; }
+.sod-chat-start > button[type="submit"] { min-height:50px; font-size:15px; }
+.sod-chat-start input:focus-visible,.sod-chat-start textarea:focus-visible,.sod-intent-options input:focus-visible,.sod-chat-start button:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
+.sod-chat-start input:invalid:not(:placeholder-shown) { border-color:#b42318; }
 .sod-chat-scroll { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; background:#f4f7f5; }
 .sod-chat-transcript { display:grid; align-content:start; gap:9px; min-height:150px; padding:14px; background:#f4f7f5; }
 .sod-chat-transcript > div { display:grid; max-width:82%; gap:3px; }

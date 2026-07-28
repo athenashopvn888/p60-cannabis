@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:staff-photo": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/staff-photo.test.ts",
+    "test:web-chat": "node --test tests/web-chat-intake.test.mjs",
     "test:delivery-source": "node --test tests/farmerslink-menu.test.mjs",
     "verify:delivery": "node scripts/verify-delivery-menu.mjs",
     "sync:delivery": "node scripts/farmerslink-menu.mjs --write",

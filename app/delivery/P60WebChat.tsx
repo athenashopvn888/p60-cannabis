@@ -8,7 +8,8 @@ const MAX_BYTES = 3 * 1024 * 1024;
 
 type Message = { id: string; direction: "inbound" | "outbound"; body: string; at: number };
 type Review = { id: string; status: string; receivedAt: number; expiresAt: number };
-type Conversation = { id: string; messages: Message[]; idReviews?: Review[] };
+type CustomerIntent = "NEW_CUSTOMER" | "RETURNING_CUSTOMER";
+type Conversation = { id: string; messages: Message[]; idReviews?: Review[]; customerIntent?: CustomerIntent };
 type Availability = { state: "AVAILABLE" | "PAUSED"; message: string | null; resumeAt: number | null };
 type UploadState = "idle" | "preparing" | "uploading" | "sent" | "error";
 
@@ -96,7 +97,8 @@ export default function P60WebChat() {
   const [uploadAvailable, setUploadAvailable] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [firstMessage, setFirstMessage] = useState("Hi, I need help with ID verification.");
+  const [intent, setIntent] = useState<CustomerIntent | "">("");
+  const [firstMessage, setFirstMessage] = useState("");
   const [message, setMessage] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -165,6 +167,10 @@ export default function P60WebChat() {
 
   async function start(event: FormEvent) {
     event.preventDefault();
+    if (!intent) {
+      setNotice("Choose whether you are new or returning.");
+      return;
+    }
     if (!availability || availability.state !== "AVAILABLE") {
       setNotice(availability?.message || "Delivery status is temporarily unavailable. Please check back soon.");
       return;
@@ -175,7 +181,7 @@ export default function P60WebChat() {
       const data = await payload(await fetch(`${API_BASE}/api/web-chat/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: "P60", customerName: name, phone, message: firstMessage }),
+        body: JSON.stringify({ storeId: "P60", customerName: name, phone, intent, message: firstMessage }),
       }));
       localStorage.setItem(SESSION_KEY, data.token);
       setToken(data.token);
@@ -251,7 +257,8 @@ export default function P60WebChat() {
   const latestReview = conversation?.idReviews?.at(-1);
   const reviewStatus = latestReview?.status || "NOT_SUBMITTED";
   const retryNeeded = reviewStatus === "REJECTED" || reviewStatus === "EXPIRED";
-  const showUpload = reviewStatus === "NOT_SUBMITTED" || retryExpanded || ["preparing", "uploading", "error"].includes(uploadState);
+  const activeIntent = conversation?.customerIntent || intent;
+  const showUpload = activeIntent === "NEW_CUSTOMER" && (reviewStatus === "NOT_SUBMITTED" || retryExpanded || ["preparing", "uploading", "error"].includes(uploadState));
   const paused = availability?.state === "PAUSED";
   const statusMessage = paused ? availability.message : availabilityUnavailable ? "Delivery status is temporarily unavailable. Please check back soon." : null;
 
@@ -261,7 +268,7 @@ export default function P60WebChat() {
         {open ? "Close chat" : "Web Chat"}
       </button>
       {open && <section className="sod-chat-panel" role="dialog" aria-modal="true" aria-label="P60 Web Chat">
-      <header><div><strong>P60 Web Chat</strong><small>Private support from the SOD dispatcher</small></div><button type="button" onClick={() => setOpen(false)} aria-label="Minimize chat">×</button></header>
+      <header><div><strong>P60 Web Chat</strong><small>Start your delivery order with a dispatcher</small></div><button type="button" onClick={() => setOpen(false)} aria-label="Minimize chat">×</button></header>
       <div className={`sod-availability-banner ${paused ? "paused" : "unavailable"}`} role="status" hidden={!statusMessage}>
         <strong>{paused ? "New delivery chats are paused" : "Delivery status unavailable"}</strong>
         <span>{statusMessage}{token ? " Your existing chat remains open." : ""}</span>
@@ -270,11 +277,15 @@ export default function P60WebChat() {
         <p>{statusMessage || "Checking delivery availability..."}</p>
         <button type="button" onClick={() => void refreshAvailability()}>Check again</button>
       </div> : <form className="sod-chat-start" onSubmit={start}>
-        <p>Use the customer&apos;s P60 phone number. Even if it is also used at another store, this starts a separate P60 customer account with separate messages and verification.</p>
+        <div className="sod-chat-welcome"><h2>Ready to order?</h2><p>Welcome! First time ordering? Have a valid government-issued photo ID and a Canadian mobile number ready. Your mobile number will be used as your account number.</p><p>Use a mobile number that can receive verification texts.</p></div>
+        <fieldset className="sod-intent-options"><legend>Tell us about your account</legend>
+          <label className={intent === "NEW_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="NEW_CUSTOMER" checked={intent === "NEW_CUSTOMER"} onChange={() => setIntent("NEW_CUSTOMER")} /><span><strong>I&apos;m new</strong><small>Create my account and place my first order</small></span></label>
+          <label className={intent === "RETURNING_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="RETURNING_CUSTOMER" checked={intent === "RETURNING_CUSTOMER"} onChange={() => setIntent("RETURNING_CUSTOMER")} /><span><strong>I&apos;m returning</strong><small>Use my existing mobile account and place an order</small></span></label>
+        </fieldset>
         <label>Full name<input required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>
-        <label>Canadian phone number<input required inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="647 555 0123" /></label>
-        <label>Message<textarea required maxLength={1000} value={firstMessage} onChange={(event) => setFirstMessage(event.target.value)} /></label>
-        <button type="submit" disabled={busy}>{busy ? "Starting..." : "Start P60 Web Chat"}</button>
+        <label>Canadian mobile number<input required inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="647 555 0123" aria-describedby="sod-phone-help" /><small id="sod-phone-help">Must be able to receive verification texts. This becomes your account number.</small></label>
+        <label>Order details (optional)<textarea maxLength={1000} value={firstMessage} onChange={(event) => setFirstMessage(event.target.value)} placeholder="List the products and quantities you want, or leave this blank and a dispatcher will help." /></label>
+        <button type="submit" disabled={busy}>{busy ? "Starting…" : "Start order chat"}</button>
       </form>) : <>
         <div className="sod-chat-scroll">
           <div className="sod-chat-transcript" aria-live="polite">
