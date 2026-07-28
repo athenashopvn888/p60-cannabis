@@ -1389,14 +1389,14 @@ body.product-open .product-drawer {
 .sod-chat-welcome { display:grid; gap:8px; padding:2px 0 4px; }
 .sod-chat-welcome h2 { margin:0; color:#102a1f; font-size:24px; line-height:1.15; }
 .sod-chat-welcome p { color:#344e42; font-size:14px; line-height:1.5; }
-.sod-intent-options { display:grid; gap:9px; min-width:0; margin:0; border:0; padding:0; }
-.sod-intent-options legend { margin-bottom:7px; color:#233d31; font-size:13px; font-weight:850; }
-.sod-intent-options label { display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; gap:10px; min-height:72px; border:2px solid #aebdb5; border-radius:12px; padding:11px 12px; background:#fff; color:#17221d; cursor:pointer; }
+.sod-intent-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; min-width:0; margin:0; border:0; padding:0; }
+.sod-intent-options legend { grid-column:1 / -1; margin-bottom:7px; color:#233d31; font-size:13px; font-weight:850; }
+.sod-intent-options label { display:grid; grid-template-columns:22px minmax(0,1fr); align-items:center; gap:7px; min-height:76px; border:2px solid #aebdb5; border-radius:12px; padding:9px; background:#fff; color:#17221d; cursor:pointer; }
 .sod-intent-options label.checked { border-color:#146b48; background:#eef8f2; box-shadow:0 0 0 2px rgba(20,107,72,.12); }
 .sod-intent-options input { width:20px; height:20px; margin:0; accent-color:#146b48; }
 .sod-intent-options span { display:grid; gap:4px; }
-.sod-intent-options strong { font-size:15px; }
-.sod-intent-options small,.sod-chat-start label > small { color:#475c50; font-size:12px; font-weight:500; line-height:1.4; }
+.sod-intent-options strong { font-size:13px; }
+.sod-intent-options small,.sod-chat-start label > small { color:#475c50; font-size:11px; font-weight:500; line-height:1.35; }
 .sod-chat-start input,.sod-chat-start textarea { min-height:46px; font-size:16px; }
 .sod-chat-start textarea { min-height:92px; resize:vertical; }
 .sod-chat-start > button[type="submit"] { min-height:50px; font-size:15px; }
@@ -1448,21 +1448,26 @@ body.product-open .product-drawer {
 .decision-tile>span { font-size:10px; font-weight:950; letter-spacing:.07em; line-height:1.25; }
 .decision-tile>strong { font-size:28px; line-height:1; }
 .decision-tile>small { font-size:11px; font-weight:800; }
-.standard-28 { border:1px solid #6f6679; background:#17121c; color:#fff; }
+.standard-28 { grid-column:1 / -1; min-height:68px; border:1px solid #6f6679; background:#17121c; color:#fff; }
 .standard-28>span,.standard-28>small { color:#c9c1cf; }
 .member-28 { border:2px solid #60a5fa; background:linear-gradient(145deg,#0b3a63,#124f83); color:#fff; box-shadow:0 7px 22px rgba(37,99,235,.24); }
 .member-28>span,.member-28>small { color:#bfdbfe; }
 .member-28 p { margin:5px 0 0; color:#e0efff; font-size:10px; line-height:1.35; }
-.bundle-decision { grid-column:1 / -1; min-height:88px; border:2px solid #d3a53e; background:linear-gradient(145deg,#2a1c08,#49300b); color:#fff4cf; }
-.bundle-decision>span { color:#ffd66f; }
+.bundle-decision { min-height:104px; border:2px solid #c084fc; background:linear-gradient(145deg,#3b0764,#6b21a8); color:#faf5ff; box-shadow:0 8px 24px rgba(168,85,247,.25); }
+.bundle-decision>span { color:#e9d5ff; }
 .bundle-numbers { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:end; }
 .bundle-numbers strong,.bundle-numbers b { display:block; font-size:22px; line-height:1.1; }
 .bundle-numbers b { color:#fff; text-align:right; }
-.bundle-numbers small { color:#e8d7aa; font-size:10px; font-weight:850; text-transform:uppercase; }
+.bundle-numbers small { color:#f3e8ff; font-size:10px; font-weight:850; text-transform:uppercase; }
 @media(max-width:560px){
-  .pny-tile-grid { grid-template-columns:1fr; }
-  .pny-vertical-card { padding:12px; }
-  .pny-vertical-card .product-image-button { height:auto; aspect-ratio:16 / 10; }
-  .pny-vertical-card .product-title { min-height:0; font-size:18px; }
-  .decision-tile { min-height:100px; }
+  .pny-tile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .pny-vertical-card { min-width:0; padding:7px; }
+  .pny-vertical-card .product-image-button { height:auto; aspect-ratio:1; }
+  .pny-vertical-card .product-title { min-height:42px; font-size:13px; }
+  .pny-vertical-card .product-meta { font-size:10px; }
+  .decision-prices { grid-template-columns:1fr; gap:6px; }
+  .decision-tile,.bundle-decision { min-height:78px; padding:8px; }
+  .standard-28 { grid-column:auto; min-height:58px; }
+  .decision-tile>strong { font-size:23px; }
+  .bundle-numbers strong,.bundle-numbers b { font-size:18px; }
 }
