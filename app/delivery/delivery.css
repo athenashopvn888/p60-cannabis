@@ -1308,6 +1308,13 @@ body.product-open .product-drawer {
 .pny-vertical-card .all-weight-label { display: block; margin: 12px 0 8px; color: #65e8ff; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .pny-vertical-card .card-matrix { grid-template-columns: repeat(auto-fit,minmax(72px,1fr)); gap: 6px; }
 .pny-vertical-card .matrix-pill del { color: #9d8eaa; font-size: 11px; }
+.product-offers { display: grid; gap: 7px; margin-top: 9px; }
+.product-offers > div { display: grid; gap: 3px; border-radius: 10px; padding: 10px; }
+.product-offers strong { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.product-offers span { font-size: 12px; font-weight: 850; line-height: 1.35; }
+.prime-offer { border: 1px solid #60a5fa; background: linear-gradient(135deg,#0b3a63,#124f83); color: #fff; box-shadow: 0 5px 18px rgba(37,99,235,.28); }
+.prime-offer strong { color: #93c5fd; }
+.bundle-offer { border: 1px solid rgba(245,191,75,.55); background: #21170b; color: #ffe4a3; }
 .pny-delivery-steps { max-width: 980px; margin: 18px auto 48px; border: 1px solid rgba(101,232,255,.24); border-radius: 18px; padding: clamp(20px,4vw,36px); background: linear-gradient(145deg,#110b20,#071c25); }
 .pny-delivery-steps h2 { margin: 0 0 18px; color: #f8f6ff; font-size: clamp(22px,3vw,34px); }
 .pny-delivery-steps ol { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: #d9d0e8; line-height: 1.55; }

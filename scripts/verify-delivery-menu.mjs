@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { validateMenu } from "./farmerslink-menu.mjs";
 
 const path = new URL("../app/delivery/delivery-menu.json", import.meta.url);
 const menu = JSON.parse(await readFile(path, "utf8"));
@@ -8,39 +9,26 @@ const products = menu.products;
 assert.equal(menu.store.id, "P60");
 assert.equal(menu.store.code, "PNY01");
 assert.equal(menu.store.pod, "POD01");
-assert.equal(products.length, 51, "PNY01 action-time visible count must be 51");
+assert.equal(menu.source, "Farmers Link public live catalog");
+assert.equal(products.length, 63);
+validateMenu(menu);
 
-const expectedSkus = "207,209,261,269,271,275,278,288,290,291,292,293,339,340,341,343,344,345,346,347,348,393,415,416,473,475,480,481,482,483,484,490,492,493,494,504,507,513,514,538,539,540,543,550,560,561,562,593,594,595,596".split(",");
-assert.deepEqual(products.map((product) => product.sku), expectedSkus);
-assert.equal(new Set(expectedSkus).size, products.length);
-assert(!expectedSkus.includes("422"));
+const tierCounts = Object.fromEntries(["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"].map((name) => [
+  name,
+  products.filter((product) => product.tier === name).length,
+]));
+assert.deepEqual(tierCounts, { Exotics: 14, CRAFTS: 13, "BC Premium": 15, Budget: 18, SHREDS: 3 });
 
-const tierCounts = { Exotics: 0, CRAFTS: 0, "BC Premium": 0, Budget: 0, SHREDS: 0 };
-function tier(product) {
-  const sku = Number(product.sku);
-  if (sku >= 100 && sku <= 199 && /\bSHREDS?\b/i.test(product.name)) return "SHREDS";
-  if (sku >= 100 && sku <= 299) return "Budget";
-  if (sku >= 300 && sku <= 399) return "BC Premium";
-  if (sku >= 400 && sku <= 499) return "CRAFTS";
-  if (sku >= 500 && sku <= 599) return "Exotics";
-  throw new Error(`Out-of-tier SKU ${product.sku}`);
-}
+const craft408 = products.find((product) => product.sku === "408");
+assert.deepEqual(craft408.priceOptions.map((option) => option.label), ["14g", "28g"]);
+assert.equal(craft408.offers.find((offer) => offer.kind === "prime_time").label, "$140/28g + 3g CRAFT COUPON");
+assert.equal(craft408.offers.find((offer) => offer.kind === "multi_ounce").label, "2 × 28g at $140 each — $280 total");
 
-for (const product of products) {
-  tierCounts[tier(product)] += 1;
-  assert(product.name);
-  assert(product.image.startsWith("https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/"));
-  assert(product.priceOptions.length > 0, `Missing visible price for ${product.sku}`);
-  for (const option of product.priceOptions) {
-    assert(["3g", "5g", "14g", "28g"].includes(option.label));
-    assert(Number.isFinite(option.price) && option.price > 0);
-    if (option.regularPrice !== undefined) assert(option.regularPrice > option.price);
-  }
-}
+const budget184 = products.find((product) => product.sku === "184");
+assert.deepEqual(budget184.priceOptions, [{ key: "weight_28g", label: "28g", price: 75 }]);
+assert.deepEqual(budget184.offers.map((offer) => offer.label), ["2 × 28g — $90 total", "4 × 28g — $160 total"]);
 
-assert.deepEqual(tierCounts, { Exotics: 16, CRAFTS: 13, "BC Premium": 10, Budget: 12, SHREDS: 0 });
-assert.deepEqual(products.find((p) => p.sku === "561").priceOptions.map((o) => o.label), ["3g"]);
-assert.deepEqual(products.find((p) => p.sku === "595").priceOptions.map((o) => o.label), ["3g", "5g", "14g"]);
-assert.deepEqual(products.find((p) => p.sku === "596").priceOptions.map((o) => o.label), ["3g", "5g"]);
+const shred106 = products.find((product) => product.sku === "106");
+assert.equal(shred106.offers[0].label, "3 × 28g — $95 total");
 
-console.log(`Verified ${products.length} PNY01 delivery products`, tierCounts);
+console.log(`Verified ${products.length} live-source P60 delivery products`, tierCounts);

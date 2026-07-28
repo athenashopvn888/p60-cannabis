@@ -5,13 +5,14 @@ import { useMemo, useState } from "react";
 import menu from "./delivery-menu.json";
 
 type Option = { key: string; label: string; price: number; regularPrice?: number };
-type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; image: string | null };
+type PrimeOffer = { kind: "prime_time"; title: string; price: number; weight: string; bonus: string; label: string };
+type MultiOunceOffer = { kind: "multi_ounce"; quantity: number; unitWeight: "28g"; perUnitPrice?: number; totalPrice: number; label: string };
+type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; offers: (PrimeOffer | MultiOunceOffer)[]; image: string | null };
 type Tier = "SHREDS" | "Budget" | "BC Premium" | "CRAFTS" | "Exotics";
 type TierFilter = "ALL" | Tier;
 const products = menu.products as Product[];
 const tierFilters: TierFilter[] = ["ALL", "Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
 const tierDisplayOrder: Tier[] = ["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
-const normalPriceKeys = new Set(["three_grams", "five_grams", "half_oz", "one_oz"]);
 const features = [
   ["fast-delivery.webp", "Delivery Menu"], ["order-online.webp", "Choose Weights"],
   ["live-tracking.webp", "Text To Order"], ["discreet-packaging.webp", "Photo ID"],
@@ -44,7 +45,7 @@ function tier(product: Product): Tier | null {
 }
 
 function normalEntryPrice(product: Product) {
-  const prices = product.priceOptions.filter((option) => normalPriceKeys.has(option.key)).map((option) => option.price);
+  const prices = product.priceOptions.map((option) => option.price);
   return prices.length ? Math.min(...prices) : Number.POSITIVE_INFINITY;
 }
 
@@ -86,7 +87,7 @@ export default function Catalog() {
           <section className="menu-main pny-menu-main"><div className="menu-tools"><div><p className="eyebrow">P60 FLOWER MENU</p><h2>{activeTier === "ALL" ? "Flowers" : activeTier}</h2></div><label className="menu-search"><span>Search</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product, SKU, strain" /></label></div><p className="result-summary">{filtered.length} flower products.</p>
             <div className="product-grid pny-tile-grid">{filtered.map((product) => {
               const productTier = tier(product);
-              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 50vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><strong className="all-weight-label">Available weights</strong><div className="price-matrix card-matrix">{product.priceOptions.map((option) => <div key={option.key} className="matrix-pill"><span>{option.label}</span>{option.regularPrice && <del>${option.regularPrice}</del>}<strong>${option.price}</strong></div>)}</div></div></article>;
+              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 50vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">SKU {product.sku} | {product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><strong className="all-weight-label">Available weights</strong><div className="price-matrix card-matrix">{product.priceOptions.map((option) => <div key={option.key} className="matrix-pill"><span>{option.label}</span>{option.regularPrice && <del>${option.regularPrice}</del>}<strong>${option.price}</strong></div>)}</div>{product.offers.length > 0 && <div className="product-offers">{product.offers.map((offer, index) => offer.kind === "prime_time" ? <div className="prime-offer" key={`${offer.kind}-${index}`}><strong>{offer.title}</strong><span>{offer.label}</span></div> : <div className="bundle-offer" key={`${offer.kind}-${offer.quantity}`}><strong>Bundle special</strong><span>{offer.label}</span></div>)}</div>}</div></article>;
             })}</div>
           </section>
         </section>
