@@ -1,14 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import menu from "./delivery-menu.json";
+import ProductDetailsDrawer from "./ProductDetailsDrawer";
 
 type Option = { key: string; label: string; price: number; regularPrice?: number };
 type MemberOffer = { kind: "prime_time"; title: string; price: number; weight: string; bonus: string; label: string };
 type MultiOunceOffer = { kind: "multi_ounce"; quantity: number; unitWeight: "28g"; perUnitPrice?: number; totalPrice: number; label: string };
-type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; offers: (MemberOffer | MultiOunceOffer)[]; image: string | null };
 type Tier = "SHREDS" | "Budget" | "BC Premium" | "CRAFTS" | "Exotics";
+type Product = { publicProductId:string;name:string;tier:Tier;category:string;strain:string;thc:string;effects:string[];description:string|null;images:string[];priceOptions:Option[];offers:(MemberOffer|MultiOunceOffer)[] };
 type TierFilter = "ALL" | Tier;
 const bundledProducts = menu.products as Product[];
 const tierFilters: TierFilter[] = ["ALL", "Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
@@ -27,22 +28,7 @@ function strain(product: Product) {
   return "HYBRID";
 }
 
-function parseTierSku(rawSku: string) {
-  if (/^[1-9]\d*$/.test(rawSku)) return Number(rawSku);
-  const variant = rawSku.match(/^([1-9]\d{2})-\d+$/);
-  return variant ? Number(variant[1]) : null;
-}
-
-function tier(product: Product): Tier | null {
-  const sku = parseTierSku(product.sku);
-  if (sku === null) return null;
-  if (sku >= 100 && sku <= 199 && /\bSHREDS\b/i.test(product.name)) return "SHREDS";
-  if (sku >= 100 && sku <= 299) return "Budget";
-  if (sku >= 300 && sku <= 399) return "BC Premium";
-  if (sku >= 400 && sku <= 499) return "CRAFTS";
-  if (sku >= 500 && sku <= 599) return "Exotics";
-  return null;
-}
+function tier(product:Product):Tier{return product.tier;}
 
 function normalEntryPrice(product: Product) {
   const prices = product.priceOptions.map((option) => option.price);
@@ -57,8 +43,7 @@ function compareProducts(a: Product, b: Product) {
   const priceA = normalEntryPrice(a);
   const priceB = normalEntryPrice(b);
   if (priceA !== priceB) return priceA - priceB;
-  const skuDifference = (parseTierSku(a.sku) ?? Number.MAX_SAFE_INTEGER) - (parseTierSku(b.sku) ?? Number.MAX_SAFE_INTEGER);
-  return skuDifference || a.name.localeCompare(b.name, "en", { sensitivity: "base" });
+  return a.name.localeCompare(b.name, "en", { sensitivity: "base" });
 }
 
 function ProductPricing({ product }: { product: Product }) {
@@ -95,18 +80,20 @@ export default function Catalog() {
   const [products, setProducts] = useState<Product[]>(bundledProducts);
   const [activeTier, setActiveTier] = useState<TierFilter>("ALL");
   const [search, setSearch] = useState("");
+  const [selectedProduct,setSelectedProduct]=useState<Product|null>(null);
+  const closeDetails=useCallback(()=>setSelectedProduct(null),[]);
   useEffect(() => {
     const controller = new AbortController();
     fetch("https://milestone-1-demo.vercel.app/api/catalog?store=P60", { signal: controller.signal })
       .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((payload) => { if (Array.isArray(payload.products) && payload.products.length >= 50) setProducts(payload.products); })
+      .then((payload) => { if (Array.isArray(payload.products) && payload.products.length >= 50 && payload.products.every((product:Product)=>product.publicProductId&&product.tier&&Array.isArray(product.images))) setProducts(payload.products); })
       .catch(() => {});
     return () => controller.abort();
   }, []);
   const filtered = useMemo(() => products.filter((product) => {
     if (activeTier !== "ALL" && tier(product) !== activeTier) return false;
     const needle = search.trim().toLowerCase();
-    return !needle || `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(needle);
+    return !needle || `${product.name} ${product.category} ${product.strain}`.toLowerCase().includes(needle);
   }).sort(compareProducts), [activeTier, search, products]);
   return (
     <div className="pny-original-shell">
@@ -144,7 +131,7 @@ export default function Catalog() {
           <section className="menu-main pny-menu-main"><div className="menu-tools"><div><p className="eyebrow">P60 FLOWER MENU</p><h2>{activeTier === "ALL" ? "Flowers" : activeTier}</h2></div><label className="menu-search"><span>Search</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product or strain" /></label></div><p className="result-summary">{filtered.length} flower products.</p>
             <div className="product-grid pny-tile-grid">{filtered.map((product) => {
               const productTier = tier(product);
-              return <article className="product-card pny-vertical-card" key={product.sourceProductId}><div className="product-image-button">{product.image ? <Image src={product.image} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 100vw, 240px" /> : <span>No image</span>}</div><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title">{product.name}</h2><p className="product-meta">{product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><ProductPricing product={product} /></div></article>;
+              return <article className="product-card pny-vertical-card" key={product.publicProductId}><button className="product-image-button" type="button" onClick={()=>setSelectedProduct(product)} aria-label={`View details for ${product.name}`}>{product.images[0] ? <Image src={product.images[0]} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 100vw, 240px" /> : <span>No image</span>}</button><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title"><button type="button" onClick={()=>setSelectedProduct(product)}>{product.name}</button></h2><p className="product-meta">{product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><ProductPricing product={product} /><button className="view-details-button" type="button" onClick={()=>setSelectedProduct(product)}>View details</button></div></article>;
             })}</div>
           </section>
         </section>
@@ -154,6 +141,7 @@ export default function Catalog() {
           <ol><li>Browse the menu and note the product names and weights.</li><li>Open Web Chat and send the dispatcher your choices.</li><li>New customers complete private selfie-with-ID verification in Web Chat.</li><li>The dispatcher confirms availability, delivery details, and next steps.</li></ol>
         </section>
       </main>
+      <ProductDetailsDrawer product={selectedProduct} storeName="P60 Cannabis" onClose={closeDetails} pricing={selectedProduct?<ProductPricing product={selectedProduct}/>:null}/>
     </div>
   );
 }
