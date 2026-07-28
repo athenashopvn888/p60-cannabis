@@ -56,7 +56,7 @@ export const SITE = {
   storePage: "/weed-dispensary-york",
   address: "1938 Weston Rd, York, ON M9N 1W2",
   phone: "(437) 522-2802",
-  hours: "Open Daily: 10:00 AM - 03:00 AM",
+  hours: "Open 24 hours daily",
 };
 
 export const AUTHORS: Record<ResourceAuthorKey, ResourceAuthor> = {

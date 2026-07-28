@@ -106,7 +106,13 @@ export default function Catalog() {
       <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span><span>DELIVERY HOURS 10:00 a.m.–10:00 p.m.</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
 
       <main className="delivery-page" id="top">
-        <section className="store-hero pny-cinematic-hero"><Image src="/p60-delivery-menu-banner.webp" alt="P60 Cannabis delivery banner" width={1774} height={887} priority sizes="(max-width: 1500px) 100vw, 1444px" /></section>
+        <section className="pny-delivery-intro" aria-labelledby="pny-delivery-title">
+          <p className="eyebrow">P60 DELIVERY</p>
+          <h1 id="pny-delivery-title">P60 Cannabis Delivery in York</h1>
+          <p>Delivery is available throughout York, North York, Vaughan, and Brampton daily from 10:00 a.m. to 10:00 p.m. Orders have a $60 product minimum and a $10 delivery fee.</p>
+        </section>
+
+        <section className="store-hero pny-cinematic-hero"><Image src="/p60-delivery-menu-banner.webp" alt="P60 Cannabis delivery service for York, North York, Vaughan, and Brampton" width={1774} height={887} priority sizes="(max-width: 1500px) 100vw, 1444px" /></section>
 
         <section className="member-loyalty" aria-labelledby="member-loyalty-title">
           <div className="member-loyalty-heading">

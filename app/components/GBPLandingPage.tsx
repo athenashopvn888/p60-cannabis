@@ -62,8 +62,8 @@ export function GBPLandingPage() {
   };
 
   // Inject real opening hours and coordinates if they exist
-  if (gbpLocation.hours && gbpLocation.hours.length > 0) {
-    schemaMarkup.openingHours = gbpLocation.hours;
+  if (gbpLocation.schemaHours && gbpLocation.schemaHours.length > 0) {
+    schemaMarkup.openingHours = gbpLocation.schemaHours;
   }
 
   if (gbpLocation.latitude && gbpLocation.longitude) {
