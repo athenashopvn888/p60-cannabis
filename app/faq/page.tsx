@@ -17,7 +17,7 @@ const FAQ_CATEGORIES = [
     title: "Location & Hours",
     faqs: [
       { q: "Where is P60 Cannabis located?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
-      { q: "What are your listed hours?", a: "The site lists P60 Cannabis as open daily from 10:00 AM to 03:00 AM." },
+      { q: "What are your listed hours?", a: "P60 Cannabis is open 24 hours daily." },
       { q: "Is there parking nearby?", a: "Check the store page, local signs, and current street rules before parking. Local transit may also be useful for a Weston Rd visit." },
       { q: "How do I get to P60 Cannabis?", a: "Use the store page or your preferred map app for current directions to 1938 Weston Rd in York." },
     ],

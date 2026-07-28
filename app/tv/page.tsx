@@ -673,7 +673,7 @@ function AddOnsCard({ items, hiIdx }: { items: Item[]; hiIdx: number }) {
 const TICKER_SLIDES = [
   "🔥 P60 Cannabis — 1938 Weston Rd, York",
   "Browse Current Flower Menu",
-  "Open Daily: 10:00 AM - 03:00 AM",
+  "Open 24 hours daily",
   "ALL SALES ARE FINAL",
 ];
 

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s | P60 Cannabis",
   },
   description:
-    "P60 Cannabis is a York cannabis dispensary on Weston Rd with adult 19+ store info and category browsing for flower, pre-rolls, vapes, edibles, concentrates, and accessories. Open Daily: 10:00 AM - 03:00 AM.",
+    "P60 Cannabis is a York cannabis dispensary on Weston Rd with adult 19+ store info and category browsing for flower, pre-rolls, vapes, edibles, concentrates, and accessories. Open 24 hours daily.",
   keywords: [
     "cannabis dispensary York",
     "weed store York",
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     siteName: "P60 Cannabis",
     title: "P60 Cannabis — Premium York Cannabis Dispensary",
     description:
-      "Browse flower tiers and menu categories at 1938 Weston Rd. Open Daily: 10:00 AM - 03:00 AM.",
+      "Browse flower tiers and menu categories at 1938 Weston Rd. Open 24 hours daily.",
     images: [
       {
         url: "https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg",
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "P60 Cannabis — York's Uplifting Dispensary",
-    description: "Browse current menu categories. Open Daily: 10:00 AM - 03:00 AM at 1938 Weston Rd, York.",
+    description: "Browse current menu categories. P60 Cannabis at 1938 Weston Rd, York is open 24 hours daily.",
     images: ["https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
   robots: {
@@ -75,7 +75,7 @@ const jsonLd = {
   additionalType: "https://schema.org/Store",
   "@id": "https://www.p60cannabis.com",
   name: "P60 Cannabis",
-  description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open Daily: 10:00 AM - 03:00 AM.",
+  description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open 24 hours daily.",
   url: "https://www.p60cannabis.com",
   telephone: "+14375222802",
   image: "https://www.p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
@@ -105,8 +105,8 @@ const jsonLd = {
       "Saturday",
       "Sunday"
     ],
-    "opens": "10:00",
-    "closes": "03:00"
+    "opens": "00:00",
+    "closes": "23:59"
   }
 ],
   sameAs: [

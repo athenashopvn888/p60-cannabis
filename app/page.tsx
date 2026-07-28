@@ -71,7 +71,7 @@ const EXPLORE_CATEGORIES = [
 const LOCAL_FAQS = [
   {
     q: "What are the hours for P60 Cannabis?",
-    a: "P60 Cannabis at 1938 Weston Rd, York is open daily from 10:00 AM to 03:00 AM. Walk in anytime — no appointment needed.",
+    a: "P60 Cannabis at 1938 Weston Rd, York is open 24 hours daily. Walk in anytime — no appointment needed.",
   },
   {
     q: "What cannabis products do you carry?",
@@ -219,7 +219,7 @@ export default function HomePage() {
                 <span className={styles.deliveryKicker}>Weston Rd / York</span>
                 <h1 className={styles.brandTitle}>P60 CANNABIS</h1>
                 <p className={styles.brandSub}>Premium Cannabis Dispensary</p>
-                <div className={styles.brandBadge}>Open Daily: 10:00 AM - 03:00 AM</div>
+                <div className={styles.brandBadge}>Open 24 hours daily</div>
               </div>
 
               <div className={styles.deliveryFacts}>
@@ -255,7 +255,7 @@ export default function HomePage() {
 
           <div className={styles.deliveryPromiseGrid}>
             <div><strong>Fast Delivery</strong><span>Store-branded delivery presentation</span></div>
-            <div><strong>Open Late</strong><span>10:00 AM - 03:00 AM</span></div>
+            <div><strong>Open 24 Hours</strong><span>Every day</span></div>
             <div><strong>Weston Rd</strong><span>York, ON M9N 1W2</span></div>
             <div><strong>Menu First</strong><span>Flower tiers and core categories</span></div>
           </div>
@@ -344,12 +344,12 @@ export default function HomePage() {
       <section className={styles.seoSection}>
         <div className={styles.container}>
           <div className={styles.seoPanel}>
-            <h2 className={styles.seoPanelTitle}>P60 Cannabis On Weston Rd In York - Open Daily: 10:00 AM - 03:00 AM</h2>
+            <h2 className={styles.seoPanelTitle}>P60 Cannabis On Weston Rd In York - Open 24 Hours Daily</h2>
             <p className={styles.seoPanelText}>
               Welcome to <strong>P60 Cannabis</strong> at 1938 Weston Rd in York. Use the current menu to compare flower tiers, pre-rolls, edibles, vapes, concentrates, cigarettes, and accessories before visiting.
             </p>
             <p className={styles.seoPanelText}>
-              We are open Open Daily: 10:00 AM - 03:00 AM — P60 Cannabis is here to serve you. The current menu brings together flower, pre-rolls, edibles, vapes, and other categories. Our staff can help shoppers compare those categories during listed store hours.
+              P60 Cannabis is open 24 hours daily. The current menu brings together flower, pre-rolls, edibles, vapes, and other categories. Our staff can help shoppers compare those categories during listed store hours.
             </p>
             <p className={styles.seoPanelText}>
               Searching for a cannabis dispensary in York or the surrounding area? P60 Cannabis offers flower, pre-rolls, edibles, vapes, and other menu categories. Clear flower tiers help shoppers compare listed prices before visiting.
@@ -451,7 +451,7 @@ export default function HomePage() {
               <p className={styles.storeCardText}>
                 Open 7 Days a Week
                 <br />
-                <span className={styles.storeHighlight}>Open Daily: 10:00 AM - 03:00 AM</span>
+                <span className={styles.storeHighlight}>Open 24 hours daily</span>
               </p>
             </div>
             <div className={styles.storeCard}>

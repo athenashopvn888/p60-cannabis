@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test:staff-photo": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/staff-photo.test.ts",
     "test:web-chat": "node --test tests/web-chat-intake.test.mjs",
-    "verify:delivery": "node scripts/verify-delivery-menu.mjs"
+    "verify:delivery": "node scripts/verify-delivery-menu.mjs",
+    "verify:hours-seo": "node scripts/verify-public-hours-seo.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",

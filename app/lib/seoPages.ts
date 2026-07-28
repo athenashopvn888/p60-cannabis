@@ -17,7 +17,7 @@ export const SEO_PAGES: SeoPageData[] = [
     metaDescription: "P60 Cannabis is a York weed dispensary at 1938 Weston Rd with flower tiers, pre-rolls, vapes, edibles, concentrates, cigarettes, accessories, and local store details.",
     h1: "York Weed Dispensary - P60 Cannabis",
     icon: "*",
-    heroTagline: "1938 Weston Rd in York - open daily 10:00 AM to 03:00 AM",
+    heroTagline: "1938 Weston Rd in York - open 24 hours daily",
     banner: "/banners/p60-real/page-york.webp",
     sections: [
       {
@@ -35,7 +35,7 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Where is P60 Cannabis located?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
-      { q: "What are the listed hours for P60 Cannabis?", a: "The site lists P60 Cannabis as open daily from 10:00 AM to 03:00 AM." },
+      { q: "What are the listed hours for P60 Cannabis?", a: "P60 Cannabis is open 24 hours daily." },
       { q: "What should shoppers check before visiting?", a: "Check the current menu, category pages, directions, contact options, and listed hours before visiting." },
     ],
   },

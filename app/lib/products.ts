@@ -166,7 +166,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     faqs: [
       { q: "What edible formats may be listed?", a: "The category may include gummies, chocolates, beverages, capsules, and baked goods. Check the current menu for item details." },
       { q: "Where can I find item details?", a: "Check the current menu and product package for item-specific details." },
-      { q: "Can I buy edibles at P60 Cannabis?", a: "Yes! Visit us at 1938 Weston Rd, York. We're open daily from 10:00 AM to 03:00 AM with a full edibles selection in store." },
+      { q: "Can I buy edibles at P60 Cannabis?", a: "Visit us at 1938 Weston Rd, York. The storefront is open 24 hours daily; check the current menu for edible listings." },
     ],
   },
   "VAPE PENS": {
