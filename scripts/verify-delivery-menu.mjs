@@ -4,6 +4,7 @@ import { validateMenu } from "./farmerslink-menu.mjs";
 
 const path = new URL("../app/delivery/delivery-menu.json", import.meta.url);
 const menu = JSON.parse(await readFile(path, "utf8"));
+const component = await readFile(new URL("../app/delivery/DeliveryCatalog.tsx", import.meta.url), "utf8");
 const products = menu.products;
 
 assert.equal(menu.store.id, "P60");
@@ -11,6 +12,7 @@ assert.equal(menu.store.code, "PNY01");
 assert.equal(menu.store.pod, "POD01");
 assert.equal(menu.source, "Farmers Link public live catalog");
 assert.equal(products.length, 63);
+assert(component.includes("milestone-1-demo.vercel.app/api/catalog?store=P60"));
 validateMenu(menu);
 
 const tierCounts = Object.fromEntries(["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"].map((name) => [
