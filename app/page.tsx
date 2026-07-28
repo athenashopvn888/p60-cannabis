@@ -9,6 +9,7 @@ import HiringCallout from "./components/HiringCallout";
 import Footer from "./components/Footer";
 import FlowerCard from "./components/FlowerCard";
 import { allFlowers } from "./lib/products";
+import Papa from "papaparse";
 
 /* ── Bento Mosaic Config ── */
 const BENTO_TIERS = [
@@ -110,44 +111,31 @@ export default function HomePage() {
   /* ── 1. Fetch Client-Side Google Reviews ── */
   useEffect(() => {
     const STORE_KEY = "PNY01";
-    const SHEET_ID = "1-KeuyKFKprbU-Vl_qVQiZkEKMX_i5CmdScTToNTdkUY";
-    const SHEET_NAME = "WEBSITE_REVIEWS";
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`;
+    const url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSu6iy9W3YKRzBYo_r96rXcbJsAOzlkzn5Rw9QMFnE0NbYSBgPxKX8kPRZNC9QcffZYj57155esmnqH/pub?gid=1555782756&single=true&output=csv";
 
     fetch(url)
-      .then((r) => r.text())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Review feed returned ${r.status}`);
+        return r.text();
+      })
       .then((raw) => {
-        const jsonStart = raw.indexOf("{");
-        const jsonEnd = raw.lastIndexOf("}");
-        const jsonString = raw.substring(jsonStart, jsonEnd + 1);
-        const json = JSON.parse(jsonString);
-        const rows = json.table.rows;
-        const cols = json.table.cols;
-
-        const colMap: Record<string, number> = {};
-        cols.forEach((col: any, idx: number) => {
-          if (col.label) colMap[col.label.trim()] = idx;
-        });
-
-        const skIdx = colMap["StoreKey"] !== undefined ? colMap["StoreKey"] : 0;
-        const rnIdx = colMap["ReviewerName"] !== undefined ? colMap["ReviewerName"] : 1;
-        const cmIdx = colMap["Comment"] !== undefined ? colMap["Comment"] : 2;
-        const dtIdx = colMap["CreateTime"] !== undefined ? colMap["CreateTime"] : 3;
+        const rows = Papa.parse<Record<string, string>>(raw, {
+          header: true,
+          skipEmptyLines: true,
+        }).data;
 
         const reviewsPool: Review[] = [];
         let totalVal: number | null = null;
         let avgVal: number | null = null;
         let hasStats = false;
 
-        rows.forEach((row: any) => {
-          if (!row.c) return;
-          const sk = row.c[skIdx] ? row.c[skIdx].v || "" : "";
-          if (sk !== STORE_KEY) return;
+        rows.forEach((row) => {
+          if (row.StoreKey !== STORE_KEY) return;
 
-          const rn = row.c[rnIdx] ? row.c[rnIdx].v || "" : "";
+          const rn = row.ReviewerName || "";
           if (rn === "__STATS__") {
-            const parsedTotal = parseInt(row.c[cmIdx] ? row.c[cmIdx].v : "", 10);
-            const parsedAvg = parseFloat(row.c[dtIdx] ? row.c[dtIdx].v : "");
+            const parsedTotal = parseInt(row.Comment || "", 10);
+            const parsedAvg = parseFloat(row.CreateTime || "");
             if (Number.isFinite(parsedTotal) && Number.isFinite(parsedAvg)) {
               totalVal = parsedTotal;
               avgVal = parsedAvg;
@@ -156,10 +144,10 @@ export default function HomePage() {
             return;
           }
 
-          const comment = row.c[cmIdx] ? row.c[cmIdx].v || "" : "";
+          const comment = row.Comment || "";
           if (!comment || comment.length < 10) return;
           const name = rn || "Customer";
-          const dateStr = row.c[dtIdx] ? row.c[dtIdx].v || "" : "";
+          const dateStr = row.CreateTime || "";
           reviewsPool.push({ name, comment, date: dateStr });
         });
 
