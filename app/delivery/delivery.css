@@ -1438,7 +1438,6 @@ body.product-open .product-drawer {
 .pny-category-strip button { min-height:44px; padding-inline:15px; }
 .pny-tile-grid { grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
 .product-pricing { display:grid; gap:10px; margin-top:auto; padding-top:12px; }
-.pricing-kicker { display:block; margin-bottom:6px; color:#b9aeca; font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
 .compact-price-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(62px,1fr)); gap:6px; }
 .compact-price { display:flex; min-height:44px; align-items:center; justify-content:space-between; gap:6px; border:1px solid rgba(176,108,255,.24); border-radius:8px; padding:7px 9px; background:#0b0811; }
 .compact-price span { color:#b9aeca; font-size:11px; font-weight:850; }
