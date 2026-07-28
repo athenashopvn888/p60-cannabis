@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import menu from "./delivery-menu.json";
 
 type Option = { key: string; label: string; price: number; regularPrice?: number };
@@ -10,7 +10,7 @@ type MultiOunceOffer = { kind: "multi_ounce"; quantity: number; unitWeight: "28g
 type Product = { sourceProductId: number; sku: string; name: string; category: string; thc: string; priceOptions: Option[]; offers: (PrimeOffer | MultiOunceOffer)[]; image: string | null };
 type Tier = "SHREDS" | "Budget" | "BC Premium" | "CRAFTS" | "Exotics";
 type TierFilter = "ALL" | Tier;
-const products = menu.products as Product[];
+const bundledProducts = menu.products as Product[];
 const tierFilters: TierFilter[] = ["ALL", "Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
 const tierDisplayOrder: Tier[] = ["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
 const features = [
@@ -62,13 +62,22 @@ function compareProducts(a: Product, b: Product) {
 }
 
 export default function Catalog() {
+  const [products, setProducts] = useState<Product[]>(bundledProducts);
   const [activeTier, setActiveTier] = useState<TierFilter>("ALL");
   const [search, setSearch] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("https://milestone-1-demo.vercel.app/api/catalog?store=P60", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => { if (Array.isArray(payload.products) && payload.products.length >= 50) setProducts(payload.products); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const filtered = useMemo(() => products.filter((product) => {
     if (activeTier !== "ALL" && tier(product) !== activeTier) return false;
     const needle = search.trim().toLowerCase();
     return !needle || `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(needle);
-  }).sort(compareProducts), [activeTier, search]);
+  }).sort(compareProducts), [activeTier, search, products]);
   return (
     <div className="pny-original-shell">
       <header className="store-header pny-store-header">
