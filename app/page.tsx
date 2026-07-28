@@ -228,8 +228,7 @@ export default function HomePage() {
               </div>
 
               <div className={styles.heroActions}>
-                <Link href="/delivery" className={styles.heroPrimary}>Delivery Info</Link>
-                <Link href="#menu" className={styles.heroSecondary}>Browse Menu</Link>
+                <Link href="#menu" className={styles.heroPrimary}>Browse Menu</Link>
               </div>
             </div>
 
