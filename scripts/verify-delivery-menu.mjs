@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const menu = JSON.parse(await readFile(new URL("../app/delivery/delivery-menu.json", import.meta.url), "utf8"));
 const component = await readFile(new URL("../app/delivery/DeliveryCatalog.tsx", import.meta.url), "utf8");
+const chat = await readFile(new URL("../app/delivery/P60WebChat.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/delivery/delivery.css", import.meta.url), "utf8");
 const drawer = await readFile(new URL("../app/delivery/ProductDetailsDrawer.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
@@ -12,6 +13,8 @@ const products = menu.products;
 assert.deepEqual([menu.store.id, menu.store.code, menu.store.pod], ["P60", "PNY01", "POD01"]);
 assert.equal(products.length, 63);
 assert(component.includes("api/catalog?store=P60"));
+assert(component.includes("DELIVERY HOURS 10:00 a.m.–10:00 p.m."));
+assert(chat.includes('"Close chat" : "LIVE ORDER"'));
 assert(!component.includes("Other weights") && !component.includes("SKU {product.sku}") && !component.includes("Product, SKU"));
 assert(!component.includes("product.sku") && !component.includes("parseTierSku"));
 assert(products.every((product) => product.publicProductId && product.tier && product.images.length === 1));
@@ -26,6 +29,8 @@ assert(component.includes("STANDARD 28g") && component.includes("MEMBER LOYALTY 
 assert(component.includes("<small>each</small>") && component.includes("<small>total</small>"));
 assert(!component.includes("PRIME TIME") && !component.includes("2oz promo"));
 assert(css.includes(".member-28") && css.includes("#0b3a63"));
+assert(css.includes("@keyframes p60-live-order-pulse") && css.includes("@media(prefers-reduced-motion:reduce)"));
+assert(css.includes("border:2px solid #b42318") && css.includes("background:#fff;color:#8f1d14"));
 assert(css.includes(".bundle-decision") && css.includes(".pny-tile-grid { grid-template-columns:repeat(2,minmax(0,1fr));"));
 assert(component.includes("totalPrice: loyaltyPrice * 2") && component.includes("offer.quantity !== 2"));
 assert(component.indexOf("MEMBER LOYALTY 28g") < component.indexOf("STANDARD 28g"));
