@@ -54,8 +54,12 @@ assert(home.includes('href="/delivery"') && home.includes("width={1774}") && hom
 assert(homeCss.includes("aspect-ratio: 1774 / 887") && homeCss.includes(".deliveryHeroMedia:focus-visible"));
 assert.equal(homeBanner.length, 192774);
 assert(nav.includes('{ href: "/delivery", label: "Delivery" }'));
-assert(nav.includes('pathname === "/"') && nav.includes("NEW DELIVERY MENU") && nav.includes("ORDER NOW"));
-assert(navCss.includes("@keyframes deliveryCtaRing") && navCss.includes("@media (prefers-reduced-motion: reduce)") && navCss.includes("@media (max-width: 620px)"));
+assert(nav.includes('href="/exotic"') && nav.includes("Store Menu"));
+assert(nav.includes('href="/delivery"') && nav.includes("Delivery Menu") && nav.includes('aria-label="Choose a menu"'));
+assert(nav.includes("aria-current=") && nav.includes("isStoreMenuActive") && nav.includes("isDeliveryActive"));
+assert(navCss.includes(".menuChoice:focus-visible") && navCss.includes(".deliveryMenuChoice"));
+assert(navCss.includes("grid-template-columns: repeat(2, minmax(0, 1fr))") && navCss.includes("min-height: 44px"));
+assert(navCss.includes("@media (prefers-reduced-motion: reduce)") && navCss.includes("@media (max-width: 620px)"));
 assert(footer.includes('<Link href="/delivery">Delivery Menu</Link>'));
 assert(faq.includes("10:00 AM to 10:00 PM") && faq.includes("LIVE ORDER") && !faq.includes("Delivery is listed as coming soon"));
 assert(component.includes('href="/" aria-label="P60 Cannabis home"'));
