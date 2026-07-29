@@ -83,39 +83,52 @@
   gap: 10px;
 }
 
-.deliveryCta {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 5px 12px;
-  border: 1px solid #ef4444;
-  border-radius: 999px;
-  color: #fff;
-  background: #b42318;
+.menuChoices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.menuChoice {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 7px 13px;
+  border: 1px solid rgba(163, 230, 53, 0.72);
+  border-radius: 10px;
+  color: #ecfccb;
+  background: rgba(163, 230, 53, 0.13);
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.04em;
-  line-height: 1.1;
+  line-height: 1.05;
   text-align: center;
   text-decoration: none;
+  text-transform: uppercase;
   white-space: nowrap;
-  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
-  animation: deliveryCtaRing 2s ease-out infinite;
 }
 
-.deliveryCta:hover {
+.menuChoice:hover,
+.menuChoiceActive {
+  color: #111806;
+  background: #a3e635;
+}
+
+.deliveryMenuChoice {
+  border-color: #ef4444;
+  color: #ffffff;
+  background: #b42318;
+}
+
+.deliveryMenuChoice:hover,
+.deliveryMenuChoiceActive {
+  color: #ffffff;
   background: #dc2626;
 }
 
-.deliveryCta:focus-visible {
-  outline: 2px solid #bef264;
-  outline-offset: 3px;
-}
-
-@keyframes deliveryCtaRing {
-  0%, 35% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
-  75%, 100% { box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
+.menuChoice:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
 }
 
 /* ── Horizontal scrollable link bar ── */
@@ -207,38 +220,38 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deliveryCta,
   .scrollAdvance,
   .pill {
-    animation: none;
     transition: none;
   }
 }
 
 @media (max-width: 620px) {
   .topBar {
+    height: 58px;
     padding-inline: 10px;
     gap: 8px;
   }
 
+  .brandText,
+  .open {
+    display: none;
+  }
+
   .topBarRight {
+    flex: 1;
+    min-width: 0;
     gap: 5px;
   }
 
-  .deliveryCta {
-    max-width: 118px;
-    min-height: 30px;
-    padding: 4px 8px;
+  .menuChoices {
+    width: 100%;
+  }
+
+  .menuChoice {
+    min-width: 0;
+    min-height: 44px;
+    padding: 5px 4px;
     white-space: normal;
-  }
-
-  .open {
-    padding-inline: 8px;
-  }
-}
-
-@media (max-width: 430px) {
-  .open {
-    display: none;
   }
 }

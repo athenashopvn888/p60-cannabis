@@ -27,6 +27,11 @@ const ALL_LINKS = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const isStoreMenuActive =
+    ["/exotic", "/premium", "/aaa", "/aa", "/budget"].includes(pathname) ||
+    pathname.startsWith("/item/") ||
+    pathname.startsWith("/items/");
+  const isDeliveryActive = pathname === "/delivery";
   const scrollBarRef = useRef<HTMLDivElement>(null);
   const [canAdvance, setCanAdvance] = useState(false);
 
@@ -73,7 +78,7 @@ export default function Navbar() {
       <div className={styles.topBar}>
         <Link href="/" className={styles.logo} style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none" }}>
           <img src="/storeFavicon.webp" alt="P60 Cannabis Logo" style={{ height: "30px", width: "30px", objectFit: "contain", borderRadius: "4px" }} />
-          <span style={{
+          <span className={styles.brandText} style={{
             fontFamily: "var(--font-display)",
             fontWeight: 900,
             fontSize: "18px",
@@ -85,11 +90,22 @@ export default function Navbar() {
           </span>
         </Link>
         <div className={styles.topBarRight}>
-          {pathname === "/" && (
-            <Link href="/delivery" className={styles.deliveryCta}>
-              NEW DELIVERY MENU <span aria-hidden="true">—</span> ORDER NOW
+          <div className={styles.menuChoices} aria-label="Choose a menu">
+            <Link
+              href="/exotic"
+              className={`${styles.menuChoice} ${isStoreMenuActive ? styles.menuChoiceActive : ""}`}
+              aria-current={isStoreMenuActive ? "page" : undefined}
+            >
+              Store Menu
             </Link>
-          )}
+            <Link
+              href="/delivery"
+              className={`${styles.menuChoice} ${styles.deliveryMenuChoice} ${isDeliveryActive ? styles.deliveryMenuChoiceActive : ""}`}
+              aria-current={isDeliveryActive ? "page" : undefined}
+            >
+              Delivery Menu
+            </Link>
+          </div>
           <span className={styles.open}>
             <span className={styles.dot}></span>
             Open Now
