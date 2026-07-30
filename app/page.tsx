@@ -216,8 +216,13 @@ export default function HomePage() {
                 <span>Adults 19+</span>
               </div>
 
-              <div className={styles.heroActions}>
-                <Link href="#menu" className={styles.heroPrimary}>Browse Menu</Link>
+              <aside className={styles.homeDeliveryNotice} aria-labelledby="home-delivery-title">
+                <h2 id="home-delivery-title">NEW DELIVERY AVAILABLE</h2>
+                <p>P60 Cannabis delivers across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the P60 delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
+              </aside>
+              <div className={styles.heroActions} aria-label="Choose a P60 Cannabis menu">
+                <Link href="/exotic" className={styles.heroPrimary}>STORE MENU</Link>
+                <Link href="/delivery" className={styles.heroSecondary}>DELIVERY MENU</Link>
               </div>
             </div>
 

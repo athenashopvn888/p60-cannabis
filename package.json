@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "verify:home-actions": "node scripts/verify-home-actions.mjs",
     "verify:navigation": "node scripts/verify-navigation-actions.mjs",
     "test:staff-photo": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/staff-photo.test.ts",
     "test:web-chat": "node --test tests/web-chat-intake.test.mjs",

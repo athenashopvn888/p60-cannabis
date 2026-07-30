@@ -88,14 +88,14 @@ export function GBPLandingPage() {
         <p className={styles.heroTagline}>Serving {gbpLocation.city} & Nearby Neighborhoods</p>
       </header>
 
-      {/* Call to Actions */}
+      <aside className={styles.deliveryNotice} aria-labelledby="landing-delivery-title">
+        <h2 id="landing-delivery-title">NEW DELIVERY AVAILABLE</h2>
+        <p>P60 Cannabis delivers across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the P60 delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
+      </aside>
+
       <div className={styles.btnRow}>
-        <a href={gbpLocation.menuUrl} className={`${styles.btn} ${styles.btnPrimary}`}>
-          View Menu
-        </a>
-        <a href={`tel:${gbpLocation.phoneIntl}`} className={`${styles.btn} ${styles.btnSecondary}`}>
-          Call Store
-        </a>
+        <Link href="/exotic" className={`${styles.btn} ${styles.btnPrimary}`}>STORE MENU</Link>
+        <Link href="/delivery" className={`${styles.btn} ${styles.btnSecondary}`}>DELIVERY MENU</Link>
       </div>
 
       {/* Intro Section */}
