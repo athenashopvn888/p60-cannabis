@@ -8,8 +8,8 @@ export const gbpLocation = {
   address: "1938 Weston Rd, York, ON M9N 1W2",
   streetAddress: "1938 Weston Rd",
   postalCode: "M9N 1W2",
-  phone: "(437) 522-2802",
-  phoneIntl: "+14375222802",
+  phone: "+1 (289) 217-2763",
+  phoneIntl: "+12892172763",
   neighborhood: "Weston Road / York",
   nearbyAreas: ["Weston Road", "York", "Mount Dennis", "Keelesdale", "Eglinton West", "Black Creek", "Jane Street", "TTC"],
   products: [

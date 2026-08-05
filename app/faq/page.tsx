@@ -108,7 +108,7 @@ export default function FAQPage() {
           <div className={styles.ctaSection}>
             <h2 className={styles.ctaTitle}>Still have questions?</h2>
             <p className={styles.ctaText}>
-              Call <strong>(437) 522-2802</strong> or visit 1938 Weston Rd, York.
+              Call <strong>+1 (289) 217-2763</strong> or visit 1938 Weston Rd, York.
             </p>
           </div>
         </div>

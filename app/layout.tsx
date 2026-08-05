@@ -77,7 +77,7 @@ const jsonLd = {
   name: "P60 Cannabis",
   description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open 24 hours daily.",
   url: "https://www.p60cannabis.com",
-  telephone: "+14375222802",
+  telephone: "+12892172763",
   image: "https://www.p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
   priceRange: "$3 - $12/g",
   address: {

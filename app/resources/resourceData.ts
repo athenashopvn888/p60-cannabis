@@ -55,7 +55,7 @@ export const SITE = {
   baseUrl: "https://www.p60cannabis.com",
   storePage: "/weed-dispensary-york",
   address: "1938 Weston Rd, York, ON M9N 1W2",
-  phone: "(437) 522-2802",
+  phone: "+1 (289) 217-2763",
   hours: "Open 24 hours daily",
 };
 

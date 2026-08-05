@@ -80,7 +80,7 @@ const LOCAL_FAQS = [
   },
   {
     q: "Where is P60 Cannabis located?",
-    a: "We are located at 1938 Weston Rd, York, ON M9N 1W2. Visit us in person or call us at (437) 522-2802. Free evening street parking is available.",
+    a: "We are located at 1938 Weston Rd, York, ON M9N 1W2. Visit us in person or call us at +1 (289) 217-2763. Free evening street parking is available.",
   },
   {
     q: "What is the cheapest weed at P60 Cannabis?",
