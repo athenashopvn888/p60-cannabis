@@ -1430,6 +1430,16 @@ body.product-open .product-drawer {
 .sod-chat-start input:focus-visible,.sod-chat-start textarea:focus-visible,.sod-intent-options input:focus-visible,.sod-chat-start button:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
 .sod-chat-start input:invalid:not(:placeholder-shown) { border-color:#b42318; }
 .sod-chat-scroll { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; background:#f4f7f5; }
+.sod-chat-account { display:grid; gap:9px; border-bottom:1px solid #d6dfda; padding:12px 14px; background:#fff; }
+.sod-chat-account > div:first-child { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.sod-chat-account span { color:#52665b; font-size:11px; font-weight:750; }
+.sod-chat-account strong { color:#102a1f; font-size:14px; letter-spacing:.03em; }
+.sod-chat-account > button,.sod-chat-account form button { min-height:38px; border:1px solid #146b48; border-radius:9px; padding:7px 11px; background:#fff; color:#0d5a3c; font-weight:850; }
+.sod-chat-account form { display:grid; gap:9px; }
+.sod-chat-account form label { display:grid; gap:4px; color:#233d31; font-size:11px; font-weight:800; }
+.sod-chat-account form input { min-height:44px; border:1px solid #aebdb5; border-radius:9px; padding:9px 10px; background:#fff; color:#17221d; font-size:16px; }
+.sod-chat-account form > div { display:grid; grid-template-columns:1fr auto; gap:8px; }
+.sod-chat-account .sod-start-another-order { border:0; background:#146b48; color:#fff; }
 .sod-chat-transcript { display:grid; align-content:start; gap:9px; min-height:150px; padding:14px; background:#f4f7f5; }
 .sod-chat-transcript > div { display:grid; max-width:82%; gap:3px; }
 .sod-chat-transcript > div span { border-radius:13px; padding:9px 11px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.08); font-size:13px; line-height:1.4; }
