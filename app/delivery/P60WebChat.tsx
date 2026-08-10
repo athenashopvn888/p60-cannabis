@@ -120,6 +120,12 @@ export default function P60WebChat() {
     return () => document.body.classList.remove("sod-chat-open");
   }, [open]);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("liveOrder") !== "1") return;
+    const timer = window.setTimeout(() => setOpen(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const refresh = useCallback(async (activeToken: string) => {
     if (!activeToken) return;
     const response = await fetch(`${API_BASE}/api/web-chat/messages`, {
@@ -182,7 +188,7 @@ export default function P60WebChat() {
       const data = await payload(await fetch(`${API_BASE}/api/web-chat/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: "P60", customerName: intent === "NEW_CUSTOMER" ? name : "", phone, intent, message: firstMessage, smsConsent }),
+        body: JSON.stringify({ storeId: "P60", customerName: intent === "NEW_CUSTOMER" ? name : "", phone, intent, message: firstMessage, workflowVersion: "READY_V1", smsConsent }),
       }));
       localStorage.setItem(SESSION_KEY, data.token);
       setToken(data.token);
@@ -285,7 +291,7 @@ export default function P60WebChat() {
         {intent === "NEW_CUSTOMER" && <><div className="sod-chat-welcome"><h2>Welcome!</h2><p>Have a valid government-issued photo ID and a Canadian mobile number ready. Your mobile number will be used as your account number.</p><p>Use a mobile number that can receive verification texts.</p></div>
         <label>Full name<input required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label></>}
         {intent && <><label>Canadian mobile number<input required inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="647 555 0123" aria-describedby={intent === "NEW_CUSTOMER" ? "sod-phone-help" : undefined} />{intent === "NEW_CUSTOMER" && <small id="sod-phone-help">Must be able to receive verification texts. This becomes your account number.</small>}</label>
-        <label className="sod-sms-consent"><input required type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} /><span>I agree to receive one text from P60 to confirm this mobile number for my Web Chat. Reply YES to confirm. Message and data rates may apply.</span></label>
+        <label className="sod-sms-consent"><input required type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} /><span>I agree to receive one READY delivery-link text for this order. Message and data rates may apply.</span></label>
         <label>Order details (optional)<textarea maxLength={1000} value={firstMessage} onChange={(event) => setFirstMessage(event.target.value)} placeholder="What would you like to order today?" /></label>
         <button type="submit" disabled={busy || !smsConsent}>{busy ? "Starting…" : "Start order chat"}</button></>}
       </form>) : <>
