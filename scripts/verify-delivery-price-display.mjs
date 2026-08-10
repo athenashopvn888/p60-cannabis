@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const deliveryRoot = new URL("../app/delivery/", import.meta.url);
 const componentUrl = ["DeliveryCatalog.tsx", "DeliveryContent.tsx"]
@@ -53,4 +55,23 @@ const renderedCurrency = menu.products.flatMap((product) => [
 assert(renderedCurrency.every((value) => /^\$\d+(?:\.\d{1,2})?$/.test(value)), "currency output must never expose long decimals or scientific notation");
 assert(!renderedCurrency.some((value) => value.includes("31.666")), "raw 95 / 3 output must never ship");
 
-console.log("Verified $33 EACH for the three 3 x 28g / $95 SHREDS offers and safe currency formatting.");
+const appRoot = new URL("../app/", import.meta.url);
+const layoutSource = fs.readFileSync(new URL("layout.tsx", appRoot), "utf8");
+const stylesSource = fs.readFileSync(new URL("globals.css", appRoot), "utf8");
+const announcement = "NEW DELIVERY MENU IS HERE — CLICK TO EXPLORE";
+assert.equal(layoutSource.split(announcement).length - 1, 1, "delivery announcement must appear exactly once in the root layout");
+assert(/className="deliveryAnnouncement"\s+href="\/delivery"/.test(layoutSource), "delivery announcement must link to /delivery");
+assert(stylesSource.includes(".deliveryAnnouncement"), "delivery announcement styles must exist");
+
+function collectPublicSources(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) return entry.name === "games" ? [] : collectPublicSources(absolute);
+    return /\.(?:tsx|ts)$/.test(entry.name) ? [absolute] : [];
+  });
+}
+
+const publicSource = collectPublicSources(fileURLToPath(appRoot)).map((file) => fs.readFileSync(file, "utf8")).join("\n");
+assert(!/Play Games|Games Arcade|href=["']\/games["']|href:\s*["']\/games["']|slug:\s*["']games["']|\$\{BASE\}\/games/.test(publicSource), "public Play Games and /games discovery links must not ship");
+
++console.log("Verified delivery pricing, announcement bar, and public navigation guards.");
