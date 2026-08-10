@@ -7,13 +7,17 @@
 
 /* -- CSS Variables -- */
 .deliveryAnnouncement {
-  position: relative;
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
   z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 42px;
+  height: var(--delivery-announcement-height);
+  min-height: var(--delivery-announcement-height);
   box-sizing: border-box;
   padding: 0.65rem 1rem;
   background: var(--green-deep, #052e16);
@@ -26,7 +30,7 @@
 }
 
 body > .deliveryAnnouncement ~ * nav {
-  top: 42px !important;
+  top: var(--delivery-announcement-height) !important;
 }
 
 .deliveryAnnouncement:hover,
@@ -42,6 +46,7 @@ body > .deliveryAnnouncement ~ * nav {
 }
 
 :root {
+  --delivery-announcement-height: 42px;
   /* Core palette - clean white */
   --bg-primary: #ffffff;
   --bg-secondary: #f8faf9;
@@ -126,6 +131,7 @@ body {
   line-height: 1.6;
   overflow-x: hidden;
   min-height: 100vh;
+  padding-top: var(--delivery-announcement-height);
 }
 
 /* Subtle organic background */
