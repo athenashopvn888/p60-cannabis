@@ -63,10 +63,13 @@ assert.equal(layoutSource.split(announcement).length - 1, 1, "delivery announcem
 assert(/className="deliveryAnnouncement"\s+href="\/delivery"/.test(layoutSource), "delivery announcement must link to /delivery");
 assert(stylesSource.includes(".deliveryAnnouncement"), "delivery announcement styles must exist");
 assert(/\.deliveryAnnouncement\s*\{[^}]*display:\s*flex;/s.test(stylesSource), "delivery announcement must render as a visible flex strip");
-assert(/\.deliveryAnnouncement\s*\{[^}]*min-height:\s*42px;/s.test(stylesSource), "delivery announcement must keep a 42px click target");
+assert(/--delivery-announcement-height:\s*42px;/.test(stylesSource), "delivery announcement height must have one shared 42px variable");
+assert(/\.deliveryAnnouncement\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*height:\s*var\(--delivery-announcement-height\);/s.test(stylesSource), "delivery announcement must stay fixed at the viewport top");
+assert(/\.deliveryAnnouncement\s*\{[^}]*min-height:\s*var\(--delivery-announcement-height\);/s.test(stylesSource), "delivery announcement must keep the shared click-target height");
 assert(/\.deliveryAnnouncement\s*\{[^}]*z-index:\s*1100;/s.test(stylesSource), "delivery announcement must stack above the fixed header");
 assert(/\.deliveryAnnouncement\s*\{[^}]*background:\s*var\(--green-deep,\s*#052e16\);/s.test(stylesSource), "delivery announcement must use a high-contrast brand-dark background");
-assert(/body\s*>\s*\.deliveryAnnouncement\s*~\s*\*\s*nav\s*\{[^}]*top:\s*42px\s*!important;/s.test(stylesSource), "fixed navigation must sit below the delivery announcement");
+assert(/body\s*>\s*\.deliveryAnnouncement\s*~\s*\*\s*nav\s*\{[^}]*top:\s*var\(--delivery-announcement-height\)\s*!important;/s.test(stylesSource), "fixed navigation must sit directly below the delivery announcement");
+assert(/body\s*\{[^}]*padding-top:\s*var\(--delivery-announcement-height\);/s.test(stylesSource), "document flow must reserve the announcement height");
 
 function collectPublicSources(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
