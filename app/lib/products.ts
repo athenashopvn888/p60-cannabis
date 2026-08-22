@@ -234,7 +234,7 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
     ],
   },
   CIGARETTES: {
-    banner: "/banners/p60-real/category-cigarettes.webp",
+    banner: "/banners/native-cigarette-offer-20260822.webp",
     name: "Cigarettes", slug: "cigarettes", color: "#78716c", icon: "SM",
     seoTitle: "Native Cigarettes York - P60 Cannabis",
     seoIntro: "Browse cigarette category information at P60 Cannabis on Weston Rd in York.",
