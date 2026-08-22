@@ -64,7 +64,7 @@ const EXPLORE_CATEGORIES = [
   { name: "Concentrates", slug: "items/concentrates", banner: "/banners/p60-real/tile-concentrates.webp", icon: "💎" },
   { name: "Pre-Rolls", slug: "items/prerolls", banner: "/banners/p60-real/tile-prerolls.webp", icon: "🚬" },
   { name: "Accessories", slug: "items/add-ons", banner: "/banners/p60-real/tile-accessories.webp", icon: "➕" },
-  { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/p60-real/tile-cigarettes.webp", icon: "🏷️" },
+  { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/native-cigarette-offer-20260822.webp", icon: "🏷️" },
   { name: "Magic Stuff", slug: "items/magic", banner: "/banners/p60-real/tile-magic.webp", icon: "🍄" },
 ];
 
