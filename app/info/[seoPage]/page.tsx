@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import Image from "next/image";
 import fs from "fs";
 import path from "path";
 import Link from "next/link";
@@ -55,7 +56,7 @@ export default async function SeoLandingPage({
       <Navbar />
 
       {/* Banner Image */}
-      {page.banner && bannerExists && (
+      {page.banner && bannerExists && !page.heroPreview && (
         <section className={styles.bannerSection}>
           <img
             src={page.banner}
@@ -66,13 +67,45 @@ export default async function SeoLandingPage({
       )}
 
       {/* Hero */}
-      <section className={styles.hero}>
-        <div className={styles.heroInner}>
-          <span className={styles.heroIcon}>{page.icon}</span>
-          <h1 className={styles.heroH1}>{page.h1}</h1>
-          <p className={styles.heroTagline}>{page.heroTagline}</p>
-        </div>
-      </section>
+      {page.heroPreview ? (
+        <section className={styles.productHero}>
+          <div className={styles.productHeroInner}>
+            <div className={styles.productHeroCopy}>
+              <span className={styles.productHeroKicker}>{page.heroPreview.eyebrow}</span>
+              <h1>{page.h1}</h1>
+              <p>{page.heroPreview.intro}</p>
+              <div className={styles.productHeroActions}>
+                <Link href="/items/cigarettes" className={styles.productHeroPrimary}>Check the cigarette menu</Link>
+                <Link href="/items/cigarettes" className={styles.productHeroSecondary}>See the current selection</Link>
+              </div>
+            </div>
+            <div className={styles.productPreviewStage} aria-label={`${page.h1} brand preview`}>
+              {page.heroPreview.products.map((product, index) => (
+                <Link key={product.name} href="/items/cigarettes" className={styles.productPreviewCard}>
+                  <Image
+                    src={product.image}
+                    alt={`${product.name} brand preview`}
+                    width={800}
+                    height={800}
+                    priority={index === 0}
+                    sizes="(max-width: 720px) 42vw, (max-width: 980px) 46vw, 220px"
+                  />
+                  <span>{product.name}</span>
+                </Link>
+              ))}
+              <p className={styles.productHeroDisclosure}>{page.heroPreview.disclosure}</p>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className={styles.hero}>
+          <div className={styles.heroInner}>
+            <span className={styles.heroIcon}>{page.icon}</span>
+            <h1 className={styles.heroH1}>{page.h1}</h1>
+            <p className={styles.heroTagline}>{page.heroTagline}</p>
+          </div>
+        </section>
+      )}
 
       {/* Content Sections */}
       <section className={styles.content}>
