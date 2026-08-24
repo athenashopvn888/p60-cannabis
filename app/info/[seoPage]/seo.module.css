@@ -47,6 +47,140 @@
   margin: 0;
 }
 
+/* Native cigarette brand-preview hero */
+.productHero {
+  position: relative;
+  overflow: hidden;
+  padding: 132px 24px 76px;
+  color: #f7f4ed;
+  background: radial-gradient(circle at 78% 32%, rgba(231,184,91,.28), transparent 32%), linear-gradient(145deg, #08080c 0%, #11101a 62%, #070708 100%);
+}
+.productHero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .28;
+  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, #000, transparent 88%);
+}
+.productHeroInner {
+  position: relative;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(380px, .98fr);
+  gap: 72px;
+  align-items: center;
+}
+.productHeroKicker {
+  display: block;
+  margin-bottom: 15px;
+  color: #e7b85b;
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.productHeroCopy h1 {
+  max-width: 700px;
+  margin: 0 0 22px;
+  font-size: clamp(3rem, 5.7vw, 5.6rem);
+  line-height: .96;
+  letter-spacing: -.055em;
+}
+.productHeroCopy > p {
+  max-width: 620px;
+  margin: 0;
+  color: #bbb8c4;
+  font-size: clamp(1rem, 1.6vw, 1.16rem);
+  line-height: 1.7;
+}
+.productHeroActions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.productHeroPrimary,
+.productHeroSecondary {
+  min-height: 50px;
+  padding: 0 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: .9rem;
+  font-weight: 800;
+  transition: transform .2s ease, border-color .2s ease;
+}
+.productHeroPrimary { color: #0a0907; background: #e7b85b; box-shadow: 0 12px 34px rgba(231,184,91,.3); }
+.productHeroSecondary { color: #f8f6ef; border: 1px solid #3e3c49; background: rgba(255,255,255,.035); }
+.productHeroPrimary:hover,
+.productHeroSecondary:hover { transform: translateY(-2px); }
+.productHeroSecondary:hover { border-color: #e7b85b; }
+.productPreviewStage {
+  min-height: 520px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-content: center;
+}
+.productPreviewCard {
+  position: relative;
+  height: 158px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 26px;
+  color: #e9e5ee;
+  background: linear-gradient(155deg, rgba(255,255,255,.1), rgba(255,255,255,.025));
+  box-shadow: 0 25px 70px rgba(0,0,0,.36);
+}
+.productPreviewCard::after {
+  content: "";
+  position: absolute;
+  inset: auto 10% -45% 10%;
+  height: 90%;
+  border-radius: 50%;
+  background: rgba(231,184,91,.28);
+  filter: blur(34px);
+}
+.productPreviewCard img {
+  position: relative;
+  z-index: 1;
+  width: 80%;
+  height: 56%;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 20px rgba(0,0,0,.48));
+  transition: transform .25s ease;
+}
+.productPreviewCard:hover img { transform: translateY(-5px) scale(1.04); }
+.productPreviewCard span {
+  position: absolute;
+  z-index: 2;
+  inset: auto 14px 13px;
+  overflow: hidden;
+  font-size: .7rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.productHeroDisclosure { grid-column: 1 / -1; margin: 0; color: #aaa6b2; font-size: .82rem; line-height: 1.55; }
+
+@media (max-width: 980px) {
+  .productHeroInner { grid-template-columns: 1fr; gap: 42px; }
+  .productPreviewStage { min-height: 0; }
+}
+@media (max-width: 720px) {
+  .productHero { padding: 214px 18px 58px; }
+  .productHeroCopy h1 { font-size: clamp(2.7rem, 13.5vw, 4.2rem); }
+  .productPreviewStage { gap: 10px; }
+  .productPreviewCard { height: 150px; border-radius: 18px; }
+}
+@media (max-width: 430px) {
+  .productHeroActions { flex-direction: column; }
+  .productHeroPrimary,
+  .productHeroSecondary { width: 100%; }
+}
+
 /* Content */
 .content { padding: 40px 24px 60px; }
 .container { max-width: 960px; margin: 0 auto; }
