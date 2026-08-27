@@ -58,6 +58,7 @@ export default function Footer() {
               <Link href="/info/york-weed-dispensary">York Dispensary</Link>
               <Link href="/info/cheap-weed-york">Cheap Weed York</Link>
               <Link href="/info/native-cigarettes-york">Native Cigarettes</Link>
+              <Link href="/info/nicotine-vapes-york">Nicotine Vapes York</Link>
               <Link href="/info/weed-store-near-toronto">Weed Store Near Toronto</Link>
               <Link href="/weed-dispensary-york/">P60 Cannabis Weed Dispensary in York</Link>
               <Link href="/contact">Contact Us</Link>

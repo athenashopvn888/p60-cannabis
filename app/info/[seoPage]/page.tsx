@@ -26,7 +26,7 @@ export async function generateMetadata({
   if (!page) return {};
 
   return {
-    title: page.title,
+    title: page.absoluteTitle ? { absolute: page.title } : page.title,
     description: page.metaDescription,
     alternates: {
       canonical: `https://www.p60cannabis.com/info/${slug}`,
@@ -45,6 +45,7 @@ export default async function SeoLandingPage({
   if (!page) notFound();
 
   const tiers = Object.values(TIER_CONFIG);
+  const heroPreview = page.heroPreview;
 
   // Check if banner file exists in the public folder
   const bannerExists = page.banner
@@ -56,7 +57,7 @@ export default async function SeoLandingPage({
       <Navbar />
 
       {/* Banner Image */}
-      {page.banner && bannerExists && !page.heroPreview && (
+      {page.banner && bannerExists && !heroPreview && (
         <section className={styles.bannerSection}>
           <img
             src={page.banner}
@@ -67,33 +68,35 @@ export default async function SeoLandingPage({
       )}
 
       {/* Hero */}
-      {page.heroPreview ? (
-        <section className={styles.productHero}>
+      {heroPreview ? (
+        <section className={`${styles.productHero} ${heroPreview.theme === "nicotine" ? styles.nicotineProductHero : ""}`} data-publication-status="approved">
           <div className={styles.productHeroInner}>
             <div className={styles.productHeroCopy}>
-              <span className={styles.productHeroKicker}>{page.heroPreview.eyebrow}</span>
+              <span className={styles.productHeroKicker}>{heroPreview.eyebrow}</span>
               <h1>{page.h1}</h1>
-              <p>{page.heroPreview.intro}</p>
+              <p>{heroPreview.intro}</p>
               <div className={styles.productHeroActions}>
-                <Link href="/items/cigarettes" className={styles.productHeroPrimary}>Check the cigarette menu</Link>
-                <Link href="/items/cigarettes" className={styles.productHeroSecondary}>See the current selection</Link>
+                <Link href={heroPreview.menuHref ?? "/items/cigarettes"} className={styles.productHeroPrimary}>{heroPreview.primaryLabel ?? "Check the cigarette menu"}</Link>
+                <Link href={heroPreview.secondaryHref ?? heroPreview.menuHref ?? "/items/cigarettes"} className={styles.productHeroSecondary}>{heroPreview.secondaryLabel ?? "See the current selection"}</Link>
               </div>
+              {heroPreview.identityStrip && <p className={styles.productHeroIdentity}>{heroPreview.identityStrip}</p>}
             </div>
             <div className={styles.productPreviewStage} aria-label={`${page.h1} brand preview`}>
-              {page.heroPreview.products.map((product, index) => (
-                <Link key={product.name} href="/items/cigarettes" className={styles.productPreviewCard}>
+              {heroPreview.products.map((product, index) => (
+                <Link key={product.name} href={heroPreview.menuHref ?? "/items/cigarettes"} className={styles.productPreviewCard}>
                   <Image
                     src={product.image}
                     alt={`${product.name} brand preview`}
                     width={800}
                     height={800}
                     priority={index === 0}
+                    unoptimized={product.image.startsWith("https://")}
                     sizes="(max-width: 720px) 42vw, (max-width: 980px) 46vw, 220px"
                   />
                   <span>{product.name}</span>
                 </Link>
               ))}
-              <p className={styles.productHeroDisclosure}>{page.heroPreview.disclosure}</p>
+              <p className={styles.productHeroDisclosure}>{heroPreview.disclosure}</p>
             </div>
           </div>
         </section>
@@ -110,6 +113,7 @@ export default async function SeoLandingPage({
       {/* Content Sections */}
       <section className={styles.content}>
         <div className={styles.container}>
+          {heroPreview?.featuredHeading && heroPreview.featuredIntro && <div className={styles.featuredIntro} id="featured-vapes"><h2>{heroPreview.featuredHeading}</h2><p>{heroPreview.featuredIntro}</p></div>}
           {page.sections.map((s, i) => (
             <div key={i} className={styles.section}>
               <h2 className={styles.sectionTitle}>{s.heading}</h2>
@@ -118,7 +122,7 @@ export default async function SeoLandingPage({
           ))}
 
           {/* Tier Grid */}
-          <div className={styles.section}>
+          {heroPreview?.theme !== "nicotine" && <div className={styles.section}>
             <h2 className={styles.sectionTitle}>Our Cannabis Menu — Five Tiers of Quality</h2>
             <div className={styles.tierGrid}>
               {tiers.map((tier) => (
@@ -137,16 +141,16 @@ export default async function SeoLandingPage({
                 </Link>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Map */}
-          <div className={styles.section}>
+          {heroPreview?.theme !== "nicotine" && <div className={styles.section}>
             <h2 className={styles.sectionTitle}>Find Us</h2>
             <div className={styles.mapWrap}>
             </div>
             <div className={styles.visitBtns}>
             </div>
-          </div>
+          </div>}
 
           {/* FAQ */}
           {page.faqs.length > 0 && (
@@ -160,6 +164,7 @@ export default async function SeoLandingPage({
               ))}
             </div>
           )}
+          {heroPreview?.warning && <p className={styles.nicotineWarning}>{heroPreview.warning}</p>}
         </div>
       </section>
 

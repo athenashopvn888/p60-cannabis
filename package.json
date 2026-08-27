@@ -15,7 +15,8 @@
     "verify:delivery": "node scripts/verify-delivery-menu.mjs",
     "verify:delivery-images": "node scripts/verify-athena-delivery-images.mjs",
     "verify:hours-seo": "node scripts/verify-public-hours-seo.mjs",
-    "verify:ready-workflow": "node scripts/verify-ready-workflow.mjs"
+    "verify:ready-workflow": "node scripts/verify-ready-workflow.mjs",
+    "test:nicotine-vapes": "node --experimental-strip-types --test tests/nicotine-vape-landing.test.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
