@@ -82,7 +82,7 @@ test("Nicotine Vape and THC Vape remain separate without moving routes", async (
   assert(home.includes('{ name: "Nicotine Vape", slug: "items/vapes"'));
   assert(home.includes('{ name: "THC Vape", slug: "items/vape-disposables"'));
   assert(nicotineGuide.includes('menuHref: "/items/vapes"'));
-  assert(nicotineGuide.includes("/items/vape-disposables are excluded"));
+  assert(nicotineGuide.includes("THC and cannabis vape products remain separate in the THC Vape category"));
 });
 
 test("Weed resource family owns weed-bearing paths and legacy paths redirect once", async () => {
@@ -117,4 +117,28 @@ test("protected owner and volatile public-copy corrections remain bounded", asyn
   assert(!home.includes("Free evening street parking"));
   assert(!home.includes("What is the cheapest weed"));
   assert(!root.includes('priceRange: "$3 - $12/g"'));
+});
+
+test("post-live cleanup normalizes the broad canonical and removes audited public mechanics language", async () => {
+  const [ownerPage, seoPages, products] = await Promise.all([
+    read("app/weed-dispensary-york/page.tsx"),
+    read("app/lib/seoPages.ts"),
+    read("app/lib/products.ts"),
+  ]);
+
+  assert(ownerPage.includes('title: "Weed Dispensary in York"'));
+  assert(ownerPage.includes('canonical: `https://${gbpLocation.domain}/${gbpLocation.slug}`'));
+  assert(!ownerPage.includes('${gbpLocation.slug}/`'));
+
+  for (const phrase of ["this page", "live-checked", "/items/vape-disposables are excluded"]) {
+    assert(!seoPages.toLowerCase().includes(phrase));
+  }
+  assert(!products.toLowerCase().includes("this page"));
+  assert(products.includes('seoTitle: "Cannabis Concentrates in York"'));
+  assert(products.includes('seoTitle: "Pre-Rolls in York"'));
+  assert(seoPages.includes('title: "York Weed Dispensary"'));
+  assert(seoPages.includes('title: "Cheap Weed York Value Guide"'));
+  assert(seoPages.includes('title: "Native Cigarettes York"'));
+  assert(seoPages.includes('title: "Weed Store Near Toronto"'));
+  assert(seoPages.includes('title: "Cannabis Dispensary Near Me York"'));
 });

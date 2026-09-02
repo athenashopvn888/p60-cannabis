@@ -194,22 +194,22 @@ export const CATEGORY_CONFIG: Record<string, CategoryInfo> = {
   CONCENTRATES: {
     banner: "/banners/p60-real/category-concentrates.webp",
     name: "Concentrates", slug: "concentrates", color: "#f59e0b", icon: "CO",
-    seoTitle: "Cannabis Concentrates in York | P60 Cannabis",
+    seoTitle: "Cannabis Concentrates in York",
     seoIntro: "Browse concentrates category information at P60 Cannabis in York.",
-    seoDescription: "Review concentrate-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product selection.",
+    seoDescription: "Review concentrate-related menu categories at P60 Cannabis in York and confirm current menu details before visiting. This category overview supports general browsing and does not promise current product selection.",
     faqs: [
-      { q: "What concentrate information can shoppers review?", a: "Visitors can use this page to review concentrates category information and then confirm current menu details before visiting P60 Cannabis." },
-      { q: "Does this page guarantee current concentrate selection?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
+      { q: "What concentrate information can shoppers review?", a: "Visitors can review concentrates category information and then confirm current menu details before visiting P60 Cannabis." },
+      { q: "Does the category overview guarantee current concentrate selection?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
     ],
   },
   PREROLLS: {
     banner: "/banners/p60-real/category-prerolls.webp", name: "Pre-Rolls", slug: "prerolls", color: "#22c55e", icon: "PR",
-    seoTitle: "Pre-Rolls in York | P60 Cannabis",
+    seoTitle: "Pre-Rolls in York",
     seoIntro: "Browse pre-roll category information at P60 Cannabis in York.",
-    seoDescription: "Review pre-roll menu categories at P60 Cannabis in York and confirm current menu details before visiting. This page is intended for general category browsing and does not promise current product selection.",
+    seoDescription: "Review pre-roll menu categories at P60 Cannabis in York and confirm current menu details before visiting. This category overview supports general browsing and does not promise current product selection.",
     faqs: [
-      { q: "What pre-roll information can shoppers review?", a: "Visitors can use this page to review pre-roll category information and then confirm current menu details before visiting P60 Cannabis." },
-      { q: "Does this page guarantee current pre-roll selection?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
+      { q: "What pre-roll information can shoppers review?", a: "Visitors can review pre-roll category information and then confirm current menu details before visiting P60 Cannabis." },
+      { q: "Does the category overview guarantee current pre-roll selection?", a: "No. Category details can change, so customers should confirm the current menu before visiting." },
     ],
   },
   "ADD ONS": {

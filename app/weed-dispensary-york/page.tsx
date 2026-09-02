@@ -3,10 +3,10 @@ import { GBPLandingPage } from "@/app/components/GBPLandingPage";
 import { gbpLocation } from "@/app/lib/gbp-location";
 
 export const metadata: Metadata = {
-  title: gbpLocation.seoTitle,
+  title: "Weed Dispensary in York",
   description: gbpLocation.metaDescription,
   alternates: {
-    canonical: `https://${gbpLocation.domain}/${gbpLocation.slug}/`,
+    canonical: `https://${gbpLocation.domain}/${gbpLocation.slug}`,
   },
   robots: {
     index: true,
