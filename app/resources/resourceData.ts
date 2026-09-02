@@ -106,7 +106,7 @@ const nativeCigaretteBrandFamilies = [
 
 export const CATEGORY_PATHS = [
   "/resources/cannabis-101",
-  "/resources/flower-guides",
+  "/resources/weed-flower-guides",
   "/resources/pre-roll-guides",
   "/resources/edibles-guides",
   "/resources/vape-guides",
@@ -152,20 +152,20 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Start With the Topic That Matches the Visit",
         body: [
-          "Use the category hubs when you want the fast lane. Flower shoppers can jump into tier guides, edible shoppers can check label-reading basics, and value hunters can compare price with weight before getting pulled in by one loud number.",
+          "Choose the topic that matches the visit. Flower shoppers can compare Weed collections, edible shoppers can check label-reading basics, and value shoppers can compare price with weight.",
         ],
       },
       {
         heading: "Current Menu Details Stay Current",
         body: [
-          "Resources explain how to shop. The current menu shows what is listed now. When one product, price, weight, or hour decides the trip, check the current page or call the store before moving.",
+          "These resources explain how to compare categories. When one product, price, weight, or hour decides the trip, check the current menu or call the store before travelling.",
         ],
       },
     ],
     commercialLinks: [
       { label: "View the P60 Cannabis store page", href: "/weed-dispensary-york" },
-      { label: "Browse Exotic flower", href: "/exotic" },
-      { label: "Browse Budget flower", href: "/budget" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
       { label: "Explore current edibles", href: "/items/edibles" },
     ],
     related: [
@@ -225,22 +225,22 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       { label: "Open the FAQ", href: "/faq" },
     ],
     related: [
-      "/resources/flower-guides",
+      "/resources/weed-flower-guides",
       "/resources/pre-roll-guides",
       "/resources/edibles-guides",
     ],
   },
   {
-    path: "/resources/flower-guides",
+    path: "/resources/weed-flower-guides",
     kind: "category",
     categoryLabel: "Flower Guides",
-    title: "Cannabis Flower Guides",
-    seoTitle: "Cannabis Flower Guides | P60 Cannabis",
+    title: "Weed & Cannabis Flower Guides",
+    seoTitle: "Weed & Cannabis Flower Guides York | P60 Cannabis",
     metaDescription:
-      "Explore P60 Cannabis flower guides covering Budget, AA, AAA+, Premium, Exotic, value comparisons, weights, and current menu listings.",
-    h1: "Flower Guides: Know the Section Before Comparing Strains",
+      "Explore P60 Cannabis guides for Exotic Weed, Premium Weed, AAA+ Weed, AA Weed, and Budget Weed in York.",
+    h1: "P60 Cannabis Weed & Flower Guides",
     excerpt:
-      "P60 flower sections help you pick a lane before the product cards do the talking.",
+      "Compare P60 Cannabis Weed flower collections, then review each product's current listed details.",
     primaryKeyword: "cannabis flower guides York",
     supportingKeywords: [
       "AA vs AAA+ flower",
@@ -257,28 +257,29 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "P60 Cannabis flower guide for Exotic and premium sections",
     },
     intro: [
-      "P60 Cannabis organizes flower into Budget, AA, AAA+, Premium, and Exotic. Those labels are useful shopping lanes, not magic words. The current product card still matters.",
+      "P60 Cannabis organizes flower into Budget Weed, AA Weed, AAA+ Weed, Premium Weed, and Exotic Weed. Compare those collections, then review each product's current listed details.",
     ],
     sections: [
       {
-        heading: "The Section Narrows the Shelf",
+        heading: "Compare the Five Weed Collections",
         body: [
-          "Budget, AA, AAA+, Premium, and Exotic help shoppers move faster. After that, compare the actual listing: product name, weight, posted price, type, and listing details.",
+          "Budget Weed, AA Weed, AAA+ Weed, Premium Weed, and Exotic Weed organize the flower menu. Compare the product name, weight, posted price, type, and listing details within each collection.",
         ],
       },
       {
-        heading: "Flower Guides in This Lane",
+        heading: "Choose a Weed Flower Guide",
         body: [
-          "Start with the tier guide if you want the big map. Use the Budget vs Premium guide when you are deciding between value-first and higher-shelf browsing.",
+          "Start with the tier comparison for all five Weed collections, or compare Budget Weed and Premium Weed by their current product details.",
         ],
       },
     ],
     commercialLinks: [
-      { label: "Browse Budget flower", href: "/budget" },
-      { label: "Browse AA flower", href: "/aa" },
-      { label: "Browse AAA+ flower", href: "/aaa" },
-      { label: "Browse Premium flower", href: "/premium" },
-      { label: "Browse Exotic flower", href: "/exotic" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
+      { label: "Explore AA Weed", href: "/aa-weed" },
+      { label: "Explore AAA+ Weed", href: "/aaa-weed" },
+      { label: "Explore Premium Weed", href: "/premium-weed" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
+      { label: "Explore P60 Cannabis Weed in York", href: "/weed-dispensary-york" },
     ],
     related: [
       "/resources/value-guides",
@@ -323,7 +324,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
     ],
     commercialLinks: [{ label: "Browse current pre-rolls", href: "/items/prerolls" }],
-    related: ["/resources/flower-guides", "/resources/cannabis-101"],
+    related: ["/resources/weed-flower-guides", "/resources/cannabis-101"],
   },
   {
     path: "/resources/edibles-guides",
@@ -409,7 +410,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       { label: "Browse THC vapes", href: "/items/vapes" },
       { label: "Browse vape disposables", href: "/items/vape-disposables" },
     ],
-    related: ["/resources/flower-guides", "/resources/edibles-guides"],
+    related: ["/resources/weed-flower-guides", "/resources/edibles-guides"],
   },
   {
     path: "/resources/value-guides",
@@ -451,18 +452,18 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         heading: "Useful Flower Paths",
         body: ["Start with the current P60 flower lanes when value is the mission."],
         links: [
-          { label: "Browse Budget flower", href: "/budget" },
-          { label: "Browse AA flower", href: "/aa" },
-          { label: "Browse AAA+ flower", href: "/aaa" },
+          { label: "Explore Budget Weed", href: "/budget-weed" },
+          { label: "Explore AA Weed", href: "/aa-weed" },
+          { label: "Explore AAA+ Weed", href: "/aaa-weed" },
         ],
       },
     ],
     commercialLinks: [
-      { label: "Browse Budget flower", href: "/budget" },
-      { label: "Browse AA flower", href: "/aa" },
-      { label: "Browse AAA+ flower", href: "/aaa" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
+      { label: "Explore AA Weed", href: "/aa-weed" },
+      { label: "Explore AAA+ Weed", href: "/aaa-weed" },
     ],
-    related: ["/resources/flower-guides", "/resources/flower-guides/budget-vs-premium-flower"],
+    related: ["/resources/weed-flower-guides", "/resources/weed-flower-guides/budget-vs-premium-flower"],
   },
   {
     path: "/resources/local-guides",
@@ -706,11 +707,11 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Use Flower Tiers as Shopping Lanes",
         body: [
-          "Budget, AA, AAA+, Premium, and Exotic narrow the shelf. Once you pick a lane, compare individual product cards inside that lane before jumping across the whole menu.",
+          "Budget Weed, AA Weed, AAA+ Weed, Premium Weed, and Exotic Weed organize the flower menu. Compare the individual product cards within the collection that interests you.",
         ],
         links: [
-          { label: "Browse Budget flower", href: "/budget" },
-          { label: "Browse Exotic flower", href: "/exotic" },
+          { label: "Explore Budget Weed", href: "/budget-weed" },
+          { label: "Explore Exotic Weed", href: "/exotic-weed" },
         ],
       },
       {
@@ -722,7 +723,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Confirm the Current Detail",
         body: [
-          "A resource can explain menu organization. When one exact item decides the trip, check the current page or call P60 Cannabis.",
+          "When one exact item decides the trip, check the current menu or call P60 Cannabis.",
         ],
       },
     ],
@@ -732,26 +733,26 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       { label: "Explore current edibles", href: "/items/edibles" },
     ],
     related: [
-      "/resources/flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
+      "/resources/weed-flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
       "/resources/value-guides/how-to-compare-flower-prices",
     ],
     secondTake: {
       author: "mina",
-      body: "The easiest menu move is format first. Once the shelf is right, the product card has a real job instead of becoming one more tab in the pile.",
+      body: "Start with the product format, then compare the details shown with each current product.",
     },
   },
   {
-    path: "/resources/flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
+    path: "/resources/weed-flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
     kind: "article",
-    parent: "/resources/flower-guides",
+    parent: "/resources/weed-flower-guides",
     categoryLabel: "Flower Guides",
-    title: "AA vs AAA+ vs Premium vs Exotic Flower",
-    seoTitle: "AA vs AAA+ vs Premium vs Exotic | P60 Cannabis",
+    title: "AA Weed vs AAA+ Weed vs Premium Weed vs Exotic Weed",
+    seoTitle: "AA Weed vs AAA+ Weed vs Premium Weed vs Exotic Weed | P60 Cannabis",
     metaDescription:
-      "Compare AA, AAA+, Premium, and Exotic flower sections at P60 Cannabis and learn how to use tiers without treating them as automatic guarantees.",
-    h1: "AA vs AAA+ vs Premium vs Exotic: What the Flower Sections Do",
+      "Compare AA Weed, AAA+ Weed, Premium Weed, and Exotic Weed at P60 Cannabis using current product details.",
+    h1: "AA Weed vs AAA+ Weed vs Premium Weed vs Exotic Weed",
     excerpt:
-      "The tier name gets you to the right shelf. The listing tells you what is actually sitting there today.",
+      "Compare the four Weed collections, then review the details shown with each current listing.",
     primaryKeyword: "AA vs AAA+ vs Premium vs Exotic",
     supportingKeywords: ["P60 flower tiers", "premium flower guide", "exotic flower guide"],
     searchIntent: "Compare P60 flower tier labels and shopping purpose.",
@@ -763,7 +764,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "AA vs AAA+ vs Premium vs Exotic flower guide at P60 Cannabis",
     },
     intro: [
-      "AA vs AAA+ vs Premium vs Exotic is really a question about menu lanes. At P60 Cannabis, the tier helps shoppers decide where to begin before comparing current product cards.",
+      "AA Weed, AAA+ Weed, Premium Weed, and Exotic Weed are distinct P60 Cannabis flower collections. Compare each collection using current product cards.",
     ],
     sections: [
       {
@@ -778,18 +779,18 @@ export const RESOURCE_PAGES: ResourcePage[] = [
           "AA and AAA+ are often where shoppers compare everyday value, current weight, and posted price with less drama. Read the current item card before making the call.",
         ],
         links: [
-          { label: "Browse AA flower", href: "/aa" },
-          { label: "Browse AAA+ flower", href: "/aaa" },
+          { label: "Explore AA Weed", href: "/aa-weed" },
+          { label: "Explore AAA+ Weed", href: "/aaa-weed" },
         ],
       },
       {
-        heading: "Premium and Exotic Are Higher-Shelf Starting Points",
+        heading: "Compare Premium Weed and Exotic Weed",
         body: [
-          "Premium and Exotic can be the right lane when the shopper wants a higher-shelf browse. The tier still does not replace the current listing.",
+          "Premium Weed and Exotic Weed are separate collections. Compare current product details in both before choosing.",
         ],
         links: [
-          { label: "Browse Premium flower", href: "/premium" },
-          { label: "Browse Exotic flower", href: "/exotic" },
+          { label: "Explore Premium Weed", href: "/premium-weed" },
+          { label: "Explore Exotic Weed", href: "/exotic-weed" },
         ],
       },
       {
@@ -801,18 +802,18 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       {
         heading: "Let the Current Card Finish the Decision",
         body: [
-          "Use the tier to enter the lane. Use the product card to compare what is actually listed now.",
+          "Choose a Weed collection, then compare what each current product card lists.",
         ],
       },
     ],
     commercialLinks: [
-      { label: "Browse AA flower", href: "/aa" },
-      { label: "Browse AAA+ flower", href: "/aaa" },
-      { label: "Browse Premium flower", href: "/premium" },
-      { label: "Browse Exotic flower", href: "/exotic" },
+      { label: "Explore AA Weed", href: "/aa-weed" },
+      { label: "Explore AAA+ Weed", href: "/aaa-weed" },
+      { label: "Explore Premium Weed", href: "/premium-weed" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
     ],
     related: [
-      "/resources/flower-guides/budget-vs-premium-flower",
+      "/resources/weed-flower-guides/budget-vs-premium-flower",
       "/resources/value-guides/how-to-compare-flower-prices",
     ],
     secondTake: {
@@ -821,15 +822,15 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     },
   },
   {
-    path: "/resources/flower-guides/budget-vs-premium-flower",
+    path: "/resources/weed-flower-guides/budget-vs-premium-flower",
     kind: "article",
-    parent: "/resources/flower-guides",
+    parent: "/resources/weed-flower-guides",
     categoryLabel: "Flower Guides",
-    title: "Budget vs Premium Flower",
-    seoTitle: "Budget vs Premium Flower | P60 Cannabis",
+    title: "Budget Weed vs Premium Weed",
+    seoTitle: "Budget Weed vs Premium Weed | P60 Cannabis",
     metaDescription:
-      "Compare Budget and Premium flower at P60 Cannabis by reading current price, weight, section, listing details, and the shopper goal behind each lane.",
-    h1: "Budget vs Premium Flower: Choose the Section Before the Strain",
+      "Compare Budget Weed and Premium Weed at P60 Cannabis by reading current weight, posted price, and listing details.",
+    h1: "Budget Weed vs Premium Weed at P60 Cannabis",
     excerpt:
       "Budget and Premium are not enemies. They answer different shopping moods.",
     primaryKeyword: "Budget vs Premium flower",
@@ -843,7 +844,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       alt: "Budget vs Premium flower guide at P60 Cannabis",
     },
     intro: [
-      "Budget vs Premium flower is not a moral debate. It is a shopping decision. One lane leans value-first, the other leans higher-shelf browsing. Both still need the current listing.",
+      "Budget Weed and Premium Weed are different P60 Cannabis flower collections. Compare current listings in both before choosing.",
     ],
     sections: [
       {
@@ -851,14 +852,14 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         body: [
           "Budget flower makes sense when the shopper is watching the total, comparing weights, or looking for a practical grab without making the menu too precious.",
         ],
-        links: [{ label: "Browse Budget flower", href: "/budget" }],
+        links: [{ label: "Explore Budget Weed", href: "/budget-weed" }],
       },
       {
         heading: "When Premium Gets the First Click",
         body: [
-          "Premium flower is the lane for shoppers who want to browse higher-shelf options first. It still deserves the same comparison: weight, current price, type, and listing details.",
+          "Premium Weed is a separate collection. Compare its current weight, posted price, type, and listing details.",
         ],
-        links: [{ label: "Browse Premium flower", href: "/premium" }],
+        links: [{ label: "Explore Premium Weed", href: "/premium-weed" }],
       },
       {
         heading: "Compare the Same Kind of Detail",
@@ -874,17 +875,17 @@ export const RESOURCE_PAGES: ResourcePage[] = [
       },
     ],
     commercialLinks: [
-      { label: "Browse Budget flower", href: "/budget" },
-      { label: "Browse Premium flower", href: "/premium" },
-      { label: "Browse Exotic flower", href: "/exotic" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
+      { label: "Explore Premium Weed", href: "/premium-weed" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
     ],
     related: [
-      "/resources/flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
+      "/resources/weed-flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
       "/resources/value-guides/how-to-compare-flower-prices",
     ],
     secondTake: {
       author: "riley",
-      body: "Budget shoppers and premium shoppers can both be sharp. The difference is the lane they open first, not whether they care about the details.",
+      body: "Budget Weed and Premium Weed answer different shopping priorities, and both still require a careful look at current product details.",
     },
   },
   {
@@ -925,7 +926,7 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         body: [
           "Loose flower lets shoppers compare tiers and weights more directly. It also makes price-by-weight comparisons easier when the current listing is clear.",
         ],
-        links: [{ label: "Browse current flower tiers", href: "/exotic" }],
+        links: [{ label: "Explore Exotic Weed", href: "/exotic-weed" }],
       },
       {
         heading: "Do Not Compare Formats Like They Are Identical",
@@ -942,11 +943,11 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     ],
     commercialLinks: [
       { label: "Browse current pre-rolls", href: "/items/prerolls" },
-      { label: "Browse Exotic flower", href: "/exotic" },
-      { label: "Browse Budget flower", href: "/budget" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
     ],
     related: [
-      "/resources/flower-guides/budget-vs-premium-flower",
+      "/resources/weed-flower-guides/budget-vs-premium-flower",
       "/resources/cannabis-101/how-to-read-a-cannabis-menu",
     ],
     secondTake: {
@@ -1074,9 +1075,9 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     commercialLinks: [
       { label: "Browse THC vapes", href: "/items/vapes" },
       { label: "Browse vape disposables", href: "/items/vape-disposables" },
-      { label: "Browse flower tiers", href: "/exotic" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
     ],
-    related: ["/resources/flower-guides", "/resources/edibles-guides/how-long-do-edibles-take"],
+    related: ["/resources/weed-flower-guides", "/resources/edibles-guides/how-long-do-edibles-take"],
     secondTake: {
       author: "riley",
       body: "The format decides the questions. Once you know whether you are reading a vape listing or a flower listing, the comparison gets cleaner fast.",
@@ -1136,22 +1137,22 @@ export const RESOURCE_PAGES: ResourcePage[] = [
         heading: "Browse Current Flower Sections",
         body: ["Use the current P60 Cannabis flower lanes for the current listing details."],
         links: [
-          { label: "Browse Budget flower", href: "/budget" },
-          { label: "Browse AA flower", href: "/aa" },
-          { label: "Browse AAA+ flower", href: "/aaa" },
-          { label: "Browse Premium flower", href: "/premium" },
-          { label: "Browse Exotic flower", href: "/exotic" },
+          { label: "Explore Budget Weed", href: "/budget-weed" },
+          { label: "Explore AA Weed", href: "/aa-weed" },
+          { label: "Explore AAA+ Weed", href: "/aaa-weed" },
+          { label: "Explore Premium Weed", href: "/premium-weed" },
+          { label: "Explore Exotic Weed", href: "/exotic-weed" },
         ],
       },
     ],
     commercialLinks: [
-      { label: "Browse Budget flower", href: "/budget" },
-      { label: "Browse Premium flower", href: "/premium" },
-      { label: "Browse Exotic flower", href: "/exotic" },
+      { label: "Explore Budget Weed", href: "/budget-weed" },
+      { label: "Explore Premium Weed", href: "/premium-weed" },
+      { label: "Explore Exotic Weed", href: "/exotic-weed" },
     ],
     related: [
-      "/resources/flower-guides/budget-vs-premium-flower",
-      "/resources/flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
+      "/resources/weed-flower-guides/budget-vs-premium-flower",
+      "/resources/weed-flower-guides/aa-vs-aaa-vs-premium-vs-exotic",
     ],
     secondTake: {
       author: "riley",

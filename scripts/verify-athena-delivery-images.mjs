@@ -30,7 +30,7 @@ for (const [index, imageUrl] of uniqueImageUrls.entries()) {
   assert.ok(Number(response.headers.get("content-length") || 0) > 0);
 }
 
-const deliveryResponse = await fetch(new URL("/delivery", storefrontBaseUrl));
+const deliveryResponse = await fetch(new URL("/weed-delivery-york", storefrontBaseUrl));
 assert.equal(deliveryResponse.status, 200, "Production delivery page must return 200");
 const deliveryHtml = await deliveryResponse.text();
 assert(!deliveryHtml.includes("milestone-1-demo.vercel.app/api/catalog-image"));

@@ -7,15 +7,15 @@ import styles from "./Navbar.module.css";
 
 const ALL_LINKS = [
   { href: "/careers/budtender", label: "Join Team" },
-  { href: "/delivery", label: "Delivery" },
-  { href: "/exotic", label: "Exotic" },
-  { href: "/premium", label: "Premium" },
-  { href: "/aaa", label: "AAA+" },
-  { href: "/aa", label: "AA" },
-  { href: "/budget", label: "Budget" },
+  { href: "/weed-delivery-york", label: "Weed Delivery" },
+  { href: "/exotic-weed", label: "Exotic Weed" },
+  { href: "/premium-weed", label: "Premium Weed" },
+  { href: "/aaa-weed", label: "AAA+ Weed" },
+  { href: "/aa-weed", label: "AA Weed" },
+  { href: "/budget-weed", label: "Budget Weed" },
   { href: "/items/edibles", label: "Edibles" },
   { href: "/items/prerolls", label: "Pre-Rolls" },
-  { href: "/items/vapes", label: "Nic Vape" },
+  { href: "/items/vapes", label: "Nicotine Vape" },
   { href: "/items/vape-disposables", label: "THC Vape" },
   { href: "/items/concentrates", label: "Concentrates" },
   { href: "/items/magic", label: "Magic Stuff" },
@@ -28,10 +28,10 @@ const ALL_LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const isStoreMenuActive =
-    ["/exotic", "/premium", "/aaa", "/aa", "/budget"].includes(pathname) ||
+    ["/exotic-weed", "/premium-weed", "/aaa-weed", "/aa-weed", "/budget-weed"].includes(pathname) ||
     pathname.startsWith("/item/") ||
     pathname.startsWith("/items/");
-  const isDeliveryActive = pathname === "/delivery";
+  const isDeliveryActive = pathname === "/weed-delivery-york";
   const scrollBarRef = useRef<HTMLDivElement>(null);
   const [canAdvance, setCanAdvance] = useState(false);
 
@@ -92,18 +92,18 @@ export default function Navbar() {
         <div className={styles.topBarRight}>
           <div className={styles.menuChoices} aria-label="Choose a menu">
             <Link
-              href="/exotic"
+              href="/exotic-weed"
               className={`${styles.menuChoice} ${isStoreMenuActive ? styles.menuChoiceActive : ""}`}
               aria-current={isStoreMenuActive ? "page" : undefined}
             >
               Store Menu
             </Link>
             <Link
-              href="/delivery"
+              href="/weed-delivery-york"
               className={`${styles.menuChoice} ${styles.deliveryMenuChoice} ${isDeliveryActive ? styles.deliveryMenuChoiceActive : ""}`}
               aria-current={isDeliveryActive ? "page" : undefined}
             >
-              Delivery Menu
+              Weed Delivery
             </Link>
           </div>
           <span className={styles.open}>

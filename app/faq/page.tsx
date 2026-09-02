@@ -27,7 +27,7 @@ const FAQ_CATEGORIES = [
     faqs: [
       { q: "What products do you carry?", a: "The site has menu sections for flower tiers, edibles, vape categories, concentrates, pre-rolls, cigarettes, and accessories. Check the current menu for today's listings." },
       { q: "Do you have a current menu?", a: "Use p60cannabis.com to review current menu details before visiting. Product names and prices can change." },
-      { q: "What are your flower tiers?", a: "Flower is organized by tier: Exotic, Premium, AAA+, AA, and Budget. Use the tier pages to compare current listings." },
+      { q: "What are your Weed flower tiers?", a: "Flower is organized into Exotic Weed, Premium Weed, AAA+ Weed, AA Weed, and Budget Weed. Use those collections to compare current listings." },
       { q: "Do you sell edibles?", a: "The site has an edibles category. Check the current menu for listed edible items." },
       { q: "Do you sell vapes?", a: "The site has vape category pages. Check the current menu for current vape listings and details." },
       { q: "Do you sell native cigarettes?", a: "The site includes a cigarette category. Confirm current cigarette options with the menu or staff." },
@@ -36,7 +36,7 @@ const FAQ_CATEGORIES = [
   {
     title: "Pricing & Bundle Notes",
     faqs: [
-      { q: "Where should value shoppers start?", a: "Start with Budget and AA flower, then compare current menu details before choosing." },
+      { q: "Where should value shoppers start?", a: "Start with Budget Weed and AA Weed, then compare current menu details before choosing." },
       { q: "What bundle pricing do you show?", a: "Flower pages may show tier and bundle notes. Confirm current posted pricing in the menu before purchase." },
       { q: "Do you have ounce deals?", a: "Use the current menu or ask staff for today's ounce options and pricing." },
       { q: "How does tier pricing work?", a: "Each flower category is grouped by tier. Use the current listing, size, posted price, and item notes for the final comparison." },
@@ -47,7 +47,7 @@ const FAQ_CATEGORIES = [
     faqs: [
       { q: "Do I need an appointment?", a: "The public site presents P60 Cannabis as a walk-in store. Check current store details before visiting." },
       { q: "Can I order online?", a: "Use the online menu for browsing. Contact the store if you need to confirm ordering options." },
-      { q: "Do you offer delivery?", a: "Yes. Use the P60 delivery menu from 10:00 AM to 10:00 PM and open LIVE ORDER to chat with the dispatcher, who confirms availability and delivery details." },
+      { q: "Do you offer Weed Delivery?", a: "Yes. Use the P60 Weed Delivery menu from 10:00 AM to 10:00 PM and open LIVE ORDER to chat with the dispatcher, who confirms availability and delivery details." },
       { q: "What payment methods do you accept?", a: "Ask staff or check the store page for current payment details before visiting." },
       { q: "Can staff help me choose a product?", a: "Ask staff when a current product detail, format, or category choice needs clarification." },
     ],

@@ -7,16 +7,16 @@ export interface TierSeoData {
 
 export const TIER_SEO: Record<string, TierSeoData> = {
   EXOTIC: {
-    seoTitle: "Exotic Cannabis Flower York | P60 Cannabis",
-    seoIntro: "Use the Exotic flower page at P60 Cannabis to compare current higher-tier flower listings in York.",
+    seoTitle: "Exotic Weed & Cannabis Flower York",
+    seoIntro: "Compare current Exotic Weed flower listings at P60 Cannabis in York, then review each product's listed details.",
     sections: [
       {
-        heading: "Start With The Exotic Tier",
-        body: "Exotic is the higher-tier flower path on the P60 Cannabis menu. Use the current product name, strain notes, size, posted price, and selection details before choosing.",
+        heading: "Compare Exotic Weed Listings",
+        body: "Exotic Weed is one of five flower collections at P60 Cannabis. Compare the product name, size, posted price, and listing details before choosing.",
       },
       {
         heading: "Check Current Bundle Notes",
-        body: "The site may show gram and bundle notes for this tier. Confirm current pricing and selection on the menu or with staff before purchase.",
+        body: "Product cards may show gram and bundle notes. Confirm current pricing and selection on the menu or with staff before purchase.",
       },
       {
         heading: "Visit P60 Cannabis On Weston Rd",
@@ -24,18 +24,18 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is the Exotic flower tier?", a: "Exotic is the higher-tier flower category on the P60 Cannabis menu. Check current listings for today's options." },
-      { q: "How should shoppers compare Exotic flower?", a: "Compare the current item name, size, posted price, and menu notes, then ask staff if one detail matters." },
-      { q: "Are Exotic listings always the same?", a: "No. Flower listings can rotate, so use the current menu before visiting." },
+      { q: "What is the Exotic Weed collection?", a: "Exotic Weed is one of the flower collections on the P60 Cannabis menu. Check current listings for details." },
+      { q: "How should shoppers compare Exotic Weed?", a: "Compare the current item name, size, posted price, and menu notes, then ask staff if one detail matters." },
+      { q: "Are Exotic Weed listings always the same?", a: "No. Flower listings can rotate, so check the current menu before visiting." },
     ],
   },
   PREMIUM: {
-    seoTitle: "Premium Cannabis Flower York | P60 Cannabis",
-    seoIntro: "Use the Premium flower page at P60 Cannabis to compare current higher-shelf flower listings in York.",
+    seoTitle: "Premium Weed & Cannabis Flower York",
+    seoIntro: "Compare current Premium Weed flower listings at P60 Cannabis in York, then review each product's listed details.",
     sections: [
       {
-        heading: "Compare Premium Flower Clearly",
-        body: "Premium sits below Exotic in the flower navigation. It is a useful category for York shoppers who want to compare higher-shelf listings without starting at the top tier.",
+        heading: "Compare Premium Weed Listings",
+        body: "Premium Weed is a distinct flower collection for York shoppers comparing P60 Cannabis products by name, size, posted price, and listing details.",
       },
       {
         heading: "Read The Current Item Notes",
@@ -47,18 +47,18 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is Premium flower at P60 Cannabis?", a: "Premium is one of the flower tiers on the P60 Cannabis menu. Use current listings to compare listed options." },
-      { q: "How is Premium different from Exotic?", a: "They are separate menu tiers. Compare the current products and posted details in each tier before choosing." },
+      { q: "What is Premium Weed at P60 Cannabis?", a: "Premium Weed is one of the flower collections on the P60 Cannabis menu. Use current listings to compare options." },
+      { q: "How is Premium Weed different from Exotic Weed?", a: "They are separate flower collections. Compare current products and posted details in each before choosing." },
       { q: "Where can shoppers confirm current prices?", a: "Use the current menu or ask staff for current product and price details." },
     ],
   },
   "AAA+": {
-    seoTitle: "AAA+ Cannabis Flower York | P60 Cannabis",
-    seoIntro: "Use the AAA+ flower page at P60 Cannabis to compare current mid-to-high flower listings in York.",
+    seoTitle: "AAA+ Weed & Cannabis Flower York",
+    seoIntro: "Compare current AAA+ Weed flower listings at P60 Cannabis in York, then review each product's listed details.",
     sections: [
       {
-        heading: "Use AAA+ For A Focused Comparison",
-        body: "AAA+ is a flower tier for shoppers who want to compare stronger menu listings without mixing every flower category together.",
+        heading: "Compare AAA+ Weed Listings",
+        body: "AAA+ Weed is a distinct flower collection that helps shoppers compare current products without mixing every flower category together.",
       },
       {
         heading: "Compare Size, Price, And Notes",
@@ -66,18 +66,18 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is AAA+ flower?", a: "AAA+ is one of the P60 Cannabis flower tiers. Check the current menu for today's listings." },
-      { q: "How should shoppers compare AAA+?", a: "Compare current item names, sizes, posted prices, and menu notes." },
-      { q: "Does this page guarantee current selection?", a: "No. Use the current menu or ask staff for current details." },
+      { q: "What is AAA+ Weed?", a: "AAA+ Weed is one of the P60 Cannabis flower collections. Check the current menu for listing details." },
+      { q: "How should shoppers compare AAA+ Weed?", a: "Compare current item names, sizes, posted prices, and menu notes." },
+      { q: "How can I confirm current AAA+ Weed selection?", a: "Use the current menu or ask staff for current details." },
     ],
   },
   AA: {
-    seoTitle: "AA Cannabis Flower York | P60 Cannabis",
-    seoIntro: "Use the AA flower page at P60 Cannabis to compare current everyday flower listings in York.",
+    seoTitle: "AA Weed & Cannabis Flower York",
+    seoIntro: "Compare current AA Weed flower listings at P60 Cannabis in York, then review each product's listed details.",
     sections: [
       {
-        heading: "AA Flower For Everyday Browsing",
-        body: "AA is a value-minded flower category on the P60 Cannabis menu. It helps shoppers compare current listings without jumping across every tier.",
+        heading: "Compare AA Weed Listings",
+        body: "AA Weed is a distinct flower collection on the P60 Cannabis menu. Compare current products by name, size, posted price, and listing details.",
       },
       {
         heading: "Confirm The Current Details",
@@ -85,17 +85,17 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is AA flower?", a: "AA is one of the P60 Cannabis flower tiers for shoppers comparing current value-minded listings." },
-      { q: "Where should shoppers confirm AA pricing?", a: "Use the current menu or ask staff for today's posted pricing." },
+      { q: "What is AA Weed?", a: "AA Weed is one of the P60 Cannabis flower collections for shoppers comparing current listings." },
+      { q: "Where should shoppers confirm AA Weed pricing?", a: "Use the current menu or ask staff for current posted pricing." },
     ],
   },
   BUDGET: {
-    seoTitle: "Budget Cannabis York | P60 Cannabis",
-    seoIntro: "Use the Budget flower page at P60 Cannabis to compare lower-spend flower listings in York.",
+    seoTitle: "Budget Weed & Cannabis Flower York",
+    seoIntro: "Compare current Budget Weed flower listings at P60 Cannabis in York, then review each product's listed details.",
     sections: [
       {
-        heading: "Start Here For Lower-Spend Flower",
-        body: "The Budget tier is for York shoppers comparing lower-spend flower options around Weston Rd. Start with the current menu and confirm today's product details before choosing.",
+        heading: "Compare Budget Weed Listings",
+        body: "Budget Weed is a distinct flower collection for York shoppers comparing current products by name, size, posted price, and listing details.",
       },
       {
         heading: "Check Sizes And Posted Prices",
@@ -103,8 +103,8 @@ export const TIER_SEO: Record<string, TierSeoData> = {
       },
     ],
     faqs: [
-      { q: "What is the Budget flower tier?", a: "Budget is the lower-spend flower category on the P60 Cannabis menu." },
-      { q: "Does this page guarantee current Budget listings?", a: "No. Use the current menu or ask staff for current details." },
+      { q: "What is the Budget Weed collection?", a: "Budget Weed is one of the flower collections on the P60 Cannabis menu." },
+      { q: "How can I confirm current Budget Weed listings?", a: "Use the current menu or ask staff for current details." },
       { q: "Where is P60 Cannabis?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
     ],
   },

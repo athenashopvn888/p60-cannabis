@@ -14,36 +14,36 @@ import Papa from "papaparse";
 /* ── Bento Mosaic Config ── */
 const BENTO_TIERS = [
   {
-    name: "EXOTICS",
-    slug: "exotic",
+    name: "Exotic Weed",
+    slug: "exotic-weed",
     price: "$10-$12/g",
     banner: "/banners/p60-real/tile-exotic.webp",
     className: styles.bentoExotic,
   },
   {
-    name: "PREMIUM",
-    slug: "premium",
+    name: "Premium Weed",
+    slug: "premium-weed",
     price: "$7-$10/g",
     banner: "/banners/p60-real/tile-premium.webp",
     className: styles.bentoPremium,
   },
   {
-    name: "AAA+",
-    slug: "aaa",
+    name: "AAA+ Weed",
+    slug: "aaa-weed",
     price: "$5-$6/g",
     banner: "/banners/p60-real/tile-aaa.webp",
     className: styles.bentoTile,
   },
   {
-    name: "AA",
-    slug: "aa",
+    name: "AA Weed",
+    slug: "aa-weed",
     price: "$4/g",
     banner: "/banners/p60-real/tile-aa.webp",
     className: styles.bentoTile,
   },
   {
-    name: "BUDGET",
-    slug: "budget",
+    name: "Budget Weed",
+    slug: "budget-weed",
     price: "$3/g",
     banner: "/banners/p60-real/tile-budget.webp",
     className: styles.bentoTile,
@@ -59,8 +59,8 @@ const BENTO_TIERS = [
 
 /* ── Explore Categories Config (New Banners) ── */
 const EXPLORE_CATEGORIES = [
-  { name: "Vape Pens", slug: "items/vapes", banner: "/banners/p60-real/tile-thc-vape.webp", icon: "💨" },
-  { name: "Nic Vape", slug: "items/vape-disposables", banner: "/banners/p60-real/tile-nic-vape.webp", icon: "💨" },
+  { name: "Nicotine Vape", slug: "items/vapes", banner: "/banners/p60-real/tile-nic-vape.webp", icon: "💨" },
+  { name: "THC Vape", slug: "items/vape-disposables", banner: "/banners/p60-real/tile-thc-vape.webp", icon: "💨" },
   { name: "Concentrates", slug: "items/concentrates", banner: "/banners/p60-real/tile-concentrates.webp", icon: "💎" },
   { name: "Pre-Rolls", slug: "items/prerolls", banner: "/banners/p60-real/tile-prerolls.webp", icon: "🚬" },
   { name: "Accessories", slug: "items/add-ons", banner: "/banners/p60-real/tile-accessories.webp", icon: "➕" },
@@ -76,15 +76,15 @@ const LOCAL_FAQS = [
   },
   {
     q: "What cannabis products do you carry?",
-    a: "We carry five tiers of premium flower: Exotic ($10-$12/g), Premium ($7-$10/g), AAA+ ($5-$6/g), AA ($4/g), and Budget ($3/g), plus a wide variety of edibles, prerolls, vapes, and concentrates.",
+    a: "The menu organizes flower into Exotic Weed, Premium Weed, AAA+ Weed, AA Weed, and Budget Weed, alongside edibles, pre-rolls, Nicotine Vape, THC Vape, and concentrates. Check current listings for product details.",
   },
   {
     q: "Where is P60 Cannabis located?",
-    a: "We are located at 1938 Weston Rd, York, ON M9N 1W2. Visit us in person or call us at +1 (289) 217-2763. Free evening street parking is available.",
+    a: "We are located at 1938 Weston Rd, York, ON M9N 1W2. Visit us in person or call us at +1 (289) 217-2763. Check current local signs or your preferred map service when planning the trip.",
   },
   {
-    q: "What is the cheapest weed at P60 Cannabis?",
-    a: "Our budget flower starts at just $3/g. We also offer AA daily drivers from $4/g and AAA+ heavy hitters from $5-$6/g. View our budget menu for our latest deals.",
+    q: "Where can I compare Budget Weed at P60 Cannabis?",
+    a: "Open the Budget Weed collection and compare its current product names, sizes, posted prices, and listing details before choosing.",
   },
 ];
 
@@ -217,24 +217,24 @@ export default function HomePage() {
               </div>
 
               <aside className={styles.homeDeliveryNotice} aria-labelledby="home-delivery-title">
-                <h2 id="home-delivery-title">NEW DELIVERY AVAILABLE</h2>
-                <p>P60 Cannabis delivers across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the P60 delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
+                <h2 id="home-delivery-title">WEED DELIVERY AVAILABLE</h2>
+                <p>P60 Cannabis offers Weed Delivery across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the Weed Delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
               </aside>
               <div className={styles.heroActions} aria-label="Choose a P60 Cannabis menu">
-                <Link href="/exotic" className={styles.heroPrimary}>STORE MENU</Link>
-                <Link href="/delivery" className={styles.heroSecondary}>DELIVERY MENU</Link>
+                <Link href="/exotic-weed" className={styles.heroPrimary}>STORE MENU</Link>
+                <Link href="/weed-delivery-york" className={styles.heroSecondary}>WEED DELIVERY</Link>
               </div>
             </div>
 
             {hasWelcomeBanner && !welcomeBannerError && (
               <Link
-                href="/delivery"
+                href="/weed-delivery-york"
                 className={styles.deliveryHeroMedia}
-                aria-label="Open the P60 Cannabis delivery menu"
+                aria-label="Open the P60 Cannabis Weed Delivery menu"
               >
                 <Image
                   src={welcomeBannerSrc}
-                  alt="P60 Cannabis delivery banner"
+                  alt="P60 Cannabis Weed Delivery banner"
                   width={1774}
                   height={887}
                   priority
@@ -254,7 +254,7 @@ export default function HomePage() {
           </div>
 
           <div className={styles.bentoHeader}>
-            <span>Flower Tiers</span>
+            <span>Weed Flower Tiers</span>
             <p>Choose by tier, then browse the current menu.</p>
           </div>
 
@@ -286,7 +286,7 @@ export default function HomePage() {
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Explore Categories</h2>
             <p className={styles.sectionSubtitle}>
-              From custom disposable vapes and concentrates to accessories and cigarettes.
+              Compare Nicotine Vape and THC Vape as separate categories, plus concentrates, accessories, and cigarettes.
             </p>
           </div>
 

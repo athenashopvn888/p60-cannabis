@@ -16,7 +16,7 @@ const bundledProducts = menu.products as Product[];
 const tierFilters: TierFilter[] = ["ALL", "Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
 const tierDisplayOrder: Tier[] = ["Exotics", "CRAFTS", "BC Premium", "Budget", "SHREDS"];
 const features = [
-  ["fast-delivery.webp", "Delivery Menu"], ["order-online.webp", "Choose Weights"],
+  ["fast-delivery.webp", "Weed Delivery"], ["order-online.webp", "Choose Weights"],
   ["live-tracking.webp", "Text To Order"], ["discreet-packaging.webp", "Photo ID"],
   ["open-late.webp", "Cash Only"], ["safe-secure.webp", "Dispatch Confirm"],
   ["location.webp", "Driver ETA"], ["premium-products.webp", "Vehicle Meet"],
@@ -111,16 +111,16 @@ export default function Catalog() {
   return (
     <div className="pny-original-shell">
       <header className="store-header pny-store-header">
-        <div className="header-main"><Link className="brand-lockup" href="/" aria-label="P60 Cannabis home"><span className="brand-mark">P60</span><span><strong>P60 Cannabis</strong><small>York delivery menu</small></span></Link><nav className="desktop-nav"><a href="#menu">Menu</a><a href="#delivery-steps">How to order</a></nav><div className="header-actions"><a className="pny-search-jump" href="#menu">Search</a></div></div>
+        <div className="header-main"><Link className="brand-lockup" href="/" aria-label="P60 Cannabis home"><span className="brand-mark">P60</span><span><strong>P60 Cannabis</strong><small>York Weed Delivery menu</small></span></Link><nav className="desktop-nav"><a href="#menu">Menu</a><a href="#delivery-steps">How to order</a></nav><div className="header-actions"><a className="pny-search-jump" href="#menu">Search</a></div></div>
         <div className="category-strip pny-category-strip" aria-label="Flower tier filters">{tierFilters.map((item) => <button type="button" key={item} className={activeTier === item ? "active" : ""} onClick={() => setActiveTier(item)}>{item === "ALL" ? "ALL" : item.toUpperCase()}</button>)}</div>
       </header>
 
-      <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span><span>DELIVERY HOURS 10:00 a.m.–10:00 p.m.</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
+      <section className="pny-neon-terms" aria-labelledby="pny-terms"><div><p>P60 WEED DELIVERY DETAILS</p><h2 id="pny-terms"><span>$60 PRODUCT MINIMUM</span><span>$10 DELIVERY FEE</span><span>DELIVERY HOURS 10:00 a.m.–10:00 p.m.</span></h2></div><a href="#delivery-steps">Read the ordering steps</a></section>
 
       <main className="delivery-page" id="top">
         <section className="pny-delivery-intro" aria-labelledby="pny-delivery-title">
           <p className="eyebrow">P60 DELIVERY</p>
-          <h1 id="pny-delivery-title">P60 Cannabis Delivery in York</h1>
+          <h1 id="pny-delivery-title">Weed Delivery in York</h1>
           <p>Delivery is available throughout York, North York, Vaughan, and Brampton daily from 10:00 a.m. to 10:00 p.m. Orders have a $60 product minimum and a $10 delivery fee.</p>
         </section>
 
@@ -144,13 +144,13 @@ export default function Catalog() {
           </div>
         </section>
 
-        <section className="service-strip pny-eight-tile-strip" aria-label="P60 delivery menu features">{features.map(([image, label]) => <article key={label}><Image src={`/pny-original/${image}`} alt="" width={180} height={180} /><strong>{label}</strong></article>)}</section>
+        <section className="service-strip pny-eight-tile-strip" aria-label="P60 Weed Delivery menu features">{features.map(([image, label]) => <article key={label}><Image src={`/pny-original/${image}`} alt="" width={180} height={180} /><strong>{label}</strong></article>)}</section>
 
         <section className="menu-layout pny-two-column-layout" id="menu">
           <section className="menu-main pny-menu-main"><div className="menu-tools"><div><p className="eyebrow">P60 FLOWER MENU</p><h2>{activeTier === "ALL" ? "Flowers" : activeTier}</h2></div><label className="menu-search"><span>Search</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product or strain" /></label></div><p className="result-summary">{filtered.length} flower products.</p>
             <div className="product-grid pny-tile-grid">{filtered.map((product) => {
               const productTier = tier(product);
-              return <article className="product-card pny-vertical-card" key={product.publicProductId}><button className="product-image-button" type="button" onClick={()=>setSelectedProduct(product)} aria-label={`View details for ${product.name}`}>{product.images[0] ? <Image src={product.images[0]} alt={`${product.name} on the P60 delivery menu`} fill sizes="(max-width:640px) 100vw, 240px" unoptimized /> : <span>No image</span>}</button><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title"><button type="button" onClick={()=>setSelectedProduct(product)}>{product.name}</button></h2><p className="product-meta">{product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><ProductPricing product={product} /><button className="view-details-button" type="button" onClick={()=>setSelectedProduct(product)}>View details</button></div></article>;
+              return <article className="product-card pny-vertical-card" key={product.publicProductId}><button className="product-image-button" type="button" onClick={()=>setSelectedProduct(product)} aria-label={`View details for ${product.name}`}>{product.images[0] ? <Image src={product.images[0]} alt={`${product.name} on the P60 Weed Delivery menu`} fill sizes="(max-width:640px) 100vw, 240px" unoptimized /> : <span>No image</span>}</button><div className="product-body"><div className="product-badges">{productTier && <span className="badge">{productTier}</span>}<span className="badge secondary">{strain(product)}</span></div><h2 className="product-title"><button type="button" onClick={()=>setSelectedProduct(product)}>{product.name}</button></h2><p className="product-meta">{product.category}{product.thc ? ` | ${product.thc} THC` : ""}</p><ProductPricing product={product} /><button className="view-details-button" type="button" onClick={()=>setSelectedProduct(product)}>View details</button></div></article>;
             })}</div>
           </section>
         </section>

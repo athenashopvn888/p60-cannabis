@@ -29,8 +29,8 @@ const deliveryCatalog = await readFile(new URL("../app/delivery/DeliveryCatalog.
 assert(!source.includes("03:00") && !source.includes("3:00 AM"));
 assert(layout.includes('"opens": "00:00"') && layout.includes('"closes": "23:59"'));
 assert(source.includes("Open 24 hours daily"));
-assert(deliveryPage.includes('title: { absolute: "Cannabis Delivery York & North York | P60 Cannabis" }'));
-assert(deliveryCatalog.includes("<h1 id=\"pny-delivery-title\">P60 Cannabis Delivery in York</h1>"));
+assert(deliveryPage.includes('title: { absolute: "Weed Delivery York | P60 Cannabis" }'));
+assert(deliveryCatalog.includes("<h1 id=\"pny-delivery-title\">Weed Delivery in York</h1>"));
 for (const area of ["York", "North York", "Vaughan", "Brampton"]) {
   assert(deliveryPage.includes(`"${area}"`));
   assert(deliveryCatalog.includes(area));
@@ -41,7 +41,7 @@ assert(deliveryPage.includes('opens: "10:00"') && deliveryPage.includes('closes:
 assert(deliveryPage.includes('minPrice: "60.00"') && deliveryPage.includes('price: "10.00"'));
 
 const homeHtml = await readFile(new URL("../.next/server/app/index.html", import.meta.url), "utf8");
-const deliveryHtml = await readFile(new URL("../.next/server/app/delivery.html", import.meta.url), "utf8");
+const deliveryHtml = await readFile(new URL("../.next/server/app/weed-delivery-york.html", import.meta.url), "utf8");
 const storePageHtml = await readFile(new URL("../.next/server/app/weed-dispensary-york.html", import.meta.url), "utf8");
 const store = jsonLd(homeHtml).find((item) => item?.["@type"] === "Store");
 assert(store);
@@ -60,8 +60,8 @@ assert.equal(service.hoursAvailable.opens, "10:00");
 assert.equal(service.hoursAvailable.closes, "22:00");
 assert.equal(service.offers.price, "10.00");
 assert.equal(service.offers.eligibleTransactionVolume.minPrice, "60.00");
-assert(deliveryHtml.includes("P60 Cannabis Delivery in York"));
+assert(deliveryHtml.includes("Weed Delivery in York"));
 assert(deliveryHtml.includes("York, North York, Vaughan, and Brampton"));
-assert(deliveryHtml.includes("<title>Cannabis Delivery York &amp; North York | P60 Cannabis</title>"));
+assert(deliveryHtml.includes("<title>Weed Delivery York | P60 Cannabis</title>"));
 
 console.log("Verified 24-hour storefront and separate 10:00-22:00 delivery SEO/schema.");
