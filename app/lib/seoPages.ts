@@ -39,7 +39,7 @@ export interface SeoPageData {
 export const SEO_PAGES: SeoPageData[] = [
   {
     slug: "york-weed-dispensary",
-    title: "York Weed Dispensary - P60 Cannabis",
+    title: "York Weed Dispensary",
     metaDescription: "P60 Cannabis is a York weed dispensary at 1938 Weston Rd with flower tiers, pre-rolls, vapes, edibles, concentrates, cigarettes, accessories, and local store details.",
     h1: "York Weed Dispensary - P60 Cannabis",
     icon: "*",
@@ -48,7 +48,7 @@ export const SEO_PAGES: SeoPageData[] = [
     sections: [
       {
         heading: "Visit P60 Cannabis On Weston Rd",
-        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use this page for the basic store context, then use the current menu or staff for product names, posted prices, and selection details that can change.",
+        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use the store guide for the basic store context, then use the current menu or staff for product names, posted prices, and selection details that can change.",
       },
       {
         heading: "Shop By Category First",
@@ -67,7 +67,7 @@ export const SEO_PAGES: SeoPageData[] = [
   },
   {
     slug: "cheap-weed-york",
-    title: "Cheap Weed York - P60 Cannabis Value Guide",
+    title: "Cheap Weed York Value Guide",
     metaDescription: "A P60 Cannabis value guide for York shoppers comparing budget flower, AA flower, bundle notes, and current menu details.",
     h1: "Cheap Weed York - P60 Cannabis Value Guide",
     icon: "$",
@@ -80,7 +80,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Compare Current Menu Details",
-        body: "Use the current product name, format, size, posted price, and listing details when comparing value options. Menus can change, so this page is a shopping guide rather than a promise of live selection.",
+        body: "Use the current product name, format, size, posted price, and listing details when comparing value options. Menus can change, so this shopping guide is not a promise of live selection.",
       },
       {
         heading: "Move Up Only If It Fits The Visit",
@@ -89,13 +89,13 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Where should value shoppers start at P60 Cannabis?", a: "Start with Budget and AA flower, then compare the current menu details." },
-      { q: "Does this page guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and selection details." },
+      { q: "Does the guide guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and selection details." },
       { q: "Can shoppers compare other categories too?", a: "Yes. Use the menu sections for flower, pre-rolls, edibles, vapes, concentrates, accessories, and cigarettes where listed." },
     ],
   },
   {
     slug: "native-cigarettes-york",
-    title: "Native Cigarettes York - P60 Cannabis",
+    title: "Native Cigarettes York",
     metaDescription: "P60 Cannabis native cigarettes resource for York shoppers, with cigarette category notes and a reminder to confirm current listings before visiting.",
     h1: "Native Cigarettes York - P60 Cannabis",
     icon: "#",
@@ -123,13 +123,13 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
     faqs: [
       { q: "Does P60 Cannabis list cigarette options?", a: "The site includes a cigarette category. Check the current menu or ask staff for today's listings." },
-      { q: "Are cigarette prices current on this page?", a: "Confirm current prices and selection with the menu or staff." },
+      { q: "How can shoppers confirm current cigarette prices?", a: "Confirm current prices and selection with the menu or staff." },
       { q: "Where is the store?", a: "P60 Cannabis is at 1938 Weston Rd, York, ON M9N 1W2." },
     ],
   },
   {
     slug: "weed-store-near-toronto",
-    title: "Weed Store Near Toronto - P60 Cannabis",
+    title: "Weed Store Near Toronto",
     metaDescription: "Looking for a weed store near Toronto or York? P60 Cannabis is located at 1938 Weston Rd with store details, menu categories, and visit-planning notes.",
     h1: "Weed Store Near Toronto - P60 Cannabis",
     icon: ">",
@@ -146,7 +146,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Plan Around Current Details",
-        body: "For product names, posted prices, and selection, use the current menu or ask staff. This page is for orientation and local visit planning.",
+        body: "For product names, posted prices, and selection, use the current menu or ask staff. These details support orientation and local visit planning.",
       },
     ],
     faqs: [
@@ -157,7 +157,7 @@ export const SEO_PAGES: SeoPageData[] = [
   },
   {
     slug: "dispensary-near-me-york",
-    title: "Cannabis Dispensary Near Me York - P60 Cannabis",
+    title: "Cannabis Dispensary Near Me York",
     metaDescription: "Use P60 Cannabis when searching for a cannabis dispensary near me in York; compare menu categories and confirm current details before visiting.",
     h1: "Cannabis Dispensary Near Me - York",
     icon: "o",
@@ -174,7 +174,7 @@ export const SEO_PAGES: SeoPageData[] = [
       },
       {
         heading: "Check Current Details",
-        body: "For product names, prices, and selection, use the current menu or ask staff. This page is for orientation and visit planning.",
+        body: "For product names, prices, and selection, use the current menu or ask staff. These details support orientation and visit planning.",
       },
     ],
     faqs: [
@@ -187,13 +187,13 @@ export const SEO_PAGES: SeoPageData[] = [
     slug: "nicotine-vapes-york",
     title: "Nicotine Vapes in York | P60 Cannabis",
     absoluteTitle: true,
-    metaDescription: "Adults 19+: review six nicotine vape product pages from P60 Cannabis in York, then check /items/vapes for the current category. Nicotine is addictive.",
+    metaDescription: "Adults 19+: review six nicotine vape product pages from P60 Cannabis in York, then check the current Nicotine Vape category. Nicotine is addictive.",
     h1: "Nicotine Vapes at P60 Cannabis in York",
     icon: "NV",
     heroTagline: "Adults 19+ · Nicotine is addictive.",
     heroPreview: {
       eyebrow: "P60 CANNABIS • WESTON ROAD / YORK • ADULTS 19+",
-      intro: "Searching for nicotine vapes near me around Weston Road or York? This adult-only P60 Cannabis guide features six live-checked VAPE PENS product pages. Compare their supported names, then use /items/vapes for the current nicotine category. Product details can change. Nicotine is addictive.",
+      intro: "Searching for nicotine vapes near me around Weston Road or York? This adult-only P60 Cannabis guide features six VAPE PENS product pages. Compare their supported names, then use the current Nicotine Vape menu. Product details can change. Nicotine is addictive.",
       products: [
         { name: "GEEK PROMAX – 5% | 30K PUFFS", image: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/GEEK-PROMAX.jpg", sourceSlug: "geek-promax-5-30k-puffs" },
         { name: "GEEK UNIVERSE 25k PUFFS", image: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/geek_universe_pulse_x_25k.webp", sourceSlug: "geek-universe-25k-puffs" },
@@ -202,27 +202,27 @@ export const SEO_PAGES: SeoPageData[] = [
         { name: "OVNS DISPOSABLE – 5% | 8ML | MANY FLAVORS", image: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/OVNS500x500HQ.webp", sourceSlug: "ovns-disposable-5-8ml-many-flavors" },
         { name: "OVNS PIONEER – 5% | 22K PUFFS", image: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/OVNS_PIONEER_5_22K_PUFFS.webp", sourceSlug: "ovns-pioneer-5-22k-puffs" },
       ],
-      disclosure: "Featured cards are live-checked starting points, not guarantees of current stock, price or availability.",
+      disclosure: "Featured cards are starting points, not guarantees of current stock, price or availability.",
       theme: "nicotine",
       menuHref: "/items/vapes",
       primaryLabel: "Browse Nicotine Vapes",
       secondaryLabel: "Compare the Six Featured Items",
       secondaryHref: "#featured-vapes",
       identityStrip: "P60 Cannabis | Weston Road / York | Adults 19+ | Nicotine is addictive.",
-      featuredHeading: "Six Live-Checked P60 Cannabis Vape Cards",
-      featuredIntro: "This shortlist contains six live-checked Geek, NEXA and OVNS VAPE PENS product pages. Use each card for its supported display name, then rely on /items/vapes for the current P60 Cannabis category listing.",
+      featuredHeading: "Six P60 Cannabis Nicotine Vape Cards",
+      featuredIntro: "This shortlist contains six Geek, NEXA and OVNS VAPE PENS product pages. Use each card for its supported display name, then rely on the current Nicotine Vape menu.",
       warning: "Adults 19+. Nicotine is addictive.",
     },
     sections: [
       { heading: "Read Each Product Format Carefully", body: "One featured page explicitly identifies an OVNS disposable. Keep that description attached only to that product and do not apply the disposable label to another featured item by assumption." },
       { heading: "Puff Counts Identify Listings", body: "Several featured names include puff counts. Use those numbers to distinguish the listings, not as guarantees of duration, performance or superiority." },
-      { heading: "Keep Nicotine and Cannabis Vape Routes Separate", body: "This adult-only P60 Cannabis guide uses VAPE PENS products under /items/vapes. THC and cannabis vape products under /items/vape-disposables are excluded." },
-      { heading: "Review the Current York Category", body: "Before choosing, open /items/vapes and the individual product page for current supported details. This guide does not claim prices, stock or guaranteed availability." },
+      { heading: "Keep Nicotine and Cannabis Vape Routes Separate", body: "This adult-only P60 Cannabis guide uses Nicotine Vape products. THC and cannabis vape products remain separate in the THC Vape category." },
+      { heading: "Review the Current York Category", body: "Before choosing, open the Nicotine Vape menu and the individual product page for current supported details. This guide does not claim prices, stock or guaranteed availability." },
     ],
     faqs: [
-      { q: "Where should I check P60 Cannabis’s current nicotine selection?", a: "Use /items/vapes. The six featured cards are live-checked starting points while the current category listing controls selection information." },
+      { q: "Where should I check P60 Cannabis’s current nicotine selection?", a: "Use the current Nicotine Vape menu. The six featured cards are starting points while the current category listing controls selection information." },
       { q: "Does every featured item use the same format?", a: "No format should be assumed. One featured page explicitly identifies an OVNS disposable. Read each current product page for its supported format and details." },
-      { q: "Does this page include cannabis vapes?", a: "No. It covers nicotine products from the VAPE PENS category for adults 19+. THC and cannabis vape products under /items/vape-disposables are excluded." },
+      { q: "Does this guide include cannabis vapes?", a: "No. It covers nicotine products from the VAPE PENS category for adults 19+. THC and cannabis vape products belong to the separate THC Vape category." },
     ],
   },
 ];
