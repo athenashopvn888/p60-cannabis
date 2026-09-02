@@ -27,18 +27,17 @@ export async function generateMetadata({
   const { tier: tierSlug } = await params;
   const tierInfo = getTierFromSlug(tierSlug);
   if (!tierInfo) return {};
-  const flowers = getFlowersByTier(tierInfo.key);
   const seo = TIER_SEO[tierInfo.key];
 
   return {
-    title: seo?.seoTitle || `${tierInfo.config.name} Cannabis Flower — ${flowers.length} Strains`,
-    description: seo?.seoIntro || `Shop ${flowers.length} ${tierInfo.config.name.toLowerCase()} cannabis strains at P60 Cannabis.`,
+    title: seo?.seoTitle || `${tierInfo.config.name} & Cannabis Flower York`,
+    description: seo?.seoIntro || `Compare current ${tierInfo.config.name} flower listings at P60 Cannabis in York.`,
     alternates: {
       canonical: `https://www.p60cannabis.com/${tierSlug}`,
     },
     openGraph: {
-      title: `${tierInfo.config.name} Flower | P60 Cannabis`,
-      description: `Browse the current ${tierInfo.config.name.toLowerCase()} flower menu. Listed prices start from $${tierInfo.config.unitPrice}/g.`,
+      title: `${tierInfo.config.name} & Cannabis Flower York | P60 Cannabis`,
+      description: `Compare current ${tierInfo.config.name} flower listings at P60 Cannabis in York.`,
     },
   };
 }
@@ -75,7 +74,7 @@ export default async function TierPage({
         <section className={styles.bannerSection}>
           <img
             src={config.banner}
-            alt={`${config.name} Cannabis Flower — ${config.tagline}`}
+            alt={`${config.name} and cannabis flower at P60 Cannabis`}
             className={styles.bannerImg}
           />
         </section>
@@ -91,7 +90,7 @@ export default async function TierPage({
             <div className={styles.heroTitleRow}>
               <span className={styles.heroIcon}>{config.icon}</span>
               <h1 className={styles.heroTitle}>
-                <span style={{ color: config.color }}>{config.name}</span>
+                <span style={{ color: config.color }}>{config.name} &amp; Cannabis Flower in York</span>
               </h1>
             </div>
             <p className={styles.heroTagline}>{config.tagline}</p>
@@ -163,9 +162,7 @@ export default async function TierPage({
           )}
 
           <h2 className={styles.sectionTitle}>
-            All{" "}
-            <span style={{ color: config.color }}>{config.name}</span>{" "}
-            Strains
+            Current <span style={{ color: config.color }}>{config.name}</span> Listings
           </h2>
           <div className={styles.grid}>
             {regularFlowers.map((f) => (

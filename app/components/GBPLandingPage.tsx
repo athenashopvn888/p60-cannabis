@@ -27,7 +27,6 @@ type StoreSchemaMarkup = {
     postalCode: string;
     addressCountry: string;
   };
-  priceRange: string;
   openingHours?: string[];
   geo?: {
     "@type": string;
@@ -37,8 +36,6 @@ type StoreSchemaMarkup = {
 };
 
 export function GBPLandingPage() {
-  const landmarkList = gbpLocation.localLandmarks.join(", ");
-  const nearbyAreaList = gbpLocation.nearbyAreas.slice(0, 4).join(", ");
   const categoryGuideLinks = gbpLocation.products.slice(0, 6).map((product) => ({
     label: product,
     href: categoryLinks[product] || "/"
@@ -57,8 +54,7 @@ export function GBPLandingPage() {
       "addressRegion": gbpLocation.province,
       "postalCode": gbpLocation.postalCode,
       "addressCountry": gbpLocation.country
-    },
-    "priceRange": "$$"
+    }
   };
 
   // Inject real opening hours and coordinates if they exist
@@ -89,13 +85,13 @@ export function GBPLandingPage() {
       </header>
 
       <aside className={styles.deliveryNotice} aria-labelledby="landing-delivery-title">
-        <h2 id="landing-delivery-title">NEW DELIVERY AVAILABLE</h2>
-        <p>P60 Cannabis delivers across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the P60 delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
+        <h2 id="landing-delivery-title">WEED DELIVERY AVAILABLE</h2>
+        <p>P60 Cannabis offers Weed Delivery across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the Weed Delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
       </aside>
 
       <div className={styles.btnRow}>
-        <Link href="/exotic" className={`${styles.btn} ${styles.btnPrimary}`}>STORE MENU</Link>
-        <Link href="/delivery" className={`${styles.btn} ${styles.btnSecondary}`}>DELIVERY MENU</Link>
+        <Link href="/exotic-weed" className={`${styles.btn} ${styles.btnPrimary}`}>STORE MENU</Link>
+        <Link href="/weed-delivery-york" className={`${styles.btn} ${styles.btnSecondary}`}>WEED DELIVERY</Link>
       </div>
 
       {/* Intro Section */}
@@ -125,10 +121,10 @@ export function GBPLandingPage() {
       <section className={styles.section}>
         <h2 className={styles.h2}>Plan a Visit to {gbpLocation.storeName}</h2>
         <p className={styles.infoText}>
-          Use this page to confirm the basics before visiting {gbpLocation.storeName} near {gbpLocation.neighborhood}. The store page brings together the address, phone number, menu links, nearby-area context, and adult 19+ shopping notes for customers comparing cannabis stores around {gbpLocation.city}.
+          {gbpLocation.storeName} offers adults 19+ a York Weed and cannabis selection across flower, pre-rolls, edibles, THC vapes, concentrates, and other menu categories. Check the current menu for the details shown with each selection.
         </p>
         <p className={styles.infoBlock}>
-          Helpful local reference points include {landmarkList}. Customers also use this page when planning from {nearbyAreaList}.
+          Confirm the store address, phone number, listed hours, and current menu details before visiting from elsewhere in {gbpLocation.city}.
         </p>
         <p className={styles.infoText}>
           For a fuller local overview, read the{" "}
@@ -165,11 +161,6 @@ export function GBPLandingPage() {
                 ))}
               </div>
             )}
-            <div className={styles.napItem} style={{ marginTop: "10px" }}>
-              <p className={styles.infoBlock} style={{ fontSize: "0.9rem", fontStyle: "italic", margin: 0 }}>
-                * {gbpLocation.parkingNote}.
-              </p>
-            </div>
           </div>
           <div className={styles.mapWrapper}>
             {gbpLocation.mapEmbedUrl ? (
@@ -191,17 +182,10 @@ export function GBPLandingPage() {
 
       {/* Nearby Areas Section */}
       <section className={styles.section}>
-        <h2 className={styles.h2}>{gbpLocation.sectionTitle}</h2>
+        <h2 className={styles.h2}>Serving Adult Shoppers in York</h2>
         <p className={styles.infoText}>
-          {gbpLocation.neighborhoodDescription} {gbpLocation.transitNote}. We proudly welcome customers from:
+          P60 Cannabis serves adult shoppers visiting from York and nearby areas. Confirm current directions from your starting point before travelling.
         </p>
-        <div className={styles.areaList}>
-          {gbpLocation.nearbyAreas.map((area) => (
-            <span key={area} className={styles.areaTag}>
-              {area}
-            </span>
-          ))}
-        </div>
       </section>
       {/* Category Link Context Section */}
       <section className={styles.section}>
@@ -225,13 +209,13 @@ export function GBPLandingPage() {
           <div className={styles.faqItem}>
             <h3 className={styles.faqQuestion}>How should I plan a visit to {gbpLocation.storeName}?</h3>
             <p className={styles.faqAnswer}>
-              Check the store address, phone number, hours, menu links, and nearby-area notes on this page before visiting. {gbpLocation.storeName} serves adults 19+ near {gbpLocation.neighborhood} and surrounding {gbpLocation.city} areas.
+              Check the store address, phone number, listed hours, and current menu before visiting. {gbpLocation.storeName} serves adults 19+ in {gbpLocation.city}.
             </p>
           </div>
           <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>Can I use this page to compare menu categories?</h3>
+            <h3 className={styles.faqQuestion}>Which menu categories can I compare?</h3>
             <p className={styles.faqAnswer}>
-              Yes. The category links on this page are intended to help adults 19+ compare general menu sections such as flower, pre-rolls, edibles, vapes, concentrates, and accessories before checking the live menu.
+              Adults 19+ can compare Weed flower collections, pre-rolls, edibles, Nicotine Vape, THC Vape, concentrates, and other menu categories before checking current details.
             </p>
           </div>
           <div className={styles.faqItem}>
@@ -241,13 +225,13 @@ export function GBPLandingPage() {
           <div className={styles.faqItem}>
             <h3 className={styles.faqQuestion}>Is {gbpLocation.storeName} a weed dispensary in {gbpLocation.city}?</h3>
             <p className={styles.faqAnswer}>
-              Yes, {gbpLocation.storeName} is a fully licensed local weed dispensary in {gbpLocation.city} serving cannabis customers aged 19 and older with valid identification.
+              {gbpLocation.storeName} serves adults aged 19 and older in {gbpLocation.city}. Bring valid identification and follow applicable laws and product labels.
             </p>
           </div>
           <div className={styles.faqItem}>
             <h3 className={styles.faqQuestion}>What products does {gbpLocation.storeName} carry?</h3>
             <p className={styles.faqAnswer}>
-              We carry a complete line of weed products including premium flower, pre-rolls, THC edibles, concentrates, shatter, THC vape cartridges, CBD oils, and accessories.
+              The menu includes Weed flower collections, pre-rolls, edibles, THC Vape, concentrates, and other categories. Check the current menu for product details.
             </p>
           </div>
           <div className={styles.faqItem}>
@@ -256,14 +240,6 @@ export function GBPLandingPage() {
               Yes, to visit our cannabis store or order from our menu, you must be at least 19 years of age. Valid government-issued photo ID is required for verification.
             </p>
           </div>
-          {gbpLocation.neighborhood && (
-            <div className={styles.faqItem}>
-              <h3 className={styles.faqQuestion}>Is {gbpLocation.storeName} near {gbpLocation.neighborhood}?</h3>
-              <p className={styles.faqAnswer}>
-                Yes, {gbpLocation.storeName} is located near {gbpLocation.neighborhood} and serves customers from nearby landmarks like {gbpLocation.localLandmarks.join(", ")}.
-              </p>
-            </div>
-          )}
         </div>
       </section>
     </div>

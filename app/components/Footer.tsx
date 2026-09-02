@@ -44,15 +44,16 @@ export default function Footer() {
             <h3 className={styles.colTitle}>Quick Links</h3>
             <nav className={styles.links}>
               <Link href="/">Home</Link>
-              <Link href="/delivery">Delivery Menu</Link>
-              <Link href="/exotic">Exotic Flower</Link>
-              <Link href="/premium">Premium Flower</Link>
-              <Link href="/aaa">AAA+ Flower</Link>
-              <Link href="/aa">AA Flower</Link>
-              <Link href="/budget">Budget Flower</Link>
+              <Link href="/weed-delivery-york">Weed Delivery</Link>
+              <Link href="/exotic-weed">Exotic Weed</Link>
+              <Link href="/premium-weed">Premium Weed</Link>
+              <Link href="/aaa-weed">AAA+ Weed</Link>
+              <Link href="/aa-weed">AA Weed</Link>
+              <Link href="/budget-weed">Budget Weed</Link>
               <Link href="/items/edibles">Edibles</Link>
               <Link href="/items/cigarettes">Cigarettes</Link>
-              <Link href="/items/vapes">Vape Pens</Link>
+              <Link href="/items/vapes">Nicotine Vape</Link>
+              <Link href="/items/vape-disposables">THC Vape</Link>
               <Link href="/resources">Resources</Link>
               <Link href="/faq">FAQ</Link>
               <Link href="/info/york-weed-dispensary">York Dispensary</Link>
@@ -60,7 +61,7 @@ export default function Footer() {
               <Link href="/info/native-cigarettes-york">Native Cigarettes</Link>
               <Link href="/info/nicotine-vapes-york">Nicotine Vapes York</Link>
               <Link href="/info/weed-store-near-toronto">Weed Store Near Toronto</Link>
-              <Link href="/weed-dispensary-york/">P60 Cannabis Weed Dispensary in York</Link>
+              <Link href="/weed-dispensary-york">P60 Cannabis Weed Dispensary in York</Link>
               <Link href="/contact">Contact Us</Link>
               <a
                 href="https://www.p60cannabis.com/"
