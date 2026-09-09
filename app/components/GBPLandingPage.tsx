@@ -2,6 +2,7 @@ import Link from "next/link";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
 import styles from "./GBPLandingPage.module.css";
+import { DeliveryCoverage } from "./DeliveryCoverage";
 
 const categories = [
   { name: "Exotic Weed", href: "/exotic-weed" },
@@ -93,6 +94,7 @@ export function GBPLandingPage() {
           </div>
         </section>
       </div>
+      <DeliveryCoverage />
       <Footer />
     </main>
   );
