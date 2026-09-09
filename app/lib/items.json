@@ -295,7 +295,7 @@
     "type": "",
     "thc": "",
     "mg": "1000mg / 2000mg",
-    "price": "$40",
+    "price": "$40 / $55",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/stellargummies600x600.webp",
     "promoImage": null
   },
@@ -415,7 +415,7 @@
     "type": "",
     "thc": "",
     "mg": "1500mg / 3000mg / 5000mg",
-    "price": "$25",
+    "price": "$25 / $35 / $50",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/KnockOutGummies.jpg",
     "promoImage": null
   },
@@ -427,7 +427,7 @@
     "type": "",
     "thc": "",
     "mg": "",
-    "price": "$19",
+    "price": "$20 / $30",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/GrabbaShaker.webp",
     "promoImage": null
   },
@@ -451,7 +451,7 @@
     "type": "",
     "thc": "",
     "mg": "",
-    "price": "$20",
+    "price": "$20 / $25",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/backwoodsassorted600x600.webp",
     "promoImage": null
   },
@@ -511,7 +511,7 @@
     "type": "",
     "thc": "",
     "mg": "",
-    "price": "$40",
+    "price": "$40 / $30 / $25",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/GrandCannabis.png",
     "promoImage": null
   },
@@ -559,7 +559,7 @@
     "type": "",
     "thc": "",
     "mg": "",
-    "price": "$20",
+    "price": "$20 / $50 / $100",
     "image": "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/961-962-963-DUMMY-BEARS.webp",
     "promoImage": null
   },
