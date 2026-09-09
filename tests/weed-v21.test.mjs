@@ -110,7 +110,8 @@ test("protected owner and volatile public-copy corrections remain bounded", asyn
     read("app/layout.tsx"),
   ]);
 
-  assert(owner.includes("York Weed and cannabis selection"));
+  assert(owner.includes("Weed Dispensary in York — P60 Cannabis"));
+  assert(owner.includes("Our York store is open 24 hours"));
   assert(!owner.includes("fully licensed"));
   assert(!owner.includes("complete line of weed products"));
   assert(!owner.includes("parkingNote"));
@@ -126,8 +127,8 @@ test("post-live cleanup normalizes the broad canonical and removes audited publi
     read("app/lib/products.ts"),
   ]);
 
-  assert(ownerPage.includes('title: "Weed Dispensary in York"'));
-  assert(ownerPage.includes('canonical: `https://${gbpLocation.domain}/${gbpLocation.slug}`'));
+  assert(ownerPage.includes('title: { absolute: "Weed Dispensary York | P60 Cannabis" }'));
+  assert(ownerPage.includes('canonical: "https://www.p60cannabis.com/weed-dispensary-york"'));
   assert(!ownerPage.includes('${gbpLocation.slug}/`'));
 
   for (const phrase of ["this page", "live-checked", "/items/vape-disposables are excluded"]) {
@@ -136,9 +137,9 @@ test("post-live cleanup normalizes the broad canonical and removes audited publi
   assert(!products.toLowerCase().includes("this page"));
   assert(products.includes('seoTitle: "Cannabis Concentrates in York"'));
   assert(products.includes('seoTitle: "Pre-Rolls in York"'));
-  assert(seoPages.includes('title: "York Weed Dispensary"'));
-  assert(seoPages.includes('title: "Cheap Weed York Value Guide"'));
   assert(seoPages.includes('title: "Native Cigarettes York"'));
-  assert(seoPages.includes('title: "Weed Store Near Toronto"'));
-  assert(seoPages.includes('title: "Cannabis Dispensary Near Me York"'));
+  assert(seoPages.includes('title: "Visiting P60 Cannabis from Toronto | York Store Information"'));
+  assert(!seoPages.includes('slug: "york-weed-dispensary"'));
+  assert(!seoPages.includes('slug: "cheap-weed-york"'));
+  assert(!seoPages.includes('slug: "dispensary-near-me-york"'));
 });

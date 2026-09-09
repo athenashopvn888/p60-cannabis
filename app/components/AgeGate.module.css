@@ -8,6 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  box-sizing: border-box;
   animation: fadeIn 0.4s ease;
 }
 
@@ -19,11 +20,38 @@
   border-radius: 24px;
   width: 100%;
   max-width: 440px;
+  box-sizing: border-box;
   padding: 40px 32px;
   text-align: center;
   position: relative;
   overflow: hidden;
   animation: scaleUp 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 520px) {
+  .overlay {
+    padding: 14px;
+  }
+
+  .modal {
+    padding: 28px 18px;
+    border-radius: 18px;
+  }
+
+  .logo {
+    width: 88px;
+    height: 88px;
+  }
+
+  .btnRow {
+    flex-direction: column;
+  }
+
+  .yesBtn,
+  .noBtn {
+    width: 100%;
+    min-height: 48px;
+  }
 }
 
 .modal::before {

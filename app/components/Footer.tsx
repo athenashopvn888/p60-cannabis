@@ -56,15 +56,13 @@ export default function Footer() {
               <Link href="/items/vape-disposables">THC Vape</Link>
               <Link href="/resources">Resources</Link>
               <Link href="/faq">FAQ</Link>
-              <Link href="/info/york-weed-dispensary">York Dispensary</Link>
-              <Link href="/info/cheap-weed-york">Cheap Weed York</Link>
+              <Link href="/weed-dispensary-york">York Store Details</Link>
               <Link href="/info/native-cigarettes-york">Native Cigarettes</Link>
               <Link href="/info/nicotine-vapes-york">Nicotine Vapes York</Link>
-              <Link href="/info/weed-store-near-toronto">Weed Store Near Toronto</Link>
-              <Link href="/weed-dispensary-york">P60 Cannabis Weed Dispensary in York</Link>
+              <Link href="/info/weed-store-near-toronto">Visiting from Toronto</Link>
               <Link href="/contact">Contact Us</Link>
               <a
-                href="https://www.p60cannabis.com/"
+                href="https://www.google.com/maps/place/P60+Cannabis/data=!4m2!3m1!1s0x0:0xb4e5e4071fcae428"
                 target="_blank"
                 rel="noopener noreferrer"
               >
