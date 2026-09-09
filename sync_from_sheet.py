@@ -350,11 +350,9 @@ def build_items(product_rows: list[dict], flag_lookup: dict) -> list[dict]:
             continue
 
         price_raw = row.get("Price_EACH", "").strip()
-        if price_raw:
-            p = parse_price_cell(price_raw)
-            price_str = f"${p}" if p else price_raw
-        else:
-            price_str = ""
+        # Preserve the complete FMD Price_EACH value. Slash-separated values
+        # are distinct customer price options, not a number to truncate.
+        price_str = price_raw if price_raw else ""
 
         item = {
             "sku": sku_normalized,

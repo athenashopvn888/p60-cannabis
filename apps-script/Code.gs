@@ -289,18 +289,11 @@ function buildProductJSON_(catalog, stockData) {
     if (!name) continue;
     
     var priceRaw = it['Price_EACH'];
-    var priceStr = '';
-    if (priceRaw !== null && priceRaw !== undefined && String(priceRaw).trim()) {
-      var p = parsePriceCell_(priceRaw);
-      if (p && typeof p === 'object') {
-        // parsePriceCell_ returns {regular, sale} — show sale if available
-        priceStr = p.sale !== null ? '$' + p.sale : '$' + p.regular;
-      } else if (p) {
-        priceStr = '$' + p;
-      } else {
-        priceStr = String(priceRaw).trim();
-      }
-    }
+    // Preserve the complete FMD Price_EACH value. Slash-separated values
+    // are distinct customer price options, not a number to truncate.
+    var priceStr = priceRaw !== null && priceRaw !== undefined
+      ? String(priceRaw).trim()
+      : '';
     
     items.push({
       sku: sku.replace(/\.0/g, '').trim(),
