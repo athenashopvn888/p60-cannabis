@@ -48,9 +48,12 @@ assert(store);
 assert.equal(store.openingHoursSpecification[0].opens, "00:00");
 assert.equal(store.openingHoursSpecification[0].closes, "23:59");
 assert.equal(store.openingHoursSpecification[0].dayOfWeek.length, 7);
-const landingStore = jsonLd(storePageHtml).find((item) => item?.["@type"] === "Store" && Array.isArray(item.openingHours));
-assert(landingStore);
-assert.deepEqual(landingStore.openingHours, ["Mo-Su 00:00-23:59"]);
+const storePageScripts = jsonLd(storePageHtml).flatMap((item) => Array.isArray(item) ? item : [item]);
+const landingStores = storePageScripts.filter((item) => item?.["@type"] === "Store");
+assert.equal(landingStores.length, 1);
+assert.equal(landingStores[0]["@id"], "https://www.p60cannabis.com/#store");
+assert.equal(landingStores[0].openingHoursSpecification[0].opens, "00:00");
+assert.equal(landingStores[0].openingHoursSpecification[0].closes, "23:59");
 
 const deliveryScripts = jsonLd(deliveryHtml).flatMap((item) => Array.isArray(item) ? item : [item]);
 const service = deliveryScripts.find((item) => item?.["@type"] === "Service");

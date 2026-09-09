@@ -38,62 +38,6 @@ export interface SeoPageData {
 
 export const SEO_PAGES: SeoPageData[] = [
   {
-    slug: "york-weed-dispensary",
-    title: "York Weed Dispensary",
-    metaDescription: "P60 Cannabis is a York weed dispensary at 1938 Weston Rd with flower tiers, pre-rolls, vapes, edibles, concentrates, cigarettes, accessories, and local store details.",
-    h1: "York Weed Dispensary - P60 Cannabis",
-    icon: "*",
-    heroTagline: "1938 Weston Rd in York - open 24 hours daily",
-    banner: "/banners/p60-real/page-york.webp",
-    sections: [
-      {
-        heading: "Visit P60 Cannabis On Weston Rd",
-        body: "P60 Cannabis is located at 1938 Weston Rd in York. Use the store guide for the basic store context, then use the current menu or staff for product names, posted prices, and selection details that can change.",
-      },
-      {
-        heading: "Shop By Category First",
-        body: "Flower, pre-rolls, edibles, THC vapes, concentrates, cigarettes, and accessories all compare differently. Start with the category that matches the visit, then compare the current item details inside that category.",
-      },
-      {
-        heading: "Local York Store Notes",
-        body: "The store page, directions, contact options, and listed hours are the right starting point for a Weston Rd visit. P60 Cannabis is listed at 1938 Weston Rd, York, ON M9N 1W2.",
-      },
-    ],
-    faqs: [
-      { q: "Where is P60 Cannabis located?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
-      { q: "What are the listed hours for P60 Cannabis?", a: "P60 Cannabis is open 24 hours daily." },
-      { q: "What should shoppers check before visiting?", a: "Check the current menu, category pages, directions, contact options, and listed hours before visiting." },
-    ],
-  },
-  {
-    slug: "cheap-weed-york",
-    title: "Cheap Weed York Value Guide",
-    metaDescription: "A P60 Cannabis value guide for York shoppers comparing budget flower, AA flower, bundle notes, and current menu details.",
-    h1: "Cheap Weed York - P60 Cannabis Value Guide",
-    icon: "$",
-    heroTagline: "Budget and value shopping notes for York",
-    banner: "/banners/p60-real/page-budget.webp",
-    sections: [
-      {
-        heading: "Start With Budget And AA",
-        body: "If value is the goal, start with the Budget and AA flower categories before jumping across the rest of the menu. That keeps the comparison focused on lower-spend options first.",
-      },
-      {
-        heading: "Compare Current Menu Details",
-        body: "Use the current product name, format, size, posted price, and listing details when comparing value options. Menus can change, so this shopping guide is not a promise of live selection.",
-      },
-      {
-        heading: "Move Up Only If It Fits The Visit",
-        body: "If Budget or AA does not fit the visit, compare AAA+, Premium, or Exotic next. The better decision starts with the category, then the current item details.",
-      },
-    ],
-    faqs: [
-      { q: "Where should value shoppers start at P60 Cannabis?", a: "Start with Budget and AA flower, then compare the current menu details." },
-      { q: "Does the guide guarantee current prices?", a: "No. Use the current menu or ask staff for product, price, and selection details." },
-      { q: "Can shoppers compare other categories too?", a: "Yes. Use the menu sections for flower, pre-rolls, edibles, vapes, concentrates, accessories, and cigarettes where listed." },
-    ],
-  },
-  {
     slug: "native-cigarettes-york",
     title: "Native Cigarettes York",
     metaDescription: "P60 Cannabis native cigarettes resource for York shoppers, with cigarette category notes and a reminder to confirm current listings before visiting.",
@@ -129,58 +73,28 @@ export const SEO_PAGES: SeoPageData[] = [
   },
   {
     slug: "weed-store-near-toronto",
-    title: "Weed Store Near Toronto",
-    metaDescription: "Looking for a weed store near Toronto or York? P60 Cannabis is located at 1938 Weston Rd with store details, menu categories, and visit-planning notes.",
-    h1: "Weed Store Near Toronto - P60 Cannabis",
+    title: "Visiting P60 Cannabis from Toronto | York Store Information",
+    absoluteTitle: true,
+    metaDescription: "Coming from Toronto? P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2 and is open 24 hours. View our York store information before visiting.",
+    h1: "Visiting P60 Cannabis from Toronto",
     icon: ">",
-    heroTagline: "Weston Rd / York visit notes",
+    heroTagline: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2 and is open 24 hours.",
     banner: "/banners/p60-real/page-near-toronto.webp",
     sections: [
       {
-        heading: "Use The York Store Page First",
-        body: "P60 Cannabis is a York store at 1938 Weston Rd. If you are comparing weed stores near Toronto or West Toronto, confirm the store page, directions, contact options, and listed hours before visiting.",
+        heading: "P60 Cannabis Store Address",
+        body: "Use the following address when planning your visit: P60 Cannabis, 1938 Weston Rd, York, ON M9N 1W2. Hours: Open 24 hours. Phone: (289) 217-2763.",
       },
       {
-        heading: "Choose The Product Category",
-        body: "Use the category that matches the visit: flower tiers, pre-rolls, edibles, THC vapes, concentrates, cigarettes, or accessories. Current product details belong in the menu, not in old examples.",
-      },
-      {
-        heading: "Plan Around Current Details",
-        body: "For product names, posted prices, and selection, use the current menu or ask staff. These details support orientation and local visit planning.",
+        heading: "Before You Visit",
+        body: "P60 Cannabis is open 24 hours at its Weston Road location in York. If you need to contact the store before visiting, call (289) 217-2763. For the full York store page, continue to P60 Cannabis York Store Information.",
       },
     ],
     faqs: [
-      { q: "Is P60 Cannabis near Toronto?", a: "P60 Cannabis is located in York at 1938 Weston Rd. Use the store page for directions from your starting point." },
-      { q: "Can shoppers browse before visiting?", a: "Yes. Use the current menu and category pages before heading to the store." },
-      { q: "How do I check current product listings?", a: "Check the current menu or ask staff for today's product details." },
-    ],
-  },
-  {
-    slug: "dispensary-near-me-york",
-    title: "Cannabis Dispensary Near Me York",
-    metaDescription: "Use P60 Cannabis when searching for a cannabis dispensary near me in York; compare menu categories and confirm current details before visiting.",
-    h1: "Cannabis Dispensary Near Me - York",
-    icon: "o",
-    heroTagline: "Store page first, category second",
-    banner: "/banners/p60-real/page-near-me.webp",
-    sections: [
-      {
-        heading: "Make The Near-Me Search Useful",
-        body: "A near-me search should get you to the right store page and the best category. P60 Cannabis gives York shoppers a path to store details, menu categories, and resources.",
-      },
-      {
-        heading: "Compare Categories Clearly",
-        body: "Use normal shopping language: cannabis dispensary in York, weed dispensary on Weston Rd, cheap weed, budget flower, premium flower, pre-rolls, edibles, THC vapes, and concentrates.",
-      },
-      {
-        heading: "Check Current Details",
-        body: "For product names, prices, and selection, use the current menu or ask staff. These details support orientation and visit planning.",
-      },
-    ],
-    faqs: [
-      { q: "Is P60 Cannabis useful for a near-me search in York?", a: "Yes. Start with the P60 Cannabis store page, then open the menu category that matches the visit." },
-      { q: "What categories can shoppers compare?", a: "Use the menu sections for flower, pre-rolls, edibles, THC vapes, concentrates, accessories, and cigarettes where listed." },
-      { q: "Where is P60 Cannabis located?", a: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." },
+      { q: "What address should I use for P60 Cannabis?", a: "Use 1938 Weston Rd, York, ON M9N 1W2." },
+      { q: "What are the store hours?", a: "P60 Cannabis is open 24 hours." },
+      { q: "What is the P60 Cannabis phone number?", a: "The store phone number is (289) 217-2763." },
+      { q: "Where can I find the complete York store information?", a: "Visit the dedicated P60 Cannabis York store page." },
     ],
   },
   {

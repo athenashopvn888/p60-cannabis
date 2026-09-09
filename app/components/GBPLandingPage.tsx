@@ -1,247 +1,99 @@
 import Link from "next/link";
+import Navbar from "./Navbar";
+import Footer from "./Footer";
 import styles from "./GBPLandingPage.module.css";
-import { gbpLocation } from "../lib/gbp-location";
 
-// Dictionary mapping category names to their respective paths
-const categoryLinks: { [key: string]: string } = {
-  "Flower": "/",
-  "Pre-rolls": "/items/prerolls",
-  "Edibles": "/items/edibles",
-  "THC vapes": "/items/vape-disposables",
-  "Concentrates": "/items/concentrates",
-  "Shatter": "/items/concentrates",
-  "CBD oils": "/items/concentrates",
-  "Accessories": "/items/add-ons"
+const categories = [
+  { name: "Exotic Weed", href: "/exotic-weed" },
+  { name: "Premium Weed", href: "/premium-weed" },
+  { name: "AAA Weed", href: "/aaa-weed" },
+  { name: "AA Weed", href: "/aa-weed" },
+  { name: "Budget Weed", href: "/budget-weed" },
+];
+
+const webPageSchema = {
+  "@context": "https://schema.org", "@type": "WebPage",
+  "@id": "https://www.p60cannabis.com/weed-dispensary-york#webpage",
+  url: "https://www.p60cannabis.com/weed-dispensary-york",
+  name: "Weed Dispensary York | P60 Cannabis",
+  description: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Call (289) 217-2763 or view our York store information.",
+  about: { "@id": "https://www.p60cannabis.com/#store" },
+  breadcrumb: { "@id": "https://www.p60cannabis.com/weed-dispensary-york#breadcrumb" },
 };
-type StoreSchemaMarkup = {
-  "@context": string;
-  "@type": string;
-  name: string;
-  url: string;
-  telephone: string;
-  address: {
-    "@type": string;
-    streetAddress: string;
-    addressLocality: string;
-    addressRegion: string;
-    postalCode: string;
-    addressCountry: string;
-  };
-  openingHours?: string[];
-  geo?: {
-    "@type": string;
-    latitude: number;
-    longitude: number;
-  };
+
+const breadcrumbSchema = {
+  "@context": "https://schema.org", "@type": "BreadcrumbList",
+  "@id": "https://www.p60cannabis.com/weed-dispensary-york#breadcrumb",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: "https://www.p60cannabis.com/" },
+    { "@type": "ListItem", position: 2, name: "Weed Dispensary York", item: "https://www.p60cannabis.com/weed-dispensary-york" },
+  ],
+};
+
+const faqSchema = {
+  "@context": "https://schema.org", "@type": "FAQPage",
+  "@id": "https://www.p60cannabis.com/weed-dispensary-york#faq",
+  mainEntity: [
+    { "@type": "Question", name: "Where is P60 Cannabis located?", acceptedAnswer: { "@type": "Answer", text: "P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2." } },
+    { "@type": "Question", name: "What are the hours for P60 Cannabis?", acceptedAnswer: { "@type": "Answer", text: "P60 Cannabis is open 24 hours." } },
+    { "@type": "Question", name: "What is the phone number for P60 Cannabis?", acceptedAnswer: { "@type": "Answer", text: "You can call P60 Cannabis at (289) 217-2763." } },
+    { "@type": "Question", name: "Where can I find P60 Cannabis delivery information?", acceptedAnswer: { "@type": "Answer", text: "Delivery hours and listed service areas are available on the dedicated Weed Delivery York page." } },
+  ],
 };
 
 export function GBPLandingPage() {
-  const categoryGuideLinks = gbpLocation.products.slice(0, 6).map((product) => ({
-    label: product,
-    href: categoryLinks[product] || "/"
-  }));
-  // Generate schema.org markup dynamically
-  const schemaMarkup: StoreSchemaMarkup = {
-    "@context": "https://schema.org",
-    "@type": "Store",
-    "name": gbpLocation.storeName,
-    "url": `https://${gbpLocation.domain}/${gbpLocation.slug}/`,
-    "telephone": gbpLocation.phone,
-    "address": {
-      "@type": "PostalAddress",
-      "streetAddress": gbpLocation.streetAddress,
-      "addressLocality": gbpLocation.city,
-      "addressRegion": gbpLocation.province,
-      "postalCode": gbpLocation.postalCode,
-      "addressCountry": gbpLocation.country
-    }
-  };
-
-  // Inject real opening hours and coordinates if they exist
-  if (gbpLocation.schemaHours && gbpLocation.schemaHours.length > 0) {
-    schemaMarkup.openingHours = gbpLocation.schemaHours;
-  }
-
-  if (gbpLocation.latitude && gbpLocation.longitude) {
-    schemaMarkup.geo = {
-      "@type": "GeoCoordinates",
-      "latitude": Number(gbpLocation.latitude),
-      "longitude": Number(gbpLocation.longitude)
-    };
-  }
-
   return (
-    <div className={styles.container}>
-      {/* Schema Injection */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaMarkup) }}
-      />
+    <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify([webPageSchema, breadcrumbSchema, faqSchema]).replace(/</g, "\\u003c") }} />
+      <Navbar />
+      <div className={styles.container}>
+        <header className={styles.hero}>
+          <h1 className={styles.h1}>Weed Dispensary in York — P60 Cannabis</h1>
+          <p className={styles.heroTagline}>P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2.</p>
+          <p className={styles.heroTagline}>Our York store is open 24 hours, giving customers the flexibility to visit at the time that works for them.</p>
+          <p className={styles.heroTagline}>For questions before your visit, call us at <a href="tel:+12892172763">(289) 217-2763</a>.</p>
+        </header>
 
-      {/* Hero Header */}
-      <header className={styles.hero}>
-        <h1 className={styles.h1}>{gbpLocation.storeName} — Weed Dispensary in {gbpLocation.city}</h1>
-        <p className={styles.heroTagline}>Serving {gbpLocation.city} & Nearby Neighborhoods</p>
-      </header>
+        <section className={styles.section}>
+          <h2 className={styles.h2}>Visit P60 Cannabis in York</h2>
+          <p className={styles.infoText}>You can find P60 Cannabis at:</p>
+          <p className={styles.infoBlock}>1938 Weston Rd<br />York, ON M9N 1W2</p>
+          <p className={styles.infoBlock}>Hours: Open 24 hours<br />Phone: <a href="tel:+12892172763">(289) 217-2763</a></p>
+          <p className={styles.infoText}>Whether you already know what you want to explore or simply need our store information before visiting, this page gives you the essential details for the P60 Cannabis York location.</p>
+        </section>
 
-      <aside className={styles.deliveryNotice} aria-labelledby="landing-delivery-title">
-        <h2 id="landing-delivery-title">WEED DELIVERY AVAILABLE</h2>
-        <p>P60 Cannabis offers Weed Delivery across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the Weed Delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
-      </aside>
+        <section className={styles.section}>
+          <h2 className={styles.h2}>Explore Cannabis Categories</h2>
+          <p className={styles.infoText}>You can explore the following sections of the P60 Cannabis website:</p>
+          <div className={styles.productGrid}>
+            {categories.map((category) => <Link key={category.href} href={category.href} className={styles.productCard}><strong>{category.name}</strong><br />Explore our {category.name} section.</Link>)}
+          </div>
+        </section>
 
-      <div className={styles.btnRow}>
-        <Link href="/exotic-weed" className={`${styles.btn} ${styles.btnPrimary}`}>STORE MENU</Link>
-        <Link href="/weed-delivery-york" className={`${styles.btn} ${styles.btnSecondary}`}>WEED DELIVERY</Link>
+        <section className={styles.section}>
+          <h2 className={styles.h2}>Looking for Delivery Information?</h2>
+          <p className={styles.infoText}>Delivery details are published separately so you can find the current delivery hours and listed service areas in one place.</p>
+          <div className={styles.btnRow}><Link href="/weed-delivery-york" className={`${styles.btn} ${styles.btnPrimary}`}>View Weed Delivery Information</Link></div>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.h2}>P60 Cannabis York Store Information</h2>
+          <p className={styles.infoBlock}>P60 Cannabis<br />1938 Weston Rd<br />York, ON M9N 1W2</p>
+          <p className={styles.infoBlock}>Phone: <a href="tel:+12892172763">(289) 217-2763</a><br />Hours: Open 24 hours</p>
+          <p className={styles.infoText}>Website: <Link href="/">https://www.p60cannabis.com/</Link></p>
+        </section>
+
+        <section id="faq" className={styles.section}>
+          <h2 className={styles.h2}>Frequently Asked Questions</h2>
+          <div className={styles.faqList}>
+            <div className={styles.faqItem}><h3 className={styles.faqQuestion}>Where is P60 Cannabis located?</h3><p className={styles.faqAnswer}>P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2.</p></div>
+            <div className={styles.faqItem}><h3 className={styles.faqQuestion}>What are the hours for P60 Cannabis?</h3><p className={styles.faqAnswer}>P60 Cannabis is open 24 hours.</p></div>
+            <div className={styles.faqItem}><h3 className={styles.faqQuestion}>What is the phone number for P60 Cannabis?</h3><p className={styles.faqAnswer}>You can call P60 Cannabis at <a href="tel:+12892172763">(289) 217-2763</a>.</p></div>
+            <div className={styles.faqItem}><h3 className={styles.faqQuestion}>Where can I find P60 Cannabis delivery information?</h3><p className={styles.faqAnswer}>Delivery hours and listed service areas are available on the dedicated <Link href="/weed-delivery-york">Weed Delivery York</Link> page.</p></div>
+          </div>
+        </section>
       </div>
-
-      {/* Intro Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>A Local Weed Dispensary</h2>
-        <p className={styles.introText}>{gbpLocation.introVariant}</p>
-      </section>
-
-      {/* Product Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>Browse Weed and Cannabis Categories</h2>
-        <p className={styles.infoText}>
-          At {gbpLocation.storeName}, adults 19+ can browse the following general menu categories. Check the current menu before visiting:
-        </p>
-        <div className={styles.productGrid}>
-          {gbpLocation.products.map((p) => {
-            const href = categoryLinks[p] || "/";
-            return (
-              <Link key={p} href={href} className={styles.productCard}>
-                {p}
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-      {/* Visit Planning Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>Plan a Visit to {gbpLocation.storeName}</h2>
-        <p className={styles.infoText}>
-          {gbpLocation.storeName} offers adults 19+ a York Weed and cannabis selection across flower, pre-rolls, edibles, THC vapes, concentrates, and other menu categories. Check the current menu for the details shown with each selection.
-        </p>
-        <p className={styles.infoBlock}>
-          Confirm the store address, phone number, listed hours, and current menu details before visiting from elsewhere in {gbpLocation.city}.
-        </p>
-        <p className={styles.infoText}>
-          For a fuller local overview, read the{" "}
-          <Link href="/resources">Resources</Link>.
-        </p>
-      </section>
-
-      {/* Location & NAP Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>Visit {gbpLocation.storeName} in {gbpLocation.city}</h2>
-        <div className={styles.napGrid}>
-          <div className={styles.napDetails}>
-            <div className={styles.napItem}>
-              <span className={styles.napLabel}>Store Name</span>
-              <strong>{gbpLocation.storeName}</strong>
-            </div>
-            <div className={styles.napItem}>
-              <span className={styles.napLabel}>Address</span>
-              <span>{gbpLocation.address}</span>
-            </div>
-            <div className={styles.napItem}>
-              <span className={styles.napLabel}>Phone</span>
-              <span><a href={`tel:${gbpLocation.phoneIntl}`} style={{ color: "inherit" }}>{gbpLocation.phone}</a></span>
-            </div>
-            <div className={styles.napItem}>
-              <span className={styles.napLabel}>Website</span>
-              <span><a href={`https://${gbpLocation.domain}/`} style={{ color: "inherit" }}>https://{gbpLocation.domain}/</a></span>
-            </div>
-            {gbpLocation.hours && gbpLocation.hours.length > 0 && (
-              <div className={styles.napItem}>
-                <span className={styles.napLabel}>Store Hours</span>
-                {gbpLocation.hours.map((line) => (
-                  <span key={line} style={{ fontSize: "0.95rem" }}>{line}</span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className={styles.mapWrapper}>
-            {gbpLocation.mapEmbedUrl ? (
-              <iframe
-                title={`Map of ${gbpLocation.storeName}`}
-                src={gbpLocation.mapEmbedUrl}
-                className={styles.mapIframe}
-                allowFullScreen={true}
-                loading="lazy"
-              />
-            ) : (
-              <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
-                Map preview not available.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Nearby Areas Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>Serving Adult Shoppers in York</h2>
-        <p className={styles.infoText}>
-          P60 Cannabis serves adult shoppers visiting from York and nearby areas. Confirm current directions from your starting point before travelling.
-        </p>
-      </section>
-      {/* Category Link Context Section */}
-      <section className={styles.section}>
-        <h2 className={styles.h2}>Compare Menu Categories Before You Visit</h2>
-        <p className={styles.infoText}>
-          These category links help adults 19+ browse general menu sections before visiting. Product selection can change, so use the current menu for current details.
-        </p>
-        <div className={styles.productGrid}>
-          {categoryGuideLinks.map((category) => (
-            <Link key={category.label} href={category.href} className={styles.productCard}>
-              {category.label}
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* FAQ Section */}
-      <section id="faq" className={styles.section}>
-        <h2 className={styles.h2}>Frequently Asked Questions</h2>
-        <div className={styles.faqList}>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>How should I plan a visit to {gbpLocation.storeName}?</h3>
-            <p className={styles.faqAnswer}>
-              Check the store address, phone number, listed hours, and current menu before visiting. {gbpLocation.storeName} serves adults 19+ in {gbpLocation.city}.
-            </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>Which menu categories can I compare?</h3>
-            <p className={styles.faqAnswer}>
-              Adults 19+ can compare Weed flower collections, pre-rolls, edibles, Nicotine Vape, THC Vape, concentrates, and other menu categories before checking current details.
-            </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>Where is {gbpLocation.storeName} located?</h3>
-            <p className={styles.faqAnswer}>{gbpLocation.storeName} is located at {gbpLocation.address}.</p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>Is {gbpLocation.storeName} a weed dispensary in {gbpLocation.city}?</h3>
-            <p className={styles.faqAnswer}>
-              {gbpLocation.storeName} serves adults aged 19 and older in {gbpLocation.city}. Bring valid identification and follow applicable laws and product labels.
-            </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>What products does {gbpLocation.storeName} carry?</h3>
-            <p className={styles.faqAnswer}>
-              The menu includes Weed flower collections, pre-rolls, edibles, THC Vape, concentrates, and other categories. Check the current menu for product details.
-            </p>
-          </div>
-          <div className={styles.faqItem}>
-            <h3 className={styles.faqQuestion}>Do I need to be 19+ to shop at {gbpLocation.storeName}?</h3>
-            <p className={styles.faqAnswer}>
-              Yes, to visit our cannabis store or order from our menu, you must be at least 19 years of age. Valid government-issued photo ID is required for verification.
-            </p>
-          </div>
-        </div>
-      </section>
-    </div>
+      <Footer />
+    </main>
   );
 }

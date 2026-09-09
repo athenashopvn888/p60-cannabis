@@ -88,6 +88,16 @@ const LOCAL_FAQS = [
   },
 ];
 
+const HOME_WEBPAGE_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://www.p60cannabis.com/#webpage",
+  url: "https://www.p60cannabis.com/",
+  name: "P60 Cannabis | 24-Hour Cannabis Store in York",
+  description: "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
+  about: { "@id": "https://www.p60cannabis.com/#store" },
+};
+
 interface Review {
   name: string;
   comment: string;
@@ -189,6 +199,7 @@ export default function HomePage() {
 
   return (
     <main className={styles.main}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
       {/* ── NAVBAR ── */}
       <Navbar />
       <HiringCallout />
@@ -204,25 +215,25 @@ export default function HomePage() {
             <div className={styles.deliveryHeroCopy}>
               <div className={styles.brandBlock}>
                 <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" className={styles.brandLogo} />
-                <span className={styles.deliveryKicker}>Weston Rd / York</span>
-                <h1 className={styles.brandTitle}>P60 CANNABIS</h1>
-                <p className={styles.brandSub}>Premium Cannabis Dispensary</p>
-                <div className={styles.brandBadge}>Open 24 hours daily</div>
+                <span className={styles.deliveryKicker}>1938 Weston Rd / York</span>
+                <h1 className={styles.brandTitle}>P60 Cannabis</h1>
+                <p className={styles.brandSub}>A 24-hour cannabis store at 1938 Weston Rd in York, Ontario. Visit us any time or explore the site for store information, cannabis categories and delivery details.</p>
+                <div className={styles.brandBadge}>Open 24 hours</div>
               </div>
 
               <div className={styles.deliveryFacts}>
                 <span>1938 Weston Rd</span>
-                <span>Fast pickup flow</span>
+                <span>Store information</span>
                 <span>Adults 19+</span>
               </div>
 
               <aside className={styles.homeDeliveryNotice} aria-labelledby="home-delivery-title">
-                <h2 id="home-delivery-title">WEED DELIVERY AVAILABLE</h2>
-                <p>P60 Cannabis offers Weed Delivery across York, North York, Vaughan, and Brampton daily from 10 a.m. to 10 p.m. Browse the Weed Delivery menu and use LIVE ORDER to connect with the P60 dispatcher.</p>
+                <h2 id="home-delivery-title">Delivery Information</h2>
+                <p>P60 Cannabis has a dedicated page for delivery information, including the published delivery hours and service areas.</p>
               </aside>
-              <div className={styles.heroActions} aria-label="Choose a P60 Cannabis menu">
-                <Link href="/exotic-weed" className={styles.heroPrimary}>STORE MENU</Link>
-                <Link href="/weed-delivery-york" className={styles.heroSecondary}>WEED DELIVERY</Link>
+              <div className={styles.heroActions} aria-label="P60 Cannabis information">
+                <Link href="/weed-dispensary-york" className={styles.heroPrimary}>Visit Our York Store</Link>
+                <Link href="/weed-delivery-york" className={styles.heroSecondary}>Delivery Information</Link>
               </div>
             </div>
 
@@ -247,10 +258,10 @@ export default function HomePage() {
           </div>
 
           <div className={styles.deliveryPromiseGrid}>
-            <div><strong>Fast Delivery</strong><span>Store-branded delivery presentation</span></div>
+            <div><strong>Visit Us</strong><span>1938 Weston Rd</span></div>
             <div><strong>Open 24 Hours</strong><span>Every day</span></div>
             <div><strong>Weston Rd</strong><span>York, ON M9N 1W2</span></div>
-            <div><strong>Menu First</strong><span>Flower tiers and core categories</span></div>
+            <div><strong>Call Us</strong><span>(289) 217-2763</span></div>
           </div>
 
           <div className={styles.bentoHeader}>
@@ -333,19 +344,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── SEO PANEL WRITE-UP ── */}
+      {/* ── STORE INFORMATION ── */}
       <section className={styles.seoSection}>
         <div className={styles.container}>
           <div className={styles.seoPanel}>
-            <h2 className={styles.seoPanelTitle}>P60 Cannabis On Weston Rd In York - Open 24 Hours Daily</h2>
+            <h2 className={styles.seoPanelTitle}>Visit P60 Cannabis in York</h2>
             <p className={styles.seoPanelText}>
-              Welcome to <strong>P60 Cannabis</strong> at 1938 Weston Rd in York. Use the current menu to compare flower tiers, pre-rolls, edibles, vapes, concentrates, cigarettes, and accessories before visiting.
+              P60 Cannabis is located at <strong>1938 Weston Rd, York, ON M9N 1W2</strong>.
             </p>
             <p className={styles.seoPanelText}>
-              P60 Cannabis is open 24 hours daily. The current menu brings together flower, pre-rolls, edibles, vapes, and other categories. Our staff can help shoppers compare those categories during listed store hours.
+              We are <strong>open 24 hours</strong>.
             </p>
             <p className={styles.seoPanelText}>
-              Searching for a cannabis dispensary in York or the surrounding area? P60 Cannabis offers flower, pre-rolls, edibles, vapes, and other menu categories. Clear flower tiers help shoppers compare listed prices before visiting.
+              Questions before your visit? Call <a href="tel:+12892172763">(289) 217-2763</a> or view our <Link href="/weed-dispensary-york">York store details</Link>.
             </p>
           </div>
         </div>

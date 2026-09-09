@@ -12,6 +12,24 @@ export const metadata: Metadata = {
 };
 
 export default function DeliveryPage() {
+  const webPageData = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": "https://www.p60cannabis.com/weed-delivery-york#webpage",
+    url: "https://www.p60cannabis.com/weed-delivery-york",
+    name: "Weed Delivery York | P60 Cannabis",
+    about: { "@id": "https://www.p60cannabis.com/#store" },
+    breadcrumb: { "@id": "https://www.p60cannabis.com/weed-delivery-york#breadcrumb" },
+  };
+  const breadcrumbData = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "@id": "https://www.p60cannabis.com/weed-delivery-york#breadcrumb",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://www.p60cannabis.com/" },
+      { "@type": "ListItem", position: 2, name: "Weed Delivery York", item: "https://www.p60cannabis.com/weed-delivery-york" },
+    ],
+  };
   const collectionPageData = {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -35,9 +53,7 @@ export default function DeliveryPage() {
     serviceType: "Weed delivery",
     url: "https://www.p60cannabis.com/weed-delivery-york",
     provider: {
-      "@type": "Store",
-      "@id": "https://www.p60cannabis.com",
-      name: "P60 Cannabis",
+      "@id": "https://www.p60cannabis.com/#store",
     },
     areaServed: ["York", "North York", "Vaughan", "Brampton"].map((name) => ({
       "@type": "City",
@@ -67,7 +83,7 @@ export default function DeliveryPage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify([collectionPageData, deliveryServiceData]).replace(/</g, "\\u003c") }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify([webPageData, breadcrumbData, collectionPageData, deliveryServiceData]).replace(/</g, "\\u003c") }}
       />
       <DeliveryCatalog />
       <P60WebChat />

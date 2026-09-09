@@ -6,35 +6,19 @@ import AgeGate from "./components/AgeGate";
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.p60cannabis.com"),
   title: {
-    default: "P60 Cannabis | York Cannabis Dispensary",
+    default: "P60 Cannabis | 24-Hour Cannabis Store in York",
     template: "%s | P60 Cannabis",
   },
   description:
-    "P60 Cannabis is a York cannabis dispensary on Weston Rd with adult 19+ store info and category browsing for flower, pre-rolls, vapes, edibles, concentrates, and accessories. Open 24 hours daily.",
-  keywords: [
-    "cannabis dispensary York",
-    "weed store York",
-    "exotic flower York",
-    "premium cannabis",
-    "P60 Cannabis",
-    "cheap weed York",
-    "dispensary near me",
-    "THC flower",
-    "indica sativa hybrid",
-    "edibles York",
-    "vapes",
-    "pre-rolls",
-    "native cigarettes York",
-    "weed store York",
-  ],
+    "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
   openGraph: {
     type: "website",
     locale: "en_CA",
-    url: "https://www.p60cannabis.com",
+    url: "https://www.p60cannabis.com/",
     siteName: "P60 Cannabis",
-    title: "P60 Cannabis — Premium York Cannabis Dispensary",
+    title: "P60 Cannabis | 24-Hour Cannabis Store in York",
     description:
-      "Browse flower tiers and menu categories at 1938 Weston Rd. Open 24 hours daily.",
+      "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: [
       {
         url: "https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg",
@@ -46,8 +30,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "P60 Cannabis — York's Uplifting Dispensary",
-    description: "Browse current menu categories. P60 Cannabis at 1938 Weston Rd, York is open 24 hours daily.",
+    title: "P60 Cannabis | 24-Hour Cannabis Store in York",
+    description: "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: ["https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
   robots: {
@@ -62,7 +46,7 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: "https://www.p60cannabis.com",
+    canonical: "https://www.p60cannabis.com/",
   },
   verification: {
     // google: "your-google-verification-code",
@@ -73,13 +57,10 @@ export const metadata: Metadata = {
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Store",
-  additionalType: "https://schema.org/Store",
-  "@id": "https://www.p60cannabis.com",
+  "@id": "https://www.p60cannabis.com/#store",
   name: "P60 Cannabis",
-  description: "Cannabis dispensary at 1938 Weston Rd in York, ON. Shop exotic, premium, AAA+, AA, and budget flower tiers plus edibles, prerolls, and vapes. Open 24 hours daily.",
-  url: "https://www.p60cannabis.com",
-  telephone: "+12892172763",
-  image: "https://www.p60cannabis.com/wp-content/uploads/2026/04/7Clmh.jpg",
+  url: "https://www.p60cannabis.com/",
+  telephone: "+1-289-217-2763",
   address: {
     "@type": "PostalAddress",
     streetAddress: "1938 Weston Rd",
@@ -88,36 +69,26 @@ const jsonLd = {
     postalCode: "M9N 1W2",
     addressCountry: "CA",
   },
-  geo: {
-    "@type": "GeoCoordinates",
-    latitude: 43.7004400,
-    longitude: -79.5177900,
-  },
   openingHoursSpecification: [
   {
     "@type": "OpeningHoursSpecification",
     "dayOfWeek": [
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-      "Sunday"
+      "https://schema.org/Monday",
+      "https://schema.org/Tuesday",
+      "https://schema.org/Wednesday",
+      "https://schema.org/Thursday",
+      "https://schema.org/Friday",
+      "https://schema.org/Saturday",
+      "https://schema.org/Sunday"
     ],
     "opens": "00:00",
     "closes": "23:59"
   }
 ],
   sameAs: [
-    "https://www.p60cannabis.com/",
-    "https://www.p60cannabis.com/",
+    "https://www.google.com/maps/place/P60+Cannabis/data=!4m2!3m1!1s0x0:0xb4e5e4071fcae428",
   ],
-  hasMap: "https://www.p60cannabis.com/",
-  areaServed: {
-    "@type": "City",
-    name: "York",
-  },
+  hasMap: "https://www.google.com/maps/place/P60+Cannabis/data=!4m2!3m1!1s0x0:0xb4e5e4071fcae428",
 };
 
 export default function RootLayout({

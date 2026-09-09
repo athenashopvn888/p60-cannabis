@@ -44,6 +44,45 @@ export default async function SeoLandingPage({
   const page = getSeoPageBySlug(slug);
   if (!page) notFound();
 
+  if (slug === "weed-store-near-toronto") {
+    const webPageSchema = {
+      "@context": "https://schema.org", "@type": "WebPage",
+      "@id": "https://www.p60cannabis.com/info/weed-store-near-toronto#webpage",
+      url: "https://www.p60cannabis.com/info/weed-store-near-toronto",
+      name: "Visiting P60 Cannabis from Toronto | York Store Information",
+      description: "Coming from Toronto? P60 Cannabis is located at 1938 Weston Rd, York, ON M9N 1W2 and is open 24 hours. View our York store information before visiting.",
+      about: { "@id": "https://www.p60cannabis.com/#store" },
+      breadcrumb: { "@id": "https://www.p60cannabis.com/info/weed-store-near-toronto#breadcrumb" },
+    };
+    const breadcrumbSchema = {
+      "@context": "https://schema.org", "@type": "BreadcrumbList",
+      "@id": "https://www.p60cannabis.com/info/weed-store-near-toronto#breadcrumb",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: "https://www.p60cannabis.com/" },
+        { "@type": "ListItem", position: 2, name: "Visiting P60 Cannabis from Toronto", item: "https://www.p60cannabis.com/info/weed-store-near-toronto" },
+      ],
+    };
+    const faqSchema = {
+      "@context": "https://schema.org", "@type": "FAQPage",
+      "@id": "https://www.p60cannabis.com/info/weed-store-near-toronto#faq",
+      mainEntity: page.faqs.map((faq) => ({ "@type": "Question", name: faq.q, acceptedAnswer: { "@type": "Answer", text: faq.a } })),
+    };
+
+    return (
+      <main className={styles.main}>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify([webPageSchema, breadcrumbSchema, faqSchema]).replace(/</g, "\\u003c") }} />
+        <Navbar />
+        <section className={styles.hero}><div className={styles.heroInner}><span className={styles.heroIcon}>{page.icon}</span><h1 className={styles.heroH1}>{page.h1}</h1><p className={styles.heroTagline}>If you are starting your visit from Toronto, the P60 Cannabis store address is 1938 Weston Rd, York, ON M9N 1W2.</p><p className={styles.heroTagline}>P60 Cannabis is open 24 hours.</p><p className={styles.heroTagline}>For complete information about the York store, including its address, phone number and links to the main cannabis sections of the website, visit our dedicated York store page.</p><Link href="/weed-dispensary-york" className={styles.productHeroPrimary}>View P60 Cannabis York Store</Link></div></section>
+        <section className={styles.content}><div className={styles.container}>
+          <div className={styles.section}><h2 className={styles.sectionTitle}>P60 Cannabis Store Address</h2><p className={styles.sectionBody}>Use the following address when planning your visit:</p><p className={styles.sectionBody}>P60 Cannabis<br />1938 Weston Rd<br />York, ON M9N 1W2</p><p className={styles.sectionBody}>Hours: Open 24 hours<br />Phone: <a href="tel:+12892172763">(289) 217-2763</a></p></div>
+          <div className={styles.section}><h2 className={styles.sectionTitle}>Before You Visit</h2><p className={styles.sectionBody}>P60 Cannabis is open 24 hours at its Weston Road location in York.</p><p className={styles.sectionBody}>If you need to contact the store before visiting, call <a href="tel:+12892172763">(289) 217-2763</a>.</p><p className={styles.sectionBody}>For the full York store page, continue here:</p><Link href="/weed-dispensary-york" className={styles.productHeroPrimary}>P60 Cannabis York Store Information</Link></div>
+          <div className={styles.section}><h2 className={styles.sectionTitle}>Frequently Asked Questions</h2>{page.faqs.map((faq) => <details key={faq.q} className={styles.faqItem}><summary className={styles.faqQ}>{faq.q}</summary><p className={styles.faqA}>{faq.a}{faq.q === "Where can I find the complete York store information?" && <> <Link href="/weed-dispensary-york">P60 Cannabis York store page</Link>.</>}</p></details>)}</div>
+        </div></section>
+        <Footer />
+      </main>
+    );
+  }
+
   const tiers = Object.values(TIER_CONFIG);
   const heroPreview = page.heroPreview;
 
