@@ -141,7 +141,7 @@ export default async function ItemsCategoryPage({
 }
 
 function ItemCard({ item, catColor }: { item: ItemProduct; catColor: string }) {
-  const itemPrice = getItemPriceDisplay(item.price);
+  const itemPrice = getItemPriceDisplay(item.price, item.sku);
 
   return (
     <Link href={`/item/${item.slug}`} className={styles.card} style={{ "--cat-color": catColor } as React.CSSProperties}>
