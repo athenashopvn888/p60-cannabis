@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import styles from "./page.module.css";
+import FleetAnnouncementBanner from "./components/FleetAnnouncementBanner";
 import Navbar from "./components/Navbar";
 import HiringCallout from "./components/HiringCallout";
 import Footer from "./components/Footer";
@@ -199,6 +200,7 @@ export default function HomePage() {
 
   return (
     <main className={styles.main}>
+      <FleetAnnouncementBanner />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
       {/* ── NAVBAR ── */}
       <Navbar />
