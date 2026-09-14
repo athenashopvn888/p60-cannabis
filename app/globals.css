@@ -465,3 +465,27 @@ button { cursor: pointer; font-family: inherit; }
   backdrop-filter: blur(16px);
   border: 1px solid var(--border-subtle);
 }
+
+/* Fleet homepage announcements: reserve their full height above the fixed navigation. */
+:root {
+  --fleet-homepage-announcement-height: 144px;
+}
+
+[data-fleet-homepage-announcement] {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  width: 100%;
+  height: var(--fleet-homepage-announcement-height);
+}
+
+[data-fleet-homepage-announcement] > p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+main:has(> [data-fleet-homepage-announcement]) > #main-nav {
+  top: calc(var(--delivery-announcement-height, 0px) + var(--fleet-homepage-announcement-height)) !important;
+}
