@@ -13,6 +13,7 @@ const lineStyle = {
 export default function FleetAnnouncementBanner() {
   return (
     <aside
+      data-fleet-homepage-announcement=""
       aria-label="Store announcements"
       style={{ width: "100%", position: "relative", zIndex: 50 }}
     >
