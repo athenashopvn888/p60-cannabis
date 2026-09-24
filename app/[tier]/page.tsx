@@ -55,6 +55,47 @@ export default async function TierPage({
   const flowers = getFlowersByTier(tierInfo.key);
   const { config } = tierInfo;
   const seo = TIER_SEO[tierInfo.key];
+  const siteUrl = "https://www.p60cannabis.com";
+  const pageUrl = `${siteUrl}/${tierSlug}`;
+  const collectionJsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${pageUrl}#webpage`,
+        url: pageUrl,
+        name: seo?.seoTitle || `${config.name} flower at P60 Cannabis`,
+        description:
+          seo?.seoIntro ||
+          `${config.name} flower listings at P60 Cannabis for Weston Road in York. Adults 19+.`,
+        isPartOf: { "@type": "WebSite", "@id": `${siteUrl}/#website` },
+        about: { "@id": `${siteUrl}/#store` },
+        mainEntity: {
+          "@type": "ItemList",
+          numberOfItems: flowers.length,
+          itemListElement: flowers.map((flower, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: flower.name,
+            url: `${siteUrl}/flower/${flower.slug}`,
+          })),
+        },
+      },
+      ...(seo?.faqs?.length
+        ? [
+            {
+              "@type": "FAQPage",
+              "@id": `${pageUrl}#faq`,
+              mainEntity: seo.faqs.map((faq) => ({
+                "@type": "Question",
+                name: faq.q,
+                acceptedAnswer: { "@type": "Answer", text: faq.a },
+              })),
+            },
+          ]
+        : []),
+    ],
+  };
 
   const saleFlowers = flowers.filter((f) => f.isSale);
   const regularFlowers = flowers.filter((f) => !f.isSale);
@@ -67,6 +108,7 @@ export default async function TierPage({
 
   return (
     <main className={styles.main}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }} />
       <Navbar />
 
       {/* ── Banner Image (standalone, no overlay text) ── */}

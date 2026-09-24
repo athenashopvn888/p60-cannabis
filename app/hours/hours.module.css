@@ -1,0 +1,14 @@
+.main { position: relative; z-index: 1; min-height: 100vh; background: #020617; color: #f8fafc; padding-bottom: 40px; }
+.hero { padding: 128px 24px 48px; background: #020617; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.heroInner, .content { width: min(100% - 2rem, 920px); margin: 0 auto; }
+.eyebrow { margin: 0 0 12px; color: #fdba74; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.heroTitle { margin: 0 0 16px; font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.08; }
+.heroLead, .section p, .faqAnswer { color: #cbd5e1; line-height: 1.65; }
+.napCard, .section, .faqItem { background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; margin: 20px 0; }
+.section h2, .faqQuestion { color: #f8fafc; }
+.weekRow { display:flex; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+.ctaRow { display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; }
+.cta { display:inline-flex; padding:12px 18px; border-radius:999px; font-weight:700; text-decoration:none; }
+.ctaPrimary { background:#f97316; color:#111; }
+.ctaSecondary { background:transparent; border:1px solid rgba(255,255,255,0.25); color:#f8fafc; }
+.ageNote { font-size:0.85rem; color:#94a3b8; }
