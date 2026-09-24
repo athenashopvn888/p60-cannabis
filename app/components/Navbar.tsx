@@ -21,6 +21,8 @@ const ALL_LINKS = [
   { href: "/items/magic", label: "Magic Stuff" },
   { href: "/items/cigarettes", label: "Cigarettes" },
   { href: "/items/add-ons", label: "Accessories" },
+  { href: "/hours", label: "Hours" },
+  { href: "/visit", label: "Visit" },
   { href: "/faq", label: "FAQ" },
   { href: "/resources", label: "Resources" },
 ];

@@ -79,6 +79,10 @@ export default function Footer() {
           </p>
         </div>
       </div>
+          <div style={{ textAlign: "center", padding: "12px 16px", display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+        <Link href="/visit">Visit / directions</Link>
+        <Link href="/hours">Store hours</Link>
+      </div>
     </footer>
   );
 }
