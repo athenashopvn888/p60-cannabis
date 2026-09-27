@@ -1,0 +1,277 @@
+/* Ported from the Apps Script hiring ribbon.
+   Canvas is 3840×2160, so 148px / 60px scales to ~74px / ~30px at 1920×1080. */
+.hiringRibbon {
+  --hiringH: 148px;
+  --hiringTextRed: #ff5260;
+  --hiringRed: #d51028;
+  flex: 0 0 var(--hiringH);
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 20px;
+  padding: 0 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  background: linear-gradient(115deg, #020202 0%, #120205 34%, #350710 64%, #070102 100%);
+  background-size: 220% 220%;
+  border: 2px solid rgba(255, 34, 56, 0.72);
+  box-shadow:
+    0 14px 34px rgba(2, 6, 23, 0.52),
+    inset 0 0 46px rgba(255, 34, 56, 0.1),
+    0 0 20px rgba(255, 0, 34, 0.18);
+  animation: hiringGradient 12s ease-in-out infinite, hiringBorderPulse 6s ease-in-out infinite;
+}
+
+.hiringRibbon::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: -160%;
+  left: -28%;
+  width: 18%;
+  height: 420%;
+  pointer-events: none;
+  transform: rotate(24deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 34, 56, 0.3), transparent);
+  filter: blur(2px);
+  animation: hiringLightSweep 8s ease-in-out infinite;
+}
+
+.hiringViewport {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 900px;
+}
+
+.hiringPhase,
+.hiringStatic {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 22px;
+  box-sizing: border-box;
+  font-size: 60px;
+  line-height: 1.05;
+  font-weight: 950;
+  letter-spacing: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backface-visibility: hidden;
+}
+
+.hiringPhase {
+  opacity: 0;
+  transform: scale(0.72);
+  transition: opacity 420ms ease, transform 420ms ease;
+  isolation: isolate;
+}
+
+.isActive {
+  opacity: 1;
+  transform: scale(1);
+  animation: hiringBurstIn 700ms cubic-bezier(0.18, 0.78, 0.24, 1) both;
+}
+
+.hiringPhaseText {
+  position: relative;
+  z-index: 2;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hiringPhase::before,
+.hiringPhase::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  opacity: 0;
+  color: var(--hiringRed);
+}
+
+.hiringPhase::before {
+  width: 220px;
+  height: 220px;
+  margin: -114px 0 0 -114px;
+  border: 4px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 14px currentColor, inset 0 0 14px currentColor;
+}
+
+.hiringPhase::after {
+  width: 560px;
+  height: 560px;
+  margin: -280px 0 0 -280px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    transparent 0deg 9deg,
+    currentColor 10deg 11deg,
+    transparent 12deg 18deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 0 25%, #000 28% 61%, transparent 65%);
+  mask: radial-gradient(circle, transparent 0 25%, #000 28% 61%, transparent 65%);
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.isActive::before {
+  animation: hiringShockwave 720ms ease-out both;
+}
+
+.isActive::after {
+  animation: hiringSparkBurst 680ms ease-out both;
+}
+
+.phaseHeadline,
+.phaseApply,
+.phaseUrl {
+  color: var(--hiringTextRed);
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.88);
+}
+
+.hiringStatic {
+  display: none;
+  color: var(--hiringTextRed);
+  font-size: 44px;
+  letter-spacing: 2px;
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.88);
+}
+
+@keyframes hiringGradient {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes hiringBorderPulse {
+  0%,
+  100% {
+    border-color: rgba(255, 34, 56, 0.58);
+    box-shadow:
+      0 14px 34px rgba(2, 6, 23, 0.52),
+      inset 0 0 46px rgba(255, 34, 56, 0.08),
+      0 0 14px rgba(255, 0, 34, 0.12);
+  }
+  50% {
+    border-color: rgba(255, 84, 99, 0.94);
+    box-shadow:
+      0 14px 34px rgba(2, 6, 23, 0.52),
+      inset 0 0 50px rgba(255, 34, 56, 0.16),
+      0 0 26px rgba(255, 0, 34, 0.3);
+  }
+}
+
+@keyframes hiringLightSweep {
+  0%,
+  18% {
+    left: -28%;
+    opacity: 0;
+  }
+  28% {
+    opacity: 0.72;
+  }
+  64% {
+    left: 112%;
+    opacity: 0.52;
+  }
+  72%,
+  100% {
+    left: 112%;
+    opacity: 0;
+  }
+}
+
+@keyframes hiringBurstIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+    filter: brightness(1.24);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: brightness(1.16);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes hiringShockwave {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  16% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.35);
+  }
+}
+
+@keyframes hiringSparkBurst {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(-8deg);
+  }
+  18% {
+    opacity: 0.62;
+  }
+  68% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.34) rotate(9deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hiringRibbon {
+    animation: none;
+  }
+  .hiringRibbon::after {
+    display: none;
+    animation: none;
+  }
+  .hiringPhase {
+    display: none;
+    transition: none;
+    animation: none;
+  }
+  .hiringPhase::before,
+  .hiringPhase::after {
+    display: none;
+    animation: none;
+  }
+  .hiringStatic {
+    display: flex;
+  }
+}
