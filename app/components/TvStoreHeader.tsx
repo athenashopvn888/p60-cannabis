@@ -12,6 +12,7 @@ export default function TvStoreHeader({
     <div className={styles.stack}>
       <header className={styles.header}>
         <div className={styles.brand}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/storeFavicon.webp" alt="" />
           <div>
             <span className={styles.eyebrow}>{eyebrow}</span>
