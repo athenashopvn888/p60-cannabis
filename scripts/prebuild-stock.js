@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { postprocessFlowers, postprocessItems } = require('../app/lib/tvStock.js');
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || '';
 const FLOWERS_PATH = path.join(__dirname, '..', 'app', 'lib', 'flowers.json');
@@ -36,36 +37,7 @@ async function main() {
     }
 
     // ── Post-process flowers: derive sale flags + clean names ──
-    const SALE_RE = /\bSALE\b/i;
-    const ON_SALE_RE = /ON\s*SALE/i;
-    function hasSalePrice(f) {
-      return !!(
-        (f.price3g && f.price3g.sale !== null) ||
-        (f.price5g && f.price5g.sale !== null) ||
-        (f.price14g && f.price14g.sale !== null) ||
-        (f.price28g && f.price28g.sale !== null)
-      );
-    }
-    function cleanName(name) {
-      return name
-        .replace(/\s*\(?\s*AAA\+?\s*ON\s*SALE\s*\)?\s*$/i, '')
-        .replace(/\s*\(?\s*AAA\+?\s*SALE!?\s*\)?\s*$/i, '')
-        .replace(/\s*\bSALE!?\s*$/i, '')
-        .replace(/\s*\bON\s*SALE\s*$/i, '')
-        .trim();
-    }
-    let saleFixed = 0;
-    for (const f of data.flowers) {
-      // Derive isSale from name or prices
-      if (!f.isSale) {
-        if (SALE_RE.test(f.name) || ON_SALE_RE.test(f.name) || hasSalePrice(f)) {
-          f.isSale = true;
-          saleFixed++;
-        }
-      }
-      // Clean display name
-      f.name = cleanName(f.name);
-    }
+    const { saleFixed } = postprocessFlowers(data.flowers);
     if (saleFixed > 0) console.log(`[prebuild] Fixed ${saleFixed} sale flags from names`);
 
     // Write flowers.json
@@ -78,18 +50,7 @@ async function main() {
     Object.entries(tiers).forEach(([t, c]) => console.log(`  ${t}: ${c}`));
 
     // ── Post-process items: fix '$[object Object]' prices ──
-    let itemsFixed = 0;
-    for (const it of data.items) {
-      if (typeof it.price === 'string' && it.price.includes('[object')) {
-        // Price was mangled by parsePriceCell_ returning an object
-        // Try to extract from the raw price data
-        it.price = '';
-        itemsFixed++;
-      }
-      if (String(it.sku || '').includes('650') && /GALAXY GUMMIES 6000MG/i.test(it.name || '') && !it.image) {
-        it.image = '/products/640-641-GALAXY-6000.jpg';
-      }
-    }
+    const { itemsFixed } = postprocessItems(data.items);
     if (itemsFixed > 0) console.log(`[prebuild] Fixed ${itemsFixed} mangled item prices`);
 
     // Write items.json
