@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
 import AgeGate from "./components/AgeGate";
+import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.p60cannabis.com"),
@@ -126,9 +126,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <Link className="deliveryAnnouncement" href="/weed-delivery-york">
-          WEED DELIVERY IS HERE — CLICK TO EXPLORE
-        </Link>
+        <DeliveryAnnouncement />
         {children}
         <AgeGate />
       </body>
