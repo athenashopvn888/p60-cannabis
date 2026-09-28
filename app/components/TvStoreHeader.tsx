@@ -41,7 +41,7 @@ export default function TvStoreHeader({
         </div>
       </header>
       {tvStore.open24Hours7Days ? (
-        <div className={styles.hoursAlert}>NEW! NOW OPEN 24 HOURS</div>
+        <div className={styles.hoursAlert}>NOW OPEN 24 HOURS</div>
       ) : null}
     </div>
   );
