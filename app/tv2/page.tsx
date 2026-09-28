@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import styles from "./tv2.module.css";
+import { CIGARETTE_FLASH_MESSAGE, isCigaretteFlashWindow } from "../tv/flashMessages";
 import HiringRibbon from "../components/HiringRibbon";
 import TvStoreHeader from "../components/TvStoreHeader";
 import { tvHiring } from "../lib/tvHiring";
@@ -159,10 +160,18 @@ const TICKER_SLIDES = [
 function VerticalTicker() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [exitIdx, setExitIdx] = useState(-1);
+  const [showCigaretteFlash, setShowCigaretteFlash] = useState(() => isCigaretteFlashWindow());
+  const slides = showCigaretteFlash ? [...TICKER_SLIDES, CIGARETTE_FLASH_MESSAGE] : TICKER_SLIDES;
+
+  useEffect(() => {
+    const update = () => setShowCigaretteFlash(isCigaretteFlashWindow());
+    const iv = setInterval(update, 60_000);
+    return () => clearInterval(iv);
+  }, []);
   useEffect(() => {
     const iv = setInterval(() => {
       setExitIdx(activeIdx);
-      setActiveIdx(prev => (prev + 1) % TICKER_SLIDES.length);
+      setActiveIdx(prev => (prev + 1) % slides.length);
     }, 3000);
     return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,7 +180,7 @@ function VerticalTicker() {
   return (
     <div className={styles.ticker}>
       <div className={styles.tickerInner}>
-        {TICKER_SLIDES.map((text, i) => (
+        {slides.map((text, i) => (
           <div key={i} className={`${styles.tickerSlide} ${i===activeIdx?styles.tickerActive:""} ${i===exitIdx?styles.tickerExit:""}`}>
             {text}
           </div>
