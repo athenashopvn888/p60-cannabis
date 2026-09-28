@@ -690,7 +690,7 @@ function VerticalTicker() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [exitIdx, setExitIdx] = useState(-1);
   const [showCigaretteFlash, setShowCigaretteFlash] = useState(() => isCigaretteFlashWindow());
-  const slides = showCigaretteFlash ? [...TICKER_SLIDES, CIGARETTE_FLASH_MESSAGE] : TICKER_SLIDES;
+  const slides = showCigaretteFlash ? [CIGARETTE_FLASH_MESSAGE, ...TICKER_SLIDES] : TICKER_SLIDES;
 
   useEffect(() => {
     const update = () => setShowCigaretteFlash(isCigaretteFlashWindow());
