@@ -126,7 +126,7 @@ export default function HiringRibbon({ hiring }: { hiring: TvHiringConfig | null
             </span>
           );
         })}
-        <span className={styles.hiringStatic}>{messages.join("  •  ")}</span>
+        <span className={styles.hiringStatic}>{messages[activeIndex]}</span>
       </div>
     </div>
   );
