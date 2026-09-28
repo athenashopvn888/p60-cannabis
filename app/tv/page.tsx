@@ -72,17 +72,11 @@ function TypeTag({ type }: { type: string }) {
 }
 
 /* -- Vibe card -- */
-const VIBE_MAP: Record<string, [string,string][]> = {
-  indica: [["🌿","Indica"],["📦","Package Details"],["📋","Current Menu"]],
-  sativa: [["🌿","Sativa"],["📦","Package Details"],["📋","Current Menu"]],
-  hybrid: [["🌿","Hybrid"],["📦","Package Details"],["📋","Current Menu"]],
-};
 function VibeCard({ type }: { type: string }) {
-  const t = type?.toLowerCase();
-  const vibes = VIBE_MAP[t] || VIBE_MAP.hybrid;
+  const vibes = getFlowerEffects(type);
   return (
     <div className={styles.vibeSection}>
-      <div className={styles.vibeHead}>DETAILS</div>
+      <div className={styles.vibeHead}>EFFECTS</div>
       <div className={styles.vibePills}>
         {vibes.map(([emoji, label]) => (
           <span key={label} className={styles.vibePill}>
