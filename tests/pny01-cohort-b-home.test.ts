@@ -8,7 +8,7 @@ const navbar = fs.readFileSync("app/components/Navbar.tsx", "utf8");
 const navbarCss = fs.readFileSync("app/components/Navbar.module.css", "utf8");
 
 test("locked Cohort B title and paths", () => {
-  assert.equal(HOME_TITLE, "P60 Cannabis - Cannabis Delivery in York");
+  assert.equal(HOME_TITLE, "P60 Cannabis - Weed Delivery in York");
   assert.equal(HOME_MENU_HREF, "/exotic-weed");
   assert.equal(HOME_DELIVERY_HREF, "/delivery");
   assert.match(home, /\{HOME_TITLE\}/);
