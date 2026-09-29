@@ -487,5 +487,26 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 main:has(> [data-fleet-homepage-announcement]) > #main-nav {
-  top: calc(var(--delivery-announcement-height, 0px) + var(--fleet-homepage-announcement-height)) !important;
+  top: 0 !important;
+}
+
+body:has(#home-delivery-heading) {
+  padding-top: 0 !important;
+}
+
+body:has(#home-delivery-heading) #main-nav {
+  position: sticky !important;
+  top: 0 !important;
+}
+
+body:has(#home-delivery-heading) > .deliveryAnnouncement,
+body:has(#home-delivery-heading) > .deliveryHoursAnnouncement {
+  display: none !important;
+}
+
+body:has(#home-delivery-heading) main > .deliveryAnnouncement,
+body:has(#home-delivery-heading) main > .deliveryHoursAnnouncement {
+  position: static !important;
+  inset: auto !important;
+  display: flex !important;
 }

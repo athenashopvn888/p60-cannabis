@@ -1,4 +1,8 @@
 "use client";
+import { HOME_TITLE } from "./lib/homeDelivery";
+import CohortDeliveryActions from "./components/CohortDeliveryActions";
+import HomeDeliverySection from "./components/HomeDeliverySection";
+import HomepageTopNotices from "./components/HomepageTopNotices";
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
@@ -200,10 +204,12 @@ export default function HomePage() {
 
   return (
     <main className={styles.main}>
+      <Navbar />
+      <HomepageTopNotices />
       <FleetAnnouncementBanner />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
       {/* ── NAVBAR ── */}
-      <Navbar />
+
       <HiringCallout />
 
       {/* ── BENTO MOSAIC HERO ── */}
@@ -218,7 +224,8 @@ export default function HomePage() {
               <div className={styles.brandBlock}>
                 <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" className={styles.brandLogo} />
                 <span className={styles.deliveryKicker}>1938 Weston Rd / York</span>
-                <h1 className={styles.brandTitle}>P60 Cannabis</h1>
+                <h1 className={styles.brandTitle}>{HOME_TITLE}</h1>
+            <CohortDeliveryActions variant="hero" />
                 <p className={styles.brandSub}>A 24-hour cannabis store at 1938 Weston Rd in York, Ontario. Visit us any time or explore the site for store information, cannabis categories and delivery details.</p>
                 <div className={styles.brandBadge}>Open 24 hours</div>
               </div>
@@ -292,6 +299,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <HomeDeliverySection />
 
       {/* ── EXPLORE CATEGORIES ── */}
       <section className={styles.categoriesSection} id="menu">
