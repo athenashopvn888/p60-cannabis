@@ -1,0 +1,12 @@
+.section { color: #f8fafc; background: linear-gradient(145deg, #07110b, #020617 62%, #171008); padding: 64px 20px; border-top: 1px solid rgba(251,191,36,.25); border-bottom: 1px solid rgba(251,191,36,.18); }
+.inner { width: min(100%, 1080px); margin: 0 auto; }
+.inner h2 { margin: 0 0 18px; color: #fbbf24; font-size: clamp(28px, 5vw, 48px); line-height: 1.08; }
+.inner > p { max-width: 850px; color: #d1d5db; font-size: 16px; line-height: 1.75; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 12px; margin: 28px 0 34px; }
+.card { display: flex; min-height: 120px; flex-direction: column; gap: 8px; justify-content: center; border: 1px solid rgba(251,191,36,.32); border-radius: 14px; padding: 18px; color: #fff; background: rgba(255,255,255,.055); text-decoration: none; }
+.card strong { color: #fbbf24; }
+.card span { color: #d1d5db; line-height: 1.5; }
+.inner h3 { margin: 0 0 14px; font-size: 24px; }
+.inner details { border-top: 1px solid rgba(255,255,255,.15); padding: 14px 0; }
+.inner summary { cursor: pointer; color: #fff; font-weight: 800; }
+.inner details p { margin: 10px 0 0; color: #d1d5db; line-height: 1.6; }

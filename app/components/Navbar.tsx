@@ -1,4 +1,5 @@
 "use client";
+import CohortDeliveryActions from "./CohortDeliveryActions";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -145,6 +146,7 @@ export default function Navbar() {
           </button>
         )}
       </div>
+      <CohortDeliveryActions />
     </nav>
   );
 }
