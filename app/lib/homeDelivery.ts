@@ -1,4 +1,4 @@
-export const HOME_TITLE = "P60 Cannabis - Weed Delivery in York";
+export const HOME_TITLE = "P60 Cannabis Dispensary - Weed Delivery in York";
 export const HOME_MENU_HREF = "/exotic-weed";
 export const HOME_DELIVERY_HREF = "/delivery";
 export const HOME_DELIVERY_H2 = "Cannabis Delivery in York";
