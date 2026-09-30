@@ -1,7 +1,6 @@
 import { HOME_TITLE } from "./lib/homeDelivery";
 import type { Metadata } from "next";
 import "./globals.css";
-import AgeGate from "./components/AgeGate";
 import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
 
 export const metadata: Metadata = {
@@ -129,7 +128,6 @@ export default function RootLayout({
       <body>
         <DeliveryAnnouncement />
         {children}
-        <AgeGate />
       </body>
     </html>
   );
