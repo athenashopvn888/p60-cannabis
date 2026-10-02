@@ -26,6 +26,7 @@ const ALL_LINKS = [
   { href: "/visit", label: "Visit" },
   { href: "/faq", label: "FAQ" },
   { href: "/resources", label: "Resources" },
+  { href: "/guides", label: "Guides" },
 ];
 
 export default function Navbar() {
