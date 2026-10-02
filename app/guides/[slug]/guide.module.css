@@ -20,3 +20,12 @@
 
 
 
+
+.body > :first-child { margin-top: 0; }
+.body > :last-child { margin-bottom: 0; }
+.body h2 { margin: 34px 0 14px; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -.02em; }
+.body h3 { margin: 24px 0 10px; font-size: clamp(1.08rem, 2vw, 1.3rem); }
+.body p, .body li { color: #46534b; line-height: 1.75; }
+.body p { margin: 0 0 16px; }
+.body ul { display: grid; gap: 8px; margin: 0 0 20px; padding-left: 22px; }
+.body strong { color: #172019; }
