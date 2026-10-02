@@ -124,6 +124,19 @@ export default async function ResourceRoute({
             ))}
           </div>
 
+          {page.kind === "root" && (
+            <section className={styles.cardsSection}>
+              <h2>Name Guides</h2>
+              <div className={styles.cardGridCompact}>
+                <Link href="/guides" className={styles.resourceCard}>
+                  <span className={styles.cardKicker}>Name Guides</span>
+                  <h3>Strains, Native Cigarettes &amp; Vape Guides</h3>
+                  <p>Browse all strain, Native Cigarettes, Nicotine Vape, and THC Vape name guides in one directory.</p>
+                </Link>
+              </div>
+            </section>
+          )}
+
           {children.length > 0 && (
             <ResourceCards
               title={page.kind === "root" ? "Choose a Resource Lane" : "Guides in This Lane"}

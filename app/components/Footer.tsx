@@ -55,6 +55,7 @@ export default function Footer() {
               <Link href="/items/vapes">Nicotine Vape</Link>
               <Link href="/items/vape-disposables">THC Vape</Link>
               <Link href="/resources">Resources</Link>
+              <Link href="/guides">Guides</Link>
               <Link href="/faq">FAQ</Link>
               <Link href="/weed-dispensary-york">York Store Details</Link>
               <Link href="/info/native-cigarettes-york">Native Cigarettes</Link>
