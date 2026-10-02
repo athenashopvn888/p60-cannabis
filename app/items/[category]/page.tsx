@@ -14,6 +14,8 @@ import {
   type ItemProduct,
 } from "../../lib/products";
 import styles from "./items.module.css";
+import { getCategoryGuideGroups } from "../../lib/guideRegistry";
+import guideStyles from "../../guides/[slug]/guide.module.css";
 
 /* ── Generate all category pages ── */
 export function generateStaticParams() {
@@ -58,6 +60,7 @@ export default async function ItemsCategoryPage({
     items = [...items, ...uniqueAccessories];
   }
   const { config } = catInfo;
+  const guideGroups = getCategoryGuideGroups(`/items/${config.slug}`);
 
   // Check if banner file exists in the public folder
   const bannerExists = config.banner
@@ -105,6 +108,8 @@ export default async function ItemsCategoryPage({
           )}
         </div>
       </section>
+
+      {guideGroups.map((group) => group.guides.length > 0 && <section key={group.label} className={`${styles.container} ${guideStyles.guideStrip}`} aria-label={group.label}><h2>{group.label}</h2><div className={guideStyles.guideLinks}>{group.guides.map((guide) => <Link key={guide.slug} href={`/guides/${guide.slug}`}>{guide.name}</Link>)}</div></section>)}
 
       {/* SEO Content */}
       <section className={styles.seoSection}>
