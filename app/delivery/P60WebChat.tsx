@@ -10,7 +10,7 @@ type Message = { id: string; direction: "inbound" | "outbound"; body: string; at
 type Review = { id: string; status: string; receivedAt: number; expiresAt: number };
 type CustomerIntent = "NEW_CUSTOMER" | "RETURNING_CUSTOMER";
 type Conversation = { id: string; messages: Message[]; idReviews?: Review[]; customerIntent?: CustomerIntent; customerNumberMasked?: string; phoneVersion?: number; intakeCycleId?: string | null; intakeCycleDate?: string | null; intakeCycleSequence?: number };
-type Availability = { state: "AVAILABLE" | "PAUSED"; message: string | null; resumeAt: number | null };
+type Availability = { state: "AVAILABLE" | "PAUSED"; message: string | null; mapUrl?: string | null; resumeAt: number | null };
 type UploadState = "idle" | "preparing" | "uploading" | "sent" | "error";
 
 async function payload(response: Response) {
@@ -314,6 +314,7 @@ export default function P60WebChat() {
       <div className={`sod-availability-banner ${paused ? "paused" : "unavailable"}`} role="status" hidden={!statusMessage}>
         <strong>{paused ? "New delivery chats are paused" : "Delivery status unavailable"}</strong>
         <span>{statusMessage}{token ? " Your existing chat remains open." : ""}</span>
+        {paused && availability?.mapUrl && <a href={availability.mapUrl} target="_blank" rel="noopener noreferrer">Map to store</a>}
       </div>
       {!token ? (!availability || availability.state !== "AVAILABLE" ? <div className="sod-chat-start sod-chat-paused">
         <p>{statusMessage || "Checking delivery availability..."}</p>
