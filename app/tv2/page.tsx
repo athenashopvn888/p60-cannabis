@@ -244,8 +244,10 @@ export default function TV2Page() {
   const fitToScreen = useCallback(() => {
     if (!wrapRef.current) return;
     const W = window.innerWidth, H = window.innerHeight;
-    const s = Math.min(W/3840, H/2160);
-    const tx = Math.round((W - 3840*s)/2);
+    const reviewQrSafeArea = Math.min(184, Math.max(112, Math.round(W * 0.1)));
+    const availableW = Math.max(1, W - reviewQrSafeArea);
+    const s = Math.min(availableW/3840, H/2160);
+    const tx = Math.round((availableW - 3840*s)/2);
     const ty = Math.round((H - 2160*s)/2);
     wrapRef.current.style.transform = `translate(${tx}px,${ty}px) scale(${s})`;
   }, []);
