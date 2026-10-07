@@ -1,13 +1,13 @@
 .card {
   position: relative;
   z-index: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
   flex: 0 0 auto;
-  padding: 8px;
+  padding: 7px;
   overflow: hidden;
   border: 0;
   border-radius: 12px;
@@ -39,8 +39,22 @@
 
 @keyframes reviewQrChase { to { transform: rotate(1turn); } }
 
-.image { display: block; width: 100%; height: auto; border-radius: 5px; }
-.note { margin: 0; color: #000; font-size: 17px; font-weight: 900; line-height: 1.05; text-align: center; }
+.image {
+  display: block;
+  width: min(100%, 260px);
+  height: auto;
+  border-radius: 5px;
+  image-rendering: pixelated;
+}
+
+.note {
+  margin: 0;
+  color: #000;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .card::before { animation: none; }
