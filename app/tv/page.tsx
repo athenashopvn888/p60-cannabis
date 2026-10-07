@@ -9,6 +9,9 @@ import HiringRibbon from "../components/HiringRibbon";
 import TvStoreHeader from "../components/TvStoreHeader";
 import { tvHiring } from "../lib/tvHiring";
 import { formatBoardTime, readStockUpdatedAt } from "../lib/tvStockTime";
+import TvThemeArtwork from "../tv-theme/TvThemeArtwork";
+import { getTvTheme, getTvThemeVariables } from "../tv-theme/theme";
+import TvReviewQr from "../TvReviewQr";
 
 /* -- Types -- */
 interface PricePoint { regular: number; sale: number | null; }
@@ -671,6 +674,7 @@ function AddOnsCard({ items, hiIdx }: { items: Item[]; hiIdx: number }) {
             </div>
           ))}
         </div>
+        <TvReviewQr storeName="P60 Cannabis" />
       </div>
     </div>
   );
@@ -724,6 +728,7 @@ function VerticalTicker() {
    MAIN TV PAGE
    ============================================================ */
 export default function TVMenuPage() {
+  const theme = getTvTheme(tvHiring?.store);
   const [bgUrl, setBgUrl] = useState("");
   useEffect(() => {
     fetch("https://athena-cannabis-images.vercel.app/backgrounds/list.json")
@@ -855,7 +860,12 @@ export default function TVMenuPage() {
   };
 
   return (
-    <div className={styles.tvPage} style={bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}>
+    <div
+      className={styles.tvPage}
+      data-tv-themed={theme ? "true" : undefined}
+      style={theme ? getTvThemeVariables(theme) : bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}
+    >
+      <TvThemeArtwork theme={theme} />
       {/* Floating particles */}
       <div className={styles.particles}>
         {particles.map((p, i) => (
