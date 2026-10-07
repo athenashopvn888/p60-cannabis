@@ -2,7 +2,7 @@ export const TV2_DAYTIME_START_HOUR = 10;
 export const TV2_DAYTIME_END_HOUR = 17;
 
 export const CIGARETTE_OFFER_CYCLE_MS = 30_000;
-export const CIGARETTE_OFFER_VISIBLE_FROM_MS = 20_000;
+export const CIGARETTE_OFFER_VISIBLE_MS = 5_000;
 
 export type Tv2DaytimePromo = {
   src: string;
@@ -10,13 +10,20 @@ export type Tv2DaytimePromo = {
   alt: string;
 };
 
+export const CIGARETTE_PROMOS = [
+  {
+    src: "/banners/luxury_mix_match_600_web.webp",
+    alt: "Mix and Match 2 Packs for $5 and $25 Carton Offer",
+  },
+  {
+    src: "/banners/marlboro_belmont_600x600.webp",
+    alt: "Marlboro and Belmont $10 Pack Offer",
+  },
+] as const;
+
 export const TV2_DAYTIME_PROMOS: Readonly<
   Partial<Record<string, Tv2DaytimePromo>>
 > = {
-  CIGARETTES: {
-    src: "/banners/cig-poster-1.png",
-    alt: "Cigarettes Promo",
-  },
   VAPES: {
     src: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/cannabis_banner_mashup_variation_01_600x600.webp",
     fallbackSrc:
@@ -38,12 +45,14 @@ export function getTv2DaytimePromo(
 }
 
 export function isCigaretteOfferVisible(
-  daytime: boolean,
   elapsedMs: number,
 ): boolean {
-  if (daytime || !Number.isFinite(elapsedMs) || elapsedMs < 0) return false;
-  return (
-    elapsedMs % CIGARETTE_OFFER_CYCLE_MS >=
-    CIGARETTE_OFFER_VISIBLE_FROM_MS
-  );
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return false;
+  return elapsedMs % CIGARETTE_OFFER_CYCLE_MS < CIGARETTE_OFFER_VISIBLE_MS;
+}
+
+export function getCigaretteOfferPromo(elapsedMs: number) {
+  if (!isCigaretteOfferVisible(elapsedMs)) return undefined;
+  const cycle = Math.floor(elapsedMs / CIGARETTE_OFFER_CYCLE_MS);
+  return CIGARETTE_PROMOS[cycle % CIGARETTE_PROMOS.length];
 }
