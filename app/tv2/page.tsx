@@ -10,14 +10,15 @@ import TvThemeArtwork from "../tv-theme/TvThemeArtwork";
 import { getTvTheme, getTvThemeVariables } from "../tv-theme/theme";
 import {
   getTv2DaytimePromo,
-  isCigaretteOfferVisible,
+  getCigaretteOfferPromo,
   isTv2Daytime,
+  type Tv2DaytimePromo,
 } from "./tv2Promos";
 
 /* -- TYPES -- */
 interface Item {
   sku: string; name: string; category: string;
-  type?: string; thc?: string; mg?: string; price?: string; image?: string; isSale?: boolean;
+  type?: string; thc?: string; mg?: string; price?: string; image?: string; isSale?: boolean; promoImage?: string | null;
 }
 
 /* -- CATEGORY CONFIG -- */
@@ -35,9 +36,23 @@ const fmtPrice = (v?:string) => { const s=String(v||"").trim(); if(!s)return""; 
 const fmtTHC = (v?:string) => { const s=String(v||"").trim(); if(!s)return""; if(/^\d+(\.\d+)?%?$/.test(s)){const n=parseFloat(s);return(n<=1?Math.round(n*100):Math.round(n))+"%";}return s; };
 const fmtMG = (v?:string) => { const s=String(v||"").trim(); if(!s)return""; if(/^\d+(\.\d+)?$/.test(s))return s+"mg"; return s; };
 
+const hasCartonFlash = (item?: Item) =>
+  item?.category === "CIGARETTES" &&
+  item.promoImage === "CIG_2_FOR_5" &&
+  Number(String(item.price || "").replace(/[^0-9.]/g, "")) === 25;
+
+function CigarettePriceFlash() {
+  return (
+    <span className={styles.cigarettePriceFlash} aria-label="$25 carton, 2 packs $5">
+      <span aria-hidden="true">$25 CARTON</span>
+      <span aria-hidden="true">2 PACKS $5</span>
+    </span>
+  );
+}
+
 /* -- ITEM CARD -- */
-function ItemCard({ title, accent, items, hiIdx, preset, offerOverlay = false }: {
-  title:string; accent:string; items:Item[]; hiIdx:number; preset:string; offerOverlay?:boolean;
+function ItemCard({ title, accent, items, hiIdx, preset, offerPromo }: {
+  title:string; accent:string; items:Item[]; hiIdx:number; preset:string; offerPromo?:Tv2DaytimePromo;
 }) {
   const MAX = 10;
   const hiW = Math.min(hiIdx % Math.max(1, items.length), items.length - 1);
@@ -66,7 +81,7 @@ function ItemCard({ title, accent, items, hiIdx, preset, offerOverlay = false }:
   if (hi?.price) metaParts.push(fmtPrice(hi.price));
 
   return (
-    <div className={styles.card} style={{"--accent":accent} as React.CSSProperties}>
+    <div className={`${styles.card} ${offerPromo ? styles.timedPromoCard : ""}`} style={{"--accent":accent} as React.CSSProperties}>
       <div className={styles.cardHeader}>{title}</div>
       <div className={styles.cardMain}>
         {/* LEFT */}
@@ -100,7 +115,11 @@ function ItemCard({ title, accent, items, hiIdx, preset, offerOverlay = false }:
                 {metaParts.map((p,i) => (
                   <span key={i}>
                     {i > 0 && <span className={styles.detailSep}> · </span>}
-                    <span className={p===fmtTHC(hi?.thc)?styles.detailThc:undefined} style={p===fmtPrice(hi?.price)?{fontWeight:900}:undefined}>{p}</span>
+                    {p === fmtPrice(hi?.price) && hasCartonFlash(hi) ? (
+                      <CigarettePriceFlash />
+                    ) : (
+                      <span className={p===fmtTHC(hi?.thc)?styles.detailThc:undefined} style={p===fmtPrice(hi?.price)?{fontWeight:900}:undefined}>{p}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -131,18 +150,20 @@ function ItemCard({ title, accent, items, hiIdx, preset, offerOverlay = false }:
                     {it.thc && <span className={styles.submeta}> · {fmtTHC(it.thc)}</span>}
                     {it.mg && <span className={styles.submeta}> · {fmtMG(it.mg)}</span>}
                   </div>
-                  <div className={styles.mcPrice}>{fmtPrice(it.price)}</div>
+                  <div className={styles.mcPrice}>
+                    {hasCartonFlash(it) ? <CigarettePriceFlash /> : fmtPrice(it.price)}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
       </div>
-      {offerOverlay && (
-        <div className={styles.timedPromoOverlay} aria-label="Mix and Match 2 Pack $5 Cigarette Offer">
+      {offerPromo && (
+        <div className={styles.timedPromoOverlay} aria-label={offerPromo.alt}>
           <img
-            src="/banners/2pack5cig.webp"
-            alt="Mix and Match 2 Pack $5 Cigarette Offer"
+            src={offerPromo.src}
+            alt={offerPromo.alt}
           />
         </div>
       )}
@@ -212,7 +233,7 @@ export default function TV2Page() {
   const [lastUpdate, setLastUpdate] = useState("");
   const [stockUpdated, setStockUpdated] = useState<string | null>(null);
   const [daytime, setDaytime] = useState(() => isTv2Daytime());
-  const [cigaretteOfferVisible, setCigaretteOfferVisible] = useState(false);
+  const [cigaretteOfferPromo, setCigaretteOfferPromo] = useState<Tv2DaytimePromo | undefined>();
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -223,10 +244,9 @@ export default function TV2Page() {
   useEffect(() => {
     const startedAt = performance.now();
     const updateOffer = () => {
-      setCigaretteOfferVisible(
-        isCigaretteOfferVisible(isTv2Daytime(), performance.now() - startedAt),
-      );
+      setCigaretteOfferPromo(getCigaretteOfferPromo(performance.now() - startedAt));
     };
+    updateOffer();
     const iv = setInterval(updateOffer, 250);
     return () => clearInterval(iv);
   }, []);
@@ -254,10 +274,17 @@ export default function TV2Page() {
   }, []);
 
   useEffect(() => {
-    loadData(); fitToScreen();
+    const initialLoad = window.requestAnimationFrame(() => {
+      void loadData();
+      fitToScreen();
+    });
     window.addEventListener("resize", fitToScreen);
     const refresh = setInterval(loadData, 5*60*1000);
-    return () => { window.removeEventListener("resize", fitToScreen); clearInterval(refresh); };
+    return () => {
+      window.cancelAnimationFrame(initialLoad);
+      window.removeEventListener("resize", fitToScreen);
+      clearInterval(refresh);
+    };
   }, [loadData, fitToScreen]);
 
   useEffect(() => {
@@ -329,7 +356,7 @@ export default function TV2Page() {
               return (
                 <ItemCard key={card.id} title={card.title} accent={card.accent}
                   items={filtered} hiIdx={highlights[card.id]||0} preset={card.preset}
-                  offerOverlay={card.id === "CIGARETTES" && cigaretteOfferVisible} />
+                  offerPromo={card.id === "CIGARETTES" ? cigaretteOfferPromo : undefined} />
               );
             })}
           </div>
