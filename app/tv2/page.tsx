@@ -6,6 +6,8 @@ import HiringRibbon from "../components/HiringRibbon";
 import TvStoreHeader from "../components/TvStoreHeader";
 import { tvHiring } from "../lib/tvHiring";
 import { formatBoardTime, readStockUpdatedAt } from "../lib/tvStockTime";
+import TvThemeArtwork from "../tv-theme/TvThemeArtwork";
+import { getTvTheme, getTvThemeVariables } from "../tv-theme/theme";
 import {
   getTv2DaytimePromo,
   isCigaretteOfferVisible,
@@ -192,6 +194,7 @@ function VerticalTicker() {
 
 /* -- MAIN TV2 PAGE -- */
 export default function TV2Page() {
+  const theme = getTvTheme(tvHiring?.store);
   const [bgUrl, setBgUrl] = useState("");
   useEffect(() => {
     fetch("https://athena-cannabis-images.vercel.app/backgrounds/list.json")
@@ -273,7 +276,12 @@ export default function TV2Page() {
   }, [items]);
 
   return (
-    <div className={styles.tvPage} style={bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}>
+    <div
+      className={styles.tvPage}
+      data-tv-themed={theme ? "true" : undefined}
+      style={theme ? getTvThemeVariables(theme) : bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: "cover" } : undefined}
+    >
+      <TvThemeArtwork theme={theme} />
       <div className={styles.wrap} ref={wrapRef}>
         <TvStoreHeader eyebrow="Secondary Menu Board" stockUpdated={stockUpdated} />
 

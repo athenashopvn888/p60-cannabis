@@ -99,3 +99,25 @@
   letter-spacing: 3px;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
+
+:global([data-tv-themed="true"]) .header {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--tv-theme-header-text);
+  background-color: var(--tv-theme-primary);
+  background-image: var(--tv-theme-header-image);
+  background-repeat: no-repeat;
+  background-position: center 52%;
+  background-size: cover;
+  border-color: var(--tv-theme-card-border);
+  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.42), 0 0 30px var(--tv-theme-glow);
+}
+
+:global([data-tv-themed="true"]) .header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(3, 24, 17, 0.88), rgba(3, 24, 17, 0.18) 44%, rgba(3, 24, 17, 0.78));
+}

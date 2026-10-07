@@ -1112,8 +1112,11 @@
 }
 
 .addonsList {
-  flex:1 1 auto; overflow:hidden; min-height:0;
+  flex:1 1 auto; overflow:auto; min-height:0;
+  scrollbar-width:none;
 }
+
+.addonsList::-webkit-scrollbar { display:none; }
 
 .addonPriceCol {
   font-weight:900; font-size:20px; color:#16a34a;
@@ -1422,4 +1425,44 @@
 .vibeSection {
   margin-top: 6px;
   padding: 6px 10px;
+}
+
+/* Shared data-driven TV theme layer. Unthemed stores never receive this attribute. */
+.tvPage[data-tv-themed="true"] {
+  background-color: var(--tv-theme-primary);
+  background-image: var(--tv-theme-background-image) !important;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover !important;
+}
+
+.tvPage[data-tv-themed="true"]::before {
+  background: linear-gradient(180deg, rgba(2, 22, 15, 0.08), rgba(2, 22, 15, 0.42));
+}
+
+.tvPage[data-tv-themed="true"] .wrap {
+  z-index: 2;
+  padding-bottom: 140px;
+}
+
+.tvPage[data-tv-themed="true"] .stage {
+  background: rgba(3, 30, 21, 0.48);
+  border-color: var(--tv-theme-card-border);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.5), 0 0 36px var(--tv-theme-glow);
+}
+
+.tvPage[data-tv-themed="true"] .card {
+  outline: 3px solid var(--tv-theme-card-border);
+  outline-offset: -1px;
+  filter: drop-shadow(0 0 14px var(--tv-theme-glow));
+}
+
+.tvPage[data-tv-themed="true"] .tierExotic .cardHeader,
+.tvPage[data-tv-themed="true"] .tierPremium .cardHeader,
+.tvPage[data-tv-themed="true"] .tierAaa .cardHeader,
+.tvPage[data-tv-themed="true"] .tierAa .cardHeader,
+.tvPage[data-tv-themed="true"] .tierBudget .cardHeader,
+.tvPage[data-tv-themed="true"] .tierOz .cardHeader,
+.tvPage[data-tv-themed="true"] .cardAddons .cardHeader {
+  background: linear-gradient(120deg, var(--tv-theme-primary) 0%, #032f29 34%, var(--tv-theme-accent) 72%, var(--tv-theme-primary) 100%) !important;
 }

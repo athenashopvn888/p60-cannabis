@@ -1,0 +1,47 @@
+.card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex: 0 0 auto;
+  padding: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 24%);
+  line-height: 0;
+  pointer-events: none;
+  isolation: isolate;
+  box-sizing: border-box;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: -55%;
+  z-index: -2;
+  background: conic-gradient(from 0deg, #e10600 0deg 80deg, #1db954 90deg 170deg, #e10600 180deg 260deg, #1db954 270deg 350deg, #e10600 360deg);
+  animation: reviewQrChase 2s linear infinite;
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  z-index: -1;
+  border-radius: 9px;
+  background: #fff;
+}
+
+@keyframes reviewQrChase { to { transform: rotate(1turn); } }
+
+.image { display: block; width: 100%; height: auto; border-radius: 5px; }
+.note { margin: 0; color: #000; font-size: 17px; font-weight: 900; line-height: 1.05; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card::before { animation: none; }
+}
