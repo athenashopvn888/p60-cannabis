@@ -101,7 +101,7 @@ test("live success post-processes stock and reports live headers", async () => {
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `${DEFAULT_APPS_SCRIPT_URL}?store=PNY01`);
-  assert.equal(calls[0].opts.next.revalidate, 300);
+  assert.equal(calls[0].opts.cache, "no-store");
   assert.equal(calls[0].opts.signal.aborted, false);
   assert.equal(flowerRes.headers["x-tv-data-source"], "live");
   assert.equal(flowerRes.headers["x-tv-data-as-of"], "2026-09-26");
@@ -154,6 +154,7 @@ test("fetch failure returns the static snapshot", async () => {
   assert.equal(result.headers["x-tv-data-flower-count"], String(staticFlowers.length));
   assert.equal(result.headers["x-tv-data-item-count"], String(staticItems.length));
   assert.equal(result.headers["Cache-Control"], "no-store");
+  assert.match(result.headers["x-tv-data-fallback-reason"], /fetch failed: network down/);
   assert.equal(result.body, staticFlowers);
   assert.ok(result.body.length > 0);
 
@@ -189,6 +190,7 @@ test("partial, empty, or invalid live stock falls back to the static snapshot", 
   assert.equal(partial.body, staticFlowers);
   assert.equal(partial.headers["x-tv-data-flower-count"], String(staticFlowers.length));
 
+  resetTvStockCache();
   const partialItems = await getTvData({
     type: "items",
     staticFlowers,
@@ -203,6 +205,7 @@ test("partial, empty, or invalid live stock falls back to the static snapshot", 
   assert.equal(partialItems.body, staticItems);
   assert.equal(partialItems.headers["x-tv-data-source"], "static-fallback");
 
+  resetTvStockCache();
   const empty = await getTvData({
     type: "items",
     staticFlowers,
@@ -213,6 +216,7 @@ test("partial, empty, or invalid live stock falls back to the static snapshot", 
   assert.equal(empty.body, staticItems);
   assert.ok(empty.body.length > 0);
 
+  resetTvStockCache();
   const invalid = await getTvData({
     type: "flowers",
     staticFlowers,
@@ -223,6 +227,7 @@ test("partial, empty, or invalid live stock falls back to the static snapshot", 
   assert.equal(invalid.body, staticFlowers);
   assert.equal(invalid.headers["x-tv-data-source"], "static-fallback");
 
+  resetTvStockCache();
   const exactHalf = Math.ceil(staticFlowers.length * 0.5);
   const accepted = await getTvData({
     type: "flowers",
@@ -237,6 +242,42 @@ test("partial, empty, or invalid live stock falls back to the static snapshot", 
   });
   assert.equal(accepted.headers["x-tv-data-source"], "live");
   assert.equal(accepted.body.length, exactHalf);
+});
+
+test("HTTP 200 HTML, 429, and throws serve last-good with reason and cooldown", async () => {
+  const goodFlowers = list(57, (index) => flower(`GOOD ${index}`));
+  const goodItems = list(56, (index) => item(`GOOD ITEM ${index}`));
+
+  for (const failure of [
+    mockFetch(new SyntaxError("Unexpected token '<', HTML error")),
+    mockFetch(null, { ok: false, status: 429 }),
+    mockFetch(null, { throwError: new Error("network down") }),
+  ]) {
+    resetTvStockCache();
+    const seed = await getTvData({
+      type: "flowers", staticFlowers, staticItems,
+      fetchImpl: mockFetch({ flowers: goodFlowers, items: goodItems, stockDate: "2026-10-08" }).fetchImpl,
+      now: 1_000,
+    });
+    assert.equal(seed.headers["x-tv-data-source"], "live");
+
+    let now = 302_000;
+    const failed = await getTvData({ type: "flowers", staticFlowers, staticItems, fetchImpl: failure.fetchImpl, now });
+    assert.equal(failed.headers["x-tv-data-source"], "last-good");
+    assert.equal(failed.headers["x-tv-data-as-of"], "2026-10-08");
+    assert.ok(failed.headers["x-tv-data-fallback-reason"]);
+    assert.equal(failed.body.length, 57);
+    assert.equal(failure.calls.length, 1);
+
+    now += 30_000;
+    const cooled = await getTvData({ type: "flowers", staticFlowers, staticItems, fetchImpl: failure.fetchImpl, now });
+    assert.equal(cooled.headers["x-tv-data-source"], "last-good");
+    assert.equal(failure.calls.length, 1);
+
+    now += 31_000;
+    await getTvData({ type: "flowers", staticFlowers, staticItems, fetchImpl: failure.fetchImpl, now });
+    assert.equal(failure.calls.length, 2);
+  }
 });
 
 test("prebuild uses the shared post-processor", () => {
