@@ -254,7 +254,7 @@ export default function HomePage() {
               >
                 <Image
                   src={welcomeBannerSrc}
-                  alt="P60 Cannabis Weed Delivery banner"
+                  alt="P60 Cannabis Dispensary Weed Delivery"
                   width={1774}
                   height={887}
                   priority

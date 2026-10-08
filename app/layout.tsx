@@ -58,7 +58,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Store",
   "@id": "https://www.p60cannabis.com/#store",
-  name: "P60 Cannabis",
+  name: "P60 Cannabis Dispensary Weed Delivery",
   url: "https://www.p60cannabis.com/",
   telephone: "+1-289-217-2763",
   address: {
