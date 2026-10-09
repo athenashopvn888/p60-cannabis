@@ -1,4 +1,4 @@
-import { HOME_TITLE } from "./lib/homeDelivery";
+import { HOME_DOC_TITLE } from "./lib/homeDelivery";
 import type { Metadata } from "next";
 import "./globals.css";
 import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
@@ -6,7 +6,7 @@ import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.p60cannabis.com"),
   title: {
-    default: HOME_TITLE,
+    default: HOME_DOC_TITLE,
     template: "%s | P60 Cannabis",
   },
   description:
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     locale: "en_CA",
     url: "https://www.p60cannabis.com/",
     siteName: "P60 Cannabis",
-    title: HOME_TITLE,
+    title: HOME_DOC_TITLE,
     description:
       "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: [
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: HOME_TITLE,
+    title: HOME_DOC_TITLE,
     description: "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: ["https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
@@ -69,6 +69,7 @@ const jsonLd = {
     postalCode: "M9N 1W2",
     addressCountry: "CA",
   },
+  geo: { "@type": "GeoCoordinates", latitude: 43.70044, longitude: -79.51779 },
   openingHoursSpecification: [
   {
     "@type": "OpeningHoursSpecification",
