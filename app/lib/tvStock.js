@@ -69,13 +69,35 @@ function postprocessItems(items) {
 }
 
 function resolveAppsScriptUrl(explicit) {
-  const raw = explicit != null ? String(explicit) : String(process.env.APPS_SCRIPT_URL || "");
+  const raw = explicit != null ? String(explicit) : String(process.env.MENU_FEED_URL || "");
   const trimmed = raw.trim();
   return trimmed || DEFAULT_APPS_SCRIPT_URL;
 }
 
 function stockEndpoint(baseUrl) {
   return `${baseUrl}?store=${TV_STORE}`;
+}
+
+// Menu freshness (Grok 2026-10-08). The feed URL is read ONLY from MENU_FEED_URL (default = shared feed);
+// the legacy APPS_SCRIPT_URL env is ignored so it can never point TVs at an old Gmail-per-request script again.
+// x-tv-data-stale = "1" when the stock being served is older than 48 h (or a bundled snapshot of unknown age),
+// so /tv and /tv2 can show a small "Menu updating" notice instead of silently serving old stock.
+const MENU_STALE_MS = 48 * 60 * 60 * 1000;
+let STATIC_STOCK_META = {};
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  STATIC_STOCK_META = require("./stock-meta.json");
+} catch {
+  STATIC_STOCK_META = {};
+}
+
+function menuStaleFlag(dataset, now = Date.now()) {
+  const date =
+    dataset.stockDate ||
+    (dataset.source === "static-fallback" ? String(STATIC_STOCK_META.stockDate || "") : "");
+  const t = Date.parse(date || "");
+  if (!Number.isFinite(t)) return dataset.source === "live" ? "0" : "1";
+  return now - t > MENU_STALE_MS ? "1" : "0";
 }
 
 function staticDataset(staticFlowers, staticItems) {
@@ -128,6 +150,8 @@ function selectTvPayload(dataset, type) {
       "x-tv-data-flower-count": String(dataset.flowers.length),
       "x-tv-data-item-count": String(dataset.items.length),
       ...(dataset.fallbackReason ? { "x-tv-data-fallback-reason": dataset.fallbackReason } : {}),
+      "x-tv-data-stale": menuStaleFlag(dataset),
+      "x-tv-data-snapshot-as-of": String(STATIC_STOCK_META.stockDate || ""),
       "Cache-Control": "no-store",
     },
   };

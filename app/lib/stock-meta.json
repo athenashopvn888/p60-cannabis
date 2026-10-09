@@ -1,0 +1,5 @@
+{
+  "stockDate": "",
+  "fetchedAt": "",
+  "note": "Written by scripts/prebuild-stock.js on each successful build-time feed fetch."
+}

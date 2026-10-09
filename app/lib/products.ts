@@ -41,7 +41,11 @@ export const allFlowers: FlowerProduct[] = flowersJson as FlowerProduct[];
 export const allItems: ItemProduct[] = itemsJson as ItemProduct[];
 
 /* Live stock fetch from Apps Script */
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "";
+// Shared fleet menu feed (no Gmail on requests). Read ONLY from MENU_FEED_URL; the legacy
+// APPS_SCRIPT_URL env is ignored on purpose (it pointed at old Gmail-per-request scripts).
+const APPS_SCRIPT_URL =
+  (process.env.MENU_FEED_URL || "").trim() ||
+  "https://script.google.com/macros/s/AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4/exec";
 
 interface LiveStockResponse {
   flowers: FlowerProduct[];
