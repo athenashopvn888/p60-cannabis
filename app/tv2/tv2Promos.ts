@@ -27,8 +27,8 @@ export const TV2_DAYTIME_PROMOS: Readonly<
   Partial<Record<string, Tv2DaytimePromo>>
 > = {
   CIGARETTES: {
-    ...CIGARETTE_PROMOS[0],
-    fallbackSrc: "/banners/cig-poster-1.png",
+    src: "/banners/tv2-category-collage.png",
+    alt: "Edibles, concentrates, and pre-rolls collage",
   },
   VAPES: {
     src: "https://pub-eb3e1fe18a43477eabc885cfb791d97c.r2.dev/products/cannabis_banner_mashup_variation_01_600x600.webp",
@@ -56,14 +56,7 @@ export function getTv2DaytimePromo(
   elapsedMs = 0,
 ): Tv2DaytimePromo | undefined {
   if (!daytime) return undefined;
-  if (cardId !== "CIGARETTES") return TV2_DAYTIME_PROMOS[cardId];
-
-  const safeElapsedMs = Number.isFinite(elapsedMs) && elapsedMs >= 0 ? elapsedMs : 0;
-  const promo = CIGARETTE_PROMOS[
-    Math.floor(safeElapsedMs / CIGARETTE_DAYTIME_ROTATION_MS) %
-      CIGARETTE_PROMOS.length
-  ];
-  return { ...promo, fallbackSrc: "/banners/cig-poster-1.png" };
+  return TV2_DAYTIME_PROMOS[cardId];
 }
 
 export function isCigaretteOfferVisible(
