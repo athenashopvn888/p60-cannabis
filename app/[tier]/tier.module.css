@@ -328,3 +328,39 @@
     gap: 12px;
   }
 }
+
+/* Free-gram promo (After Dark parity) */
+.asLowAsBanner {
+  margin: 0;
+  font-size: clamp(18px, 2.4vw, 26px);
+  font-weight: 900;
+  color: #1B4332;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.listAnchor {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.dealMeta {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+@media (max-width: 768px) {
+  .asLowAsBanner,
+  .listAnchor {
+    text-align: left;
+  }
+  .dealBox {
+    min-width: 0;
+  }
+}
