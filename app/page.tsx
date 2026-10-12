@@ -206,8 +206,8 @@ export default function HomePage() {
   return (
     <main className={styles.main}>
       <Navbar />
-      <HomepageTopNotices />
       <FleetAnnouncementBanner />
+      <HomepageTopNotices />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
       {/* ── NAVBAR ── */}
 
