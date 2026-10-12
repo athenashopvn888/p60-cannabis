@@ -9,6 +9,7 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "./page.module.css";
 import FleetAnnouncementBanner from "./components/FleetAnnouncementBanner";
+import HomeTitleBlock from "./components/HomeTitleBlock";
 import Navbar from "./components/Navbar";
 import HiringCallout from "./components/HiringCallout";
 import Footer from "./components/Footer";
@@ -206,6 +207,7 @@ export default function HomePage() {
   return (
     <main className={styles.main}>
       <Navbar />
+      <HomeTitleBlock />
       <FleetAnnouncementBanner />
       <HomepageTopNotices />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
@@ -225,7 +227,7 @@ export default function HomePage() {
               <div className={styles.brandBlock}>
                 <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" className={styles.brandLogo} />
                 <span className={styles.deliveryKicker}>1938 Weston Rd / York</span>
-                <h1 className={styles.brandTitle}>{HOME_TITLE}</h1>
+                <p className={styles.brandTitle}>{HOME_TITLE}</p>
             <CohortDeliveryActions variant="hero" />
                 <p className={styles.brandSub}>A 24-hour cannabis store at 1938 Weston Rd in York, Ontario. Visit us any time or explore the site for store information, cannabis categories and delivery details.</p>
                 <div className={styles.brandBadge}>Open 24 hours</div>
