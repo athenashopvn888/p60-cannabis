@@ -4,6 +4,7 @@ import Link from "next/link";
 import fs from "fs";
 import path from "path";
 import Navbar from "../components/Navbar";
+import CategoryCoreBanners from "../components/CategoryCoreBanners";
 import Footer from "../components/Footer";
 import FlowerCard from "../components/FlowerCard";
 import {
@@ -134,6 +135,8 @@ export default async function TierPage({
           />
         </section>
       )}
+
+      {["EXOTIC", "PREMIUM", "AAA+"].includes(tierInfo.key.toUpperCase()) ? <CategoryCoreBanners kind="weed" /> : null}
 
       {/* ── Hero Content BELOW banner ── */}
       <section

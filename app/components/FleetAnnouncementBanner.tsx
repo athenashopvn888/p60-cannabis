@@ -15,7 +15,7 @@ const imageObjects = [
   { name: `${STORE_NAME} top weed tiers`, description: `Exotic, Premium and AAA+ weed tiers at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${TOP_WEED_IMAGE}` },
   { name: `${STORE_NAME} nicotine and THC vapes`, description: `Nicotine vapes and THC vapes at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${VAPE_IMAGE}` },
   { name: `${STORE_NAME} cigarette mix and match`, description: `Two packs for $5 mix and match and $25 carton cigarette offer at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${CIGARETTE_IMAGE}` },
-  { name: `${STORE_NAME} premium cigarette offer`, description: `BB Full Flavor and Lights plus Marlboro and Belmont cigarette offer at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${PREMIUM_CIGARETTE_IMAGE}` },
+  { name: `${STORE_NAME} premium cigarette offer`, description: `BB Full Flavor and Lights two packs for $5 plus Marlboro and Belmont for $10 per pack at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${PREMIUM_CIGARETTE_IMAGE}` },
 ].map((image) => ({ "@type": "ImageObject", ...image }));
 
 function isThanksgivingNoticeActive(date: Date) {
@@ -28,7 +28,7 @@ function isThanksgivingNoticeActive(date: Date) {
 const figureStyle = { margin: 0, width: "100%" } as const;
 const imageStyle = { display: "block", width: "100%", maxWidth: "100%", height: "auto" } as const;
 const linkStyle = { display: "block", width: "100%" } as const;
-const captionStyle = { margin: 0, padding: "10px 14px", background: "#111827", color: "#ffffff", textAlign: "center" as const, fontWeight: 800, lineHeight: 1.35 };
+const captionStyle = { margin: 0, padding: "14px 18px", background: "#111827", color: "#ffffff", textAlign: "center" as const, fontSize: "clamp(17px, 1.7vw, 28px)", fontWeight: 800, lineHeight: 1.35 };
 const captionLinkStyle = { color: "inherit", textDecoration: "underline", textUnderlineOffset: "3px" } as const;
 
 export default function FleetAnnouncementBanner() {
@@ -71,9 +71,9 @@ export default function FleetAnnouncementBanner() {
       <figure data-core-banner="premium-cigarettes" data-premium-cigarette-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop BB, Marlboro and Belmont cigarette offers at ${STORE_NAME}`} style={linkStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={PREMIUM_CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — BB Full Flavor and Lights, Marlboro and Belmont premium cigarettes`} title={`${STORE_NAME} premium cigarettes — BB, Marlboro and Belmont`} style={imageStyle} loading="lazy" />
+          <img src={PREMIUM_CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — BB Full Flavor and Lights 2 packs for $5, Marlboro and Belmont $10 per pack`} title={`${STORE_NAME} premium cigarettes — BB 2 packs $5, Marlboro and Belmont $10 per pack`} style={imageStyle} loading="lazy" />
         </Link>
-        <figcaption style={captionStyle}>BB Full Flavor + Lights · Marlboro &amp; Belmont $10/pack · <Link href="/items/cigarettes" style={captionLinkStyle}>Shop cigarettes</Link></figcaption>
+        <figcaption style={captionStyle}>BB Full Flavor + Lights — 2 packs $5 · Marlboro &amp; Belmont — $10/pack · <Link href="/items/cigarettes" style={captionLinkStyle}>Shop cigarettes</Link></figcaption>
       </figure>
       {showThanksgivingNotice ? <p data-thanksgiving-hours-notice="">Thanksgiving Monday (Oct 12): We are open regular hours.</p> : null}
     </aside>
