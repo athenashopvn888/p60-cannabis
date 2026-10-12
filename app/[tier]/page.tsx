@@ -136,7 +136,7 @@ export default async function TierPage({
         </section>
       )}
 
-      <CategoryCoreBanners kind="weed" />
+      {["EXOTIC", "PREMIUM", "AAA+"].includes(tierInfo.key.toUpperCase()) ? <CategoryCoreBanners kind="weed" /> : null}
 
       {/* ── Hero Content BELOW banner ── */}
       <section
