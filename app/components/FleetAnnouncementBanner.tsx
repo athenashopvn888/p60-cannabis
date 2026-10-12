@@ -22,6 +22,14 @@ export default function FleetAnnouncementBanner() {
       <p style={{ ...lineStyle, background: "#b91c1c" }}>
         CIGARETTE DEAL ! 2 PACK $5 MIX AND MATCH
       </p>
+      <Link href="/items/cigarettes" data-cig-mix-banner="" aria-label="Shop the 2 packs for $5 mix and match cigarette offer">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/banners/native-cigarette-offer-20260822.webp"
+          alt="2 packs for $5 mix and match and $25 carton cigarette offer at P60 Cannabis."
+          style={{ display: "block", width: "100%", height: "auto" }}
+        />
+      </Link>
       <p style={{ ...lineStyle, background: "#c2410c" }}>
         EXCLUSIVE SPECIAL PREMIUM GRADE BB FULL, BB LIGHT &amp; BELMONT KING SIZE!
       </p>
