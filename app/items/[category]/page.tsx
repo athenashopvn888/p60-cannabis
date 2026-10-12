@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import Link from "next/link";
 import Navbar from "../../components/Navbar";
+import CategoryCoreBanners, { cigaretteCategoryImage } from "../../components/CategoryCoreBanners";
 import Footer from "../../components/Footer";
 import SafeImage from "../../components/SafeImage";
 import { getItemPriceDisplay } from "../../lib/itemPricing";
@@ -80,7 +81,8 @@ export default async function ItemsCategoryPage({
         {config.banner && bannerExists ? (
           <img
             src={config.banner}
-            alt={config.name}
+            alt={catSlug === "cigarettes" ? cigaretteCategoryImage.alt : config.name}
+              title={catSlug === "cigarettes" ? cigaretteCategoryImage.title : config.name}
             className={styles.bannerImg}
           />
         ) : (
@@ -93,6 +95,9 @@ export default async function ItemsCategoryPage({
           </div>
         )}
       </section>
+
+      {(catSlug === "vapes" || catSlug === "vape-disposables") && <CategoryCoreBanners kind="vapes" />}
+      {catSlug === "cigarettes" && <CategoryCoreBanners kind="cigarettes" />}
 
       {/* Product Grid */}
       <section className={styles.products}>
