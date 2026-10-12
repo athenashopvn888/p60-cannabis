@@ -15,8 +15,8 @@ export const TIER_SEO: Record<string, TierSeoData> = {
         body: "Exotic Weed is one of five flower collections at P60 Cannabis. Compare the product name, size, posted price, and listing details before choosing.",
       },
       {
-        heading: "Check Current Bundle Notes",
-        body: "Product cards may show gram and bundle notes. Confirm current pricing and selection on the menu or with staff before purchase.",
+        heading: "Check Current Free-Gram Deals",
+        body: "Exotic is part of our free-gram deal: Buy 2g Get 1g FREE (Pay $40 = 3g) or Buy 3g Get 3g FREE (Pay $60 = 6g). Each strain card shows its exact price, so check the menu or ask staff before you buy.",
       },
       {
         heading: "Visit P60 Cannabis On Weston Rd",
