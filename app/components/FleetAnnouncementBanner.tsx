@@ -49,7 +49,7 @@ export default function FleetAnnouncementBanner() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={TOP_WEED_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — Exotic, Premium and AAA+ top weed tiers`} title={`${STORE_NAME} top weed tiers — Exotic, Premium and AAA+`} style={imageStyle} />
         </Link>
-        <figcaption style={captionStyle}>Exotic, Premium and AAA+ weed · <Link href="/exotic-weed" style={captionLinkStyle}>Shop weed tiers</Link></figcaption>
+        <figcaption style={captionStyle}>Exotic, Premium and AAA+ weed · <Link href="/exotic-weed" style={captionLinkStyle}>Shop weed tiers</Link><span data-free-gram-strip="" style={{ display: "block", marginTop: "6px", color: "#facc15" }}>Top 3 tiers only (Exotic, Premium, AAA+): Buy 2g Get 1g FREE · Buy 3g Get 3g FREE (6g)</span></figcaption>
       </figure>
 
       <figure data-core-banner="vapes" data-vape-banner="" style={figureStyle}>
