@@ -41,7 +41,7 @@ function PromoFigure({ promo, renderImage = true }: { promo: (typeof promos)[key
 
 export default function CategoryCoreBanners({ kind }: CategoryCoreBannersProps) {
   const visiblePromos = kind === "cigarettes" ? [promos.cigarettes, promos.premium] : [promos[kind]];
-  const imageObjects = visiblePromos.map((promo) => ({ "@type": "ImageObject", name: promo.schemaName, description: promo.schemaDescription, contentUrl: `${STORE_ORIGIN}${promo.image}` }));
+  const imageObjects = visiblePromos.map((promo) => ({ "@type": "ImageObject", name: promo.schemaName, description: promo.schemaDescription, contentUrl: `${STORE_ORIGIN}${promo.image}`, caption: promo.schemaDescription }));
   return (
     <section data-category-core-promos={kind} aria-label={`${STORE_NAME} ${kind} promotions`} style={{ width: "100%", maxWidth: "100%", overflowX: "hidden", marginBottom: "24px" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": imageObjects }).replace(/</g, "\\u003c") }} />
