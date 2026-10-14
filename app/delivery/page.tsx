@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import DeliveryCatalog from "./DeliveryCatalog";
 import P60WebChat from "./P60WebChat";
 import menu from "./delivery-menu.json";
+import NearMeFaq from "../components/NearMeFaq";
+import nearMeFaq from "../lib/nearMeFaq.json";
 
 export const metadata: Metadata = {
   title: { absolute: "Weed Delivery York | P60 Cannabis" },
@@ -87,6 +89,7 @@ export default function DeliveryPage() {
       />
       <DeliveryCatalog />
       <P60WebChat />
+      <NearMeFaq id="delivery-near-me" q={nearMeFaq.delivery!.q} a={nearMeFaq.delivery!.a} />
     </>
   );
 }
