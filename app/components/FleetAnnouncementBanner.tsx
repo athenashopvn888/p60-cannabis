@@ -1,4 +1,5 @@
 "use client";
+import CigaretteSeasonalNotice from "./CigaretteSeasonalNotice";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -59,6 +60,8 @@ export default function FleetAnnouncementBanner() {
         </Link>
         <figcaption style={captionStyle}>Nicotine vapes + THC vapes · <Link href="/items/vapes" style={captionLinkStyle}>Shop vapes</Link></figcaption>
       </figure>
+
+      <CigaretteSeasonalNotice />
 
       <figure data-core-banner="cigarettes" data-cig-mix-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop cigarette mix and match offers at ${STORE_NAME}`} style={linkStyle}>
