@@ -97,6 +97,7 @@ export default function P60WebChat() {
   const [uploadAvailable, setUploadAvailable] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneConfirmationPending, setPhoneConfirmationPending] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [intent, setIntent] = useState<CustomerIntent | "">("");
   const [firstMessage, setFirstMessage] = useState("");
@@ -185,13 +186,18 @@ export default function P60WebChat() {
       setNotice(availability?.message || "Delivery status is temporarily unavailable. Please check back soon.");
       return;
     }
+    if (!phoneConfirmationPending) {
+      setPhoneConfirmationPending(true);
+      setNotice('');
+      return;
+    }
     setBusy(true);
     setNotice("");
     try {
       const data = await payload(await fetch(`${API_BASE}/api/web-chat/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId: "P60", customerName: intent === "NEW_CUSTOMER" ? name : "", phone, intent, message: firstMessage, workflowVersion: "READY_V1", smsConsent }),
+        body: JSON.stringify({ storeId: "P60", customerName: intent === "NEW_CUSTOMER" ? name : "", phone, phoneConfirmed: true, phoneConfirmation: phone, intent, message: firstMessage, workflowVersion: "READY_V1", smsConsent }),
       }));
       localStorage.setItem(SESSION_KEY, data.token);
       setToken(data.token);
@@ -321,15 +327,16 @@ export default function P60WebChat() {
         <button type="button" onClick={() => void refreshAvailability()}>Check again</button>
       </div> : <form className="sod-chat-start" onSubmit={start}>
         <fieldset className="sod-intent-options"><legend>Tell us about your account</legend>
-          <label className={intent === "NEW_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="NEW_CUSTOMER" checked={intent === "NEW_CUSTOMER"} onChange={() => setIntent("NEW_CUSTOMER")} /><span><strong>I&apos;m new</strong><small>Create my account and place my first order</small></span></label>
-          <label className={intent === "RETURNING_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="RETURNING_CUSTOMER" checked={intent === "RETURNING_CUSTOMER"} onChange={() => setIntent("RETURNING_CUSTOMER")} /><span><strong>I&apos;m returning</strong><small>Use my existing mobile account and place an order</small></span></label>
+          <label className={intent === "NEW_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="NEW_CUSTOMER" checked={intent === "NEW_CUSTOMER"} onChange={() => { setIntent("NEW_CUSTOMER"); setPhoneConfirmationPending(false); }} /><span><strong>I&apos;m new</strong><small>Create my account and place my first order</small></span></label>
+          <label className={intent === "RETURNING_CUSTOMER" ? "checked" : ""}><input required type="radio" name="customerIntent" value="RETURNING_CUSTOMER" checked={intent === "RETURNING_CUSTOMER"} onChange={() => { setIntent("RETURNING_CUSTOMER"); setPhoneConfirmationPending(false); }} /><span><strong>I&apos;m returning</strong><small>Use my existing mobile account and place an order</small></span></label>
         </fieldset>
         {intent === "NEW_CUSTOMER" && <><div className="sod-chat-welcome"><h2>Welcome!</h2><p>Have a valid government-issued photo ID and a Canadian mobile number ready. Your mobile number will be used as your account number.</p><p>Use a mobile number that can receive verification texts.</p></div>
         <label>Full name<input required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label></>}
-        {intent && <><label>Canadian mobile number<input required inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="647 555 0123" aria-describedby={intent === "NEW_CUSTOMER" ? "sod-phone-help" : undefined} />{intent === "NEW_CUSTOMER" && <small id="sod-phone-help">Must be able to receive verification texts. This becomes your account number.</small>}</label>
+        {intent && <><label>Canadian mobile number<input required inputMode="tel" value={phone} onChange={(event) => { setPhone(event.target.value); setPhoneConfirmationPending(false); }} autoComplete="tel" placeholder="647 555 0123" aria-describedby={intent === "NEW_CUSTOMER" ? "sod-phone-help" : undefined} />{intent === "NEW_CUSTOMER" && <small id="sod-phone-help">Must be able to receive verification texts. This becomes your account number.</small>}</label>
         <label className="sod-sms-consent"><input required type="checkbox" checked={smsConsent} onChange={(event) => setSmsConsent(event.target.checked)} /><span>I agree to receive one READY delivery-link text for this order. Message and data rates may apply.</span></label>
         <label>Order details (optional)<textarea maxLength={1000} value={firstMessage} onChange={(event) => setFirstMessage(event.target.value)} placeholder="What would you like to order today?" /></label>
-        <button type="submit" disabled={busy || !smsConsent}>{busy ? "Starting…" : "Start order chat"}</button></>}
+        {phoneConfirmationPending && <section className="sod-chat-welcome sod-phone-confirmation" role="alert"><strong>Confirm this number is correct:</strong><span>{phone}</span><p>A dispatcher will call you shortly to verify your telephone number and take your order.</p><button type="button" onClick={() => setPhoneConfirmationPending(false)}>Edit number</button></section>}
+        <button type="submit" disabled={busy || !smsConsent}>{busy ? "Starting…" : phoneConfirmationPending ? "Confirm number & submit" : "Start order chat"}</button></>}
         </form>) : <>
         <div className="sod-chat-scroll">
           <section className="sod-chat-account" aria-label="Order account">
