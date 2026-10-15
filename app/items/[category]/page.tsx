@@ -1,3 +1,4 @@
+import CigaretteSeasonalNotice from "../../components/CigaretteSeasonalNotice";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import fs from "fs";
@@ -75,6 +76,7 @@ export default async function ItemsCategoryPage({
   return (
     <main className={styles.main}>
       <Navbar />
+      {catSlug === "cigarettes" && <CigaretteSeasonalNotice sticky />}
 
       {/* Hero Banner */}
       <section className={styles.bannerSection}>
