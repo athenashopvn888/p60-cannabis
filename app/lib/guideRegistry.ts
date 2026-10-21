@@ -1,3 +1,4 @@
+import { SHOW_CIGARETTES, isCigaretteGuide } from "./siteConfig";
 import guideCopy from "./guideCopy.json";
 import { allFlowers, allItems, type FlowerProduct, type ItemProduct } from "./products";
 
@@ -57,7 +58,7 @@ const deriveName = (entry: GuideCopyEntry) => {
   return suffix && headingName.endsWith(suffix) ? headingName.slice(0, -suffix.length) : headingName;
 };
 
-export const GUIDE_REGISTRY: GuideEntry[] = (guideCopy as GuideCopyEntry[]).map((entry) => ({
+const GUIDE_REGISTRY_RAW: GuideEntry[] = (guideCopy as GuideCopyEntry[]).map((entry) => ({
   slug: entry.slug,
   lane: entry.lane,
   name: deriveName(entry),
@@ -69,6 +70,10 @@ export const GUIDE_REGISTRY: GuideEntry[] = (guideCopy as GuideCopyEntry[]).map(
   primaryKeywords: entry.seo.primary_keywords,
   schema: entry.seo.schema,
 }));
+
+export const GUIDE_REGISTRY: GuideEntry[] = SHOW_CIGARETTES
+  ? GUIDE_REGISTRY_RAW
+  : GUIDE_REGISTRY_RAW.filter((guide) => !isCigaretteGuide(guide));
 
 export const getGuide = (slug: string) => GUIDE_REGISTRY.find((guide) => guide.slug === slug);
 const GUIDE_LANES: { lane: GuideLane; label: string }[] = [

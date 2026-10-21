@@ -1,5 +1,6 @@
 import { allFlowers, allItems, type FlowerProduct, type ItemProduct } from "./products";
 import { getTvData } from "./tvStock";
+import { filterCigaretteItems } from "./siteConfig";
 
 /**
  * ONE product loader for every web page (Grok 2026-10-08/09): the same getTvData() call /api/tv-data uses
@@ -13,7 +14,7 @@ export async function getLiveMenu(): Promise<{ flowers: FlowerProduct[]; items: 
   ]);
   return {
     flowers: Array.isArray(f?.body) ? (f.body as unknown as FlowerProduct[]) : allFlowers,
-    items: Array.isArray(i?.body) ? (i.body as unknown as ItemProduct[]) : allItems,
+    items: filterCigaretteItems(Array.isArray(i?.body) ? (i.body as unknown as ItemProduct[]) : allItems),
   };
 }
 

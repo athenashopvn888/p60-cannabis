@@ -1,4 +1,7 @@
 "use client";
+
+import { cigaretteSafeContent } from "./lib/siteConfig";
+
 import { HOME_TITLE } from "./lib/homeDelivery";
 import CohortDeliveryActions from "./components/CohortDeliveryActions";
 import HomeDeliverySection from "./components/HomeDeliverySection";
@@ -66,7 +69,7 @@ const BENTO_TIERS = [
 ];
 
 /* ── Explore Categories Config (New Banners) ── */
-const EXPLORE_CATEGORIES = [
+const EXPLORE_CATEGORIES = cigaretteSafeContent([
   { name: "Nicotine Vape", slug: "items/vapes", banner: "/banners/p60-real/tile-nic-vape.webp", icon: "💨" },
   { name: "THC Vape", slug: "items/vape-disposables", banner: "/banners/p60-real/tile-thc-vape.webp", icon: "💨" },
   { name: "Concentrates", slug: "items/concentrates", banner: "/banners/p60-real/tile-concentrates.webp", icon: "💎" },
@@ -74,7 +77,7 @@ const EXPLORE_CATEGORIES = [
   { name: "Accessories", slug: "items/add-ons", banner: "/banners/p60-real/tile-accessories.webp", icon: "➕" },
   { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/native-cigarette-offer-20260822.webp", icon: "🏷️" },
   { name: "Magic Stuff", slug: "items/magic", banner: "/banners/p60-real/tile-magic.webp", icon: "🍄" },
-];
+]);
 
 /* ── Local FAQs for Jane St ── */
 const LOCAL_FAQS = [

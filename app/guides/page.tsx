@@ -1,3 +1,4 @@
+import { cigaretteSafeContent } from "../lib/siteConfig";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -10,7 +11,7 @@ const CANONICAL = `${SITE}/guides`;
 
 export const metadata: Metadata = {
   title: { absolute: "Guides | P60 Cannabis" },
-  description: "Browse P60 Cannabis name guides for strains, Native Cigarettes, Nicotine Vape, and THC Vape, then check today's menu. Adults 19+.",
+  description: cigaretteSafeContent("Browse P60 Cannabis name guides for strains, Native Cigarettes, Nicotine Vape, and THC Vape, then check today's menu. Adults 19+."),
   alternates: { canonical: CANONICAL },
   robots: { index: true, follow: true },
   openGraph: { url: CANONICAL },
@@ -46,7 +47,7 @@ export default function GuidesPage() {
         <p>Use this directory to identify a name, confirm its shelf, and continue to today&apos;s menu. Selection rotates, so each guide points back to a current category instead of promising availability. Adults 19+ only.</p>
         <div className={styles.actions}><Link className={styles.primary} href="/#menu">Open today&apos;s menu</Link><Link className={styles.secondary} href="/resources">Browse resources</Link></div>
       </div></header>
-      <section className={`${styles.shell} ${styles.intro}`}><h2>Find the right P60 shelf</h2><p>Strain names, Native Cigarettes, Nicotine Vape, and THC Vape stay in separate lanes. Open a name guide for context, then use its current menu path before heading to Weston Road.</p></section>
+      <section className={`${styles.shell} ${styles.intro}`}><h2>Find the right P60 shelf</h2><p>{cigaretteSafeContent("Strain names, Native Cigarettes, Nicotine Vape, and THC Vape stay in separate lanes. Open a name guide for context, then use its current menu path before heading to Weston Road.")}</p></section>
       <div className={`${styles.shell} ${styles.groups}`}>{groups.map((group) => <section key={group.lane} className={styles.group} aria-labelledby={`${group.lane}-guides`}>
         <div className={styles.groupHeader}><div><span>{group.guides.length} name guides</span><h2 id={`${group.lane}-guides`}>{group.label}</h2></div><Link href={laneCtas[group.lane].href}>{laneCtas[group.lane].label}</Link></div>
         <div className={styles.grid}>{group.guides.map((guide) => <Link key={guide.slug} href={`/guides/${guide.slug}`} className={styles.card}><strong>{guide.name}</strong><span>Read {group.label} guide</span></Link>)}</div>

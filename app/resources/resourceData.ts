@@ -1,3 +1,4 @@
+import { SHOW_CIGARETTES, cigaretteSafeContent, isCigarettePath } from "../lib/siteConfig";
 export type ResourceAuthorKey = "riley" | "mina" | "team";
 
 export interface ResourceAuthor {
@@ -117,7 +118,7 @@ export const CATEGORY_PATHS = [
   "/resources/magic-mushroom-guides",
 ];
 
-export const RESOURCE_PAGES: ResourcePage[] = [
+const RESOURCE_PAGES_RAW: ResourcePage[] = [
   {
     path: "/resources",
     kind: "root",
@@ -1580,6 +1581,12 @@ export const RESOURCE_PAGES: ResourcePage[] = [
     },
   },
 ];
+
+export const RESOURCE_PAGES = SHOW_CIGARETTES
+  ? RESOURCE_PAGES_RAW
+  : RESOURCE_PAGES_RAW
+      .filter((page) => !isCigarettePath((page as { slug?: string; path?: string }).slug ?? (page as { path?: string }).path))
+      .map((page) => cigaretteSafeContent(page));
 
 export const RESOURCE_PAGE_BY_PATH = new Map(RESOURCE_PAGES.map((page) => [page.path, page]));
 

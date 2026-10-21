@@ -1,4 +1,7 @@
 "use client";
+
+import { filterCigaretteEntries } from "../lib/siteConfig";
+
 import CohortDeliveryActions from "./CohortDeliveryActions";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -6,7 +9,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import styles from "./Navbar.module.css";
 
-const ALL_LINKS = [
+const ALL_LINKS_RAW = [
   { href: "/careers/budtender", label: "Join Team" },
   { href: "/weed-delivery-york", label: "Weed Delivery" },
   { href: "/exotic-weed", label: "Exotic Weed" },
@@ -28,6 +31,8 @@ const ALL_LINKS = [
   { href: "/resources", label: "Resources" },
   { href: "/guides", label: "Guides" },
 ];
+
+const ALL_LINKS = filterCigaretteEntries(ALL_LINKS_RAW);
 
 export default function Navbar() {
   const pathname = usePathname();
