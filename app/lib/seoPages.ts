@@ -1,3 +1,4 @@
+import { SHOW_CIGARETTES, cigaretteSafeContent, isCigarettePath } from "./siteConfig";
 const NATIVE_HERO_DISCLOSURE = "Brand preview only. Selection varies by store; check the current cigarette menu before visiting.";
 const NATIVE_HERO_PRODUCTS = [
   { name: "BB Lights", image: "/products/1001-BB-LIGHTS-CARTONS.webp" },
@@ -36,7 +37,7 @@ export interface SeoPageData {
   faqs: { q: string; a: string }[];
 }
 
-export const SEO_PAGES: SeoPageData[] = [
+const SEO_PAGES_RAW: SeoPageData[] = [
   {
     slug: "native-cigarettes-york",
     title: "Native Cigarettes York",
@@ -140,6 +141,12 @@ export const SEO_PAGES: SeoPageData[] = [
     ],
   },
 ];
+
+export const SEO_PAGES = SHOW_CIGARETTES
+  ? SEO_PAGES_RAW
+  : SEO_PAGES_RAW
+      .filter((page) => !isCigarettePath(page.slug))
+      .map((page) => cigaretteSafeContent(page));
 
 export function getSeoPageBySlug(slug: string): SeoPageData | undefined {
   return SEO_PAGES.find((p) => p.slug === slug);

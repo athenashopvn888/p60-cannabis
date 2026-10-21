@@ -1,4 +1,7 @@
 "use client";
+
+import { SHOW_CIGARETTES } from "../lib/siteConfig";
+
 import CigaretteSeasonalNotice from "./CigaretteSeasonalNotice";
 
 import Link from "next/link";
@@ -17,7 +20,7 @@ const imageObjects = [
   { name: `${STORE_NAME} nicotine and THC vapes`, description: `Nicotine vapes and THC vapes at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${VAPE_IMAGE}` },
   { name: `${STORE_NAME} cigarette mix and match`, description: `Two packs for $5 mix and match and $25 carton cigarette offer at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${CIGARETTE_IMAGE}` },
   { name: `${STORE_NAME} premium cigarette offer`, description: `BB Full Flavor and Lights two packs for $5 plus Marlboro and Belmont for $10 per pack at ${STORE_NAME} in ${STORE_AREA}.`, contentUrl: `${STORE_ORIGIN}${PREMIUM_CIGARETTE_IMAGE}` },
-].map((image) => ({ "@type": "ImageObject", ...image, caption: image.description }));
+].filter((image) => SHOW_CIGARETTES || !/cigarette|marlboro|belmont/i.test(`${image.name} ${image.description}`)).map((image) => ({ "@type": "ImageObject", ...image, caption: image.description }));
 
 function isHalloweenNoticeActive(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -61,23 +64,23 @@ export default function FleetAnnouncementBanner() {
         <figcaption style={captionStyle}>Nicotine vapes + THC vapes · <Link href="/items/vapes" style={captionLinkStyle}>Shop vapes</Link></figcaption>
       </figure>
 
-      <CigaretteSeasonalNotice />
+      {SHOW_CIGARETTES ? <CigaretteSeasonalNotice /> : null}
 
-      <figure data-core-banner="cigarettes" data-cig-mix-banner="" style={figureStyle}>
+      {SHOW_CIGARETTES ? (<figure data-core-banner="cigarettes" data-cig-mix-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop cigarette mix and match offers at ${STORE_NAME}`} style={linkStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — 2 packs for $5 mix and match and $25 carton cigarette offer`} title={`${STORE_NAME} cigarette offer — 2 packs $5 mix and match, $25 carton`} style={imageStyle} loading="lazy" />
         </Link>
         <figcaption style={captionStyle}>2 packs $5 mix &amp; match · $25 carton · <Link href="/items/cigarettes" style={captionLinkStyle}>Shop cigarettes</Link></figcaption>
-      </figure>
+      </figure>) : null}
 
-      <figure data-core-banner="premium-cigarettes" data-premium-cigarette-banner="" style={figureStyle}>
+      {SHOW_CIGARETTES ? (<figure data-core-banner="premium-cigarettes" data-premium-cigarette-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop BB, Marlboro and Belmont cigarette offers at ${STORE_NAME}`} style={linkStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={PREMIUM_CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — BB Full Flavor and Lights 2 packs for $5, Marlboro and Belmont $10 per pack`} title={`${STORE_NAME} premium cigarettes — BB 2 packs $5, Marlboro and Belmont $10 per pack`} style={imageStyle} loading="lazy" />
         </Link>
         <figcaption style={captionStyle}>BB Full Flavor + Lights — 2 packs $5 · Marlboro &amp; Belmont — $10/pack · <Link href="/items/cigarettes" style={captionLinkStyle}>Shop cigarettes</Link></figcaption>
-      </figure>
+      </figure>) : null}
       {showHalloweenNotice ? <p data-halloween-hours-notice="">Happy Halloween! {STORE_NAME} is open regular hours on Saturday, October 31.</p> : null}
     </aside>
   );

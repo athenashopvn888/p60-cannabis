@@ -1,4 +1,7 @@
 "use client";
+
+import { SHOW_CIGARETTES } from "../lib/siteConfig";
+
 import { isNicotineItem } from "../tv/flashMessages";
 import { CIGARETTE_FLASH_MESSAGE, isCigaretteFlashWindow } from "../tv/flashMessages";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -23,7 +26,7 @@ interface Item {
 }
 
 /* -- CATEGORY CONFIG -- */
-const CARD_CONFIG = [
+const CARD_CONFIG_RAW = [
   { id:"PREROLLS_ADDONS", title:"🔥 PREROLLS & ADD ONS", accent:"#dc2626", filter:(it:Item)=>it.category==="PREROLLS"||it.category==="ADD ONS", preset:"🔥 START SLOW · 2–3 PUFFS · WAIT 5 MIN" },
   { id:"VAPES",           title:"💨 VAPES",              accent:"#0284c7", filter:(it:Item)=>["VAPE PENS","VAPE DISPOSABLE"].includes(it.category), preset:"💨 1–2 PUFFS · WAIT 2–3 MIN · REPEAT" },
   { id:"EDIBLES",         title:"🍬 EDIBLES",            accent:"#7c3aed", filter:(it:Item)=>it.category==="EDIBLES", preset:"🍬 START SMALL · WAIT 45 MIN · THEN MORE" },
@@ -31,6 +34,9 @@ const CARD_CONFIG = [
   { id:"CIGARETTES",      title:"🚬 CIGARETTES",         accent:"#78350f", filter:(it:Item)=>it.category==="CIGARETTES", preset:"" },
   { id:"MAGIC",           title:"🍄 MAGIC & OTHERS",     accent:"#9333ea", filter:(it:Item)=>it.category==="MAGIC & OTHERS", preset:"🍫 START SMALL · WAIT 45 MIN · THEN MORE" },
 ];
+const CARD_CONFIG = SHOW_CIGARETTES
+  ? CARD_CONFIG_RAW
+  : CARD_CONFIG_RAW.filter((card) => card.id !== "CIGARETTES");
 
 /* -- HELPERS -- */
 const fmtPrice = (v?:string) => { const s=String(v||"").trim(); if(!s)return""; return /^\$/.test(s)?s:"$"+s; };

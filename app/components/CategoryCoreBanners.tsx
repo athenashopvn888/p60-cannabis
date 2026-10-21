@@ -1,3 +1,4 @@
+import { SHOW_CIGARETTES } from "../lib/siteConfig";
 import Link from "next/link";
 
 type CategoryCoreBannersProps = { kind: "weed" | "vapes" | "cigarettes" };
@@ -40,6 +41,7 @@ function PromoFigure({ promo, renderImage = true }: { promo: (typeof promos)[key
 }
 
 export default function CategoryCoreBanners({ kind }: CategoryCoreBannersProps) {
+  if (kind === "cigarettes" && !SHOW_CIGARETTES) return null;
   const visiblePromos = kind === "cigarettes" ? [promos.cigarettes, promos.premium] : [promos[kind]];
   const imageObjects = visiblePromos.map((promo) => ({ "@type": "ImageObject", name: promo.schemaName, description: promo.schemaDescription, contentUrl: `${STORE_ORIGIN}${promo.image}`, caption: promo.schemaDescription }));
   return (
