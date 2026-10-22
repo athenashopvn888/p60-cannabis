@@ -39,6 +39,11 @@ function stripCigaretteMentions(value: string) {
     .trim();
 }
 
+export function cigaretteEnvHardOff(raw: string | undefined = process.env.SHOW_CIGARETTES ?? process.env.NEXT_PUBLIC_SHOW_CIGARETTES): boolean {
+  if (raw == null) return false;
+  return /^(0|false|no|off)$/i.test(raw.trim());
+}
+
 export function cigaretteSafeContent<T>(value: T): T {
   if (SHOW_CIGARETTES) return value;
   if (typeof value === "string") return stripCigaretteMentions(value) as T;

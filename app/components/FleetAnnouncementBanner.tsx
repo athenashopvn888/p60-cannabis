@@ -3,6 +3,8 @@
 import { SHOW_CIGARETTES } from "../lib/siteConfig";
 
 import CigaretteSeasonalNotice from "./CigaretteSeasonalNotice";
+import KitFleetAnnouncementBanner from "./fleet/FleetAnnouncementBanner";
+import { useFleetContent } from "./fleet/FleetContentProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -36,6 +38,7 @@ const captionStyle = { margin: 0, padding: "14px 18px", background: "#111827", c
 const captionLinkStyle = { color: "inherit", textDecoration: "underline", textUnderlineOffset: "3px" } as const;
 
 export default function FleetAnnouncementBanner() {
+  const fleet = useFleetContent();
   const [showHalloweenNotice, setShowHalloweenNotice] = useState(false);
   useEffect(() => {
     const updateVisibility = () => setShowHalloweenNotice(isHalloweenNoticeActive(new Date()));
@@ -43,6 +46,8 @@ export default function FleetAnnouncementBanner() {
     const timer = window.setInterval(updateVisibility, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  if (fleet.contentBanners && fleet.contentBanners.length > 0) return <KitFleetAnnouncementBanner banners={fleet.contentBanners} />;
 
   return (
     <aside data-fleet-homepage-announcement="" aria-label="Store announcements" style={{ display: "flex", flexDirection: "column", width: "100%", maxWidth: "100%", overflowX: "hidden", position: "relative", zIndex: 50 }}>
