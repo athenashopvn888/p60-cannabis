@@ -12,6 +12,8 @@ import { formatBoardTime, readStockUpdatedAt } from "../lib/tvStockTime";
 import TvThemeArtwork from "../tv-theme/TvThemeArtwork";
 import { getTvTheme, getTvThemeVariables } from "../tv-theme/theme";
 import TvReviewQr from "../TvReviewQr";
+import FleetTvTakeover from "../components/fleet/FleetTvTakeover";
+import { useFleetTvManifest } from "../components/fleet/useFleetTvManifest";
 
 /* -- Types -- */
 interface PricePoint { regular: number; sale: number | null; }
@@ -728,6 +730,7 @@ function VerticalTicker() {
    MAIN TV PAGE
    ============================================================ */
 export default function TVMenuPage() {
+  const fleetTv = useFleetTvManifest();
   const theme = getTvTheme(tvHiring?.store);
   const [bgUrl, setBgUrl] = useState("");
   useEffect(() => {
@@ -905,6 +908,7 @@ export default function TVMenuPage() {
         
       </div>
       {lastUpdate ? <div className={styles.lastUpdated}>Refreshed {lastUpdate}</div> : null}
+      <FleetTvTakeover promos={fleetTv.fullscreenPromos} />
     </div>
   );
 }

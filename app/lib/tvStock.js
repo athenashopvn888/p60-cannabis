@@ -125,11 +125,15 @@ function rejectLiveStock(data, staticFlowers, staticItems) {
   return null;
 }
 
+const CIG_STOCK_CACHE_MS = 60 * 1000;
+
 let cached = null;
 let lastGood = null;
 let failureUntil = 0;
 let failureReason = "";
 let inflight = null;
+let cigCached = null;
+let cigInflight = null;
 
 function resetTvStockCache() {
   cached = null;
@@ -137,6 +141,8 @@ function resetTvStockCache() {
   failureUntil = 0;
   failureReason = "";
   inflight = null;
+  cigCached = null;
+  cigInflight = null;
 }
 
 function selectTvPayload(dataset, type) {
@@ -193,6 +199,7 @@ async function resolveDataset(options) {
       flowers: data.flowers,
       items: data.items,
       stockDate: data.stockDate == null ? "" : String(data.stockDate),
+      cig: data.cig && typeof data.cig === "object" && !Array.isArray(data.cig) ? data.cig : null,
     };
     const now = options.now ?? Date.now();
     cached = { expiresAt: now + TV_STOCK_CACHE_MS, dataset };
@@ -248,6 +255,28 @@ async function getTvData(options) {
   return selectTvPayload(dataset, options.type);
 }
 
+async function getCigaretteDataset(options) {
+  const now = options.now ?? Date.now();
+  if (cigCached && now < cigCached.expiresAt) return cigCached.dataset;
+  if (!cigInflight) {
+    const started = now;
+    cigInflight = resolveDataset({ ...options, now: started }).then((dataset) => {
+      const safe = {
+        source: dataset.source,
+        flowers: Array.isArray(dataset.flowers) ? dataset.flowers : [],
+        items: Array.isArray(dataset.items) ? dataset.items : [],
+        stockDate: dataset.stockDate || "",
+        cig: dataset.cig || null,
+      };
+      cigCached = { expiresAt: started + CIG_STOCK_CACHE_MS, dataset: safe };
+      return safe;
+    }).finally(() => {
+      cigInflight = null;
+    });
+  }
+  return cigInflight;
+}
+
 module.exports = {
   DEFAULT_APPS_SCRIPT_URL,
   TV_STORE,
@@ -261,5 +290,6 @@ module.exports = {
   postprocessItems,
   resolveAppsScriptUrl,
   getTvData,
+  getCigaretteDataset,
   resetTvStockCache,
 };

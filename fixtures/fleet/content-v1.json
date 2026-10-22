@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "storeCode": "PNY01",
+  "domain": "www.p60cannabis.com",
+  "contentVersion": 1,
+  "publishedAt": "2026-10-22T12:00:00.000Z",
+  "sourceHash": "fixture-hash-1",
+  "jobId": "job-1",
+  "storeInfo": {
+    "name": { "mode": "Coded" },
+    "street": { "mode": "Custom", "value": "" },
+    "phone": { "mode": "Hidden" },
+    "hours": { "mode": "Custom", "value": "Open 24 Hours Daily" }
+  },
+  "all": {
+    "slots": [
+      {
+        "page": "Home",
+        "spot": "Top banner",
+        "mode": "Custom",
+        "image": "/banners/core-top-weed-tier.webp",
+        "textBar": "ALL weed text bar",
+        "alt": "ALL alt",
+        "title": "ALL title",
+        "caption": "ALL caption",
+        "categoryName": "Exotic Weed"
+      }
+    ]
+  },
+  "slots": [
+    {
+      "page": "Home",
+      "spot": "Top banner",
+      "mode": "Custom",
+      "image": "/banners/core-top-weed-tier.webp",
+      "imageWidth": 1200,
+      "imageHeight": 420,
+      "textBar": "Sheet weed text bar",
+      "alt": "Sheet weed alt",
+      "title": "Sheet weed title",
+      "caption": "Sheet weed caption",
+      "categoryName": "Exotic Weed"
+    },
+    {
+      "page": "Home",
+      "spot": "Promo banner 2",
+      "mode": "Custom",
+      "image": "/banners/core-vapes-nicotine-thc.webp",
+      "textBar": "   ",
+      "alt": "",
+      "title": "",
+      "caption": "",
+      "categoryName": "Nicotine Vapes"
+    },
+    {
+      "page": "Home",
+      "spot": "Promo banner 3",
+      "mode": "Coded"
+    },
+    {
+      "page": "Home",
+      "spot": "Promo banner 4",
+      "mode": "Hidden",
+      "textBar": "hidden premium"
+    },
+    {
+      "page": "Contact",
+      "spot": "Text under banner",
+      "mode": "Custom",
+      "description": "",
+      "metaTitle": "",
+      "metaDescription": "   "
+    }
+  ]
+}

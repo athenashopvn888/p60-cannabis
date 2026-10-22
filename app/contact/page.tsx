@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { FULL_NAME_NAP } from "../lib/fullNameNap";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { getFleetContent } from "../lib/fleetContent";
 import styles from "./contact.module.css";
 
-export const metadata: Metadata = {
+export const dynamic = "force-dynamic";
+
+const CONTACT_METADATA: Metadata = {
   title: "Contact Us — P60 Cannabis | 1938 Weston Rd, York",
   description:
     "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. The storefront is open 24 hours daily. Walk-ins welcome.",
@@ -17,6 +20,20 @@ export const metadata: Metadata = {
       "1938 Weston Rd, York. The storefront is open 24 hours daily.",
   },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const fleet = await getFleetContent();
+  if (!fleet.active) return CONTACT_METADATA;
+  const page = fleet.pages.Contact;
+  const description = page?.metaDescription || "";
+  const title = page?.metaTitle || "";
+  if ((!description || description === CONTACT_METADATA.description) && (!title || title === "Contact Us — P60 Cannabis | 1938 Weston Rd, York")) return CONTACT_METADATA;
+  return {
+    ...CONTACT_METADATA,
+    ...(description && description !== CONTACT_METADATA.description ? { description } : {}),
+    ...(title && title !== "Contact Us — P60 Cannabis | 1938 Weston Rd, York" ? { title: { absolute: title } } : {}),
+  };
+}
 
 export default function ContactPage() {
   return (
