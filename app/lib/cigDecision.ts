@@ -89,9 +89,15 @@ export function decideCigaretteSurface(input: {
       : undefined,
   );
   if (cigaretteEnvHardOff(input.envRaw)) return { show: false, reason: "env", wording };
-  // A missing feed or a feed error shows cigarettes. Only an explicit false flag hides them.
-  if (input.errored) return { show: true, reason: "error", wording };
+  // TV hides on a feed error or a missing block. A saved snapshot still arrives
+  // with errored false and follows tvOn. Website decisions stay fail-open here;
+  // publicWebsiteCigaretteFlag turns a feed error or a missing block off.
+  if (input.errored) {
+    if (input.surface === "tv") return { show: false, reason: "error", wording };
+    return { show: true, reason: "error", wording };
+  }
   if (!input.cig || typeof input.cig !== "object" || Array.isArray(input.cig)) {
+    if (input.surface === "tv") return { show: false, reason: "missing", wording };
     return { show: true, reason: "missing", wording };
   }
   if (!resolveSurfaceFlag(input.cig, input.surface)) return { show: false, reason: "off", wording };
@@ -123,8 +129,19 @@ export function decideCigaretteGuide(input: {
 }
 
 /**
+ * Website flag. The coded switch stays in front of the feed.
+ * A feed error or a missing block stays off, even when that switch is on.
+ * TV does not use this.
+ */
+export function publicWebsiteCigaretteFlag(decision: CigaretteSurfaceDecision, codedOn: boolean): boolean {
+  if (!codedOn) return false;
+  if (decision.reason === "error" || decision.reason === "missing") return false;
+  return decision.show;
+}
+
+/**
  * Website surfaces publish only an explicit on. A missing feed stays off there.
- * TV keeps the decision, including the missing-feed fallback.
+ * TV publishes its decision. A feed error or a missing block is already hidden there.
  */
 export function publishedSurfaceShow(decision: CigaretteSurfaceDecision, surface: CigaretteSurface): boolean {
   if (surface === "web") return decision.reason === "on";
