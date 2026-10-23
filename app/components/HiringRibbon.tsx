@@ -3,7 +3,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { TvHiringConfig } from "../lib/tvHiring";
 import { TV_POLICY_MESSAGE } from "../lib/tvPolicy";
-import { CIGARETTE_FLASH_MESSAGE, isCigaretteFlashWindow } from "../tv/flashMessages";
 import styles from "./HiringRibbon.module.css";
 
 const PHASE_CLASS = [styles.phaseHeadline, styles.phaseApply, styles.phaseUrl];
@@ -53,29 +52,23 @@ function fitPolicyLine(node: HTMLSpanElement) {
   node.style.textOverflow = "";
 }
 
-export default function HiringRibbon({ hiring }: { hiring: TvHiringConfig | null }) {
-  const [showCigaretteFlash, setShowCigaretteFlash] = useState(() => isCigaretteFlashWindow());
+export default function HiringRibbon({ hiring, notice }: { hiring: TvHiringConfig | null; notice?: string | null }) {
+  const line = trimmed(notice);
   const policy = trimmed(TV_POLICY_MESSAGE);
   const hiringOn = hiring !== null && trimmed(hiring.displayUrl).length > 0;
   const messages = [
-    ...(showCigaretteFlash ? [CIGARETTE_FLASH_MESSAGE] : []),
+    ...(line ? [line] : []),
     ...(hiringOn && hiring ? hiringLines(hiring) : []),
     ...(policy ? [policy] : []),
   ];
-  const flashIndex = showCigaretteFlash ? 0 : -1;
+  const flashIndex = line ? 0 : -1;
   const policyIndex = policy ? messages.length - 1 : -1;
-  const hiringOffset = showCigaretteFlash ? 1 : 0;
+  const hiringOffset = line ? 1 : 0;
   const rotating = messages.length > 1;
 
   const [phase, setPhase] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
   const policyRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const update = () => setShowCigaretteFlash(isCigaretteFlashWindow());
-    const timer = window.setInterval(update, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -104,7 +97,7 @@ export default function HiringRibbon({ hiring }: { hiring: TvHiringConfig | null
     : flashIndex >= 0 ? flashIndex : policyIndex;
 
   return (
-    <div className={styles.hiringRibbon} role="status" aria-live="polite">
+    <div className={styles.hiringRibbon} data-tv-ticker={line ? "cigarette" : "standard"} role="status" aria-live="polite">
       <div className={styles.hiringViewport}>
         {messages.map((message, index) => {
           const isFlash = index === flashIndex;

@@ -1,9 +1,9 @@
-import { cigaretteSafeContent, SHOW_CIGARETTES } from "./lib/siteConfig";
+import { cigaretteSafeContent } from "./lib/siteConfig";
 import CigaretteStateProvider from "./components/CigaretteStateProvider";
 import FleetContentProvider from "./components/fleet/FleetContentProvider";
 import FullNameNap from "./components/FullNameNap";
 import PinnedNavClearance from "./components/PinnedNavClearance";
-import { CIG_WORDING_FALLBACK } from "./lib/cigDecision";
+import { getCigaretteSnapshot, toPublicCigaretteState } from "./lib/cigaretteFeed";
 import { CODED_BANNERS } from "./lib/fleet/config";
 import { getFleetContent } from "./lib/fleetContent";
 import { HOME_DOC_TITLE } from "./lib/homeDelivery";
@@ -107,9 +107,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const fleet = await getFleetContent();
+  const [fleet, cigaretteSnapshot] = await Promise.all([getFleetContent(), getCigaretteSnapshot()]);
   const contentBanners = fleet.active && fleet.banners.some((banner, index) => banner !== CODED_BANNERS[index]) ? fleet.banners : undefined;
-  const cigarettes = { web: SHOW_CIGARETTES, tv: SHOW_CIGARETTES, wording: CIG_WORDING_FALLBACK };
+  const cigarettes = toPublicCigaretteState(cigaretteSnapshot);
   return (
     <html lang="en">
       <head>
