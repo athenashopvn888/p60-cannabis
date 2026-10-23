@@ -1,4 +1,4 @@
-import { cigaretteSafeContent } from "./lib/siteConfig";
+import { cigaretteSafeContent, SHOW_CIGARETTES } from "./lib/siteConfig";
 import CigaretteStateProvider from "./components/CigaretteStateProvider";
 import FleetContentProvider from "./components/fleet/FleetContentProvider";
 import FullNameNap from "./components/FullNameNap";
@@ -142,7 +142,7 @@ export default async function RootLayout({
       </head>
       <body>
         <FleetContentProvider value={{ active: fleet.active, version: fleet.version, nap: fleet.nap, contentBanners }}>
-          <CigaretteStateProvider value={cigarettes}>
+          <CigaretteStateProvider value={{ ...cigarettes, web: SHOW_CIGARETTES ? cigarettes.web : false }}>
             <DeliveryAnnouncement />
             {children}
             <FullNameNap />

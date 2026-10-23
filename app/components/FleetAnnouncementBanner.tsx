@@ -3,6 +3,7 @@
 import { SHOW_CIGARETTES } from "../lib/siteConfig";
 
 import CigaretteSeasonalNotice from "./CigaretteSeasonalNotice";
+import { useCigaretteState } from "./CigaretteStateProvider";
 import KitFleetAnnouncementBanner from "./fleet/FleetAnnouncementBanner";
 import { useFleetContent } from "./fleet/FleetContentProvider";
 
@@ -39,6 +40,8 @@ const captionLinkStyle = { color: "inherit", textDecoration: "underline", textUn
 
 export default function FleetAnnouncementBanner() {
   const fleet = useFleetContent();
+  const feedWeb = useCigaretteState().web;
+  const showCigarettes = SHOW_CIGARETTES ? feedWeb : false;
   const [showHalloweenNotice, setShowHalloweenNotice] = useState(false);
   useEffect(() => {
     const updateVisibility = () => setShowHalloweenNotice(isHalloweenNoticeActive(new Date()));
@@ -51,7 +54,7 @@ export default function FleetAnnouncementBanner() {
 
   return (
     <aside data-fleet-homepage-announcement="" aria-label="Store announcements" style={{ display: "flex", flexDirection: "column", width: "100%", maxWidth: "100%", overflowX: "hidden", position: "relative", zIndex: 50 }}>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": imageObjects }).replace(/</g, "\\u003c") }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({ "@context": "https://schema.org", "@graph": showCigarettes ? imageObjects : imageObjects.filter((image) => !/cigarette|marlboro|belmont/i.test(`${image.name} ${image.description}`)) }).replace(/</g, "\\u003c") }} />
 
       <figure data-core-banner="weed" data-exotic-tier-banner="" style={figureStyle}>
         <Link href="/exotic-weed" aria-label={`Shop Exotic, Premium and AAA+ weed tiers at ${STORE_NAME}`} style={linkStyle}>
@@ -69,9 +72,9 @@ export default function FleetAnnouncementBanner() {
         <figcaption style={captionStyle}>Nicotine vapes + THC vapes · <Link href="/items/vapes" style={captionLinkStyle}>Shop vapes</Link></figcaption>
       </figure>
 
-      {SHOW_CIGARETTES ? <CigaretteSeasonalNotice /> : null}
+      {showCigarettes ? <CigaretteSeasonalNotice /> : null}
 
-      {SHOW_CIGARETTES ? (<figure data-core-banner="cigarettes" data-cig-mix-banner="" style={figureStyle}>
+      {showCigarettes ? (<figure data-core-banner="cigarettes" data-cig-mix-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop cigarette mix and match offers at ${STORE_NAME}`} style={linkStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — 2 packs for $5 mix and match and $25 carton cigarette offer`} title={`${STORE_NAME} cigarette offer — 2 packs $5 mix and match, $25 carton`} style={imageStyle} loading="lazy" />
@@ -79,7 +82,7 @@ export default function FleetAnnouncementBanner() {
         <figcaption style={captionStyle}>2 packs $5 mix &amp; match · $25 carton · <Link href="/items/cigarettes" style={captionLinkStyle}>Shop cigarettes</Link></figcaption>
       </figure>) : null}
 
-      {SHOW_CIGARETTES ? (<figure data-core-banner="premium-cigarettes" data-premium-cigarette-banner="" style={figureStyle}>
+      {showCigarettes ? (<figure data-core-banner="premium-cigarettes" data-premium-cigarette-banner="" style={figureStyle}>
         <Link href="/items/cigarettes" aria-label={`Shop BB, Marlboro and Belmont cigarette offers at ${STORE_NAME}`} style={linkStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={PREMIUM_CIGARETTE_IMAGE} alt={`${STORE_NAME} in ${STORE_AREA} — BB Full Flavor and Lights 2 packs for $5, Marlboro and Belmont $10 per pack`} title={`${STORE_NAME} premium cigarettes — BB 2 packs $5, Marlboro and Belmont $10 per pack`} style={imageStyle} loading="lazy" />

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   CIG_WORDING_FALLBACK,
   decideCigaretteGuide,
   decideCigaretteSurface,
+  publicWebsiteCigaretteFlag,
   reconcileSurfaceItems,
   resolveCigWording,
   resolveSurfaceFlag,
@@ -44,7 +46,7 @@ test("website follows webOn and TV follows tvOn, with on as the fallback", () =>
   assert.equal(resolveSurfaceFlag(cig({ on: true, webOn: false, webFollowsTv: true }), "web"), false);
 });
 
-test("only an explicit false flag, no real items, or the env override hides cigarettes", () => {
+test("website decisions stay open unless an explicit false flag, no real items, or the env override hides them", () => {
   const items = [carton, grabba, backwoods];
   const missing = decideCigaretteSurface({ cig: null, items, surface: "web" });
   assert.equal(missing.reason, "missing");
@@ -80,6 +82,39 @@ test("guide pages follow the master switch and a feed error stays open", () => {
   assert.equal(decideCigaretteGuide({ cig: cig({ on: true, master: true, webOn: false }), items }).show, true);
   assert.equal(decideCigaretteGuide({ cig: null, items, errored: true }).show, true);
   assert.equal(decideCigaretteGuide({ cig: cig({ on: true, master: true }), items, envRaw: "off" }).reason, "env");
+});
+
+test("website flag stays off when the static gate is off, even if the feed web switch is on", () => {
+  const items = [carton, backwoods];
+  const explicitOn = decideCigaretteSurface({ cig: cig({ webOn: true, tvOn: false }), items, surface: "web" });
+  const explicitOff = decideCigaretteSurface({ cig: cig({ webOn: false, tvOn: true }), items, surface: "web" });
+  const errored = decideCigaretteSurface({ cig: cig({ webOn: true, tvOn: true }), items, surface: "web", errored: true });
+  const missing = decideCigaretteSurface({ cig: null, items, surface: "web" });
+  assert.equal(explicitOn.show, true);
+  assert.equal(explicitOn.reason, "on");
+  assert.equal(publicWebsiteCigaretteFlag(explicitOn, false), false);
+  assert.equal(publicWebsiteCigaretteFlag(explicitOn, true), true);
+  assert.equal(publicWebsiteCigaretteFlag(explicitOff, true), false);
+  assert.equal(publicWebsiteCigaretteFlag(errored, true), false);
+  assert.equal(publicWebsiteCigaretteFlag(errored, false), false);
+  assert.equal(publicWebsiteCigaretteFlag(missing, true), false);
+  assert.equal(publicWebsiteCigaretteFlag(missing, false), false);
+  assert.equal(decideCigaretteSurface({ cig: cig({ webOn: true, tvOn: true }), items, surface: "tv" }).show, true);
+});
+
+test("website surfaces keep the static gate in front of the feed", () => {
+  const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const status = readFileSync(new URL("../app/api/content-status/route.ts", import.meta.url), "utf8");
+  const feed = readFileSync(new URL("../app/lib/cigaretteFeed.ts", import.meta.url), "utf8");
+  const banner = readFileSync(new URL("../app/components/FleetAnnouncementBanner.tsx", import.meta.url), "utf8");
+  const kit = readFileSync(new URL("../app/components/fleet/FleetAnnouncementBanner.tsx", import.meta.url), "utf8");
+  assert.match(layout, /web: SHOW_CIGARETTES \? cigarettes\.web : false/);
+  assert.match(status, /web: SHOW_CIGARETTES \? cigarettes\.web : false/);
+  assert.match(feed, /publicWebsiteCigaretteFlag\(snap\.web, SHOW_CIGARETTES\)/);
+  assert.match(feed, /web: SHOW_CIGARETTES \? state\.web : false/);
+  assert.match(feed, /!live && !cig/);
+  assert.match(banner, /const showCigarettes = SHOW_CIGARETTES \? feedWeb : false/);
+  assert.match(kit, /const showCigarettes = cigarettes\.web/);
 });
 
 test("each surface hides real cigarettes itself and always keeps wraps and pouches", () => {
