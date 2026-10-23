@@ -122,6 +122,15 @@ export function decideCigaretteGuide(input: {
   return { show: true, reason: "on" };
 }
 
+/**
+ * Website surfaces publish only an explicit on. A missing feed stays off there.
+ * TV keeps the decision, including the missing-feed fallback.
+ */
+export function publishedSurfaceShow(decision: CigaretteSurfaceDecision, surface: CigaretteSurface): boolean {
+  if (surface === "web") return decision.reason === "on";
+  return decision.show;
+}
+
 /** Drop real cigarettes when this surface is off. Always keep wraps and pouches. */
 export function reconcileSurfaceItems<T extends ShelfItem>(menuItems: T[], liveItems: T[], show: boolean): T[] {
   if (!show) return menuItems.filter((item) => !isRealCigaretteItem(item));

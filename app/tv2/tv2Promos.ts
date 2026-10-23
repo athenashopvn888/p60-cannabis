@@ -1,4 +1,3 @@
-import { SHOW_CIGARETTES } from "../lib/siteConfig";
 export const TV2_DAYTIME_START_HOUR = 8;
 export const TV2_DAYTIME_END_HOUR = 17;
 export const TV2_TIME_ZONE = "America/Toronto";
@@ -23,7 +22,7 @@ const CIGARETTE_PROMOS_RAW = [
     alt: "Marlboro and Belmont $10 Pack Offer",
   },
 ] as const;
-export const CIGARETTE_PROMOS = SHOW_CIGARETTES ? CIGARETTE_PROMOS_RAW : [];
+export const CIGARETTE_PROMOS = CIGARETTE_PROMOS_RAW;
 
 export const TV2_DAYTIME_PROMOS: Readonly<
   Partial<Record<string, Tv2DaytimePromo>>

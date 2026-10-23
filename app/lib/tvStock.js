@@ -169,10 +169,10 @@ async function resolveDataset(options) {
   const endpoint = stockEndpoint(resolveAppsScriptUrl(options.appsScriptUrl));
 
   try {
-    const res = await fetchImpl(endpoint, {
-      signal: AbortSignal.timeout(timeoutMs),
-      cache: "no-store",
-    });
+    const requestInit = { signal: AbortSignal.timeout(timeoutMs) };
+    if (options.revalidateSeconds) requestInit.next = { revalidate: options.revalidateSeconds };
+    else requestInit.cache = "no-store";
+    const res = await fetchImpl(endpoint, requestInit);
 
     if (!res || !res.ok) {
       const status = res ? res.status : "no response";
@@ -260,7 +260,7 @@ async function getCigaretteDataset(options) {
   if (cigCached && now < cigCached.expiresAt) return cigCached.dataset;
   if (!cigInflight) {
     const started = now;
-    cigInflight = resolveDataset({ ...options, now: started }).then((dataset) => {
+    cigInflight = resolveDataset({ ...options, now: started, revalidateSeconds: CIG_STOCK_CACHE_MS / 1000 }).then((dataset) => {
       const safe = {
         source: dataset.source,
         flowers: Array.isArray(dataset.flowers) ? dataset.flowers : [],

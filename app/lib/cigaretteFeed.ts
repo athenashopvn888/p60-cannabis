@@ -3,6 +3,7 @@ import {
   cigarettePublicHeaders,
   decideCigaretteGuide,
   decideCigaretteSurface,
+  publishedSurfaceShow,
   reconcileSurfaceItems,
   type CigaretteSurfaceDecision,
   type CigaretteWording,
@@ -53,11 +54,15 @@ export async function readCigaretteFeed(): Promise<CigaretteSnapshot> {
 export const getCigaretteSnapshot = cache(readCigaretteFeed);
 
 export function toPublicCigaretteState(snap: CigaretteSnapshot): PublicCigaretteState {
-  return { web: snap.web.show, tv: snap.tv.show, wording: snap.wording };
+  return {
+    web: publishedSurfaceShow(snap.web, "web"),
+    tv: publishedSurfaceShow(snap.tv, "tv"),
+    wording: snap.wording,
+  };
 }
 
 export function snapshotHeaders(snap: CigaretteSnapshot): Record<string, string> {
-  return cigarettePublicHeaders({ web: snap.web.show, tv: snap.tv.show, wording: snap.wording });
+  return cigarettePublicHeaders(toPublicCigaretteState(snap));
 }
 
 export { reconcileSurfaceItems };
