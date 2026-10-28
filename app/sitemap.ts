@@ -37,6 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/faq`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/weed-delivery-york`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${BASE}/guides`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${BASE}/resources/fresh-frozen-vs-cured-cannabis`, lastModified: "2026-10-28", changeFrequency: "monthly", priority: 0.7 },
   ];
 
   /* Tier pages */
