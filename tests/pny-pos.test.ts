@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
@@ -466,7 +466,7 @@ test("21. SETB on-hand is ignored and PNY balances stay independent", async () =
 });
 
 test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-hand", async () => {
-  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/menu"), ...walk("app/api/kitchen"), ...walk("app/kitchen"), ...walk("app/api/admin"), ...walk("app/api/cron")];
+  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/menu"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   assert.doesNotMatch(source, /GOOGLE_SA_KITCHEN|KITCHEN_URL|kitchen_on_hand|kitchenOnHand/);
   const h = await readyTill({ "1001": 0, "1002": 0 });
@@ -478,7 +478,7 @@ test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-
 });
 
 test("23. shift, roster and closing code does not reference SOD", () => {
-  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/kitchen"), ...walk("app/kitchen"), ...walk("app/api/cron")];
+  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   assert.doesNotMatch(source, /\bSOD\b|\/api\/gateway\/send|signal-cli|SOD_/);
   const sitemap = readFileSync("app/sitemap.ts", "utf8");
@@ -488,14 +488,13 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(hideMobileBottomBar("/kitchen"), true);
   const menuApp = readFileSync("app/menu/MenuApp.tsx", "utf8");
   assert.match(menuApp, /pny-menu-layout/);
-  const kitchenApp = readFileSync("app/kitchen/KitchenApp.tsx", "utf8");
-  assert.doesNotMatch(kitchenApp, /kitchen-stock|>Stock</);
-  assert.match(kitchenApp, /pny-kitchen-lang/);
-  assert.match(kitchenApp, /\/api\/kitchen\/login/);
-  assert.doesNotMatch(kitchenApp, /\/api\/pos\/login/);
-  assert.match(kitchenApp, /Send Allocation/);
-  assert.match(kitchenApp, /OH /);
-  assert.match(kitchenApp, /PNY01/);
+  const nextConfig = readFileSync("next.config.ts", "utf8");
+  assert.match(nextConfig, /source: "\/kitchen", destination: "https:\/\/mobile-kitchen-two\.vercel\.app\/"/);
+  assert.match(nextConfig, /source: "\/pos\/admin", destination: "https:\/\/mobile-kitchen-two\.vercel\.app\/admin"/);
+  assert.equal(existsSync("app/kitchen/page.tsx"), false);
+  assert.equal(existsSync("app/pos/admin/page.tsx"), false);
+  assert.equal(existsSync("app/api/kitchen/login/route.ts"), false);
+  assert.equal(existsSync("app/api/admin/login/route.ts"), false);
   const posApp = readFileSync("app/pos/PosApp.tsx", "utf8");
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
   assert.match(posApp, /href="\/pos\/till"/);
@@ -689,9 +688,7 @@ test("kitchen send adds allocation or refill stock once and does not write the p
   const state = await h.svc.state(h.token);
   assert.equal(state.receipts.length, 2);
   await rejects(() => h.svc.sendRefill(h.token, { key: "empty", lines: [] }), "EMPTY");
-  const route = readFileSync("app/api/kitchen/refill/route.ts", "utf8");
-  assert.match(route, /sendRefill/);
-  assert.doesNotMatch(route, /flowers\.json|items\.json|writeFile|SETB_PRODUCTS/);
+  assert.equal(existsSync("app/api/kitchen/refill/route.ts"), false);
 });
 
 test("cashing a ticket marks it paid once and a fresh demo server keeps that close", async () => {
