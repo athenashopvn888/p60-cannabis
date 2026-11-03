@@ -1,5 +1,6 @@
 import { DEMO_PIN, STORE_CODE, STORE_TZ } from "./constants.ts";
 import { hashPin } from "./crypto.ts";
+import { catalogFromFeed, readCommittedPnyCatalog, type SetbProduct } from "./setbFeed.ts";
 import type { State } from "./types.ts";
 
 const SHIFT_ID = "11111111-1111-4111-8111-111111111111";
@@ -7,25 +8,12 @@ const SALE_ID = "22222222-2222-4222-8222-222222222222";
 const TICKET_A = "33333333-3333-4333-8333-333333333333";
 const TICKET_B = "44444444-4444-4444-8444-444444444444";
 
-type SeedProduct = {
-  sku: string;
-  name: string;
-  category: string;
-  price: number;
-  qty: number;
-  enabled?: boolean;
-  active?: boolean;
-};
+/** Demo quantities only. They are not SETB on-hand. */
+const DEMO_QTY = [8, 6, 10, 4, 0, 3, 5, 2, 7, 1];
 
-const PRODUCTS: SeedProduct[] = [
-  { sku: "1001", name: "DEMO Flower — Pad Thai", category: "Flower", price: 1200, qty: 9 },
-  { sku: "1002", name: "DEMO Edible — Mango Gummies", category: "Edible", price: 1500, qty: 6 },
-  { sku: "1003", name: "DEMO Pre-Roll — Citrus", category: "Pre-Roll", price: 800, qty: 10 },
-  { sku: "1004", name: "DEMO Vape — Night Cart", category: "Vape", price: 4200, qty: 4 },
-  { sku: "1005", name: "DEMO Concentrate — Hash Coin", category: "Concentrate", price: 2000, qty: 0 },
-  { sku: "1006", name: "DEMO Disabled Tint", category: "Flower", price: 900, qty: 3, enabled: false },
-  { sku: "1007", name: "DEMO Inactive SETB", category: "Flower", price: 900, qty: 3, active: false },
-];
+function demoCatalog(): SetbProduct[] {
+  return catalogFromFeed(readCommittedPnyCatalog()).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
+}
 
 /** Sample PNY01 till. Every name is marked DEMO. Stock here is not the public store menu. */
 export function applyDemoSeed(state: State, now: Date) {
@@ -41,47 +29,54 @@ export function applyDemoSeed(state: State, now: Date) {
     updated_at: at,
     created_at: at,
   });
-  for (const product of PRODUCTS) {
+  const catalog = demoCatalog();
+  const priced = catalog.filter((product) => product.price_cents > 0);
+  const inactiveSku = priced[priced.length - 1]?.sku ?? "";
+  const disabledSku = priced[priced.length - 2]?.sku ?? "";
+  const openingFor = (sku: string) => DEMO_QTY[Math.max(0, catalog.findIndex((product) => product.sku === sku)) % DEMO_QTY.length];
+  const sale = priced.find((product) => product.sku !== inactiveSku && product.sku !== disabledSku && openingFor(product.sku) >= 2) ?? priced[0];
+  if (!sale) return;
+  for (const [index, product] of catalog.entries()) {
+    const opening = DEMO_QTY[index % DEMO_QTY.length];
+    const active = product.sku !== inactiveSku && product.price_cents > 0;
+    const enabled = active && product.sku !== disabledSku;
     state.products.push({
       sku: product.sku,
-      sku_sort: Number(product.sku),
+      sku_sort: Number(product.sku) || 0,
       name: product.name,
       category: product.category,
-      default_price_cents: product.price,
-      setb_active: product.active !== false,
+      default_price_cents: product.price_cents,
+      image_url: product.image_url,
+      setb_active: active,
       synced_at: at,
       created_at: at,
     });
     state.store_products.push({
       store_code: STORE_CODE,
       sku: product.sku,
-      enabled: product.enabled !== false && product.active !== false,
+      enabled,
       price_override_cents: null,
       created_at: at,
       updated_at: at,
     });
-    state.balances.push({ sku: product.sku, qty: product.qty, updated_at: at, created_at: at });
+    const qty = product.sku === sale.sku ? opening - 1 : opening;
+    state.balances.push({ sku: product.sku, qty, updated_at: at, created_at: at });
     state.ledger.push({
       id: crypto.randomUUID(),
       sku: product.sku,
-      qty_delta: product.qty,
+      qty_delta: opening,
       movement_type: "OPENING_BALANCE",
       ref_type: "seed",
       ref_id: "demo",
       actor: "seed",
-      reason: "DEMO opening balance",
+      reason: "DEMO stock, not SETB on-hand",
       shift_id: null,
       created_at: at,
     });
   }
-  const flower = state.balances.find((row) => row.sku === "1001");
-  if (flower) {
-    flower.qty = 8;
-    flower.updated_at = at;
-  }
   state.ledger.push({
     id: crypto.randomUUID(),
-    sku: "1001",
+    sku: sale.sku,
     qty_delta: -1,
     movement_type: "SALE",
     ref_type: "sale",
@@ -115,7 +110,7 @@ export function applyDemoSeed(state: State, now: Date) {
     shift_id: SHIFT_ID,
     staff_uid: "staff-demo-tri",
     ticket_id: null,
-    total_cents: 1200,
+    total_cents: sale.price_cents,
     prices_tax_included: true,
     payment_method: "CASH",
     status: "COMPLETED",
@@ -126,17 +121,17 @@ export function applyDemoSeed(state: State, now: Date) {
   state.sale_lines.push({
     id: crypto.randomUUID(),
     sale_id: SALE_ID,
-    sku: "1001",
+    sku: sale.sku,
     qty: 1,
-    unit_price_cents: 1200,
+    unit_price_cents: sale.price_cents,
     price_source: "SETB_DEFAULT",
-    line_total_cents: 1200,
+    line_total_cents: sale.price_cents,
   });
   state.deposits.push({
     id: crypto.randomUUID(),
     shift_id: SHIFT_ID,
     staff_uid: "staff-demo-tri",
-    amount_cents: 500,
+    amount_cents: Math.min(500, sale.price_cents),
     note: "DEMO drop",
     created_at: at,
   });
@@ -160,9 +155,12 @@ export function applyDemoSeed(state: State, now: Date) {
       created_at: at,
     },
   );
+  const ticketProducts = priced.filter((product) => product.sku !== sale.sku && product.sku !== inactiveSku && product.sku !== disabledSku).slice(0, 2);
+  const ticketA = ticketProducts[0] ?? sale;
+  const ticketB = ticketProducts[1] ?? sale;
   state.ticket_lines.push(
-    { id: crypto.randomUUID(), ticket_id: TICKET_A, sku: "1002", qty: 1, unit_price_cents_snapshot: 1500 },
-    { id: crypto.randomUUID(), ticket_id: TICKET_B, sku: "1003", qty: 2, unit_price_cents_snapshot: 800 },
+    { id: crypto.randomUUID(), ticket_id: TICKET_A, sku: ticketA.sku, qty: 1, unit_price_cents_snapshot: ticketA.price_cents },
+    { id: crypto.randomUUID(), ticket_id: TICKET_B, sku: ticketB.sku, qty: 2, unit_price_cents_snapshot: ticketB.price_cents },
   );
   state.audit.push({
     id: crypto.randomUUID(),

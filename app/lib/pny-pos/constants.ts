@@ -29,4 +29,4 @@ export const OUTBOX_TAB_ORDER = [
 ] as const;
 
 export const DEMO_PIN = "482913";
-export const DEMO_LABEL = "DEMO DATA — sample stock, not a live till";
+export const DEMO_LABEL = "DEMO DATA — real SETB products, sample stock, not live on-hand";

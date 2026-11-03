@@ -20,6 +20,7 @@ export type ProductRow = {
   name: string;
   category: string;
   default_price_cents: number;
+  image_url: string | null;
   setb_active: boolean;
   synced_at: string | null;
   created_at: string;

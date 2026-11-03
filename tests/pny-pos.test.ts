@@ -8,6 +8,7 @@ import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { inStockCategories } from "../app/lib/pny-pos/money.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
+import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
@@ -554,24 +555,52 @@ test("preview without a database uses the labeled demo and production with a dat
   }
 });
 
-test("demo seed is labeled, reconciles, and the menu shows only sellable demo items", async () => {
+test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
+  const rows = catalogFromFeed({
+    flowers: [{ sku: "490", name: "PINK JOKER", tier: "PREMIUM", price3g: { regular: 30, sale: null }, price5g: { regular: 45, sale: 40 }, image: "https://cdn.example/pink.webp", on_hand: 99, qty: 4 }],
+    items: [
+      { sku: "613, 614", name: "STELLAR GUMMIES", category: "EDIBLES", price: "$40 / $55", image: "https://cdn.example/stellar.webp", stock: 12 },
+      { sku: "392", name: "SECOND", tier: "BUDGET", price5g: { regular: 10, sale: null }, image: "https://cdn.example/second.webp" },
+    ],
+  });
+  const flower = rows.find((row) => row.sku === "490");
+  assert.equal(flower?.price_cents, 3000);
+  assert.equal(flower?.image_url, "https://cdn.example/pink.webp");
+  assert.equal(flower?.category, "PREMIUM");
+  assert.equal(rows.filter((row) => row.sku === "392").length, 1);
+  assert.deepEqual(rows.filter((row) => row.sku === "613" || row.sku === "614").map((row) => row.price_cents), [4000, 5500]);
+  assert.equal(JSON.stringify(rows).includes("on_hand"), false);
+  assert.equal(JSON.stringify(rows).includes("\"stock\""), false);
+  const committed = catalogFromFeed(readCommittedPnyCatalog());
+  assert.ok(committed.some((row) => row.sku === "490" && row.name === "PINK JOKER" && row.image_url?.startsWith("https://")));
+  const tv = readFileSync("app/lib/tvStock.js", "utf8");
+  assert.match(tv, /AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4/);
+  assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("store=PNY01"), true);
+  assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
+});
+
+test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {
   const db = new MemoryDb();
   const now = new Date("2026-11-03T15:00:00.000Z");
   applyDemoSeed(db.state, now);
   const sheet = new LocalSheet();
-  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA — sample stock, not a live till" } });
+  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA — real SETB products, sample stock, not live on-hand" } });
   const report = await svc.reconciliation();
   assert.equal(report.ok, true);
   const menu = await svc.menu();
   assert.equal(menu.demo, true);
-  assert.deepEqual(menu.items?.map((item) => item.sku), ["1001", "1002", "1003", "1004"]);
-  assert.equal(menu.items?.every((item) => item.name.startsWith("DEMO") && item.availability === "Available"), true);
+  assert.ok((menu.items?.length ?? 0) > 20);
+  assert.equal(menu.items?.some((item) => item.sku === "490" && item.name === "PINK JOKER"), true);
+  assert.equal(menu.items?.every((item) => item.availability === "Available" && typeof item.image_url === "string" && item.image_url.length > 0), true);
+  assert.equal(menu.items?.some((item) => item.category === "CIGARETTES"), false);
   assert.equal(keysDeep(menu).has("qty"), false);
+  assert.equal(keysDeep(menu).has("on_hand"), false);
   const login = await svc.login(DEMO_PIN, "10.0.0.1");
   const state = await svc.state(login.token);
   assert.equal(state.pending_count, 2);
-  assert.equal(state.totals.sales_cents, 1200);
-  assert.equal(state.totals.deposited_cents, 500);
-  assert.equal(state.totals.cash_on_hand_cents, 700);
-  assert.deepEqual(state.categories, ["Edible", "Flower", "Pre-Roll", "Vape"]);
+  assert.ok((state.totals?.sales_cents ?? 0) >= 500);
+  assert.equal(state.totals?.deposited_cents, 500);
+  assert.equal(state.totals?.cash_on_hand_cents, (state.totals?.sales_cents ?? 0) - 500);
+  assert.equal(state.products?.some((product) => product.image_url?.startsWith("https://")), true);
+  assert.equal(db.state.ledger.filter((row) => row.movement_type === "OPENING_BALANCE").every((row) => row.reason === "DEMO stock, not SETB on-hand"), true);
 });

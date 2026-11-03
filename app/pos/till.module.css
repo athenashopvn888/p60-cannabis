@@ -133,9 +133,25 @@
   border-color: #24160f;
 }
 
+.thumb,
+.thumbPh {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #e7e5e4;
+}
+
+.thumbPh {
+  display: grid;
+  place-items: center;
+  color: #57534e;
+  font-weight: 800;
+}
+
 .row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 56px 1fr auto;
   gap: 8px;
   align-items: center;
   margin: 0 12px 8px;

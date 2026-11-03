@@ -22,10 +22,13 @@ CREATE TABLE IF NOT EXISTS products (
   name text NOT NULL,
   category text NOT NULL,
   default_price_cents integer NOT NULL,
+  image_url text,
   setb_active boolean NOT NULL,
   synced_at timestamptz,
   created_at timestamptz NOT NULL
 );
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url text;
 
 CREATE TABLE IF NOT EXISTS store_products (
   store_code text NOT NULL,

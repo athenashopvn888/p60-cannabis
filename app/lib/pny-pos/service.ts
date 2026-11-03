@@ -24,6 +24,7 @@ import { decryptJson, encryptJson, hashPin, newToken, randomPin, safeEqual, sha2
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
+import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -635,7 +636,7 @@ export class PosService {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled) return [];
           const price = storeProduct.price_override_cents ?? product.default_price_cents;
-          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, qty: qtyOf(tx.state, product.sku) }];
+          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const incoming = tx.state.incoming
@@ -1151,11 +1152,13 @@ export class PosService {
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
+          if (!SHOW_CIGARETTES && isCigaretteCategory(product.category)) return [];
           return [{
             sku: product.sku,
             name: product.name,
             category: product.category,
             price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
+            image_url: product.image_url,
             availability: "Available" as const,
           }];
         })
@@ -1359,13 +1362,14 @@ export class PosService {
         const name = String(raw.name ?? sku);
         const category = String(raw.category ?? "Uncategorized");
         const active = raw.setb_active !== false && raw.active !== false;
+        const image = typeof raw.image_url === "string" ? raw.image_url : typeof raw.image === "string" ? raw.image : null;
         let price: number | null = null;
         if (typeof raw.default_price_cents === "number") price = Math.round(raw.default_price_cents);
         else if (typeof raw.price_cents === "number") price = Math.round(raw.price_cents);
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, sku_sort: Number(sku) || 0, name, category, default_price_cents: price ?? 0, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, sku_sort: Number(sku) || 0, name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: STORE_CODE, sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
@@ -1373,6 +1377,7 @@ export class PosService {
           product.category = category;
           product.setb_active = active;
           if (price != null) product.default_price_cents = price;
+          if (image != null) product.image_url = image;
           product.synced_at = at;
           product.sku_sort = Number(sku) || product.sku_sort;
         }

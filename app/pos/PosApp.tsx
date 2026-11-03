@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
+import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
-type Product = { sku: string; name: string; category: string; price_cents: number; qty: number };
+type Product = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; qty: number };
 type Ticket = { id: string; code: string; status: string; expires_at: string; lines: { sku: string; name: string; qty: number }[] };
 type CountLine = { sku: string; name: string; system_qty: number };
 type View = {
@@ -327,9 +328,10 @@ export default function PosApp() {
             const qty = cart[product.sku] ?? 0;
             return (
               <article key={product.sku} className={styles.row} data-sku={product.sku}>
+                <ProductPhoto src={product.image_url} alt="" className={styles.thumb} placeholderClassName={styles.thumbPh} />
                 <div>
                   <div className={styles.name}>{product.name}</div>
-                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)} tax incl. · {product.qty} on hand</div>
+                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)} tax incl. · {product.qty} demo stock</div>
                 </div>
                 <div className={styles.stepper}>
                   <button type="button" aria-label={`Decrease ${product.name}`} disabled={qty === 0} onClick={() => setQty(product, qty - 1)}>−</button>
