@@ -7,7 +7,7 @@ import CloseShift, { type CloseLine } from "./CloseShift";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
-type Product = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; qty: number };
+type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null; qty: number };
 
 const FLOWER_CATEGORIES = new Set(["flower", "flowers", "budget", "aa", "aaa", "aaa+", "premium", "exotic"]);
 
@@ -360,7 +360,7 @@ export default function PosApp() {
                 <ProductPhoto src={product.image_url} alt="" className={styles.thumb} placeholderClassName={styles.thumbPh} />
                 <div>
                   <div className={styles.name}>{product.name}</div>
-                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)} tax incl. · {product.qty} demo stock</div>
+                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)}{product.price_source === "RAW_UNIT" ? "" : " tax incl."} · {product.qty} demo stock</div>
                 </div>
                 {stepper}
               </article>

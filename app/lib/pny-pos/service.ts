@@ -27,6 +27,7 @@ import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
+import { RAW_PRICE_TTL_MS, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
 import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
 import type { SheetClient } from "./sheets.ts";
@@ -315,10 +316,12 @@ function productName(state: State, sku: string) {
   return state.products.find((product) => product.sku === sku)?.name ?? sku;
 }
 
-function priceOf(state: State, sku: string) {
+function priceOf(state: State, sku: string, raw?: Map<string, number>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   if (!product?.setb_active || !storeProduct?.enabled) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
+  const fromSheet = raw?.get(sku);
+  if (fromSheet != null) return { cents: fromSheet, source: "RAW_UNIT", product };
   if (storeProduct.price_override_cents != null) return { cents: storeProduct.price_override_cents, source: "STORE_OVERRIDE", product };
   return { cents: product.default_price_cents, source: "SETB_DEFAULT", product };
 }
@@ -327,7 +330,9 @@ function qtyOf(state: State, sku: string) {
   return state.balances.find((row) => row.sku === sku)?.qty ?? 0;
 }
 
-function sellingPriceCents(state: State, sku: string) {
+function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>) {
+  const fromSheet = raw?.get(sku);
+  if (fromSheet != null) return fromSheet;
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   return storeProduct?.price_override_cents ?? product?.default_price_cents ?? 0;
@@ -346,7 +351,7 @@ function draftsOf(state: State) {
 }
 
 /** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
-function shiftClosePlan(state: State, shiftId: string) {
+function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>) {
   const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
   const openingLines = opening ? state.count_lines.filter((row) => row.count_id === opening.id) : [];
   const saleIds = new Set(state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED").map((sale) => sale.id));
@@ -373,7 +378,7 @@ function shiftClosePlan(state: State, shiftId: string) {
       return {
         sku,
         name: productName(state, sku),
-        price_cents: sellingPriceCents(state, sku),
+        price_cents: sellingPriceCents(state, sku, raw),
         opening_qty: openingQty,
         received_qty: received,
         sold_qty: sold,
@@ -708,6 +713,8 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
+  private rawPriceCache: { at: number; map: Map<string, number> } | null = null;
+  private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -718,6 +725,26 @@ export class PosService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** Read Items_raw_price.Unit_Price. Does not write the sheet. A failed read keeps the last good cache. */
+  private async rawUnitPrices() {
+    const now = this.now().getTime();
+    if (this.rawPriceCache && now - this.rawPriceCache.at < RAW_PRICE_TTL_MS) return this.rawPriceCache.map;
+    if (this.rawPriceFlight) return this.rawPriceFlight;
+    this.rawPriceFlight = (async () => {
+      try {
+        const map = unitPricesFromRawRows(await this.deps.sheet.readRows("Items_raw_price"));
+        this.rawPriceCache = { at: now, map };
+        return map;
+      } catch (error) {
+        if (error instanceof SheetUnavailable) return this.rawPriceCache?.map ?? new Map();
+        throw error;
+      } finally {
+        this.rawPriceFlight = null;
+      }
+    })();
+    return this.rawPriceFlight;
   }
 
   private demoPinAllowed() {
@@ -995,6 +1022,7 @@ export class PosService {
   }
 
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
+    const raw = await this.rawUnitPrices();
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -1006,8 +1034,9 @@ export class PosService {
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled) return [];
-          const price = storeProduct.price_override_cents ?? product.default_price_cents;
-          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
+          const fromSheet = raw.get(product.sku);
+          const price = fromSheet ?? storeProduct.price_override_cents ?? product.default_price_cents;
+          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: fromSheet == null ? "MENU" : "RAW_UNIT", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const incoming = tx.state.incoming
@@ -1062,7 +1091,7 @@ export class PosService {
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
         close_lines: (() => {
           const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
-          return shiftClosePlan(tx.state, shift.id).map((line) => ({
+          return shiftClosePlan(tx.state, shift.id, raw).map((line) => ({
             ...line,
             system_qty: qtyOf(tx.state, line.sku),
             counted_qty: draft?.counts.find((row) => row.sku === line.sku)?.counted_qty ?? null,
@@ -1236,6 +1265,7 @@ export class PosService {
 
   async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
+    const raw = await this.rawUnitPrices();
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -1263,7 +1293,7 @@ export class PosService {
       }
       const lines = mergeLines(input.lines);
       const priced = lines.map((line) => {
-        const price = priceOf(tx.state, line.sku);
+        const price = priceOf(tx.state, line.sku, raw);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
       let stockout = false;
@@ -1275,6 +1305,7 @@ export class PosService {
         ledger(tx.state, line.sku, -line.qty, "SALE", "sale", saleId, staff.staff_uid, null, shift.id, at);
       }
       const total = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      const taxIncluded = priced.some((line) => line.source !== "RAW_UNIT");
       const method = paymentOf(input.payment_method);
       const ref = `PNY01-${String(tx.state.sales.length + 1).padStart(5, "0")}`;
       tx.state.sales.push({
@@ -1284,7 +1315,7 @@ export class PosService {
         staff_uid: staff.staff_uid,
         ticket_id: input.ticket_id ?? null,
         total_cents: total,
-        prices_tax_included: true,
+        prices_tax_included: taxIncluded,
         payment_method: method,
         status: "COMPLETED",
         void_reason: null,
@@ -1313,7 +1344,7 @@ export class PosService {
         sale_id: saleId,
         ref_no: ref,
         total_cents: total,
-        prices_tax_included: true,
+        prices_tax_included: taxIncluded,
         payment_method: method,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
         journal_order: input.ticket_id ? journalFromTicket(tx.state, input.ticket_id) : null,
@@ -1439,13 +1470,14 @@ export class PosService {
 
   async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
     const body = input as unknown as Json;
+    const raw = await this.rawUnitPrices();
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
       const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
-      const plan = shiftClosePlan(tx.state, shift.id);
+      const plan = shiftClosePlan(tx.state, shift.id, raw);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
       if (plan.some((line) => !bySku.has(line.sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that had stock this shift.");
       const finalDeposit = input.final_deposit_cents ?? 0;
@@ -1723,6 +1755,7 @@ export class PosService {
   async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
+    const raw = await this.rawUnitPrices();
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -1735,7 +1768,7 @@ export class PosService {
       const lines = mergeLines(input.lines);
       for (const line of lines) {
         try {
-          priceOf(tx.state, line.sku);
+          priceOf(tx.state, line.sku, raw);
         } catch {
           throw new PosError(400, "ITEM_UNAVAILABLE", "An item in that order is unavailable.");
         }
@@ -1760,7 +1793,7 @@ export class PosService {
       });
       let total = 0;
       for (const line of lines) {
-        const price = priceOf(tx.state, line.sku);
+        const price = priceOf(tx.state, line.sku, raw);
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
