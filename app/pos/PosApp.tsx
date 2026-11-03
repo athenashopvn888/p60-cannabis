@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { formatMoney } from "../lib/pny-pos/money";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
@@ -59,8 +60,7 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "deposit" | "end" | "done" | null>(null);
-  const [deposit, setDeposit] = useState("");
+  const [sheet, setSheet] = useState<"cash" | "end" | "done" | null>(null);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
@@ -142,22 +142,6 @@ export default function PosApp() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cashout failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function sendDeposit() {
-    setError("");
-    const cents = Math.round(Number(deposit) * 100);
-    setBusy(true);
-    try {
-      await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
-      setDeposit("");
-      setSheet(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Deposit failed");
     } finally {
       setBusy(false);
     }
@@ -272,22 +256,10 @@ export default function PosApp() {
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}</div>
-          <button className={styles.ghost} type="button" onClick={() => void openEnd()}>End Shift</button>
-        </div>
-        <div className={styles.metrics}>
-          <div className={styles.metric} data-testid="total-sales">
-            <span>Total Sales</span>
-            <strong>{formatMoney(view.totals?.sales_cents ?? 0)}</strong>
+          <div className={styles.headerActions}>
+            <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
+            <button className={styles.ghost} type="button" onClick={() => void openEnd()}>End Shift</button>
           </div>
-          <div className={styles.metric} data-testid="cash-on-hand">
-            <span>Cash on Hand</span>
-            <strong>{formatMoney(view.totals?.cash_on_hand_cents ?? 0)}</strong>
-          </div>
-          <div className={styles.metric} data-testid="total-deposited">
-            <span>Total Deposited</span>
-            <strong>{formatMoney(view.totals?.deposited_cents ?? 0)}</strong>
-          </div>
-          <button className={styles.depositBtn} type="button" onClick={() => { setError(""); setSheet("deposit"); }}>+Deposit</button>
         </div>
       </header>
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
@@ -430,18 +402,6 @@ export default function PosApp() {
                 <h2>Sale {refNo}</h2>
                 <p>Prices include tax.</p>
                 <button className={styles.primary} type="button" onClick={() => setSheet(null)}>Done</button>
-              </>
-            ) : null}
-            {sheet === "deposit" ? (
-              <>
-                <h2>+Deposit</h2>
-                <p>Cash on hand is {formatMoney(view.totals?.cash_on_hand_cents ?? 0)}. A larger deposit is blocked.</p>
-                <input className={styles.field} inputMode="decimal" placeholder="0.00" value={deposit} onChange={(event) => setDeposit(event.target.value)} aria-label="Deposit amount" />
-                {error ? <p className={styles.error}>{error}</p> : null}
-                <div className={styles.actions}>
-                  <button className={styles.secondary} type="button" onClick={() => setSheet(null)}>Back</button>
-                  <button className={styles.primary} type="button" disabled={busy} onClick={() => void sendDeposit()}>Deposit</button>
-                </div>
               </>
             ) : null}
             {sheet === "end" ? (
