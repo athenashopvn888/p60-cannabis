@@ -6,6 +6,7 @@ import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { inStockCategories } from "../app/lib/pny-pos/money.ts";
+import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
@@ -34,6 +35,30 @@ function harness(start = new Date("2026-11-03T15:00:00.000Z")) {
   const svc = new PosService(db, { now: () => clock.t, sheet, secrets, demo: null });
   return { svc, db, sheet, clock };
 }
+
+test("Postgres projection batches rows instead of issuing one insert per row", async () => {
+  const calls: { sql: string; values: unknown[] }[] = [];
+  const client = {
+    query: async (sql: string, values: unknown[]) => {
+      calls.push({ sql, values });
+      return { rows: [] };
+    },
+  };
+  const rows = Array.from({ length: 750 }, (_, index) => ({
+    id: `row-${index}`,
+    action: "TEST",
+    detail: { index },
+    created_at: "2026-11-03T15:00:00.000Z",
+  }));
+
+  await insertRows(client as never, "audit_log", rows);
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].values.length, 2000);
+  assert.equal(calls[1].values.length, 1000);
+  assert.match(calls[0].sql, /\$3::jsonb/);
+  assert.match(calls[0].sql, /INSERT INTO audit_log/);
+});
 
 async function rejects(run: () => Promise<unknown>, code: string) {
   await assert.rejects(run, (error: unknown) => {
