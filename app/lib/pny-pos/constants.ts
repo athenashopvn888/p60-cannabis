@@ -19,6 +19,8 @@ export const SCHEMA_VERSION = "3";
 
 export const OUTBOX_TAB_ORDER = [
   "S_Sales",
+  "S_Deposits",
+  "S_Shifts",
   "S_Receipts",
   "S_OpeningCounts",
   "S_ClosingCounts",

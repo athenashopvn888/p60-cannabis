@@ -405,6 +405,17 @@ function noCountLines(state: State): ClosingLine[] {
 
 function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+  enqueue(state, "S_Shifts", `SH-${shift.id}`, {
+    row_id: `SH-${shift.id}`,
+    shift_id: shift.sccx_shift_id,
+    store_code: STORE_CODE,
+    staff_pos_id: staff?.pos_id ?? "",
+    staff_name: staff?.display_name ?? "",
+    status: shift.status,
+    start: shift.started_at,
+    end: shift.ended_at ?? "",
+    end_reason: shift.end_reason ?? "",
+  }, at);
   for (const line of closing.closing_lines) {
     enqueue(state, "S_ClosingCounts", `CC-${shift.id}-${line.sku}`, {
       row_id: `CC-${shift.id}-${line.sku}`,
@@ -443,6 +454,9 @@ function queueSnapshot(state: State, at: string) {
       name: product.name,
       category: product.category,
       active: product.setb_active && storeProduct?.enabled ? "true" : "false",
+      price_cad: centsToSheet(storeProduct?.price_override_cents ?? product.default_price_cents),
+      price_label: "CAD · tax included",
+      image: product.image_url ?? "",
     }, at);
     enqueue(state, "S_Stock", `ST-${STORE_CODE}-${product.sku}`, {
       row_id: `ST-${STORE_CODE}-${product.sku}`,
@@ -712,6 +726,17 @@ export class PosService {
         created_at: at,
       };
       tx.state.shifts.push(shift);
+      enqueue(tx.state, "S_Shifts", `SH-${shift.id}`, {
+        row_id: `SH-${shift.id}`,
+        shift_id: shift.sccx_shift_id,
+        store_code: STORE_CODE,
+        staff_pos_id: staff.pos_id,
+        staff_name: staff.display_name,
+        status: shift.status,
+        start: shift.started_at,
+        end: "",
+        end_reason: "",
+      }, at);
       const result = {
         ok: true,
         staff_name: staff.display_name,
@@ -1210,6 +1235,17 @@ export class PosService {
       if (input.amount_cents > totals.cash_on_hand_cents) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
       const at = iso(now);
       tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: input.amount_cents, note: input.note?.trim() || null, created_at: at });
+      const deposit = tx.state.deposits[tx.state.deposits.length - 1]!;
+      enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
+        row_id: `D-${deposit.id}`,
+        deposit_id: deposit.id,
+        store_code: STORE_CODE,
+        shift_id: shift.sccx_shift_id,
+        staff_pos_id: staff.pos_id,
+        amount: centsToSheet(deposit.amount_cents),
+        note: deposit.note ?? "",
+        at: deposit.created_at,
+      }, at);
       const next = shiftTotals(tx.state, shift.id);
       const result = { ok: true, ...next, sales_cents: next.sales_total_cents };
       remember(tx.state, "deposit", input.key, body, result, now, this.deps.secrets.session);
