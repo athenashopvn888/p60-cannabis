@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
@@ -31,6 +32,7 @@ type View = {
   shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   close_lines?: CloseLine[];
+  opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
   categories?: string[];
   products?: Product[];
@@ -201,14 +203,20 @@ export default function PosApp() {
     }
   }
 
+  async function saveOpeningLine(sku: string, countedQty: number, varianceReason?: string) {
+    setError("");
+    await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty, variance_reason: varianceReason });
+    await load();
+  }
+
   async function confirmOpening() {
     setError("");
     setBusy(true);
     try {
-      const lines = (view?.count_lines ?? []).map((line) => ({
+      const lines = (view?.opening_lines ?? []).map((line) => ({
         sku: line.sku,
-        counted_qty: Number(counts[line.sku] ?? line.system_qty),
-        variance_reason: reasons[line.sku] || undefined,
+        counted_qty: line.counted_qty ?? 0,
+        variance_reason: line.variance_reason || undefined,
       }));
       await post("/api/pos/counts/opening", { lines }, crypto.randomUUID());
       await load();
@@ -285,25 +293,18 @@ export default function PosApp() {
         </div>
       </header>
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
-      {(view.incoming?.length ?? 0) > 0 ? <div className={styles.banner}>Incoming stock is waiting to be confirmed.</div> : null}
+      {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
+      {(view.incoming?.length ?? 0) > 0 && view.phase !== "opening" ? <div className={styles.banner}>Incoming stock is waiting to be confirmed.</div> : null}
       {error && !sheet ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
 
       {view.phase === "opening" ? (
-        <section className={styles.body} data-testid="pos-opening">
-          <div className={styles.pad}><h2>Opening count</h2><p>Confirm original stock. A difference needs a reason.</p></div>
-          {(view.count_lines ?? []).map((line) => (
-            <div key={line.sku}>
-              <label className={styles.countRow}>
-                <span><strong>{line.sku}</strong> {line.name}<br />System {line.system_qty}</span>
-                <input inputMode="numeric" value={counts[line.sku] ?? String(line.system_qty)} onChange={(event) => setCounts({ ...counts, [line.sku]: event.target.value })} />
-              </label>
-              {Number(counts[line.sku] ?? line.system_qty) !== line.system_qty ? (
-                <input className={styles.reason} placeholder="Reason" value={reasons[line.sku] ?? ""} onChange={(event) => setReasons({ ...reasons, [line.sku]: event.target.value })} style={{ margin: "0 12px 8px", width: "calc(100% - 24px)" }} />
-              ) : null}
-            </div>
-          ))}
-          <div className={styles.pad}><button className={styles.primary} type="button" disabled={busy} onClick={() => void confirmOpening()}>Confirm original stock</button></div>
-        </section>
+        <OpeningCount
+          lines={view.opening_lines ?? []}
+          busy={busy}
+          error={error}
+          onSave={saveOpeningLine}
+          onConfirm={confirmOpening}
+        />
       ) : null}
 
       {view.phase === "refill" ? (

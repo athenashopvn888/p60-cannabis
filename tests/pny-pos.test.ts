@@ -926,3 +926,45 @@ test("SKU 1000 rings the raw pack price with no tax and ignores the client price
   assert.deepEqual(h.sheet.tabs.Items_raw_price, before);
   assert.equal(writes.includes("Items_raw_price"), false);
 });
+
+test("opening count is only stocked SKUs or an incoming refill, otherwise it waits for Kitchen", async () => {
+  const h = harness();
+  await h.svc.syncSetb([
+    { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
+    { sku: "1002", name: "Empty", category: "Edible", price_cents: 500, active: true },
+  ]);
+  await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
+  const login = await h.svc.login(String(started.pin), "10.2.0.1");
+  const waiting = await h.svc.state(login.token);
+  assert.equal(waiting.phase, "sell");
+  assert.equal(waiting.block, "WAITING_FOR_KITCHEN");
+  assert.deepEqual(waiting.opening_lines, []);
+  await rejects(() => h.svc.cashout(login.token, { key: "too-soon", lines: [{ sku: "1002", qty: 1 }] }), "WAITING_FOR_KITCHEN");
+
+  const rowId = crypto.randomUUID();
+  h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "refill", store_code: "PNY01", kind: "REFILL", sku: "1002", qty: "3", created_at: "2026-11-03T16:00:00+07:00", kitchen_status: "ACTIVE" }];
+  await h.svc.refreshIncoming({ force: true });
+  await h.svc.openingBalance(h.admin ?? (await h.svc.adminLogin(secrets.admin)).token, { key: "ob-1001", sku: "1001", qty: 4 });
+  const admin = h.db.state.admin_sessions.length ? (await h.svc.adminLogin(secrets.admin)).token : "";
+  if (!h.db.state.balances.some((row) => row.sku === "1001" && row.qty === 4)) {
+    await h.svc.openingBalance(admin, { key: "ob-1001b", sku: "1001", qty: 4 });
+  }
+  const view = await h.svc.state(login.token);
+  assert.equal(view.phase, "opening");
+  assert.deepEqual(view.opening_lines?.map((line) => line.sku), ["1001", "1002"]);
+  assert.equal(view.opening_lines?.find((line) => line.sku === "1002")?.system_qty, 0);
+  assert.equal(view.opening_lines?.find((line) => line.sku === "1002")?.incoming_qty, 3);
+  await h.svc.saveOpeningCount(login.token, { sku: "1002", counted_qty: 0 });
+  await h.svc.saveOpeningCount(login.token, { sku: "1001", counted_qty: 4 });
+  const saved = await h.svc.state(login.token);
+  assert.equal(saved.opening_lines?.find((line) => line.sku === "1001")?.counted_qty, 4);
+  await h.svc.openingCount(login.token, {
+    key: "open",
+    lines: [
+      { sku: "1001", counted_qty: 4 },
+      { sku: "1002", counted_qty: 0 },
+    ],
+  });
+  assert.equal((await h.svc.state(login.token)).phase, "refill");
+});

@@ -350,6 +350,23 @@ function draftsOf(state: State) {
   return state.closing_drafts;
 }
 
+/** Opening count: on-hand stock, plus a kitchen row that is still waiting to be received. */
+function openingPlan(state: State, raw?: Map<string, number>) {
+  const incoming = state.incoming.filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0);
+  const skus = new Set<string>();
+  for (const balance of state.balances) if (balance.qty > 0) skus.add(balance.sku);
+  for (const row of incoming) skus.add(row.sku);
+  return [...skus]
+    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
+    .map((sku) => ({
+      sku,
+      name: productName(state, sku),
+      price_cents: sellingPriceCents(state, sku, raw),
+      system_qty: qtyOf(state, sku),
+      incoming_qty: incoming.filter((row) => row.sku === sku).reduce((sum, row) => sum + row.qty_sent, 0),
+    }));
+}
+
 /** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
 function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>) {
   const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
@@ -640,7 +657,8 @@ function requireAdmin(state: State, token: string, now: Date) {
 
 function sellingBlocked(state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
-  if (!shift.opening_confirmed_at) return "OPENING_REQUIRED";
+  if (!shift.opening_confirmed_at && openingPlan(state).length > 0) return "OPENING_REQUIRED";
+  if (!shift.opening_confirmed_at) return "WAITING_FOR_KITCHEN";
   if (state.incoming.some((row) => row.status === "PENDING_CONFIRM")) return "REFILL_REQUIRED";
   return null;
 }
@@ -1056,7 +1074,8 @@ export class PosService {
           })),
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
-      const phase = shift.status === "CLOSING" ? "end" : !shift.opening_confirmed_at ? "opening" : incoming.length ? "refill" : "sell";
+      const openingLines = openingPlan(tx.state, raw);
+      const phase = shift.status === "CLOSING" ? "end" : !shift.opening_confirmed_at && openingLines.length > 0 ? "opening" : shift.opening_confirmed_at && incoming.length ? "refill" : "sell";
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status === "queued")
         .map((row) => Date.parse(row.created_at))
@@ -1089,6 +1108,11 @@ export class PosService {
         categories: inStockCategories(products),
         products,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
+        opening_lines: openingLines.map((line) => ({
+          ...line,
+          counted_qty: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.opening_counts?.find((row) => row.sku === line.sku)?.counted_qty ?? null,
+          variance_reason: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.opening_counts?.find((row) => row.sku === line.sku)?.variance_reason ?? null,
+        })),
         close_lines: (() => {
           const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
           return shiftClosePlan(tx.state, shift.id, raw).map((line) => ({
@@ -1127,9 +1151,9 @@ export class PosService {
       const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
-      const expected = countSkus(tx.state);
+      const expected = openingPlan(tx.state).map((line) => line.sku);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
-      if (expected.some((sku) => !bySku.has(sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU.");
+      if (expected.some((sku) => !bySku.has(sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that has stock or an incoming refill.");
       const at = iso(now);
       const countId = randomUUID();
       for (const sku of expected) {
@@ -1274,6 +1298,7 @@ export class PosService {
       const { shift, staff } = this.session(tx.state, token, now);
       const block = sellingBlocked(tx.state, shift);
       if (block === "OPENING_REQUIRED") throw new PosError(409, block, "Confirm the opening count before selling.");
+      if (block === "WAITING_FOR_KITCHEN") throw new PosError(409, block, "No stock assigned yet — waiting for Kitchen.");
       if (block === "REFILL_REQUIRED") throw new PosError(409, block, "Confirm incoming stock before selling.");
       if (block) throw new PosError(409, block, "Shift is not open for sales.");
       const at = iso(now);
@@ -1424,6 +1449,34 @@ export class PosService {
       if (shift.status === "ACTIVE") shift.status = "CLOSING";
       if (shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       return { ok: true, status: shift.status, message: END_SHIFT_MESSAGE };
+    });
+  }
+
+  async saveOpeningCount(token: string, input: { sku: string; counted_qty: number; variance_reason?: string }) {
+    return this.db.transaction(async (tx) => {
+      const { shift } = this.session(tx.state, token, this.now());
+      if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
+      const plan = openingPlan(tx.state);
+      if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this opening count.");
+      if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
+      const system = plan.find((line) => line.sku === input.sku)?.system_qty ?? 0;
+      if (input.counted_qty !== system && !input.variance_reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "A variance needs a reason.");
+      const drafts = draftsOf(tx.state);
+      let draft = drafts.find((row) => row.shift_id === shift.id);
+      if (!draft) {
+        draft = { shift_id: shift.id, counts: [], opening_counts: [], final_deposit_cents: null, updated_at: iso(this.now()) };
+        drafts.push(draft);
+      }
+      if (!draft.opening_counts) draft.opening_counts = [];
+      const existing = draft.opening_counts.find((row) => row.sku === input.sku);
+      const reason = input.variance_reason?.trim() || null;
+      if (existing) {
+        existing.counted_qty = input.counted_qty;
+        existing.variance_reason = reason;
+      } else draft.opening_counts.push({ sku: input.sku, counted_qty: input.counted_qty, variance_reason: reason });
+      draft.updated_at = iso(this.now());
+      const done = plan.filter((line) => draft.opening_counts?.some((row) => row.sku === line.sku)).length;
+      return { ok: true, done, total: plan.length };
     });
   }
 

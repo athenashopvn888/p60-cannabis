@@ -222,6 +222,7 @@ export type ClosingRow = {
 export type ClosingDraftRow = {
   shift_id: string;
   counts: { sku: string; counted_qty: number }[];
+  opening_counts?: { sku: string; counted_qty: number; variance_reason?: string | null }[];
   final_deposit_cents: number | null;
   updated_at: string;
 };
