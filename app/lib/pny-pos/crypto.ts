@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 
 export function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -32,6 +32,39 @@ export function verifyPin(pin: string, stored: string | null) {
 
 export function newToken() {
   return randomBytes(32).toString("base64url");
+}
+
+export type StaffTicket = {
+  v: 1;
+  store: string;
+  shift: string;
+  staff: string;
+  exp: number;
+  demo: true;
+};
+
+/** Stateless till session. Any demo instance can check it without shared memory. */
+export function signStaffSession(ticket: StaffTicket, secret: string) {
+  if (!secret) throw new Error("Session secret is not configured.");
+  const body = Buffer.from(JSON.stringify(ticket)).toString("base64url");
+  const sig = createHmac("sha256", secret).update(body).digest("base64url");
+  return `v1.${body}.${sig}`;
+}
+
+export function readStaffSession(token: string, secret: string, nowMs: number): StaffTicket | null {
+  if (!secret) return null;
+  const [version, body, sig] = token.split(".");
+  if (version !== "v1" || !body || !sig) return null;
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  if (!safeEqual(sig, expected)) return null;
+  try {
+    const ticket = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as StaffTicket;
+    if (ticket.v !== 1 || ticket.demo !== true || !ticket.shift || !ticket.exp) return null;
+    if (ticket.exp * 1000 <= nowMs) return null;
+    return ticket;
+  } catch {
+    return null;
+  }
 }
 
 export function stableStringify(value: unknown): string {

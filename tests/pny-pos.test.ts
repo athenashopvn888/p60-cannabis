@@ -541,10 +541,10 @@ test("preview without a database uses the labeled demo and production with a dat
     assert.equal(demoMode(), true);
     process.env.VERCEL_ENV = "production";
     assert.equal(demoMode(), false);
-    process.env.DATABASE_URL = "postgres://production.example/pny";
-    assert.equal(demoMode(), false);
-    process.env.PNY_POS_DEMO = "1";
-    assert.equal(demoMode(), true);
+  process.env.DATABASE_URL = "postgres://production.example/pny";
+  assert.equal(demoMode(), false);
+  process.env.PNY_POS_DEMO = "1";
+  assert.equal(demoMode(), false);
     process.env.PNY_POS_DEMO = "0";
     assert.equal(demoMode(), false);
   } finally {
@@ -577,6 +577,42 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
   assert.match(tv, /AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4/);
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("store=PNY01"), true);
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
+});
+
+test("demo PIN 666666 is a signed session that another server accepts", async () => {
+  assert.equal(DEMO_PIN, "666666");
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const make = () => {
+    const db = new MemoryDb();
+    applyDemoSeed(db.state, now);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    return { db, svc };
+  };
+  const first = make();
+  const second = make();
+  const login = await first.svc.login(DEMO_PIN, "10.9.9.1");
+  assert.match(login.token, /^v1\./);
+  const remote = await second.svc.state(login.token);
+  assert.equal(remote.shift?.pos_id, "DEMO1");
+  assert.ok((remote.products?.length ?? 0) > 0);
+  await rejects(() => second.svc.login("123456", "10.9.9.2"), "BAD_PIN");
+  await rejects(() => second.svc.state(`${login.token}x`), "SESSION_REJECTED");
+  second.db.state.shifts.forEach((shift) => {
+    shift.status = "ENDED";
+    shift.pin_hash = null;
+  });
+  const again = await second.svc.login(DEMO_PIN, "10.9.9.3");
+  assert.equal((await second.svc.state(again.token)).shift?.status, "ACTIVE");
+  process.env.VERCEL_ENV = "production";
+  try {
+    second.db.state.shifts.forEach((shift) => {
+      shift.status = "ENDED";
+      shift.pin_hash = null;
+    });
+    await rejects(() => second.svc.login(DEMO_PIN, "10.9.9.4"), "NO_SHIFT");
+  } finally {
+    delete process.env.VERCEL_ENV;
+  }
 });
 
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {

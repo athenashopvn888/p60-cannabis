@@ -1,4 +1,4 @@
-import { DEMO_LABEL, DEMO_PIN } from "./constants.ts";
+import { DEMO_LABEL, DEMO_PIN, DEMO_SESSION_SECRET } from "./constants.ts";
 import { MemoryDb } from "./memory.ts";
 import { PgDb } from "./postgres.ts";
 import { applyDemoSeed } from "./seed.ts";
@@ -22,10 +22,11 @@ const DEMO_SECRETS: Secrets = {
  * Set PNY_POS_DEMO=0 to force the empty unconfigured till.
  */
 export function demoMode() {
+  if (process.env.VERCEL_ENV === "production") return false;
   if (process.env.PNY_POS_DEMO === "0") return false;
   if (process.env.PNY_POS_DEMO === "1") return true;
   if (process.env.DATABASE_URL) return false;
-  return process.env.VERCEL_ENV !== "production";
+  return true;
 }
 
 export function loadSecrets(): Secrets {
@@ -39,7 +40,7 @@ export function loadSecrets(): Secrets {
     shift: pick("SHIFT_SECRET", DEMO_SECRETS.shift),
     roster: pick("ROSTER_SECRET", DEMO_SECRETS.roster),
     poll: pick("SCCX_POLL_SECRET", DEMO_SECRETS.poll),
-    session: pick("SESSION_SECRET", DEMO_SECRETS.session),
+    session: pick("SESSION_SECRET", DEMO_SESSION_SECRET),
     admin: pick("ADMIN_SECRET", DEMO_SECRETS.admin),
     cron: pick("CRON_SECRET", DEMO_SECRETS.cron),
   };

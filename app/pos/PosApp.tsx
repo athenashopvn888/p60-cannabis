@@ -27,15 +27,28 @@ type View = {
   sheet_sync_delayed?: boolean;
   end_shift_message?: string;
   error?: string;
+  code?: string;
 };
 
 async function post(url: string, body: unknown, key?: string) {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+    const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
-  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Request failed");
+  if (!response.ok) {
+    const failure = new Error(data.error || "Request failed") as Error & { code?: string };
+    failure.code = typeof data.code === "string" ? data.code : undefined;
+    throw failure;
+  }
   return data;
+}
+
+function failureText(error: unknown) {
+  if (error instanceof Error) {
+    const code = (error as Error & { code?: string }).code;
+    return code ? `${error.message} (${code})` : error.message;
+  }
+  return "Could not sign in.";
 }
 
 export default function PosApp() {
@@ -54,10 +67,13 @@ export default function PosApp() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/pos/state", { cache: "no-store" });
+    const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
     const data = (await response.json()) as View;
     setView(data);
-    if (!data.authenticated) setCart({});
+    if (!data.authenticated) {
+      setCart({});
+      if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
+    }
   }, []);
 
   useEffect(() => {
@@ -104,7 +120,7 @@ export default function PosApp() {
       setPin("");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not sign in");
+      setError(failureText(err));
     } finally {
       setBusy(false);
     }

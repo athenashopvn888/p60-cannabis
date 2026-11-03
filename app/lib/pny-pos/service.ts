@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   DEMO_LABEL,
+  DEMO_PIN,
   FULL_SCAN_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
@@ -20,7 +21,7 @@ import {
   TICKET_LETTERS,
   TICKET_TTL_MS,
 } from "./constants.ts";
-import { decryptJson, encryptJson, hashPin, newToken, randomPin, safeEqual, sha256, stableStringify, verifyPin } from "./crypto.ts";
+import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSession, safeEqual, sha256, signStaffSession, stableStringify, verifyPin } from "./crypto.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
@@ -360,14 +361,36 @@ function openShifts(state: State) {
   return state.shifts.filter((shift) => shift.store_code === STORE_CODE && shift.status !== "ENDED");
 }
 
-function requireSession(state: State, token: string, now: Date) {
+function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string }) {
   const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
-  if (!session) throw new PosError(401, "NO_SESSION", "Sign in again.");
-  const shift = state.shifts.find((row) => row.id === session.shift_id);
-  if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) throw new PosError(401, "NO_SESSION", "This shift has ended.");
-  const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
-  if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
-  return { session, shift, staff };
+  if (session) {
+    const shift = state.shifts.find((row) => row.id === session.shift_id);
+    if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+      throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
+    }
+    const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+    if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
+    return { session, shift, staff };
+  }
+  if (opts?.demo && token.startsWith("v1.")) {
+    const ticket = readStaffSession(token, opts.secret, now.getTime());
+    if (!ticket || ticket.store !== STORE_CODE) {
+      throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
+    }
+    const shift = state.shifts.find((row) => row.sccx_shift_id === ticket.shift || row.id === ticket.shift);
+    if (!shift) throw new PosError(401, "NO_SHIFT", "No demo shift is open on this server. Sign in again.");
+    if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
+      throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again with the demo PIN.");
+    }
+    const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+    if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
+    return {
+      session: { id: "signed", shift_id: shift.id, token_hash: sha256(token), expires_at: new Date(ticket.exp * 1000).toISOString(), revoked_at: null, created_at: iso(now) },
+      shift,
+      staff,
+    };
+  }
+  throw new PosError(401, "NO_SESSION", "Sign in again. This server does not have that session.");
 }
 
 function requireAdmin(state: State, token: string, now: Date) {
@@ -459,6 +482,36 @@ export class PosService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  private demoPinAllowed() {
+    return Boolean(this.deps.demo) && process.env.VERCEL_ENV !== "production";
+  }
+
+  private session(state: State, token: string, now: Date) {
+    return requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session });
+  }
+
+  private reopenDemoShift(state: State, now: Date) {
+    const shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-1")
+      ?? state.shifts.find((row) => row.store_code === STORE_CODE);
+    if (!shift) return null;
+    const at = iso(now);
+    if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
+      shift.status = "ACTIVE";
+      shift.ended_at = null;
+      shift.end_reason = null;
+      shift.pin_failed_attempts = 0;
+      if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+    }
+    if (shift.status === "LOCKED") {
+      shift.status = "ACTIVE";
+      shift.pin_failed_attempts = 0;
+    }
+    if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+      shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
+    }
+    return shift;
   }
 
   private bumpMenu() {
@@ -574,9 +627,34 @@ export class PosService {
 
   async login(pin: string, ip: string) {
     this.hit(`login:${ip || "unknown"}`, 20, 15 * 60 * 1000);
+    if (!/^\d{6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 6-digit shift PIN.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
+      if (this.demoPinAllowed() && safeEqual(pin, DEMO_PIN)) {
+        const shift = this.reopenDemoShift(tx.state, now);
+        if (!shift?.pin_expires_at) {
+          return { ok: false as const, status: 401, code: "NO_SHIFT", message: "Demo till is not seeded on this server. Reload and try again." };
+        }
+        const token = signStaffSession({
+          v: 1,
+          store: STORE_CODE,
+          shift: shift.sccx_shift_id,
+          staff: shift.staff_uid,
+          exp: Math.floor(Date.parse(shift.pin_expires_at) / 1000),
+          demo: true,
+        }, this.deps.secrets.session);
+        tx.state.sessions.push({
+          id: randomUUID(),
+          shift_id: shift.id,
+          token_hash: sha256(token),
+          expires_at: shift.pin_expires_at,
+          revoked_at: null,
+          created_at: at,
+        });
+        const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+        return { ok: true as const, token, staff_name: staff?.display_name ?? "Demo Budtender", pos_id: staff?.pos_id ?? "DEMO1" };
+      }
       for (const shift of openShifts(tx.state)) {
         if (shift.pin_expires_at && Date.parse(shift.pin_expires_at) <= now.getTime()) {
           const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
@@ -589,14 +667,19 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
-      if (!/^\d{6}$/.test(pin) || !verifyPin(pin, shift.pin_hash)) {
+      if (!verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
         if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
+        const locked = shift.status === "LOCKED";
         return {
           ok: false as const,
-          status: shift.status === "LOCKED" ? 423 : 401,
-          code: shift.status === "LOCKED" ? "LOCKED" : "BAD_PIN",
-          message: shift.status === "LOCKED" ? "Shift is locked. An admin must reissue the PIN." : "That PIN is not correct.",
+          status: locked ? 423 : 401,
+          code: locked ? "LOCKED" : "BAD_PIN",
+          message: locked
+            ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
+            : this.demoPinAllowed()
+              ? "That PIN is not correct. This preview uses demo PIN 666666."
+              : "That PIN is not correct.",
         };
       }
       shift.pin_failed_attempts = 0;
@@ -628,7 +711,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       expireTickets(tx.state, now.getTime());
-      const { shift, staff } = requireSession(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
         .filter((product) => product.setb_active)
@@ -703,7 +786,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "opening_count", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = requireSession(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
       const expected = countSkus(tx.state);
@@ -757,7 +840,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "incoming_confirm", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = requireSession(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the opening count first.");
       if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
       const at = iso(now);
@@ -796,7 +879,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "cashout", input.key, body, now, this.deps.secrets.session);
       if (seen) return { committed: true, stockout: false, body: seen };
-      const { shift, staff } = requireSession(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       const block = sellingBlocked(tx.state, shift);
       if (block === "OPENING_REQUIRED") throw new PosError(409, block, "Confirm the opening count before selling.");
       if (block === "REFILL_REQUIRED") throw new PosError(409, block, "Confirm incoming stock before selling.");
@@ -879,7 +962,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "deposit", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = requireSession(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       if (!Number.isInteger(input.amount_cents) || input.amount_cents <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
       const totals = shiftTotals(tx.state, shift.id);
@@ -895,7 +978,7 @@ export class PosService {
 
   async openTicket(token: string, ticketId: string) {
     return this.db.transaction(async (tx) => {
-      const { shift } = requireSession(tx.state, token, this.now());
+      const { shift } = this.session(tx.state, token, this.now());
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket cannot be opened.");
@@ -913,7 +996,7 @@ export class PosService {
 
   async cancelTicket(token: string, ticketId: string) {
     return this.db.transaction(async (tx) => {
-      const { shift } = requireSession(tx.state, token, this.now());
+      const { shift } = this.session(tx.state, token, this.now());
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket cannot be cancelled.");
@@ -924,7 +1007,7 @@ export class PosService {
 
   async beginClose(token: string) {
     return this.db.transaction(async (tx) => {
-      const { shift } = requireSession(tx.state, token, this.now());
+      const { shift } = this.session(tx.state, token, this.now());
       if (shift.status === "ACTIVE") shift.status = "CLOSING";
       if (shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       return { ok: true, status: shift.status, message: END_SHIFT_MESSAGE };
@@ -937,7 +1020,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift } = requireSession(tx.state, token, now);
+      const { shift } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const expected = countSkus(tx.state);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
