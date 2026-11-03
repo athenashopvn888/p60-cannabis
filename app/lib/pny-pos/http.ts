@@ -5,6 +5,7 @@ import { PosError } from "./errors.ts";
 import { getService, loadSecrets } from "./runtime.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
+export const KITCHEN_COOKIE = "pny_kitchen_session";
 export const ADMIN_COOKIE = "pny_pos_admin";
 export const DEMO_JOURNAL_COOKIE = "pny_pos_demo";
 
@@ -102,6 +103,10 @@ export function clientIp(request: Request) {
 
 export async function staffToken() {
   return (await cookies()).get(SESSION_COOKIE)?.value ?? "";
+}
+
+export async function kitchenToken() {
+  return (await cookies()).get(KITCHEN_COOKIE)?.value ?? "";
 }
 
 export async function adminToken() {

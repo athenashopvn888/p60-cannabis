@@ -12,7 +12,7 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
-import { DEMO_PIN } from "../app/lib/pny-pos/constants.ts";
+import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
@@ -488,6 +488,14 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(hideMobileBottomBar("/kitchen"), true);
   const menuApp = readFileSync("app/menu/MenuApp.tsx", "utf8");
   assert.match(menuApp, /pny-menu-layout/);
+  const kitchenApp = readFileSync("app/kitchen/KitchenApp.tsx", "utf8");
+  assert.doesNotMatch(kitchenApp, /kitchen-stock|>Stock</);
+  assert.match(kitchenApp, /pny-kitchen-lang/);
+  assert.match(kitchenApp, /\/api\/kitchen\/login/);
+  assert.doesNotMatch(kitchenApp, /\/api\/pos\/login/);
+  assert.match(kitchenApp, /Send Allocation/);
+  assert.match(kitchenApp, /OH /);
+  assert.match(kitchenApp, /PNY01/);
   assert.match(menuApp, /listRow/);
   assert.match(menuApp, /aria-label="Categories"/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
@@ -738,4 +746,33 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   assert.equal(second.sale_id, closed.sale_id);
   assert.equal((await cold.svc.state(other.token, journal)).totals?.sales_cents, warm.totals?.sales_cents);
   assert.equal((await cold.svc.ticketStatus(open.code, journal)).status, "PAID");
+});
+
+test("kitchen PIN 9999 opens the kitchen and the POS PIN 6666 does not", async () => {
+  assert.equal(KITCHEN_PIN, "9999");
+  assert.notEqual(KITCHEN_PIN, DEMO_PIN);
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const make = () => {
+    const db = new MemoryDb();
+    applyDemoSeed(db.state, now);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    return svc;
+  };
+  const svc = make();
+  await rejects(() => svc.kitchenLogin(DEMO_PIN, "10.7.0.1"), "BAD_PIN");
+  await rejects(() => svc.kitchenLogin("12345", "10.7.0.2"), "BAD_PIN");
+  const kitchen = await svc.kitchenLogin(KITCHEN_PIN, "10.7.0.3");
+  assert.match(kitchen.token, /^v1\./);
+  const view = await svc.state(kitchen.token, undefined, "kitchen");
+  assert.equal(view.shift?.pos_id, "DEMO1");
+  await rejects(() => svc.state(kitchen.token), "SESSION_REJECTED");
+  const pos = await svc.login(DEMO_PIN, "10.7.0.4");
+  assert.equal((await svc.state(pos.token)).shift?.pos_id, "DEMO1");
+  await rejects(() => svc.state(pos.token, undefined, "kitchen"), "SESSION_REJECTED");
+  await rejects(() => svc.login(KITCHEN_PIN, "10.7.0.5"), "BAD_PIN");
+
+  const locker = make();
+  for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => locker.kitchenLogin("0000", "10.7.1.1"), "BAD_PIN");
+  await rejects(() => locker.kitchenLogin("0000", "10.7.1.2"), "LOCKED");
+  await rejects(() => locker.kitchenLogin(KITCHEN_PIN, "10.7.1.3"), "LOCKED");
 });

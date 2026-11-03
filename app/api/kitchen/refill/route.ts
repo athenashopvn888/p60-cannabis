@@ -1,4 +1,4 @@
-import { idempotencyKey, json, readBody, refillLines, staffToken, toResponse } from "@/app/lib/pny-pos/http";
+import { idempotencyKey, json, kitchenToken, readBody, refillLines, toResponse } from "@/app/lib/pny-pos/http";
 import { getService } from "@/app/lib/pny-pos/runtime";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const body = await readBody(request);
     const kind = body.kind === "ALLOCATION" ? "ALLOCATION" : "REFILL";
     const service = await getService();
-    return json(await service.sendRefill(await staffToken(), {
+    return json(await service.sendRefill(await kitchenToken(), {
       key: idempotencyKey(request, body),
       kind,
       lines: refillLines(body),
