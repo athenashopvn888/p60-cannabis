@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
+import { usePosPoll } from "../usePosPoll";
 
 type View = {
   authenticated?: boolean;
@@ -44,18 +45,7 @@ export default function TillApp() {
     if (!data.authenticated && data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
   }, []);
 
-  useEffect(() => {
-    let stop = false;
-    const run = () => {
-      if (!stop) void load();
-    };
-    run();
-    const timer = window.setInterval(run, 4000);
-    return () => {
-      stop = true;
-      window.clearInterval(timer);
-    };
-  }, [load]);
+  usePosPoll(load);
 
   async function signIn() {
     setError("");
