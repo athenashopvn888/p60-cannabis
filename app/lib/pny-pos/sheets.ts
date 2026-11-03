@@ -90,15 +90,17 @@ export class GoogleSheet implements SheetClient {
     return json.access_token;
   }
 
-  private async sheetsFetch(path: string, init?: RequestInit) {
+  private async sheetsFetch(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const token = await this.accessToken();
-    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${this.sheetId}${path}`, {
-      ...init,
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
-    });
-    if (response.status === 429 && !(init?.headers as Record<string, string> | undefined)?.["x-sheets-retry"]) {
+    const send = () =>
+      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${this.sheetId}${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
+      });
+    let response = await send();
+    if (response.status === 429) {
       await new Promise((resolve) => setTimeout(resolve, 1200));
-      return this.sheetsFetch(path, { ...init, headers: { ...(init?.headers ?? {}), "x-sheets-retry": "1" } });
+      response = await send();
     }
     if (!response.ok) throw new SheetUnavailable(`Sheets ${path} failed (${response.status}).`, response.status);
     return response.json() as Promise<Record<string, unknown>>;
