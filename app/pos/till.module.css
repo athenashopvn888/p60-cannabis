@@ -1,0 +1,397 @@
+.shell {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  flex-direction: column;
+  background: #f3efe6;
+  color: #1c1917;
+  font-family: system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.demo {
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 6px 10px;
+}
+
+.header {
+  background: #24160f;
+  color: #fff;
+  padding: 10px 12px 12px;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brand {
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.ghost {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-weight: 700;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: end;
+}
+
+.metric {
+  text-align: right;
+}
+
+.metric span,
+.metricLabel {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fdba74;
+}
+
+.metric strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.depositBtn {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #f97316;
+  color: #fff;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 0 8px;
+}
+
+.searchWrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f3efe6;
+  padding: 10px 12px 8px;
+}
+
+.search {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid #d6d3d1;
+  border-radius: 12px;
+  padding: 0 12px;
+  font-size: 16px;
+  background: #fff;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 12px 8px;
+}
+
+.chip,
+.chipOn {
+  border: 1px solid #d6d3d1;
+  background: #fff;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chipOn {
+  background: #24160f;
+  color: #fff;
+  border-color: #24160f;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0 12px 8px;
+  padding: 10px;
+  background: #fff;
+  border-radius: 14px;
+}
+
+.name {
+  font-weight: 750;
+  font-size: 15px;
+}
+
+.meta {
+  color: #57534e;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper button {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 0;
+  background: #24160f;
+  color: #fff;
+  font-size: 22px;
+}
+
+.stepper button:disabled {
+  background: #d6d3d1;
+  color: #78716c;
+}
+
+.stepper strong {
+  min-width: 1.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.footer {
+  background: #fff;
+  border-top: 1px solid #e7e5e4;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+}
+
+.footerMain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.total {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash {
+  min-height: 48px;
+  min-width: 128px;
+  border: 0;
+  border-radius: 14px;
+  background: #166534;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.cash:disabled {
+  background: #a8a29e;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tabs button {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  font-weight: 750;
+}
+
+.tabOn {
+  background: #24160f !important;
+  color: #fff;
+  border-color: #24160f !important;
+}
+
+.banner {
+  margin: 8px 12px;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.delayed {
+  margin: 0 12px 8px;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(28, 25, 23, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+
+.panel {
+  width: 100%;
+  background: #fff;
+  border-radius: 18px 18px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.panel p {
+  margin: 0 0 10px;
+  color: #44403c;
+}
+
+.field {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+  font-size: 16px;
+  border-radius: 12px;
+  border: 1px solid #d6d3d1;
+  padding: 0 12px;
+  margin-bottom: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions button,
+.primary,
+.secondary {
+  min-height: 48px;
+  border-radius: 12px;
+  font-weight: 800;
+  border: 0;
+}
+
+.primary {
+  background: #166534;
+  color: #fff;
+  flex: 1;
+}
+
+.secondary {
+  background: #e7e5e4;
+  color: #1c1917;
+  padding: 0 16px;
+}
+
+.error {
+  color: #b91c1c;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.pin {
+  margin: auto;
+  width: min(360px, 100%);
+  padding: 24px 16px;
+}
+
+.pinDisplay {
+  min-height: 56px;
+  border-radius: 14px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.4em;
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.keys button {
+  min-height: 60px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.ticket {
+  margin: 0 12px 8px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.ticket code {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.countRow {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 8px;
+  align-items: center;
+  margin: 0 12px 8px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.countRow input,
+.reason {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid #d6d3d1;
+  padding: 0 8px;
+}
+
+.pad {
+  padding: 12px;
+}
