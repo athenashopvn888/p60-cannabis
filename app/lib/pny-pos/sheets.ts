@@ -96,6 +96,10 @@ export class GoogleSheet implements SheetClient {
       ...init,
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
     });
+    if (response.status === 429 && !(init?.headers as Record<string, string> | undefined)?.["x-sheets-retry"]) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return this.sheetsFetch(path, { ...init, headers: { ...(init?.headers ?? {}), "x-sheets-retry": "1" } });
+    }
     if (!response.ok) throw new SheetUnavailable(`Sheets ${path} failed (${response.status}).`, response.status);
     return response.json() as Promise<Record<string, unknown>>;
   }
@@ -105,23 +109,18 @@ export class GoogleSheet implements SheetClient {
     const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
     const have = new Set(sheets.map((sheet) => sheet.properties?.title ?? ""));
     const missing = specs.filter((spec) => !have.has(spec.title));
-    if (missing.length) {
-      await this.sheetsFetch(":batchUpdate", {
-        method: "POST",
-        body: JSON.stringify({
-          requests: missing.map((spec) => ({ addSheet: { properties: { title: spec.title } } })),
-        }),
+    if (missing.length === 0) return;
+    await this.sheetsFetch(":batchUpdate", {
+      method: "POST",
+      body: JSON.stringify({
+        requests: missing.map((spec) => ({ addSheet: { properties: { title: spec.title } } })),
+      }),
+    });
+    for (const spec of missing) {
+      await this.sheetsFetch(`/values/${encodeURIComponent(`${spec.title}!A1`)}?valueInputOption=RAW`, {
+        method: "PUT",
+        body: JSON.stringify({ values: [spec.headers] }),
       });
-    }
-    for (const spec of specs) {
-      const data = await this.sheetsFetch(`/values/${encodeURIComponent(`${spec.title}!1:1`)}?majorDimension=ROWS`);
-      const values = (data.values as string[][] | undefined) ?? [];
-      if (values.length === 0 || values[0].every((cell) => String(cell ?? "").trim() === "")) {
-        await this.sheetsFetch(`/values/${encodeURIComponent(`${spec.title}!A1`)}?valueInputOption=RAW`, {
-          method: "PUT",
-          body: JSON.stringify({ values: [spec.headers] }),
-        });
-      }
     }
   }
 

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { safeEqual } from "./crypto.ts";
 import { readDemoJournal, signDemoJournal, upsertDemoOrder, type DemoJournalOrder } from "./demoJournal.ts";
-import { PosError } from "./errors.ts";
+import { PosError, SheetUnavailable } from "./errors.ts";
 import { getService, loadSecrets } from "./runtime.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
@@ -19,6 +19,12 @@ const cookieBase = {
 export function toResponse(error: unknown) {
   if (error instanceof PosError) {
     return Response.json({ ok: false, error: error.message, code: error.code }, { status: error.status, headers: { "cache-control": "no-store" } });
+  }
+  if (error instanceof SheetUnavailable) {
+    return Response.json(
+      { ok: false, error: "The inventory sheet is busy. Try again in a moment.", code: error.code },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
   }
   console.error(error);
   return Response.json({ ok: false, error: "Unexpected error." }, { status: 500, headers: { "cache-control": "no-store" } });
