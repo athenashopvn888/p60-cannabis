@@ -9,6 +9,7 @@ export type DemoJournalSale = {
   total_cents: number;
   staff_uid: string;
   created_at: string;
+  payment_method?: "CASH" | "DEBIT";
   lines: DemoJournalLine[];
 };
 

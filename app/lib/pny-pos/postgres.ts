@@ -3,7 +3,7 @@ import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import { SCHEMA_SQL } from "./schema.ts";
 import type { State } from "./types.ts";
 
-const JSON_COLUMNS = new Set(["closing_lines", "response_json", "public_json", "payload", "detail"]);
+const JSON_COLUMNS = new Set(["closing_lines", "response_json", "public_json", "payload", "detail", "counts"]);
 
 function statements() {
   return SCHEMA_SQL.split(";").map((statement) => statement.trim()).filter(Boolean);
@@ -34,6 +34,7 @@ async function projectState(client: PoolClient, state: State) {
     "stock_counts",
     "incoming_batches",
     "inventory_ledger",
+    "closing_drafts",
     "shift_closings",
     "idempotency_keys",
     "sheet_outbox",
@@ -65,6 +66,7 @@ async function projectState(client: PoolClient, state: State) {
   await insertRows(client, "sale_lines", state.sale_lines);
   await insertRows(client, "deposits", state.deposits);
   await insertRows(client, "shift_closings", state.closings);
+  await insertRows(client, "closing_drafts", state.closing_drafts ?? []);
   await insertRows(client, "idempotency_keys", state.idempotency);
   await insertRows(client, "sheet_outbox", state.outbox);
   await insertRows(client, "sheet_import_cursor", state.cursors);

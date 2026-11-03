@@ -30,6 +30,7 @@ export function emptyState(now = new Date().toISOString()): State {
     sale_lines: [],
     deposits: [],
     closings: [],
+    closing_drafts: [],
     idempotency: [],
     outbox: [],
     cursors: [],

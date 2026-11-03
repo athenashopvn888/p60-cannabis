@@ -8,7 +8,8 @@ export async function POST(request: Request) {
   try {
     const body = await readBody(request);
     const service = await getService();
-    return json(await service.endShiftFromPos(await staffToken(), { key: idempotencyKey(request, body), lines: countLines(body) }));
+    const deposit = body.final_deposit_cents == null || body.final_deposit_cents === "" ? undefined : Number(body.final_deposit_cents);
+    return json(await service.endShiftFromPos(await staffToken(), { key: idempotencyKey(request, body), lines: countLines(body), final_deposit_cents: deposit }));
   } catch (error) {
     return toResponse(error);
   }

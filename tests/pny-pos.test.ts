@@ -9,6 +9,7 @@ import { inStockCategories } from "../app/lib/pny-pos/money.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
+import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
@@ -226,12 +227,12 @@ test("9. a deposit above cash on hand is rejected and header totals follow sale,
   await rejects(() => h.svc.deposit(h.token, { key: "too-much", amount_cents: 1001 }), "OVER_COH");
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 400, note: "safe" });
   const mid = await h.svc.state(h.token);
-  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_on_hand_cents: 600, deposited_cents: 400 });
+  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400 });
   const saleId = h.db.state.sales[0]?.id ?? "";
   await rejects(() => h.svc.voidSale(h.token, { key: "staff-void", sale_id: saleId, reason: "no" }), "ADMIN_ONLY");
   await h.svc.voidSale(h.admin, { key: "void-1", sale_id: saleId, reason: "mis-ring" });
   const after = await h.svc.state(h.token);
-  assert.deepEqual(after.totals, { sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400 });
+  assert.deepEqual(after.totals, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400 });
   assert.equal(qty(h.db, "1001"), 2);
 });
 
@@ -791,4 +792,66 @@ test("kitchen PIN 9999 opens the kitchen and the POS PIN 6666 does not", async (
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => locker.kitchenLogin("0000", "10.7.1.1"), "BAD_PIN");
   await rejects(() => locker.kitchenLogin("0000", "10.7.1.2"), "LOCKED");
   await rejects(() => locker.kitchenLogin(KITCHEN_PIN, "10.7.1.3"), "LOCKED");
+});
+
+test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
+  assert.deepEqual(lineVariance({ expected_qty: 3, counted_qty: 1, price_cents: 1000 }), {
+    variance_qty: -2,
+    shortage_qty: 2,
+    overage_qty: 0,
+    shortage_cents: 2000,
+    overage_cents: 0,
+  });
+  assert.equal(closingBalance({ cash_sales_cents: 1000, shortage_cents: 1000, overage_cents: 500, deposited_cents: 400 }), 1100);
+
+  const h = await readyTill({ "1001": 4, "1002": 0 });
+  const rowId = crypto.randomUUID();
+  h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "refill", store_code: "PNY01", kind: "REFILL", sku: "1002", qty: "2", created_at: "2026-11-03T16:00:00+07:00", kitchen_status: "ACTIVE" }];
+  await h.svc.refreshIncoming({ force: true });
+  await h.svc.confirmIncoming(h.token, { key: "receive", lines: [{ kitchen_row_id: rowId, qty_received: 2 }] });
+  const cash = await h.svc.cashout(h.token, { key: "cash-sale", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  const debit = await h.svc.cashout(h.token, { key: "debit-sale", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(cash.payment_method, "CASH");
+  assert.equal(debit.payment_method, "DEBIT");
+  const mid = await h.svc.state(h.token);
+  assert.equal(mid.totals?.sales_cents, 2000);
+  assert.equal(mid.totals?.cash_sales_cents, 1000);
+  assert.equal(mid.totals?.debit_sales_cents, 1000);
+  assert.equal(mid.totals?.cash_on_hand_cents, 1000);
+  const plan = mid.close_lines ?? [];
+  assert.deepEqual(plan.map((line) => line.sku), ["1001", "1002"]);
+  assert.equal(plan.find((line) => line.sku === "1001")?.expected_qty, 2);
+  assert.equal(plan.find((line) => line.sku === "1002")?.expected_qty, 2);
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1 });
+  const saved = await h.svc.state(h.token);
+  assert.equal(saved.close_lines?.find((line) => line.sku === "1001")?.counted_qty, 1);
+  assert.equal(saved.close_lines?.find((line) => line.sku === "1002")?.counted_qty, null);
+  const ended = await h.svc.endShiftFromPos(h.token, {
+    key: "end-balance",
+    final_deposit_cents: 400,
+    lines: [
+      { sku: "1001", counted_qty: 1 },
+      { sku: "1002", counted_qty: 3 },
+    ],
+  });
+  assert.equal(qty(h.db, "1001"), 1);
+  assert.equal(qty(h.db, "1002"), 3);
+  assert.equal(ended.closing.cash_sales_cents, 1000);
+  assert.equal(ended.closing.debit_sales_cents, 1000);
+  assert.equal(ended.closing.shortage_cents, 1000);
+  assert.equal(ended.closing.overage_cents, 500);
+  assert.equal(ended.closing.final_deposit_cents, 400);
+  assert.equal(ended.closing.deposited_cents, 400);
+  assert.equal(ended.closing.balance_cents, 1100);
+  const summary = h.db.state.outbox.find((row) => row.tab === "S_ShiftSummary");
+  assert.equal(summary?.payload.cash_sales, "10.00");
+  assert.equal(summary?.payload.debit_sales, "10.00");
+  assert.equal(summary?.payload.shortage, "10.00");
+  assert.equal(summary?.payload.overage, "5.00");
+  assert.equal(summary?.payload.balance, "11.00");
+  const polled = await h.svc.closedShifts();
+  assert.equal(polled.closings[0]?.cash_sales, 1000);
+  assert.equal(polled.closings[0]?.debit_sales, 1000);
+  assert.equal(polled.closings[0]?.balance, 1100);
+  assert.equal(polled.closings[0]?.variance?.find((line) => line.sku === "1001")?.shortage_cents, 1000);
 });

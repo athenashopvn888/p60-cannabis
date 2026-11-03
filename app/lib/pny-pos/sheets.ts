@@ -104,8 +104,10 @@ export class GoogleSheet implements SheetClient {
     const values = (raw.values as string[][] | undefined) ?? [];
     let headers = (values[0] ?? []).map((cell) => String(cell ?? "").trim());
     while (headers.length > 0 && headers[headers.length - 1] === "") headers.pop();
-    if (headers.length === 0) {
-      headers = Object.keys(rows[0]);
+    if (headers.length === 0) headers = Object.keys(rows[0] ?? {});
+    const extra = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((key) => key && !headers.includes(key));
+    if (extra.length || values.length === 0) {
+      headers = [...headers, ...extra];
       await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
         method: "PUT",
         body: JSON.stringify({ values: [headers] }),
