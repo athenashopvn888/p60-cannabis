@@ -19,6 +19,7 @@ import {
   SHEET_ALERT_MS,
   SHEET_DELAY_MS,
   STORE_CODE,
+  STORE_TZ,
   TICKET_LETTERS,
   TICKET_TTL_MS,
 } from "./constants.ts";
@@ -888,6 +889,94 @@ export class PosService {
     });
   }
 
+  /**
+   * Open today's shift with a chosen PIN. The PIN is hashed and is not returned or audited.
+   * One open shift per store: any other open shift is ended.
+   */
+  async openShiftWithPin(input: { staff_uid: string; display_name?: string; pos_id?: string; sccx_id?: string; shift_id?: string; pin: string }) {
+    if (!/^\d{4}$/.test(input.pin)) throw new PosError(400, "BAD_PIN", "PIN must be 4 digits.");
+    const pin = input.pin;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const staffUid = input.staff_uid.trim();
+      if (!staffUid) throw new PosError(400, "STAFF", "staff_uid is required.");
+      let staff = tx.state.staff.find((row) => row.staff_uid === staffUid || row.sccx_id === staffUid);
+      if (!staff) {
+        staff = {
+          staff_uid: staffUid,
+          sccx_id: input.sccx_id?.trim() || staffUid,
+          pos_id: input.pos_id?.trim() || "TRI",
+          display_name: input.display_name?.trim() || staffUid,
+          active: true,
+          updated_at: at,
+          created_at: at,
+        };
+        tx.state.staff.push(staff);
+      } else {
+        staff.active = true;
+        if (input.display_name?.trim()) staff.display_name = input.display_name.trim();
+        if (input.pos_id?.trim()) staff.pos_id = input.pos_id.trim();
+        if (input.sccx_id?.trim()) staff.sccx_id = input.sccx_id.trim();
+        staff.updated_at = at;
+      }
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+      let sccxId = input.shift_id?.trim() || `pny01-${staff.staff_uid}-${day}`;
+      const mine = tx.state.shifts.find((row) => row.staff_uid === staff!.staff_uid && row.status !== "ENDED");
+      for (const previous of openShifts(tx.state)) {
+        if (mine && previous.id === mine.id) continue;
+        const closing = buildClosing(tx.state, previous, noCountLines(tx.state), true, at);
+        finishShift(tx.state, previous, "REPLACED", at, closing);
+        queueClosingSheets(tx.state, previous, tx.state.closings.find((row) => row.shift_id === previous.id) ?? closing, at);
+      }
+      if (mine) {
+        mine.pin_hash = hashPin(pin);
+        mine.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
+        mine.pin_failed_attempts = 0;
+        if (mine.status !== "CLOSING") mine.status = "ACTIVE";
+        audit(tx.state, "SHIFT_PIN_SET", "shift", mine.id, staff.staff_uid, { sccx_shift_id: mine.sccx_shift_id }, at);
+        return { ok: true as const, staff_name: staff.display_name, expires_at: mine.pin_expires_at, shift_id: mine.id, sccx_shift_id: mine.sccx_shift_id };
+      }
+      if (tx.state.shifts.some((shift) => shift.sccx_shift_id === sccxId)) sccxId = `${sccxId}-${now.getTime().toString(36)}`;
+      const store = tx.state.stores.find((row) => row.code === STORE_CODE);
+      if (!store) throw new PosError(404, "STORE", "Store is missing.");
+      const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
+      store.ticket_letter_seq += 1;
+      const shift: ShiftRow = {
+        id: randomUUID(),
+        sccx_shift_id: sccxId,
+        staff_uid: staff.staff_uid,
+        store_code: STORE_CODE,
+        ticket_letter: letter,
+        ticket_seq: 0,
+        pin_hash: hashPin(pin),
+        pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        pin_failed_attempts: 0,
+        status: "ACTIVE",
+        started_at: at,
+        ended_at: null,
+        end_reason: null,
+        opening_confirmed_at: null,
+        refill_confirmed_at: null,
+        created_at: at,
+      };
+      tx.state.shifts.push(shift);
+      enqueue(tx.state, "S_Shifts", `SH-${shift.id}`, {
+        row_id: `SH-${shift.id}`,
+        shift_id: shift.sccx_shift_id,
+        store_code: STORE_CODE,
+        staff_pos_id: staff.pos_id,
+        staff_name: staff.display_name,
+        status: shift.status,
+        start: shift.started_at,
+        end: "",
+        end_reason: "",
+      }, at);
+      audit(tx.state, "SHIFT_PIN_SET", "shift", shift.id, staff.staff_uid, { sccx_shift_id: shift.sccx_shift_id, ticket_letter: letter }, at);
+      return { ok: true as const, staff_name: staff.display_name, expires_at: shift.pin_expires_at, shift_id: shift.id, sccx_shift_id: shift.sccx_shift_id };
+    });
+  }
+
   async endShiftFromSccx(input: { key: string; store?: string; shift_id?: string; reason?: string }) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
@@ -1610,9 +1699,21 @@ export class PosService {
       });
       if (debounced) return { ok: true, debounced: true };
     }
+    const readTab = async (tab: string) => {
+      try {
+        return await this.deps.sheet.readRows(tab);
+      } catch (error) {
+        if (error instanceof SheetUnavailable && error.httpStatus === 400) return [] as SheetRow[];
+        throw error;
+      }
+    };
     let rows: SheetRow[] = [];
     try {
-      rows = await this.deps.sheet.readRows("K_Allocations");
+      const [legacy, refills] = await Promise.all([readTab("K_Allocations"), readTab("POS_Refills")]);
+      rows = [
+        ...legacy,
+        ...refills.filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED"),
+      ];
     } catch (error) {
       if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
       throw error;

@@ -13,7 +13,8 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
-import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
+import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
@@ -596,24 +597,40 @@ test("27. end shift says the summary posts within 5 min and admin flags a missed
   assert.match(SCHEMA_SQL, /sccx_ack_at/);
 });
 
-test("preview without a database uses the labeled demo and production with a database does not", () => {
+test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   const saved = {
     DATABASE_URL: process.env.DATABASE_URL,
     PNY_POS_DEMO: process.env.PNY_POS_DEMO,
     VERCEL_ENV: process.env.VERCEL_ENV,
+    GSHEET_ID: process.env.GSHEET_ID,
+    GOOGLE_SA_PNY_CLIENT_EMAIL: process.env.GOOGLE_SA_PNY_CLIENT_EMAIL,
+    GOOGLE_SA_PNY_PRIVATE_KEY: process.env.GOOGLE_SA_PNY_PRIVATE_KEY,
   };
+  const runtime = readFileSync("app/lib/pny-pos/runtime.ts", "utf8");
+  assert.doesNotMatch(runtime, /process\.env\.DATABASE_URL|new PgDb/);
+  assert.equal(sheetWriteAllowed("Items_raw_price"), false);
+  assert.equal(sheetWriteAllowed("Products"), false);
+  assert.equal(sheetWriteAllowed("S_Stock"), false);
+  assert.equal(sheetWriteAllowed("SETB_Inventory"), false);
+  assert.equal(sheetWriteAllowed("POS_Sales"), true);
   try {
     delete process.env.DATABASE_URL;
     delete process.env.PNY_POS_DEMO;
+    delete process.env.GSHEET_ID;
+    delete process.env.GOOGLE_SA_PNY_CLIENT_EMAIL;
+    delete process.env.GOOGLE_SA_PNY_PRIVATE_KEY;
     process.env.VERCEL_ENV = "preview";
     assert.equal(demoMode(), true);
     process.env.VERCEL_ENV = "production";
     assert.equal(demoMode(), true);
     process.env.DATABASE_URL = "postgres://production.example/pny";
-    assert.equal(demoMode(), false);
-    process.env.PNY_POS_DEMO = "1";
+    assert.equal(demoMode(), true);
+    process.env.GSHEET_ID = "sheet";
+    process.env.GOOGLE_SA_PNY_CLIENT_EMAIL = "sa@example.com";
+    process.env.GOOGLE_SA_PNY_PRIVATE_KEY = "key";
     assert.equal(demoMode(), false);
     process.env.PNY_POS_DEMO = "0";
+    delete process.env.GSHEET_ID;
     assert.equal(demoMode(), false);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
@@ -621,6 +638,63 @@ test("preview without a database uses the labeled demo and production with a dat
       else process.env[key] = value;
     }
   }
+});
+
+test("sheet store keeps a hashed shift PIN, refill opening count, and cash or debit sales", async () => {
+  const pin = "2468";
+  const sheet = new LocalSheet();
+  const db = new SheetDb(sheet);
+  const svc = new PosService(db, { sheet, secrets, demo: null });
+  await svc.syncSetb([
+    { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
+    { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
+  ]);
+  const opened = await svc.openShiftWithPin({ staff_uid: "staff-tri", display_name: "Tri", pos_id: "TRI", shift_id: "pny01-tri-today", pin });
+  assert.equal(opened.ok, true);
+  assert.equal("pin" in opened, false);
+  const login = await svc.login(pin, "10.0.0.8");
+  const waiting = await svc.state(login.token);
+  assert.equal(waiting.block, "WAITING_FOR_KITCHEN");
+  assert.equal(waiting.products.every((product) => product.qty === 0), true);
+  const refillId = crypto.randomUUID();
+  sheet.tabs.POS_Refills.push({
+    row_id: refillId,
+    store_code: "PNY01",
+    sku: "1001",
+    qty: "2",
+    kind: "REFILL",
+    kitchen_status: "ACTIVE",
+    created_at: "2026-11-03T18:00:00.000Z",
+  });
+  db.forgetCache();
+  const opening = await svc.state(login.token);
+  assert.equal(opening.phase, "opening");
+  assert.equal(opening.opening_lines.find((line) => line.sku === "1001")?.system_qty, 0);
+  assert.equal(opening.opening_lines.find((line) => line.sku === "1001")?.incoming_qty, 2);
+  await svc.openingCount(login.token, { key: "open-sheet", lines: opening.opening_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
+  await svc.confirmIncoming(login.token, { key: "recv-sheet", lines: [{ kitchen_row_id: refillId, qty_received: 2 }] });
+  const cash = await svc.cashout(login.token, { key: "cash-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "CASH" });
+  const debit = await svc.cashout(login.token, { key: "debit-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "DEBIT" });
+  assert.equal(cash.payment_method, "CASH");
+  assert.equal(debit.payment_method, "DEBIT");
+  const again = new SheetDb(sheet);
+  const live = new PosService(again, { sheet, secrets, demo: null });
+  const relog = await live.login(pin, "10.2.0.8");
+  const view = await live.state(relog.token);
+  assert.equal(view.shift.staff_name, "Tri");
+  assert.equal(view.totals.cash_sales_cents, 1000);
+  assert.equal(view.totals.debit_sales_cents, 1000);
+  assert.equal(view.products.find((product) => product.sku === "1001")?.qty, 0);
+  const stored = JSON.stringify(sheet.tabs);
+  assert.equal(stored.includes(`"${pin}"`), false);
+  assert.match(sheet.tabs.POS_Shifts[0]?.pin_hash ?? "", /^scrypt\$/);
+  assert.equal(sheet.tabs.POS_Sales.map((row) => row.payment_method).sort().join(","), "CASH,DEBIT");
+  assert.equal(sheet.tabs.POS_Refills[0]?.status, "CONFIRMED");
+  const other = await live.openShiftWithPin({ staff_uid: "staff-other", display_name: "Other", pin: "1357" });
+  assert.equal(other.ok, true);
+  await rejects(() => live.login(pin, "10.0.0.9"), "BAD_PIN");
+  const otherLogin = await live.login("1357", "10.0.0.9");
+  assert.equal(otherLogin.staff_name, "Other");
 });
 
 test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {

@@ -12,8 +12,11 @@ export class PosError extends Error {
 
 export class SheetUnavailable extends Error {
   code = "SHEET_UNAVAILABLE";
-  constructor(message = "Inventory sheet is unreachable.") {
+  httpStatus: number | null;
+
+  constructor(message = "Inventory sheet is unreachable.", httpStatus: number | null = null) {
     super(message);
     this.name = "SheetUnavailable";
+    this.httpStatus = httpStatus;
   }
 }
