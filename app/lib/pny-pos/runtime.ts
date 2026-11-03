@@ -1,8 +1,8 @@
 import { DEMO_LABEL, DEMO_PIN, DEMO_SESSION_SECRET } from "./constants.ts";
 import { MemoryDb } from "./memory.ts";
-import { PgDb } from "./postgres.ts";
 import { applyDemoSeed } from "./seed.ts";
 import { PosService, type PosDeps } from "./service.ts";
+import { SheetDb } from "./sheetStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import type { Secrets } from "./types.ts";
 
@@ -12,18 +12,26 @@ const DEMO_SECRETS: Secrets = {
   poll: "demo-sccx-poll-secret-placeholder",
   session: "demo-session-secret-placeholder-32",
   admin: "demo-admin-secret",
-  cron: "demo-cron-secret-placeholder",
+  cron: "demo-cron-secret",
 };
 
+/** The till is live when the PNY sheet credentials are set. Postgres is not used. */
+export function sheetConfigured() {
+  return Boolean(
+    process.env.GSHEET_ID?.trim()
+    && process.env.GOOGLE_SA_PNY_CLIENT_EMAIL?.trim()
+    && process.env.GOOGLE_SA_PNY_PRIVATE_KEY,
+  );
+}
+
 /**
- * Labeled demo till when there is no database.
- * Preview and local builds have no PNY env yet, and Vercel sets NODE_ENV=production for both
- * preview and production. A real database always wins, so production with DATABASE_URL is unchanged.
+ * Labeled demo till when the sheet is not configured.
+ * Preview builds have no PNY sheet env. A Neon connection string is not read.
  * Set PNY_POS_DEMO=0 to force the empty unconfigured till.
  */
 export function demoMode() {
   if (process.env.PNY_POS_DEMO === "0") return false;
-  if (process.env.DATABASE_URL) return false;
+  if (sheetConfigured()) return false;
   return true;
 }
 
@@ -45,24 +53,12 @@ export function loadSecrets(): Secrets {
 }
 
 async function boot() {
-  const demo = demoMode();
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
   const deps: PosDeps = { sheet, secrets, demo: null };
-  if (process.env.DATABASE_URL) {
-    const db = new PgDb(process.env.DATABASE_URL);
-    const service = new PosService(db, deps);
-    if (demo) {
-      const report = await service.reconciliation();
-      if (report.skus.length === 0) {
-        await db.transaction(async (tx) => applyDemoSeed(tx.state, new Date()));
-        deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
-      }
-    }
-    return service;
-  }
+  if (sheet.configured) return new PosService(new SheetDb(sheet), deps);
   const db = new MemoryDb();
-  if (demo) {
+  if (demoMode()) {
     applyDemoSeed(db.state, new Date());
     deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
   }

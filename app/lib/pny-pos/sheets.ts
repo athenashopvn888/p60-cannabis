@@ -2,10 +2,22 @@ import { createSign } from "node:crypto";
 import { SheetUnavailable } from "./errors.ts";
 import type { SheetRow } from "./types.ts";
 
+export type SheetTabSpec = { title: string; headers: string[] };
+
+/** Tabs the till must not overwrite. Items_raw_price is read for prices. SETB inventory pages stay untouched. */
+const BLOCKED_WRITE_TABS = new Set(["Items_raw_price", "Products", "S_Stock", "K_Allocations"]);
+
+export function sheetWriteAllowed(tab: string) {
+  if (BLOCKED_WRITE_TABS.has(tab)) return false;
+  if (/setb/i.test(tab)) return false;
+  return true;
+}
+
 export type SheetClient = {
   configured: boolean;
   readRows(tab: string): Promise<SheetRow[]>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
+  ensureTabs(specs: SheetTabSpec[]): Promise<void>;
 };
 
 export class LocalSheet implements SheetClient {
@@ -16,6 +28,10 @@ export class LocalSheet implements SheetClient {
   async readRows(tab: string): Promise<SheetRow[]> {
     if (!this.reachable) throw new SheetUnavailable();
     return (this.tabs[tab] ?? []).map((row, index) => ({ ...row, _sheet_row: String(index + 2) }));
+  }
+
+  async ensureTabs(specs: SheetTabSpec[]) {
+    for (const spec of specs) if (!this.tabs[spec.title]) this.tabs[spec.title] = [];
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
@@ -80,8 +96,33 @@ export class GoogleSheet implements SheetClient {
       ...init,
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
     });
-    if (!response.ok) throw new SheetUnavailable(`Sheets ${path} failed (${response.status}).`);
+    if (!response.ok) throw new SheetUnavailable(`Sheets ${path} failed (${response.status}).`, response.status);
     return response.json() as Promise<Record<string, unknown>>;
+  }
+
+  async ensureTabs(specs: SheetTabSpec[]) {
+    const meta = await this.sheetsFetch("?fields=sheets.properties.title");
+    const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
+    const have = new Set(sheets.map((sheet) => sheet.properties?.title ?? ""));
+    const missing = specs.filter((spec) => !have.has(spec.title));
+    if (missing.length) {
+      await this.sheetsFetch(":batchUpdate", {
+        method: "POST",
+        body: JSON.stringify({
+          requests: missing.map((spec) => ({ addSheet: { properties: { title: spec.title } } })),
+        }),
+      });
+    }
+    for (const spec of specs) {
+      const data = await this.sheetsFetch(`/values/${encodeURIComponent(`${spec.title}!1:1`)}?majorDimension=ROWS`);
+      const values = (data.values as string[][] | undefined) ?? [];
+      if (values.length === 0 || values[0].every((cell) => String(cell ?? "").trim() === "")) {
+        await this.sheetsFetch(`/values/${encodeURIComponent(`${spec.title}!A1`)}?valueInputOption=RAW`, {
+          method: "PUT",
+          body: JSON.stringify({ values: [spec.headers] }),
+        });
+      }
+    }
   }
 
   async readRows(tab: string): Promise<SheetRow[]> {
@@ -99,7 +140,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
-    if (rows.length === 0) return;
+    if (!sheetWriteAllowed(tab) || rows.length === 0) return;
     const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
     const values = (raw.values as string[][] | undefined) ?? [];
     let headers = (values[0] ?? []).map((cell) => String(cell ?? "").trim());
