@@ -504,10 +504,6 @@ export class PosService {
       shift.pin_failed_attempts = 0;
       if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
     }
-    if (shift.status === "LOCKED") {
-      shift.status = "ACTIVE";
-      shift.pin_failed_attempts = 0;
-    }
     if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
       shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
     }
