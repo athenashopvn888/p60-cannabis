@@ -7,6 +7,16 @@ import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
 type Product = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; qty: number };
+
+const FLOWER_CATEGORIES = new Set(["flower", "flowers", "budget", "aa", "aaa", "aaa+", "premium", "exotic"]);
+
+function isFlowerCategory(category: string) {
+  return FLOWER_CATEGORIES.has(category.trim().toLowerCase());
+}
+
+function compareSku(a: string, b: string) {
+  return a.localeCompare(b, "en", { numeric: true });
+}
 type Ticket = { id: string; code: string; status: string; expires_at: string; lines: { sku: string; name: string; qty: number }[] };
 type CountLine = { sku: string; name: string; system_qty: number };
 type View = {
@@ -96,12 +106,15 @@ export default function PosApp() {
   const visible = useMemo(() => {
     const rows = view?.products ?? [];
     const q = query.trim().toLowerCase();
-    return rows.filter((product) => {
+    const filtered = rows.filter((product) => {
       if (category !== "All" && product.category !== category) return false;
       if (!q) return true;
       return product.sku.includes(q) || product.name.toLowerCase().includes(q);
     });
+    if (!isFlowerCategory(category)) return filtered;
+    return [...filtered].sort((a, b) => compareSku(a.sku, b.sku));
   }, [view?.products, query, category]);
+  const stockCount = (name: string) => products.filter((product) => product.qty > 0 && (name === "All" || product.category === name)).length;
 
   const total = products.reduce((sum, product) => sum + (cart[product.sku] ?? 0) * product.price_cents, 0);
 
@@ -311,13 +324,33 @@ export default function PosApp() {
             <label className="sr-only" htmlFor="pos-search" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>Search SKU or name</label>
             <input id="pos-search" className={styles.search} placeholder="Search SKU or name" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
-          <div className={styles.chips}>
+          <div className={styles.chips} role="tablist" aria-label="Categories">
             {["All", ...(view.categories ?? [])].map((chip) => (
-              <button key={chip} type="button" className={chip === category ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>{chip}</button>
+              <button key={chip} type="button" role="tab" aria-selected={chip === category} data-category={chip} className={chip === category ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
+                {chip}
+                <span className={styles.countBadge} data-count={stockCount(chip)}>{stockCount(chip)}</span>
+              </button>
             ))}
           </div>
           {visible.map((product) => {
             const qty = cart[product.sku] ?? 0;
+            const stepper = (
+              <div className={styles.stepper}>
+                <button type="button" aria-label={`Decrease ${product.name}`} disabled={qty === 0} onClick={() => setQty(product, qty - 1)}>−</button>
+                <strong>{qty}</strong>
+                <button type="button" aria-label={`Increase ${product.name}`} disabled={qty >= product.qty} data-add={product.sku} onClick={() => setQty(product, qty + 1)}>+</button>
+              </div>
+            );
+            if (isFlowerCategory(product.category)) {
+              return (
+                <article key={product.sku} className={styles.listRow} data-sku={product.sku} data-layout="list">
+                  <span className={styles.sku}>{product.sku}</span>
+                  <span className={styles.listName}>{product.name}</span>
+                  <span className={styles.listPrice}>{formatMoney(product.price_cents)}</span>
+                  {stepper}
+                </article>
+              );
+            }
             return (
               <article key={product.sku} className={styles.row} data-sku={product.sku}>
                 <ProductPhoto src={product.image_url} alt="" className={styles.thumb} placeholderClassName={styles.thumbPh} />
@@ -325,11 +358,7 @@ export default function PosApp() {
                   <div className={styles.name}>{product.name}</div>
                   <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)} tax incl. · {product.qty} demo stock</div>
                 </div>
-                <div className={styles.stepper}>
-                  <button type="button" aria-label={`Decrease ${product.name}`} disabled={qty === 0} onClick={() => setQty(product, qty - 1)}>−</button>
-                  <strong>{qty}</strong>
-                  <button type="button" aria-label={`Increase ${product.name}`} disabled={qty >= product.qty} data-add={product.sku} onClick={() => setQty(product, qty + 1)}>+</button>
-                </div>
+                {stepper}
               </article>
             );
           })}
