@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   DEMO_LABEL,
   DEMO_PIN,
+  KITCHEN_PIN,
   FULL_SCAN_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
@@ -22,6 +23,7 @@ import {
   TICKET_TTL_MS,
 } from "./constants.ts";
 import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSession, safeEqual, sha256, signStaffSession, stableStringify, verifyPin } from "./crypto.ts";
+import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
@@ -99,6 +101,127 @@ function ledger(state: State, sku: string, delta: number, movement: MovementType
   };
   state.ledger.push(row);
   return row;
+}
+
+function journalFromTicket(state: State, ticketId: string): DemoJournalOrder | null {
+  const ticket = state.tickets.find((row) => row.id === ticketId);
+  if (!ticket) return null;
+  if (ticket.status !== "PENDING" && ticket.status !== "OPEN" && ticket.status !== "CASHED_OUT" && ticket.status !== "CANCELLED") return null;
+  const lines = state.ticket_lines
+    .filter((line) => line.ticket_id === ticket.id)
+    .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents_snapshot }));
+  const sale = state.sales.find((row) => row.ticket_id === ticket.id && row.status === "COMPLETED");
+  return {
+    id: ticket.id,
+    code: ticket.code,
+    shift_id: ticket.shift_id,
+    status: ticket.status,
+    expires_at: ticket.expires_at,
+    created_at: ticket.created_at,
+    lines,
+    sale: sale
+      ? {
+          id: sale.id,
+          ref_no: sale.ref_no,
+          total_cents: sale.total_cents,
+          staff_uid: sale.staff_uid,
+          created_at: sale.created_at,
+          lines: state.sale_lines
+            .filter((line) => line.sale_id === sale.id)
+            .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents })),
+        }
+      : null,
+  };
+}
+
+function paidSaleBody(state: State, ticketId: string) {
+  const sale = state.sales.find((row) => row.ticket_id === ticketId && row.status === "COMPLETED");
+  if (!sale) return null;
+  return {
+    ok: true,
+    replay: true,
+    sale_id: sale.id,
+    ref_no: sale.ref_no,
+    total_cents: sale.total_cents,
+    prices_tax_included: true,
+    lines: state.sale_lines
+      .filter((line) => line.sale_id === sale.id)
+      .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents, line_total_cents: line.line_total_cents })),
+    journal_order: journalFromTicket(state, ticketId),
+  };
+}
+
+/** Replay demo orders from the browser cookie onto a fresh seed without counting a sale twice. */
+function absorbDemoJournal(state: State, orders: DemoJournalOrder[] | undefined) {
+  if (!orders?.length) return;
+  for (const order of orders) {
+    let ticket = state.tickets.find((row) => row.id === order.id);
+    if (!ticket) {
+      ticket = {
+        id: order.id,
+        shift_id: order.shift_id,
+        code: order.code,
+        status: order.status,
+        source: "QR",
+        expires_at: order.expires_at,
+        created_at: order.created_at,
+      };
+      state.tickets.push(ticket);
+      for (const line of order.lines) {
+        state.ticket_lines.push({
+          id: randomUUID(),
+          ticket_id: order.id,
+          sku: line.sku,
+          qty: line.qty,
+          unit_price_cents_snapshot: line.unit_price_cents,
+        });
+      }
+    } else if (ticket.status !== "CASHED_OUT") {
+      if (order.status === "CASHED_OUT" || order.status === "CANCELLED" || (order.status === "OPEN" && ticket.status === "PENDING")) {
+        ticket.status = order.status;
+      }
+    }
+    if (order.status === "CASHED_OUT") ticket.status = "CASHED_OUT";
+    if (!order.sale) continue;
+    if (state.sales.some((sale) => sale.id === order.sale!.id || (sale.ticket_id === order.id && sale.status === "COMPLETED"))) {
+      ticket.status = "CASHED_OUT";
+      continue;
+    }
+    const at = order.sale.created_at;
+    const enough = order.sale.lines.every((line) => (state.balances.find((row) => row.sku === line.sku)?.qty ?? 0) >= line.qty);
+    if (enough) {
+      for (const line of order.sale.lines) {
+        balanceAdd(state, line.sku, -line.qty, at, false);
+        ledger(state, line.sku, -line.qty, "SALE", "sale", order.sale.id, order.sale.staff_uid, null, order.shift_id, at);
+      }
+    }
+    state.sales.push({
+      id: order.sale.id,
+      ref_no: order.sale.ref_no,
+      shift_id: order.shift_id,
+      staff_uid: order.sale.staff_uid,
+      ticket_id: order.id,
+      total_cents: order.sale.total_cents,
+      prices_tax_included: true,
+      payment_method: "CASH",
+      status: "COMPLETED",
+      void_reason: null,
+      voided_by: null,
+      created_at: at,
+    });
+    for (const line of order.sale.lines) {
+      state.sale_lines.push({
+        id: randomUUID(),
+        sale_id: order.sale.id,
+        sku: line.sku,
+        qty: line.qty,
+        unit_price_cents: line.unit_price_cents,
+        price_source: "SETB_DEFAULT",
+        line_total_cents: line.unit_price_cents * line.qty,
+      });
+    }
+    ticket.status = "CASHED_OUT";
+  }
 }
 
 function balanceAdd(state: State, sku: string, delta: number, at: string, create: boolean) {
@@ -361,21 +484,16 @@ function openShifts(state: State) {
   return state.shifts.filter((shift) => shift.store_code === STORE_CODE && shift.status !== "ENDED");
 }
 
-function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string }) {
-  const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
-  if (session) {
-    const shift = state.shifts.find((row) => row.id === session.shift_id);
-    if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
-      throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
-    }
-    const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
-    if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
-    return { session, shift, staff };
-  }
+function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string; gate?: "pos" | "kitchen" | "any" }) {
+  const want = opts?.gate ?? "pos";
   if (opts?.demo && token.startsWith("v1.")) {
     const ticket = readStaffSession(token, opts.secret, now.getTime());
     if (!ticket || ticket.store !== STORE_CODE) {
       throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
+    }
+    const gate = ticket.gate ?? "pos";
+    if (want !== "any" && gate !== want) {
+      throw new PosError(401, "SESSION_REJECTED", "This sign-in is for a different screen.");
     }
     const shift = state.shifts.find((row) => row.sccx_shift_id === ticket.shift || row.id === ticket.shift);
     if (!shift) throw new PosError(401, "NO_SHIFT", "No demo shift is open on this server. Sign in again.");
@@ -389,6 +507,17 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
       shift,
       staff,
     };
+  }
+  if (want === "kitchen") throw new PosError(401, "NO_SESSION", "Sign in with the kitchen PIN.");
+  const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
+  if (session) {
+    const shift = state.shifts.find((row) => row.id === session.shift_id);
+    if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+      throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
+    }
+    const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+    if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
+    return { session, shift, staff };
   }
   throw new PosError(401, "NO_SESSION", "Sign in again. This server does not have that session.");
 }
@@ -472,6 +601,8 @@ export class PosService {
   private menuCache: { gen: number; at: number; body: Json } | null = null;
   private menuGen = 0;
   private hits = new Map<string, number[]>();
+  private kitchenFails = 0;
+  private kitchenLocked = false;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -488,8 +619,8 @@ export class PosService {
     return Boolean(this.deps.demo);
   }
 
-  private session(state: State, token: string, now: Date) {
-    return requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session });
+  private session(state: State, token: string, now: Date, gate: "pos" | "kitchen" | "any" = "pos") {
+    return requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
   }
 
   private reopenDemoShift(state: State, now: Date) {
@@ -639,6 +770,7 @@ export class PosService {
           staff: shift.staff_uid,
           exp: Math.floor(Date.parse(shift.pin_expires_at) / 1000),
           demo: true,
+          gate: "pos",
         }, this.deps.secrets.session);
         tx.state.sessions.push({
           id: randomUUID(),
@@ -695,6 +827,49 @@ export class PosService {
     return result;
   }
 
+  async kitchenLogin(pin: string, ip: string) {
+    this.hit(`kitchen:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit kitchen PIN.");
+    if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      if (!(this.demoPinAllowed() && safeEqual(pin, KITCHEN_PIN))) return { ok: false as const, fail: true as const };
+      const shift = this.reopenDemoShift(tx.state, now);
+      if (!shift?.pin_expires_at) {
+        return { ok: false as const, fail: false as const, status: 401, code: "NO_SHIFT", message: "Demo kitchen is not seeded on this server. Reload and try again." };
+      }
+      const token = signStaffSession({
+        v: 1,
+        store: STORE_CODE,
+        shift: shift.sccx_shift_id,
+        staff: shift.staff_uid,
+        exp: Math.floor(Date.parse(shift.pin_expires_at) / 1000),
+        demo: true,
+        gate: "kitchen",
+      }, this.deps.secrets.session);
+      tx.state.sessions.push({
+        id: randomUUID(),
+        shift_id: shift.id,
+        token_hash: sha256(token),
+        expires_at: shift.pin_expires_at,
+        revoked_at: null,
+        created_at: at,
+      });
+      const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+      return { ok: true as const, token, staff_name: staff?.display_name ?? "Demo Budtender" };
+    });
+    if (!result.ok && result.fail) {
+      this.kitchenFails += 1;
+      if (this.kitchenFails >= MAX_PIN_FAILURES) this.kitchenLocked = true;
+      if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
+      throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    }
+    if (!result.ok) throw new PosError(result.status, result.code, result.message);
+    this.kitchenFails = 0;
+    return result;
+  }
+
   async logout(token: string) {
     await this.db.transaction(async (tx) => {
       const session = tx.state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at);
@@ -703,11 +878,12 @@ export class PosService {
     return { ok: true };
   }
 
-  async state(token: string) {
+  async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now, gate);
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
         .filter((product) => product.setb_active)
@@ -886,7 +1062,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "kitchen_refill", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now, "any");
       if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the original stock first.");
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
@@ -931,10 +1107,11 @@ export class PosService {
     return result;
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null }) {
+  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       const seen = replay(tx.state, "cashout", input.key, body, now, this.deps.secrets.session);
       if (seen) return { committed: true, stockout: false, body: seen };
       const { shift, staff } = this.session(tx.state, token, now);
@@ -946,6 +1123,11 @@ export class PosService {
       if (input.ticket_id) {
         const ticket = tx.state.tickets.find((row) => row.id === input.ticket_id && row.shift_id === shift.id);
         if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
+        if (ticket.status === "CASHED_OUT") {
+          const paid = paidSaleBody(tx.state, ticket.id);
+          if (!paid) throw new PosError(409, "BAD_TICKET", "That ticket is already paid.");
+          return { committed: true, stockout: false, body: paid };
+        }
         if (ticket.status === "EXPIRED" || Date.parse(ticket.expires_at) <= now.getTime()) {
           ticket.status = "EXPIRED";
           return { committed: true, stockout: false, body: null, error: new PosError(409, "TICKET_EXPIRED", "That ticket has expired.") };
@@ -1005,6 +1187,7 @@ export class PosService {
         total_cents: total,
         prices_tax_included: true,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
+        journal_order: input.ticket_id ? journalFromTicket(tx.state, input.ticket_id) : null,
       };
       remember(tx.state, "cashout", input.key, body, resultBody, now, this.deps.secrets.session);
       return { committed: true, stockout, body: resultBody };
@@ -1034,8 +1217,9 @@ export class PosService {
     });
   }
 
-  async openTicket(token: string, ticketId: string) {
+  async openTicket(token: string, ticketId: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
+      absorbDemoJournal(tx.state, journal);
       const { shift } = this.session(tx.state, token, this.now());
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
@@ -1318,11 +1502,12 @@ export class PosService {
     return body;
   }
 
-  async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string) {
+  async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       const seen = replay(tx.state, "menu_order", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
       const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
@@ -1361,28 +1546,40 @@ export class PosService {
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
-      const result = { ok: true, code, expires_at: iso(new Date(now.getTime() + TICKET_TTL_MS)), total_cents: total, prices_include_tax: true };
+      const result = {
+        ok: true,
+        code,
+        expires_at: iso(new Date(now.getTime() + TICKET_TTL_MS)),
+        total_cents: total,
+        prices_include_tax: true,
+        journal_order: journalFromTicket(tx.state, ticketId),
+      };
       remember(tx.state, "menu_order", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
   }
 
-  async ticketStatus(code: string) {
+  async ticketStatus(code: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const ticket = tx.state.tickets
         .filter((row) => row.code.toUpperCase() === code.toUpperCase())
         .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       const lines = tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id);
+      const paid = ticket.status === "CASHED_OUT";
       return {
         ok: true,
         code: ticket.code,
-        status: ticket.status,
+        status: paid ? "PAID" : ticket.status,
+        paid,
+        closed: paid || ticket.status === "CANCELLED" || ticket.status === "EXPIRED",
         expires_at: ticket.expires_at,
         prices_include_tax: true,
         total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
+        journal_order: journalFromTicket(tx.state, ticket.id),
       };
     });
   }
@@ -1767,6 +1964,66 @@ export class PosService {
         sales: tx.state.sales,
         alerts: tx.state.audit.filter((row) => ["QTY_CHANGED_AFTER_IMPORT", "CANCEL_AFTER_CONFIRM", "DUPLICATE_BATCH_WINDOW", "ROW_REJECTED"].includes(row.action)),
         reconciliation: reconcile(tx.state),
+        stores: [{ code: STORE_CODE, name: "P60 Cannabis" }],
+        summary: (() => {
+          const open = tx.state.shifts.filter((shift) => shift.store_code === STORE_CODE && (shift.status === "ACTIVE" || shift.status === "CLOSING"));
+          const source = open.length ? open : tx.state.shifts.filter((shift) => shift.store_code === STORE_CODE).slice(-1);
+          const totals = source.reduce((sum, shift) => {
+            const row = shiftTotals(tx.state, shift.id);
+            return {
+              sales_cents: sum.sales_cents + row.sales_total_cents,
+              deposited_cents: sum.deposited_cents + row.deposited_cents,
+            };
+          }, { sales_cents: 0, deposited_cents: 0 });
+          return {
+            sales_cents: totals.sales_cents,
+            deposited_cents: totals.deposited_cents,
+            cash_on_hand_cents: totals.sales_cents - totals.deposited_cents,
+          };
+        })(),
+        staff_on_shift: tx.state.shifts
+          .filter((shift) => shift.store_code === STORE_CODE && (shift.status === "ACTIVE" || shift.status === "CLOSING"))
+          .map((shift) => ({
+            id: shift.id,
+            sccx_shift_id: shift.sccx_shift_id,
+            staff_name: tx.state.staff.find((row) => row.staff_uid === shift.staff_uid)?.display_name ?? "Staff",
+            started_at: shift.started_at,
+            status: shift.status,
+            pin_failed_attempts: shift.pin_failed_attempts,
+          })),
+        deposits: tx.state.deposits.map((deposit) => ({
+          id: deposit.id,
+          amount_cents: deposit.amount_cents,
+          note: deposit.note,
+          created_at: deposit.created_at,
+          staff_name: tx.state.staff.find((row) => row.staff_uid === deposit.staff_uid)?.display_name ?? "",
+        })),
+        sales_detail: tx.state.sales.map((sale) => {
+          const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+          return {
+            id: sale.id,
+            ref_no: sale.ref_no,
+            total_cents: sale.total_cents,
+            status: sale.status,
+            created_at: sale.created_at,
+            ticket_code: ticket?.code ?? null,
+            void_reason: sale.void_reason,
+            lines: tx.state.sale_lines
+              .filter((line) => line.sale_id === sale.id)
+              .map((line) => ({ sku: line.sku, name: productName(tx.state, line.sku), qty: line.qty, line_total_cents: line.line_total_cents })),
+          };
+        }),
+        tickets: tx.state.tickets.map((ticket) => {
+          const lines = tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id);
+          return {
+            id: ticket.id,
+            code: ticket.code,
+            status: ticket.status,
+            created_at: ticket.created_at,
+            total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
+            lines: lines.map((line) => ({ sku: line.sku, name: productName(tx.state, line.sku), qty: line.qty })),
+          };
+        }),
       };
     });
   }

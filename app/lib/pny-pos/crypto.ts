@@ -41,6 +41,7 @@ export type StaffTicket = {
   staff: string;
   exp: number;
   demo: true;
+  gate?: "pos" | "kitchen";
 };
 
 /** Stateless till session. Any demo instance can check it without shared memory. */

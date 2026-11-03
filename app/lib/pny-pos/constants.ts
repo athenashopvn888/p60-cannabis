@@ -29,6 +29,7 @@ export const OUTBOX_TAB_ORDER = [
 ] as const;
 
 export const DEMO_PIN = "6666";
+export const KITCHEN_PIN = "9999";
 export const PIN_LENGTH = 4;
 /** Used only when demo mode is on and SESSION_SECRET is unset. Not a production secret. */
 export const DEMO_SESSION_SECRET = "pny-pos-demo-session-v1-not-for-production";
