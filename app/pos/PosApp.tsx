@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatMoney } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
+import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
@@ -94,23 +95,7 @@ export default function PosApp() {
     }
   }, []);
 
-  useEffect(() => {
-    let stop = false;
-    let timer: number | undefined;
-    const run = async () => {
-      if (stop) return;
-      try {
-        await load();
-      } finally {
-        if (!stop) timer = window.setTimeout(() => void run(), 4000);
-      }
-    };
-    void run();
-    return () => {
-      stop = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [load]);
+  usePosPoll(load);
 
   const products = view?.products ?? [];
   const visible = useMemo(() => {
