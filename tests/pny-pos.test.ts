@@ -10,6 +10,7 @@ import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
+import { unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
@@ -854,4 +855,49 @@ test("cash stays in the drawer and debit does not, and the close balance uses sh
   assert.equal(polled.closings[0]?.debit_sales, 1000);
   assert.equal(polled.closings[0]?.balance, 1100);
   assert.equal(polled.closings[0]?.variance?.find((line) => line.sku === "1001")?.shortage_cents, 1000);
+});
+
+test("SKU 1000 rings the raw pack price with no tax and ignores the client price", async () => {
+  assert.equal(unitPricesFromRawRows([{ SKU: "1000", Unit: "pack", Unit_Price: "$2.50", Carton_Price: "25", Packs_per_carton: "10", Needs_Review: "" }]).get("1000"), 250);
+  assert.equal(unitPricesFromRawRows([{ SKU: "1001", Unit_Price: "" }]).has("1001"), false);
+
+  const h = await readyTill({ "1001": 2 });
+  await h.svc.syncSetb([{ sku: "1000", name: "BB pack", category: "Cigarettes", price_cents: 999, active: true }]);
+  await h.svc.openingBalance(h.admin, { key: "ob-1000", sku: "1000", qty: 20 });
+  h.sheet.tabs.Items_raw_price = [
+    { SKU: "1000", Unit: "pack", Unit_Price: "2.50", Carton_Price: "25", Packs_per_carton: "10", Needs_Review: "" },
+    { SKU: "1001", Unit: "unit", Unit_Price: "", Carton_Price: "", Packs_per_carton: "", Needs_Review: "yes" },
+  ];
+  h.clock.t = new Date(h.clock.t.getTime() + 3 * 60 * 1000);
+  const before = h.sheet.tabs.Items_raw_price.map((row) => ({ ...row }));
+  let reads = 0;
+  const readRows = h.sheet.readRows.bind(h.sheet);
+  h.sheet.readRows = async (tab: string) => {
+    if (tab === "Items_raw_price") reads += 1;
+    return readRows(tab);
+  };
+  let writes: string[] = [];
+  const upsert = h.sheet.upsert.bind(h.sheet);
+  h.sheet.upsert = async (tab: string, rows: Record<string, string>[]) => {
+    writes.push(tab);
+    return upsert(tab, rows);
+  };
+
+  const pack = await h.svc.cashout(h.token, { key: "pack", payment_method: "CASH", lines: [{ sku: "1000", qty: 1, unit_price_cents: 1 }] });
+  assert.equal(pack.total_cents, 250);
+  assert.equal(pack.prices_tax_included, false);
+  assert.equal(pack.lines[0]?.unit_price_cents, 250);
+  const carton = await h.svc.cashout(h.token, { key: "carton", lines: [{ sku: "1000", qty: 10 }] });
+  assert.equal(carton.total_cents, 2500);
+  assert.equal(reads, 1);
+  const menu = await h.svc.cashout(h.token, { key: "flower", lines: [{ sku: "1001", qty: 1, unit_price_cents: 1 }] });
+  assert.equal(menu.total_cents, 1000);
+  assert.equal(menu.prices_tax_included, true);
+  const shown = await h.svc.state(h.token);
+  assert.equal(shown.products?.find((product) => product.sku === "1000")?.price_cents, 250);
+  h.clock.t = new Date(h.clock.t.getTime() + 3 * 60 * 1000);
+  await h.svc.cashout(h.token, { key: "pack-again", lines: [{ sku: "1000", qty: 1 }] });
+  assert.equal(reads, 2);
+  assert.deepEqual(h.sheet.tabs.Items_raw_price, before);
+  assert.equal(writes.includes("Items_raw_price"), false);
 });
