@@ -96,7 +96,7 @@ test("1. shift start returns a PIN and the same request id replays it", async ()
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const first = await h.svc.startShift({ key: "req-1", store: "PNY01", staff_ref: "staff-a", pos_id: "A1", shift_id: "sccx-1" });
   const second = await h.svc.startShift({ key: "req-1", store: "PNY01", staff_ref: "staff-a", pos_id: "A1", shift_id: "sccx-1" });
-  assert.match(String(first.pin), /^\d{6}$/);
+  assert.match(String(first.pin), /^\d{4}$/);
   assert.equal(second.pin, first.pin);
   assert.equal(h.db.state.shifts.length, 1);
   await rejects(
@@ -132,11 +132,13 @@ test("3. SCCx off shift kills the PIN and flags the summary as no count", async 
 
 test("4. five bad PINs lock the shift, admin reissue works, and a 14 hour PIN is rejected", async () => {
   const h = await readyTill();
-  for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => h.svc.login("000000", "10.1.0.5"), "BAD_PIN");
-  await rejects(() => h.svc.login("000000", "10.1.0.5"), "LOCKED");
+  await rejects(() => h.svc.login("000000", "10.1.0.4"), "BAD_PIN");
+  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.pin_failed_attempts, 0);
+  for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => h.svc.login("0000", "10.1.0.5"), "BAD_PIN");
+  await rejects(() => h.svc.login("0000", "10.1.0.5"), "LOCKED");
   assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "LOCKED");
   const reissued = await h.svc.reissuePin(h.admin, { key: "reissue-1", shift_id: "sccx-a" });
-  assert.match(String(reissued.pin), /^\d{6}$/);
+  assert.match(String(reissued.pin), /^\d{4}$/);
   assert.notEqual(reissued.pin, h.pin);
   await rejects(() => h.svc.login(h.pin, "10.1.0.6"), "BAD_PIN");
   const again = await h.svc.login(String(reissued.pin), "10.1.0.6");
@@ -464,7 +466,7 @@ test("21. SETB on-hand is ignored and PNY balances stay independent", async () =
 });
 
 test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-hand", async () => {
-  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/menu"), ...walk("app/api/admin"), ...walk("app/api/cron")];
+  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/menu"), ...walk("app/api/kitchen"), ...walk("app/kitchen"), ...walk("app/api/admin"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   assert.doesNotMatch(source, /GOOGLE_SA_KITCHEN|KITCHEN_URL|kitchen_on_hand|kitchenOnHand/);
   const h = await readyTill({ "1001": 0, "1002": 0 });
@@ -476,13 +478,19 @@ test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-
 });
 
 test("23. shift, roster and closing code does not reference SOD", () => {
-  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/cron")];
+  const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/kitchen"), ...walk("app/kitchen"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   assert.doesNotMatch(source, /\bSOD\b|\/api\/gateway\/send|signal-cli|SOD_/);
   const sitemap = readFileSync("app/sitemap.ts", "utf8");
-  assert.doesNotMatch(sitemap, /\/pos|\/menu/);
+  assert.doesNotMatch(sitemap, /\/pos|\/menu|\/kitchen/);
   assert.equal(hideMobileBottomBar("/pos"), true);
   assert.equal(hideMobileBottomBar("/menu"), true);
+  assert.equal(hideMobileBottomBar("/kitchen"), true);
+  const menuApp = readFileSync("app/menu/MenuApp.tsx", "utf8");
+  assert.match(menuApp, /pny-menu-layout/);
+  assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
+  const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
+  assert.match(menuCss, /grid-template-columns:\s*1fr 1fr/);
   assert.equal(hideMobileBottomBar("/hours"), false);
   assert.match(SCHEMA_SQL, /CHECK \(qty >= 0\)/);
   assert.match(SCHEMA_SQL, /OPENING_BALANCE|INCOMING_CONFIRM|COUNT_VARIANCE/);
@@ -540,11 +548,11 @@ test("preview without a database uses the labeled demo and production with a dat
     process.env.VERCEL_ENV = "preview";
     assert.equal(demoMode(), true);
     process.env.VERCEL_ENV = "production";
+    assert.equal(demoMode(), true);
+    process.env.DATABASE_URL = "postgres://production.example/pny";
     assert.equal(demoMode(), false);
-  process.env.DATABASE_URL = "postgres://production.example/pny";
-  assert.equal(demoMode(), false);
-  process.env.PNY_POS_DEMO = "1";
-  assert.equal(demoMode(), false);
+    process.env.PNY_POS_DEMO = "1";
+    assert.equal(demoMode(), false);
     process.env.PNY_POS_DEMO = "0";
     assert.equal(demoMode(), false);
   } finally {
@@ -579,8 +587,9 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
 });
 
-test("demo PIN 666666 is a signed session that another server accepts", async () => {
-  assert.equal(DEMO_PIN, "666666");
+test("demo PIN 6666 is a signed session that another server accepts", async () => {
+  assert.equal(DEMO_PIN, "6666");
+  assert.match(DEMO_PIN, /^\d{4}$/);
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
@@ -595,7 +604,7 @@ test("demo PIN 666666 is a signed session that another server accepts", async ()
   const remote = await second.svc.state(login.token);
   assert.equal(remote.shift?.pos_id, "DEMO1");
   assert.ok((remote.products?.length ?? 0) > 0);
-  await rejects(() => second.svc.login("123456", "10.9.9.2"), "BAD_PIN");
+  await rejects(() => second.svc.login("1234", "10.9.9.2"), "BAD_PIN");
   await rejects(() => second.svc.state(`${login.token}x`), "SESSION_REJECTED");
   second.db.state.shifts.forEach((shift) => {
     shift.status = "ENDED";
@@ -609,7 +618,8 @@ test("demo PIN 666666 is a signed session that another server accepts", async ()
       shift.status = "ENDED";
       shift.pin_hash = null;
     });
-    await rejects(() => second.svc.login(DEMO_PIN, "10.9.9.4"), "NO_SHIFT");
+    const live = await second.svc.login(DEMO_PIN, "10.9.9.4");
+    assert.equal((await second.svc.state(live.token)).shift?.status, "ACTIVE");
   } finally {
     delete process.env.VERCEL_ENV;
   }
@@ -639,4 +649,27 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(state.totals?.cash_on_hand_cents, (state.totals?.sales_cents ?? 0) - 500);
   assert.equal(state.products?.some((product) => product.image_url?.startsWith("https://")), true);
   assert.equal(db.state.ledger.filter((row) => row.movement_type === "OPENING_BALANCE").every((row) => row.reason === "DEMO stock, not SETB on-hand"), true);
+});
+
+test("kitchen send adds allocation or refill stock once and does not write the public catalog", async () => {
+  const h = await readyTill({ "1001": 2, "1002": 1 });
+  const before = qty(h.db, "1001");
+  const refill = { key: "refill-1", kind: "REFILL" as const, lines: [{ sku: "1001", qty: 3 }, { sku: "1002", qty: 0 }] };
+  await h.svc.sendRefill(h.token, refill);
+  assert.equal(h.db.state.incoming.filter((row) => row.kind === "REFILL").length, 1);
+  assert.equal(qty(h.db, "1001"), before + 3);
+  assert.equal(qty(h.db, "1002"), 1);
+  assert.equal(h.db.state.incoming[0]?.kind, "REFILL");
+  assert.equal(h.db.state.incoming[0]?.status, "CONFIRMED");
+  await h.svc.sendRefill(h.token, refill);
+  assert.equal(qty(h.db, "1001"), before + 3);
+  await h.svc.sendRefill(h.token, { key: "alloc-1", kind: "ALLOCATION", lines: [{ sku: "1002", qty: 4 }] });
+  assert.equal(qty(h.db, "1002"), 5);
+  assert.equal(h.db.state.incoming.find((row) => row.sku === "1002")?.kind, "ALLOCATION");
+  const state = await h.svc.state(h.token);
+  assert.equal(state.receipts.length, 2);
+  await rejects(() => h.svc.sendRefill(h.token, { key: "empty", lines: [] }), "EMPTY");
+  const route = readFileSync("app/api/kitchen/refill/route.ts", "utf8");
+  assert.match(route, /sendRefill/);
+  assert.doesNotMatch(route, /flowers\.json|items\.json|writeFile|SETB_PRODUCTS/);
 });

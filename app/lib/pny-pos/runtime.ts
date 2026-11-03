@@ -22,9 +22,7 @@ const DEMO_SECRETS: Secrets = {
  * Set PNY_POS_DEMO=0 to force the empty unconfigured till.
  */
 export function demoMode() {
-  if (process.env.VERCEL_ENV === "production") return false;
   if (process.env.PNY_POS_DEMO === "0") return false;
-  if (process.env.PNY_POS_DEMO === "1") return true;
   if (process.env.DATABASE_URL) return false;
   return true;
 }

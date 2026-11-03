@@ -11,7 +11,7 @@ export function safeEqual(a: string, b: string) {
 }
 
 export function randomPin() {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
+  return String(randomInt(0, 10_000)).padStart(4, "0");
 }
 
 export function hashPin(pin: string) {

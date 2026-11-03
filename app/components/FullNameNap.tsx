@@ -11,7 +11,7 @@ import { FULL_NAME_NAP, FULL_NAME_NAP_ADDRESS } from "../lib/fullNameNap";
  * On /contact, /visit and /hours it expands into a NAP + hours block.
  */
 
-const HIDE_ON = /^\/((?:fl)?tv|pos|menu)/i;
+const HIDE_ON = /^\/((?:fl)?tv|pos|menu|kitchen)/i;
 const CONTACT_PAGES = /^\/(contact|visit|hours)(\/|$)/i;
 
 const linkStyle = { color: "inherit", textDecoration: "underline", textUnderlineOffset: "2px" } as const;

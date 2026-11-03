@@ -485,7 +485,7 @@ export class PosService {
   }
 
   private demoPinAllowed() {
-    return Boolean(this.deps.demo) && process.env.VERCEL_ENV !== "production";
+    return Boolean(this.deps.demo);
   }
 
   private session(state: State, token: string, now: Date) {
@@ -622,8 +622,8 @@ export class PosService {
   }
 
   async login(pin: string, ip: string) {
-    this.hit(`login:${ip || "unknown"}`, 20, 15 * 60 * 1000);
-    if (!/^\d{6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 6-digit shift PIN.");
+    this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -674,7 +674,7 @@ export class PosService {
           message: locked
             ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
             : this.demoPinAllowed()
-              ? "That PIN is not correct. This preview uses demo PIN 666666."
+              ? "That PIN is not correct. This demo uses PIN 6666. Five wrong tries lock the shift."
               : "That PIN is not correct.",
         };
       }
@@ -769,6 +769,16 @@ export class PosService {
         incoming,
         tickets,
         pending_count: pendingCount,
+        receipts: tx.state.incoming.map((row) => ({
+          kitchen_row_id: row.kitchen_row_id,
+          sku: row.sku,
+          name: productName(tx.state, row.sku),
+          qty_sent: row.qty_sent,
+          qty_received: row.qty_received,
+          status: row.status,
+          kind: row.kind,
+          variance_reason: row.variance_reason,
+        })),
         sheet_sync_delayed: oldestQueued != null && now.getTime() - oldestQueued >= SHEET_DELAY_MS,
         prices_include_tax: true,
         end_shift_message: END_SHIFT_MESSAGE,
@@ -863,6 +873,58 @@ export class PosService {
       if (!tx.state.incoming.some((row) => row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
       const resultBody = { ok: true };
       remember(tx.state, "incoming_confirm", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    });
+    this.bumpMenu();
+    return result;
+  }
+
+  async sendRefill(token: string, input: { key: string; kind?: "ALLOCATION" | "REFILL"; lines: { sku: string; qty: number }[] }) {
+    const body = input as unknown as Json;
+    const kind = input.kind === "ALLOCATION" ? "ALLOCATION" : "REFILL";
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const { shift, staff } = this.session(tx.state, token, now);
+      if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the original stock first.");
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
+      const at = iso(now);
+      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
+        if (!product) throw new PosError(404, "SKU", "That SKU is not in the PNY catalog.");
+        const kitchenRowId = randomUUID();
+        tx.state.incoming.push({
+          kitchen_row_id: kitchenRowId,
+          batch_id: input.key,
+          store_code: STORE_CODE,
+          sku: line.sku,
+          qty_sent: line.qty,
+          kind,
+          kitchen_created_at: at,
+          imported_at: at,
+          status: "CONFIRMED",
+          qty_received: line.qty,
+          variance_reason: null,
+          confirmed_shift_id: shift.id,
+          confirmed_at: at,
+          linked_ledger_id: null,
+          created_at: at,
+        });
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive the refill.");
+        const entry = ledger(tx.state, line.sku, line.qty, "INCOMING_CONFIRM", "incoming", kitchenRowId, staff.staff_uid, null, shift.id, at);
+        const row = tx.state.incoming.find((item) => item.kitchen_row_id === kitchenRowId)!;
+        row.linked_ledger_id = entry.id;
+        enqueue(tx.state, "S_Receipts", `R-${kitchenRowId}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
+        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "CONFIRMED" });
+      }
+      shift.refill_confirmed_at = at;
+      const resultBody = { ok: true, lines: created };
+      remember(tx.state, "kitchen_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
     });
     this.bumpMenu();

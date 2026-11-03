@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
@@ -13,6 +13,25 @@ type Menu = {
   prices_include_tax?: boolean;
   items?: Item[];
 };
+type Layout = "grid" | "list";
+
+const LAYOUT_KEY = "pny-menu-layout";
+const layoutListeners = new Set<() => void>();
+
+function readLayout(): Layout {
+  const saved = window.localStorage.getItem(LAYOUT_KEY);
+  return saved === "list" ? "list" : "grid";
+}
+
+function subscribeLayout(listener: () => void) {
+  layoutListeners.add(listener);
+  return () => layoutListeners.delete(listener);
+}
+
+function chooseLayout(next: Layout) {
+  window.localStorage.setItem(LAYOUT_KEY, next);
+  layoutListeners.forEach((listener) => listener());
+}
 
 export default function MenuApp() {
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -20,6 +39,7 @@ export default function MenuApp() {
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
     let stop = false;
@@ -81,26 +101,28 @@ export default function MenuApp() {
     <main className={styles.shell} data-testid="menu-shell">
       {menu?.demo ? <div className={styles.demo}>{menu.demo_label}</div> : null}
       <header className={styles.header}>
-        <h1>PNY01 order</h1>
+        <div className={styles.headerRow}>
+          <h1>PNY01 order</h1>
+          <div className={styles.toggle} role="group" aria-label="Menu layout">
+            <button type="button" aria-pressed={layout === "grid"} className={layout === "grid" ? styles.toggleOn : styles.toggleOff} onClick={() => chooseLayout("grid")}>Grid</button>
+            <button type="button" aria-pressed={layout === "list"} className={layout === "list" ? styles.toggleOn : styles.toggleOff} onClick={() => chooseLayout("list")}>List</button>
+          </div>
+        </div>
         <p>{menu?.prices_include_tax === false ? "" : "Prices include tax."} Only available items are listed.</p>
       </header>
-      <section className={styles.list}>
+      <section className={layout === "list" ? styles.list : styles.grid} data-layout={layout}>
         {items.map((item) => {
           const qty = cart[item.sku] ?? 0;
           return (
             <article key={item.sku} className={styles.card}>
               <ProductPhoto src={item.image_url} alt={item.name} className={styles.hero} placeholderClassName={styles.heroPh} />
-              <div className={styles.cardBody}>
-              <div>
-                <div className={styles.name}>{item.name}</div>
-                <div className={styles.price}>{formatMoney(item.price_cents)}</div>
-                <span className={styles.available}>{item.availability}</span>
-              </div>
+              <div className={styles.name}>{item.name}</div>
+              <div className={styles.price}>{formatMoney(item.price_cents)}</div>
+              <span className={styles.available}>{item.availability}</span>
               <div className={styles.stepper}>
                 <button type="button" aria-label={`Decrease ${item.name}`} disabled={qty === 0} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button>
                 <strong>{qty}</strong>
                 <button type="button" aria-label={`Increase ${item.name}`} data-add={item.sku} disabled={!menu?.ordering || qty >= 20} onClick={() => setCart({ ...cart, [item.sku]: qty + 1 })}>+</button>
-              </div>
               </div>
             </article>
           );

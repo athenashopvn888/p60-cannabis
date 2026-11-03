@@ -62,6 +62,14 @@ export function countLines(body: Record<string, unknown>) {
   });
 }
 
+export function refillLines(body: Record<string, unknown>) {
+  const lines = Array.isArray(body.lines) ? body.lines : [];
+  return lines.map((line) => {
+    const row = (line ?? {}) as Record<string, unknown>;
+    return { sku: String(row.sku ?? ""), qty: Number(row.qty) };
+  });
+}
+
 export function receiptLines(body: Record<string, unknown>) {
   const lines = Array.isArray(body.lines) ? body.lines : [];
   return lines.map((line) => {

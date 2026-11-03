@@ -28,7 +28,8 @@ export const OUTBOX_TAB_ORDER = [
   "_Meta",
 ] as const;
 
-export const DEMO_PIN = "666666";
+export const DEMO_PIN = "6666";
+export const PIN_LENGTH = 4;
 /** Used only when demo mode is on and SESSION_SECRET is unset. Not a production secret. */
 export const DEMO_SESSION_SECRET = "pny-pos-demo-session-v1-not-for-production";
 export const DEMO_LABEL = "DEMO DATA — real SETB products, sample stock, not live on-hand";
