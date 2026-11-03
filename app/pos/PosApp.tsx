@@ -65,11 +65,14 @@ export default function PosApp() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
     const data = (await response.json()) as View;
     setView(data);
+    if (!data.authenticated) setActiveTicket(null);
+    else setActiveTicket((current) => (current && data.tickets?.some((ticket) => ticket.id === current.id) ? current : null));
     if (!data.authenticated) {
       setCart({});
       if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
@@ -131,9 +134,10 @@ export default function PosApp() {
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const result = await post("/api/pos/cashout", { lines }, crypto.randomUUID());
+      const result = await post("/api/pos/cashout", { lines, ticket_id: activeTicket?.id ?? null }, crypto.randomUUID());
       setRefNo(String(result.ref_no));
       setCart({});
+      setActiveTicket(null);
       setSheet("done");
       await load();
     } catch (err) {
@@ -375,6 +379,7 @@ export default function PosApp() {
                     next[line.sku] = Math.min(line.qty, product?.qty ?? line.qty);
                   }
                   setCart(next);
+                  setActiveTicket({ id: ticket.id, code: ticket.code });
                   setTab("sell");
                   void post(`/api/pos/tickets/${ticket.id}/open`, {}).then(() => load());
                 }}>Open</button>
@@ -408,6 +413,7 @@ export default function PosApp() {
               <>
                 <h2>Cashout {formatMoney(total)}</h2>
                 <p>Prices include tax. Recorded as cash. No payment is taken.</p>
+                {activeTicket ? <p>Ticket {activeTicket.code} will be marked paid.</p> : null}
                 {Object.entries(cart).map(([sku, qty]) => {
                   const product = products.find((item) => item.sku === sku);
                   return <p key={sku}>{qty} × {product?.name} · {formatMoney((product?.price_cents ?? 0) * qty)}</p>;

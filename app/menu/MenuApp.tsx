@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
@@ -39,6 +39,8 @@ export default function MenuApp() {
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [category, setCategory] = useState("All");
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
@@ -59,8 +61,33 @@ export default function MenuApp() {
   }, []);
 
   const items = menu?.items ?? [];
+  const categories = useMemo(
+    () => [...new Set((menu?.items ?? []).map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [menu?.items],
+  );
+  const activeCategory = category !== "All" && categories.includes(category) ? category : "All";
+  const visible = activeCategory === "All" ? items : items.filter((item) => item.category === activeCategory);
   const total = items.reduce((sum, item) => sum + (cart[item.sku] ?? 0) * item.price_cents, 0);
   const lines = Object.entries(cart).filter(([, qty]) => qty > 0);
+
+  useEffect(() => {
+    if (!ticket) return;
+    let stop = false;
+    const loadStatus = () => {
+      void fetch(`/api/menu/tickets/${encodeURIComponent(ticket.code)}`, { cache: "no-store" })
+        .then((response) => response.json())
+        .then((data: { status?: string; paid?: boolean }) => {
+          if (!stop && (data.paid || data.status === "PAID")) setPaid(true);
+        })
+        .catch(() => undefined);
+    };
+    loadStatus();
+    const timer = window.setInterval(loadStatus, 4000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [ticket]);
 
   async function place() {
     setError("");
@@ -73,6 +100,7 @@ export default function MenuApp() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not place the order");
+      setPaid(false);
       setTicket({ code: data.code, total_cents: data.total_cents, expires_at: data.expires_at });
       setCart({});
     } catch (err) {
@@ -90,7 +118,7 @@ export default function MenuApp() {
           <p>Show this code to staff</p>
           <strong data-testid="ticket-code">{ticket.code}</strong>
           <p>{formatMoney(ticket.total_cents)}</p>
-          <p className={styles.note}>Prices include tax. Valid for 30 minutes. Stock is taken when staff cash it out.</p>
+          <p className={styles.note} data-testid="ticket-status">{paid ? "Paid. This order is closed." : "Prices include tax. Valid for 30 minutes. Staff cash this out at the till."}</p>
           <button className={styles.order} type="button" onClick={() => setTicket(null)}>Order something else</button>
         </section>
       </main>
@@ -110,9 +138,33 @@ export default function MenuApp() {
         </div>
         <p>{menu?.prices_include_tax === false ? "" : "Prices include tax."} Only available items are listed.</p>
       </header>
+      {categories.length > 0 ? (
+        <div className={styles.chips} role="tablist" aria-label="Categories" data-testid="menu-categories">
+          {["All", ...categories].map((name) => (
+            <button key={name} type="button" role="tab" aria-selected={activeCategory === name} data-category={name} className={activeCategory === name ? styles.chipOn : styles.chip} onClick={() => setCategory(name)}>
+              {name}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <section className={layout === "list" ? styles.list : styles.grid} data-layout={layout}>
-        {items.map((item) => {
+        {visible.map((item) => {
           const qty = cart[item.sku] ?? 0;
+          if (layout === "list") {
+            return (
+              <article key={item.sku} className={styles.listRow}>
+                <div className={styles.listCopy}>
+                  <div className={styles.name}>{item.name}</div>
+                  <div className={styles.price}>{formatMoney(item.price_cents)}</div>
+                </div>
+                <div className={styles.compact}>
+                  <button type="button" aria-label={`Decrease ${item.name}`} disabled={qty === 0} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button>
+                  <strong>{qty}</strong>
+                  <button type="button" aria-label={`Increase ${item.name}`} data-add={item.sku} disabled={!menu?.ordering || qty >= 20} onClick={() => setCart({ ...cart, [item.sku]: qty + 1 })}>+</button>
+                </div>
+              </article>
+            );
+          }
           return (
             <article key={item.sku} className={styles.card}>
               <ProductPhoto src={item.image_url} alt={item.name} className={styles.hero} placeholderClassName={styles.heroPh} />

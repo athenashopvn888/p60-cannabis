@@ -22,6 +22,7 @@ import {
   TICKET_TTL_MS,
 } from "./constants.ts";
 import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSession, safeEqual, sha256, signStaffSession, stableStringify, verifyPin } from "./crypto.ts";
+import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
@@ -99,6 +100,127 @@ function ledger(state: State, sku: string, delta: number, movement: MovementType
   };
   state.ledger.push(row);
   return row;
+}
+
+function journalFromTicket(state: State, ticketId: string): DemoJournalOrder | null {
+  const ticket = state.tickets.find((row) => row.id === ticketId);
+  if (!ticket) return null;
+  if (ticket.status !== "PENDING" && ticket.status !== "OPEN" && ticket.status !== "CASHED_OUT" && ticket.status !== "CANCELLED") return null;
+  const lines = state.ticket_lines
+    .filter((line) => line.ticket_id === ticket.id)
+    .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents_snapshot }));
+  const sale = state.sales.find((row) => row.ticket_id === ticket.id && row.status === "COMPLETED");
+  return {
+    id: ticket.id,
+    code: ticket.code,
+    shift_id: ticket.shift_id,
+    status: ticket.status,
+    expires_at: ticket.expires_at,
+    created_at: ticket.created_at,
+    lines,
+    sale: sale
+      ? {
+          id: sale.id,
+          ref_no: sale.ref_no,
+          total_cents: sale.total_cents,
+          staff_uid: sale.staff_uid,
+          created_at: sale.created_at,
+          lines: state.sale_lines
+            .filter((line) => line.sale_id === sale.id)
+            .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents })),
+        }
+      : null,
+  };
+}
+
+function paidSaleBody(state: State, ticketId: string) {
+  const sale = state.sales.find((row) => row.ticket_id === ticketId && row.status === "COMPLETED");
+  if (!sale) return null;
+  return {
+    ok: true,
+    replay: true,
+    sale_id: sale.id,
+    ref_no: sale.ref_no,
+    total_cents: sale.total_cents,
+    prices_tax_included: true,
+    lines: state.sale_lines
+      .filter((line) => line.sale_id === sale.id)
+      .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents, line_total_cents: line.line_total_cents })),
+    journal_order: journalFromTicket(state, ticketId),
+  };
+}
+
+/** Replay demo orders from the browser cookie onto a fresh seed without counting a sale twice. */
+function absorbDemoJournal(state: State, orders: DemoJournalOrder[] | undefined) {
+  if (!orders?.length) return;
+  for (const order of orders) {
+    let ticket = state.tickets.find((row) => row.id === order.id);
+    if (!ticket) {
+      ticket = {
+        id: order.id,
+        shift_id: order.shift_id,
+        code: order.code,
+        status: order.status,
+        source: "QR",
+        expires_at: order.expires_at,
+        created_at: order.created_at,
+      };
+      state.tickets.push(ticket);
+      for (const line of order.lines) {
+        state.ticket_lines.push({
+          id: randomUUID(),
+          ticket_id: order.id,
+          sku: line.sku,
+          qty: line.qty,
+          unit_price_cents_snapshot: line.unit_price_cents,
+        });
+      }
+    } else if (ticket.status !== "CASHED_OUT") {
+      if (order.status === "CASHED_OUT" || order.status === "CANCELLED" || (order.status === "OPEN" && ticket.status === "PENDING")) {
+        ticket.status = order.status;
+      }
+    }
+    if (order.status === "CASHED_OUT") ticket.status = "CASHED_OUT";
+    if (!order.sale) continue;
+    if (state.sales.some((sale) => sale.id === order.sale!.id || (sale.ticket_id === order.id && sale.status === "COMPLETED"))) {
+      ticket.status = "CASHED_OUT";
+      continue;
+    }
+    const at = order.sale.created_at;
+    const enough = order.sale.lines.every((line) => (state.balances.find((row) => row.sku === line.sku)?.qty ?? 0) >= line.qty);
+    if (enough) {
+      for (const line of order.sale.lines) {
+        balanceAdd(state, line.sku, -line.qty, at, false);
+        ledger(state, line.sku, -line.qty, "SALE", "sale", order.sale.id, order.sale.staff_uid, null, order.shift_id, at);
+      }
+    }
+    state.sales.push({
+      id: order.sale.id,
+      ref_no: order.sale.ref_no,
+      shift_id: order.shift_id,
+      staff_uid: order.sale.staff_uid,
+      ticket_id: order.id,
+      total_cents: order.sale.total_cents,
+      prices_tax_included: true,
+      payment_method: "CASH",
+      status: "COMPLETED",
+      void_reason: null,
+      voided_by: null,
+      created_at: at,
+    });
+    for (const line of order.sale.lines) {
+      state.sale_lines.push({
+        id: randomUUID(),
+        sale_id: order.sale.id,
+        sku: line.sku,
+        qty: line.qty,
+        unit_price_cents: line.unit_price_cents,
+        price_source: "SETB_DEFAULT",
+        line_total_cents: line.unit_price_cents * line.qty,
+      });
+    }
+    ticket.status = "CASHED_OUT";
+  }
 }
 
 function balanceAdd(state: State, sku: string, delta: number, at: string, create: boolean) {
@@ -703,9 +825,10 @@ export class PosService {
     return { ok: true };
   }
 
-  async state(token: string) {
+  async state(token: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff } = this.session(tx.state, token, now);
       const totals = shiftTotals(tx.state, shift.id);
@@ -931,10 +1054,11 @@ export class PosService {
     return result;
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null }) {
+  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       const seen = replay(tx.state, "cashout", input.key, body, now, this.deps.secrets.session);
       if (seen) return { committed: true, stockout: false, body: seen };
       const { shift, staff } = this.session(tx.state, token, now);
@@ -946,6 +1070,11 @@ export class PosService {
       if (input.ticket_id) {
         const ticket = tx.state.tickets.find((row) => row.id === input.ticket_id && row.shift_id === shift.id);
         if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
+        if (ticket.status === "CASHED_OUT") {
+          const paid = paidSaleBody(tx.state, ticket.id);
+          if (!paid) throw new PosError(409, "BAD_TICKET", "That ticket is already paid.");
+          return { committed: true, stockout: false, body: paid };
+        }
         if (ticket.status === "EXPIRED" || Date.parse(ticket.expires_at) <= now.getTime()) {
           ticket.status = "EXPIRED";
           return { committed: true, stockout: false, body: null, error: new PosError(409, "TICKET_EXPIRED", "That ticket has expired.") };
@@ -1005,6 +1134,7 @@ export class PosService {
         total_cents: total,
         prices_tax_included: true,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
+        journal_order: input.ticket_id ? journalFromTicket(tx.state, input.ticket_id) : null,
       };
       remember(tx.state, "cashout", input.key, body, resultBody, now, this.deps.secrets.session);
       return { committed: true, stockout, body: resultBody };
@@ -1034,8 +1164,9 @@ export class PosService {
     });
   }
 
-  async openTicket(token: string, ticketId: string) {
+  async openTicket(token: string, ticketId: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
+      absorbDemoJournal(tx.state, journal);
       const { shift } = this.session(tx.state, token, this.now());
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
@@ -1318,11 +1449,12 @@ export class PosService {
     return body;
   }
 
-  async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string) {
+  async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       const seen = replay(tx.state, "menu_order", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
       const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
@@ -1361,28 +1493,40 @@ export class PosService {
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
-      const result = { ok: true, code, expires_at: iso(new Date(now.getTime() + TICKET_TTL_MS)), total_cents: total, prices_include_tax: true };
+      const result = {
+        ok: true,
+        code,
+        expires_at: iso(new Date(now.getTime() + TICKET_TTL_MS)),
+        total_cents: total,
+        prices_include_tax: true,
+        journal_order: journalFromTicket(tx.state, ticketId),
+      };
       remember(tx.state, "menu_order", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
   }
 
-  async ticketStatus(code: string) {
+  async ticketStatus(code: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
+      absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const ticket = tx.state.tickets
         .filter((row) => row.code.toUpperCase() === code.toUpperCase())
         .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       const lines = tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id);
+      const paid = ticket.status === "CASHED_OUT";
       return {
         ok: true,
         code: ticket.code,
-        status: ticket.status,
+        status: paid ? "PAID" : ticket.status,
+        paid,
+        closed: paid || ticket.status === "CANCELLED" || ticket.status === "EXPIRED",
         expires_at: ticket.expires_at,
         prices_include_tax: true,
         total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
+        journal_order: journalFromTicket(tx.state, ticket.id),
       };
     });
   }

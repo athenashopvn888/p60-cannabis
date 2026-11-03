@@ -42,6 +42,39 @@
   font-size: 14px;
 }
 
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 16px 0;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip,
+.chipOn {
+  flex: none;
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-weight: 750;
+  font-size: 14px;
+}
+
+.chip {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.chipOn {
+  background: #14532d;
+  color: #fff;
+}
+
 .toggle {
   display: flex;
   gap: 4px;
@@ -85,9 +118,51 @@
 }
 
 .list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  min-height: 52px;
+}
+
+.listCopy {
+  flex: 1;
+  min-width: 0;
+}
+
+.compact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.compact strong {
+  min-width: 1.25ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.compact button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: #14532d;
+  color: #fff;
+  font-size: 18px;
+}
+
+.compact button:disabled {
+  background: #cbd5e1;
 }
 
 .card {

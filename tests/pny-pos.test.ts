@@ -488,6 +488,8 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(hideMobileBottomBar("/kitchen"), true);
   const menuApp = readFileSync("app/menu/MenuApp.tsx", "utf8");
   assert.match(menuApp, /pny-menu-layout/);
+  assert.match(menuApp, /listRow/);
+  assert.match(menuApp, /aria-label="Categories"/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
   assert.match(menuCss, /grid-template-columns:\s*1fr 1fr/);
@@ -672,4 +674,68 @@ test("kitchen send adds allocation or refill stock once and does not write the p
   const route = readFileSync("app/api/kitchen/refill/route.ts", "utf8");
   assert.match(route, /sendRefill/);
   assert.doesNotMatch(route, /flowers\.json|items\.json|writeFile|SETB_PRODUCTS/);
+});
+
+test("cashing a ticket marks it paid once and a fresh demo server keeps that close", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 4 });
+  const order = await h.svc.placeOrder({ key: "order-pay", lines: [{ sku: "1001", qty: 1 }] }, "10.8.0.1");
+  const ticket = (await h.svc.state(h.token)).tickets.find((row) => row.code === order.code);
+  assert.ok(ticket);
+  const beforeSales = h.db.state.sales.length;
+  const beforeQty = qty(h.db, "1001");
+  const paid = await h.svc.cashout(h.token, {
+    key: "pay-1",
+    ticket_id: ticket.id,
+    lines: ticket.lines.map((line) => ({ sku: line.sku, qty: line.qty })),
+  });
+  assert.equal(h.db.state.tickets.find((row) => row.id === ticket.id)?.status, "CASHED_OUT");
+  assert.equal((await h.svc.state(h.token)).tickets.some((row) => row.id === ticket.id), false);
+  assert.equal(qty(h.db, "1001"), beforeQty - 1);
+  const again = await h.svc.cashout(h.token, {
+    key: "pay-2",
+    ticket_id: ticket.id,
+    lines: ticket.lines.map((line) => ({ sku: line.sku, qty: line.qty })),
+  });
+  assert.equal(again.sale_id, paid.sale_id);
+  assert.equal(h.db.state.sales.length, beforeSales + 1);
+  assert.equal(qty(h.db, "1001"), beforeQty - 1);
+  const customer = await h.svc.ticketStatus(ticket.code);
+  assert.equal(customer.status, "PAID");
+  assert.equal(customer.paid, true);
+
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const make = () => {
+    const db = new MemoryDb();
+    applyDemoSeed(db.state, now);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    return { db, svc };
+  };
+  const origin = make();
+  const login = await origin.svc.login(DEMO_PIN, "10.8.1.1");
+  const open = (await origin.svc.state(login.token)).tickets[0];
+  assert.ok(open);
+  const seededSales = (await origin.svc.state(login.token)).totals?.sales_cents ?? 0;
+  const closed = await origin.svc.cashout(login.token, {
+    key: "demo-pay",
+    ticket_id: open.id,
+    lines: open.lines.map((line) => ({ sku: line.sku, qty: line.qty })),
+  });
+  const journal = closed.journal_order ? [closed.journal_order] : [];
+  assert.equal(journal.length, 1);
+  const warm = await origin.svc.state(login.token, journal);
+  assert.equal(warm.tickets.some((row) => row.id === open.id), false);
+  assert.equal(warm.totals?.sales_cents, seededSales + closed.total_cents);
+  const cold = make();
+  const other = await cold.svc.login(DEMO_PIN, "10.8.1.2");
+  const reloaded = await cold.svc.state(other.token, journal);
+  assert.equal(reloaded.tickets.some((row) => row.id === open.id), false);
+  assert.equal(reloaded.totals?.sales_cents, warm.totals?.sales_cents);
+  const second = await cold.svc.cashout(other.token, {
+    key: "demo-pay-again",
+    ticket_id: open.id,
+    lines: open.lines.map((line) => ({ sku: line.sku, qty: line.qty })),
+  }, journal);
+  assert.equal(second.sale_id, closed.sale_id);
+  assert.equal((await cold.svc.state(other.token, journal)).totals?.sales_cents, warm.totals?.sales_cents);
+  assert.equal((await cold.svc.ticketStatus(open.code, journal)).status, "PAID");
 });

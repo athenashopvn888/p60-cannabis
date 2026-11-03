@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
 import { safeEqual } from "./crypto.ts";
+import { readDemoJournal, signDemoJournal, upsertDemoOrder, type DemoJournalOrder } from "./demoJournal.ts";
 import { PosError } from "./errors.ts";
 import { getService, loadSecrets } from "./runtime.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
 export const ADMIN_COOKIE = "pny_pos_admin";
+export const DEMO_JOURNAL_COOKIE = "pny_pos_demo";
 
 const cookieBase = {
   httpOnly: true,
@@ -112,6 +114,24 @@ export async function setSession(name: string, token: string) {
 
 export async function clearSession(name: string) {
   (await cookies()).set(name, "", { ...cookieBase, maxAge: 0 });
+}
+
+export async function loadDemoJournal(): Promise<DemoJournalOrder[]> {
+  const raw = (await cookies()).get(DEMO_JOURNAL_COOKIE)?.value ?? "";
+  return readDemoJournal(raw, loadSecrets().session);
+}
+
+export async function saveDemoJournal(orders: DemoJournalOrder[]) {
+  if (!loadSecrets().session) return;
+  const value = signDemoJournal(orders, loadSecrets().session);
+  (await cookies()).set(DEMO_JOURNAL_COOKIE, value, { ...cookieBase, maxAge: 60 * 60 * 14 });
+}
+
+export async function rememberDemoOrder(demo: boolean, orders: DemoJournalOrder[], order: DemoJournalOrder | null | undefined) {
+  if (!demo || !order) return orders;
+  const next = upsertDemoOrder(orders, order);
+  await saveDemoJournal(next);
+  return next;
 }
 
 export async function cronOk(request: Request) {
