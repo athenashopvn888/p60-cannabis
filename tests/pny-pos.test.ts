@@ -501,6 +501,11 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(existsSync("app/api/admin/login/route.ts"), false);
   const posApp = readFileSync("app/pos/PosApp.tsx", "utf8");
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
+  assert.match(posApp, /isFlowerCategory/);
+  assert.match(posApp, /data-layout="list"/);
+  assert.match(posApp, /data-count=\{stockCount\(chip\)\}/);
+  assert.match(posApp, /product\.qty > 0 && \(name === "All" \|\| product\.category === name\)/);
+  assert.doesNotMatch(posApp.split('data-layout="list"')[0]?.split("isFlowerCategory(product.category)")[1] ?? "", /ProductPhoto/);
   assert.match(posApp, /href="\/pos\/till"/);
   assert.match(posApp, /End Shift/);
   assert.doesNotMatch(posApp, /data-testid="total-sales"/);
