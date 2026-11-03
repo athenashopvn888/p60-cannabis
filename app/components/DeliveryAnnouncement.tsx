@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 export default function DeliveryAnnouncement() {
   const pathname = usePathname();
-  if (pathname.startsWith("/tv")) return null;
+  if (pathname.startsWith("/tv") || pathname.startsWith("/pos") || pathname.startsWith("/menu") || pathname.startsWith("/kitchen")) return null;
 
   return (
     <Link className="deliveryAnnouncement" href="/weed-delivery-york">

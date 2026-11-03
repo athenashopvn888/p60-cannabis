@@ -17,17 +17,20 @@
     "verify:hours-seo": "node scripts/verify-public-hours-seo.mjs",
     "verify:ready-workflow": "node scripts/verify-ready-workflow.mjs",
     "test:nicotine-vapes": "node --experimental-strip-types --test tests/nicotine-vape-landing.test.ts",
-    "test:weed-v21": "node --test tests/weed-v21.test.mjs"
+    "test:weed-v21": "node --test tests/weed-v21.test.mjs",
+    "test:pny-pos": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/pny-pos.test.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
     "next": "16.2.6",
     "papaparse": "^5.5.3",
+    "pg": "^8.23.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
