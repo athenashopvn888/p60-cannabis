@@ -496,6 +496,16 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(kitchenApp, /Send Allocation/);
   assert.match(kitchenApp, /OH /);
   assert.match(kitchenApp, /PNY01/);
+  const posApp = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
+  assert.match(posApp, /href="\/pos\/till"/);
+  assert.match(posApp, /End Shift/);
+  assert.doesNotMatch(posApp, /data-testid="total-sales"/);
+  assert.doesNotMatch(posApp, /\+Deposit/);
+  assert.match(tillApp, /data-testid="total-sales"/);
+  assert.match(tillApp, /data-testid="cash-on-hand"/);
+  assert.match(tillApp, /\+Deposit/);
+  assert.match(tillApp, />Back</);
   assert.match(menuApp, /listRow/);
   assert.match(menuApp, /aria-label="Categories"/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
