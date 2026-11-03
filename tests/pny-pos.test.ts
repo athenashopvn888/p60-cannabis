@@ -412,12 +412,16 @@ test("19. POS end shift kills the PIN and queues closing counts, summary and sto
   const view = await h.svc.state(h.token);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end",
-    lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
+    lines: view.count_lines.map((line) => line.sku === "1001"
+      ? { sku: line.sku, counted_qty: 0, variance_reason: "physical close count" }
+      : { sku: line.sku, counted_qty: line.system_qty }),
   });
   assert.equal(ended.message, END_SHIFT_MESSAGE);
   assert.match(ended.message, /within 5 min/);
   assert.equal(h.db.state.shifts.find((shift) => shift.id === h.shiftId)?.status, "ENDED");
   assert.equal(h.db.state.shifts.find((shift) => shift.id === h.shiftId)?.end_reason, "POS_END");
+  assert.equal(qty(h.db, "1001"), 0);
+  assert.ok(h.db.state.ledger.some((row) => row.sku === "1001" && row.movement_type === "COUNT_VARIANCE"));
   await rejects(() => h.svc.login(h.pin, "10.0.0.8"), "NO_SHIFT");
   const tabs = new Set(h.db.state.outbox.map((row) => row.tab));
   assert.equal(tabs.has("S_ClosingCounts"), true);
@@ -425,7 +429,7 @@ test("19. POS end shift kills the PIN and queues closing counts, summary and sto
   assert.equal(tabs.has("S_Stock"), true);
   await h.svc.drainOutbox();
   assert.ok((h.sheet.tabs.S_ClosingCounts ?? []).length > 0);
-  assert.ok((h.sheet.tabs.S_Stock ?? []).some((row) => row.sku === "1001"));
+  assert.ok((h.sheet.tabs.S_Stock ?? []).some((row) => row.sku === "1001" && row.on_hand === "0"));
 });
 
 test("20. closed shifts are polled once and ack is safe to repeat", async () => {
