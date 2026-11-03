@@ -15,7 +15,7 @@ export class LocalSheet implements SheetClient {
 
   async readRows(tab: string): Promise<SheetRow[]> {
     if (!this.reachable) throw new SheetUnavailable();
-    return (this.tabs[tab] ?? []).map((row, index) => ({ ...row, _sheet_row: index + 2 }));
+    return (this.tabs[tab] ?? []).map((row, index) => ({ ...row, _sheet_row: String(index + 2) }));
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
@@ -90,7 +90,7 @@ export class GoogleSheet implements SheetClient {
     if (values.length === 0) return [];
     const headers = values[0].map((cell) => String(cell ?? "").trim());
     return values.slice(1).map((cells, index) => {
-      const row: SheetRow = { _sheet_row: index + 2 };
+      const row: SheetRow = { _sheet_row: String(index + 2) };
       headers.forEach((header, cellIndex) => {
         if (header) row[header] = String(cells[cellIndex] ?? "");
       });

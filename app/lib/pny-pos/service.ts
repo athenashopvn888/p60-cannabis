@@ -1006,7 +1006,7 @@ export class PosService {
       let imported = 0;
       let maxRow = cursor.last_row_number;
       for (const row of rows) {
-        const sheetRow = row._sheet_row ?? 0;
+        const sheetRow = Number(row._sheet_row ?? 0);
         if (sheetRow < minRow) continue;
         maxRow = Math.max(maxRow, sheetRow);
         if ((row.store_code ?? "").trim() !== STORE_CODE) continue;

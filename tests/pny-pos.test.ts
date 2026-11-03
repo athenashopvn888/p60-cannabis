@@ -12,6 +12,7 @@ import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN } from "../app/lib/pny-pos/constants.ts";
+import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
 const secrets: Secrets = {
@@ -524,6 +525,33 @@ test("27. end shift says the summary posts within 5 min and admin flags a missed
   const late = await h.svc.adminState(h.admin);
   assert.equal(late.sccx_not_acked, true);
   assert.match(SCHEMA_SQL, /sccx_ack_at/);
+});
+
+test("preview without a database uses the labeled demo and production with a database does not", () => {
+  const saved = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    PNY_POS_DEMO: process.env.PNY_POS_DEMO,
+    VERCEL_ENV: process.env.VERCEL_ENV,
+  };
+  try {
+    delete process.env.DATABASE_URL;
+    delete process.env.PNY_POS_DEMO;
+    process.env.VERCEL_ENV = "preview";
+    assert.equal(demoMode(), true);
+    process.env.VERCEL_ENV = "production";
+    assert.equal(demoMode(), false);
+    process.env.DATABASE_URL = "postgres://production.example/pny";
+    assert.equal(demoMode(), false);
+    process.env.PNY_POS_DEMO = "1";
+    assert.equal(demoMode(), true);
+    process.env.PNY_POS_DEMO = "0";
+    assert.equal(demoMode(), false);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("demo seed is labeled, reconciles, and the menu shows only sellable demo items", async () => {

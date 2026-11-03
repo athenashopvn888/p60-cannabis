@@ -15,8 +15,17 @@ const DEMO_SECRETS: Secrets = {
   cron: "demo-cron-secret-placeholder",
 };
 
+/**
+ * Labeled demo till when there is no database.
+ * Preview and local builds have no PNY env yet, and Vercel sets NODE_ENV=production for both
+ * preview and production. A real database always wins, so production with DATABASE_URL is unchanged.
+ * Set PNY_POS_DEMO=0 to force the empty unconfigured till.
+ */
 export function demoMode() {
-  return process.env.PNY_POS_DEMO === "1" || (!process.env.DATABASE_URL && process.env.NODE_ENV !== "production");
+  if (process.env.PNY_POS_DEMO === "0") return false;
+  if (process.env.PNY_POS_DEMO === "1") return true;
+  if (process.env.DATABASE_URL) return false;
+  return process.env.VERCEL_ENV !== "production";
 }
 
 export function loadSecrets(): Secrets {

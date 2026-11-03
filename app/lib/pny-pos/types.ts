@@ -273,7 +273,8 @@ export type State = {
   admin_sessions: AdminSessionRow[];
 };
 
-export type SheetRow = Record<string, string> & { _sheet_row: number };
+/** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */
+export type SheetRow = Record<string, string>;
 
 export type Secrets = {
   shift: string;
