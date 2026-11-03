@@ -1298,7 +1298,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift } = this.session(tx.state, token, now);
+      const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const expected = countSkus(tx.state);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
@@ -1315,14 +1315,21 @@ export class PosService {
       }
       tx.state.counts.push({ id: countId, shift_id: shift.id, kind: "CLOSING", confirmed_at: at, created_at: at });
       for (const line of closingLines) {
+        const delta = line.left - line.system_qty;
+        const reason = bySku.get(line.sku)?.variance_reason?.trim() || null;
         tx.state.count_lines.push({
           id: randomUUID(),
           count_id: countId,
           sku: line.sku,
           system_qty: line.system_qty,
           counted_qty: line.left,
-          variance_reason: bySku.get(line.sku)?.variance_reason?.trim() || null,
+          variance_reason: reason,
         });
+        if (delta !== 0) {
+          const next = balanceAdd(tx.state, line.sku, delta, at, true);
+          if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Count would take stock below zero.");
+          ledger(tx.state, line.sku, delta, "COUNT_VARIANCE", "stock_count", countId, staff.staff_uid, reason, shift.id, at);
+        }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
       const closing = buildClosing(tx.state, shift, closingLines, false, at);
