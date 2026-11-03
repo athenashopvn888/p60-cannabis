@@ -66,6 +66,10 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      { source: "/kitchen", destination: "https://mobile-kitchen-two.vercel.app/", permanent: false },
+      { source: "/kitchen/:path*", destination: "https://mobile-kitchen-two.vercel.app/", permanent: false },
+      { source: "/pos/admin", destination: "https://mobile-kitchen-two.vercel.app/admin", permanent: false },
+      { source: "/pos/admin/:path*", destination: "https://mobile-kitchen-two.vercel.app/admin", permanent: false },
       ...cigaretteRedirects,
       { source: "/blog", destination: "/resources", permanent: true },
       { source: "/blog/:path*", destination: "/resources", permanent: true },
