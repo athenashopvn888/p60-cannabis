@@ -11,7 +11,7 @@ type View = {
   demo_label?: string | null;
   demo_pin?: string | null;
   shift?: { staff_name: string };
-  totals?: { sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+  totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   error?: string;
   code?: string;
 };
@@ -133,8 +133,16 @@ export default function TillApp() {
         </div>
       </header>
       <section className={styles.tillCards}>
+        <article className={styles.tillCard} data-testid="cash-sales">
+          <span>Cash sales</span>
+          <strong>{formatMoney(view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0)}</strong>
+        </article>
+        <article className={styles.tillCard} data-testid="debit-sales">
+          <span>Debit sales</span>
+          <strong>{formatMoney(view.totals?.debit_sales_cents ?? 0)}</strong>
+        </article>
         <article className={styles.tillCard} data-testid="total-sales">
-          <span>Total Sales</span>
+          <span>Total</span>
           <strong>{formatMoney(view.totals?.sales_cents ?? 0)}</strong>
         </article>
         <article className={styles.tillCard} data-testid="cash-on-hand">

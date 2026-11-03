@@ -26,6 +26,7 @@ import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSessio
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
+import { closingBalance, lineVariance } from "./closing.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
 import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
 import type { SheetClient } from "./sheets.ts";
@@ -126,6 +127,7 @@ function journalFromTicket(state: State, ticketId: string): DemoJournalOrder | n
           total_cents: sale.total_cents,
           staff_uid: sale.staff_uid,
           created_at: sale.created_at,
+          payment_method: sale.payment_method,
           lines: state.sale_lines
             .filter((line) => line.sale_id === sale.id)
             .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents })),
@@ -144,6 +146,7 @@ function paidSaleBody(state: State, ticketId: string) {
     ref_no: sale.ref_no,
     total_cents: sale.total_cents,
     prices_tax_included: true,
+    payment_method: sale.payment_method,
     lines: state.sale_lines
       .filter((line) => line.sale_id === sale.id)
       .map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.unit_price_cents, line_total_cents: line.line_total_cents })),
@@ -203,7 +206,7 @@ function absorbDemoJournal(state: State, orders: DemoJournalOrder[] | undefined)
       ticket_id: order.id,
       total_cents: order.sale.total_cents,
       prices_tax_included: true,
-      payment_method: "CASH",
+      payment_method: order.sale.payment_method === "DEBIT" ? "DEBIT" : "CASH",
       status: "COMPLETED",
       void_reason: null,
       voided_by: null,
@@ -285,14 +288,17 @@ function shiftTotals(state: State, shiftId: string) {
   const sales = state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED");
   const voids = state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "VOIDED");
   const deposits = state.deposits.filter((deposit) => deposit.shift_id === shiftId);
-  const salesTotal = sales.reduce((sum, sale) => sum + sale.total_cents, 0);
+  const cashSales = sales.filter((sale) => sale.payment_method !== "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
+  const debitSales = sales.filter((sale) => sale.payment_method === "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
   const deposited = deposits.reduce((sum, deposit) => sum + deposit.amount_cents, 0);
   return {
-    sales_total_cents: salesTotal,
+    sales_total_cents: cashSales + debitSales,
+    cash_sales_cents: cashSales,
+    debit_sales_cents: debitSales,
     sale_count: sales.length,
     void_count: voids.length,
     deposited_cents: deposited,
-    cash_on_hand_cents: salesTotal - deposited,
+    cash_on_hand_cents: cashSales - deposited,
   };
 }
 
@@ -319,6 +325,62 @@ function priceOf(state: State, sku: string) {
 
 function qtyOf(state: State, sku: string) {
   return state.balances.find((row) => row.sku === sku)?.qty ?? 0;
+}
+
+function sellingPriceCents(state: State, sku: string) {
+  const product = state.products.find((item) => item.sku === sku);
+  const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
+  return storeProduct?.price_override_cents ?? product?.default_price_cents ?? 0;
+}
+
+function paymentOf(value: unknown) {
+  if (value == null || value === "") return "CASH" as const;
+  const method = String(value).trim().toUpperCase();
+  if (method !== "CASH" && method !== "DEBIT") throw new PosError(400, "BAD_PAYMENT", "Pick Cash or Debit.");
+  return method as "CASH" | "DEBIT";
+}
+
+function draftsOf(state: State) {
+  if (!state.closing_drafts) state.closing_drafts = [];
+  return state.closing_drafts;
+}
+
+/** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
+function shiftClosePlan(state: State, shiftId: string) {
+  const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
+  const openingLines = opening ? state.count_lines.filter((row) => row.count_id === opening.id) : [];
+  const saleIds = new Set(state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED").map((sale) => sale.id));
+  const soldQty = (sku: string) => state.sale_lines.filter((line) => line.sku === sku && saleIds.has(line.sale_id)).reduce((sum, line) => sum + line.qty, 0);
+  const receivedQty = (sku: string) => state.incoming
+    .filter((row) => row.confirmed_shift_id === shiftId && row.sku === sku && (row.status === "CONFIRMED" || row.status === "PARTIAL"))
+    .reduce((sum, row) => sum + (row.qty_received ?? 0), 0);
+  const adjustQty = (sku: string) => state.ledger
+    .filter((row) => row.shift_id === shiftId && row.sku === sku && (row.movement_type === "ADJUSTMENT" || row.movement_type === "COUNT_VARIANCE"))
+    .reduce((sum, row) => sum + row.qty_delta, 0);
+  const skus = new Set<string>([
+    ...state.balances.map((row) => row.sku),
+    ...openingLines.map((row) => row.sku),
+    ...state.incoming.filter((row) => row.confirmed_shift_id === shiftId).map((row) => row.sku),
+  ]);
+  return [...skus]
+    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
+    .map((sku) => {
+      const received = receivedQty(sku);
+      const sold = soldQty(sku);
+      const openingQty = opening
+        ? (openingLines.find((line) => line.sku === sku)?.counted_qty ?? 0)
+        : qtyOf(state, sku) - received + sold - adjustQty(sku);
+      return {
+        sku,
+        name: productName(state, sku),
+        price_cents: sellingPriceCents(state, sku),
+        opening_qty: openingQty,
+        received_qty: received,
+        sold_qty: sold,
+        expected_qty: openingQty + received - sold,
+      };
+    })
+    .filter((line) => line.opening_qty + line.received_qty > 0);
 }
 
 function countSkus(state: State) {
@@ -356,23 +418,37 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   return [
     `PNY01 shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`,
     `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
+    `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
     `Left: ${shown}${more}`,
     closing.no_count ? "No count taken" : "",
   ].filter(Boolean).join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+  const shortage = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
+  const overage = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
   const base = {
     shift_id: shift.id,
     sales_total_cents: totals.sales_total_cents,
+    cash_sales_cents: totals.cash_sales_cents,
+    debit_sales_cents: totals.debit_sales_cents,
     sale_count: totals.sale_count,
     void_count: totals.void_count,
     cash_on_hand_cents: totals.cash_on_hand_cents,
     deposited_cents: totals.deposited_cents,
+    final_deposit_cents: finalDepositCents,
+    shortage_cents: shortage,
+    overage_cents: overage,
+    balance_cents: closingBalance({
+      cash_sales_cents: totals.cash_sales_cents,
+      shortage_cents: shortage,
+      overage_cents: overage,
+      deposited_cents: totals.deposited_cents,
+    }),
     tickets_total: tickets.total,
     tickets_cashed_out: tickets.cashed,
     tickets_expired: tickets.expired,
@@ -387,7 +463,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
@@ -424,6 +500,11 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
       sku: line.sku,
       system_qty: String(line.system_qty),
       left_qty: String(line.left),
+      expected_qty: String(line.expected_qty ?? line.system_qty),
+      variance_qty: String(line.variance_qty ?? line.left - line.system_qty),
+      price: centsToSheet(line.price_cents ?? 0),
+      shortage: centsToSheet(line.shortage_cents ?? 0),
+      overage: centsToSheet(line.overage_cents ?? 0),
       at,
     }, at);
   }
@@ -435,12 +516,22 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
     start: shift.started_at,
     end: shift.ended_at ?? at,
     sales_total: centsToSheet(closing.sales_total_cents),
+    cash_sales: centsToSheet(closing.cash_sales_cents ?? closing.sales_total_cents),
+    debit_sales: centsToSheet(closing.debit_sales_cents ?? 0),
     sale_count: String(closing.sale_count),
     voids: String(closing.void_count),
     cash_on_hand: centsToSheet(closing.cash_on_hand_cents),
     deposited: centsToSheet(closing.deposited_cents),
+    final_deposit: centsToSheet(closing.final_deposit_cents ?? 0),
+    shortage: centsToSheet(closing.shortage_cents ?? 0),
+    overage: centsToSheet(closing.overage_cents ?? 0),
+    balance: centsToSheet(closing.balance_cents ?? 0),
     tickets: String(closing.tickets_total),
     no_count: closing.no_count ? "true" : "false",
+    variance: closing.closing_lines
+      .filter((line) => (line.shortage_cents ?? 0) > 0 || (line.overage_cents ?? 0) > 0)
+      .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
+      .join(" | "),
   }, at);
   queueSnapshot(state, at);
 }
@@ -584,7 +675,7 @@ export function reconcile(state: State) {
   });
   const shifts = state.shifts.map((shift) => {
     const totals = shiftTotals(state, shift.id);
-    return { shift_id: shift.id, ...totals, cash_ok: totals.sales_total_cents - totals.deposited_cents === totals.cash_on_hand_cents };
+    return { shift_id: shift.id, ...totals, cash_ok: totals.cash_sales_cents - totals.deposited_cents === totals.cash_on_hand_cents };
   });
   return { ok: rows.every((row) => row.ok) && shifts.every((shift) => shift.cash_ok), skus: rows, shifts, cash_ok: shifts.every((shift) => shift.cash_ok) };
 }
@@ -961,12 +1052,23 @@ export class PosService {
         },
         totals: {
           sales_cents: totals.sales_total_cents,
+          cash_sales_cents: totals.cash_sales_cents,
+          debit_sales_cents: totals.debit_sales_cents,
           cash_on_hand_cents: totals.cash_on_hand_cents,
           deposited_cents: totals.deposited_cents,
         },
         categories: inStockCategories(products),
         products,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
+        close_lines: (() => {
+          const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+          return shiftClosePlan(tx.state, shift.id).map((line) => ({
+            ...line,
+            system_qty: qtyOf(tx.state, line.sku),
+            counted_qty: draft?.counts.find((row) => row.sku === line.sku)?.counted_qty ?? null,
+          }));
+        })(),
+        final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
         incoming,
         tickets,
         pending_count: pendingCount,
@@ -1132,7 +1234,7 @@ export class PosService {
     return result;
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null }, journal?: DemoJournalOrder[]) {
+  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
@@ -1173,6 +1275,7 @@ export class PosService {
         ledger(tx.state, line.sku, -line.qty, "SALE", "sale", saleId, staff.staff_uid, null, shift.id, at);
       }
       const total = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      const method = paymentOf(input.payment_method);
       const ref = `PNY01-${String(tx.state.sales.length + 1).padStart(5, "0")}`;
       tx.state.sales.push({
         id: saleId,
@@ -1182,7 +1285,7 @@ export class PosService {
         ticket_id: input.ticket_id ?? null,
         total_cents: total,
         prices_tax_included: true,
-        payment_method: "CASH",
+        payment_method: method,
         status: "COMPLETED",
         void_reason: null,
         voided_by: null,
@@ -1211,6 +1314,7 @@ export class PosService {
         ref_no: ref,
         total_cents: total,
         prices_tax_included: true,
+        payment_method: method,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
         journal_order: input.ticket_id ? journalFromTicket(tx.state, input.ticket_id) : null,
       };
@@ -1292,7 +1396,48 @@ export class PosService {
     });
   }
 
-  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
+  async saveClosingCount(token: string, input: { sku: string; counted_qty: number }) {
+    return this.db.transaction(async (tx) => {
+      const { shift } = this.session(tx.state, token, this.now());
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      const plan = shiftClosePlan(tx.state, shift.id);
+      if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this close.");
+      if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
+      const drafts = draftsOf(tx.state);
+      let draft = drafts.find((row) => row.shift_id === shift.id);
+      if (!draft) {
+        draft = { shift_id: shift.id, counts: [], final_deposit_cents: null, updated_at: iso(this.now()) };
+        drafts.push(draft);
+      }
+      const existing = draft.counts.find((row) => row.sku === input.sku);
+      if (existing) existing.counted_qty = input.counted_qty;
+      else draft.counts.push({ sku: input.sku, counted_qty: input.counted_qty });
+      draft.updated_at = iso(this.now());
+      const done = plan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
+      return { ok: true, done, total: plan.length };
+    });
+  }
+
+  async saveFinalDeposit(token: string, input: { amount_cents: number }) {
+    return this.db.transaction(async (tx) => {
+      const { shift } = this.session(tx.state, token, this.now());
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      if (!Number.isInteger(input.amount_cents) || input.amount_cents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
+      const totals = shiftTotals(tx.state, shift.id);
+      if (input.amount_cents > totals.cash_on_hand_cents) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
+      const drafts = draftsOf(tx.state);
+      let draft = drafts.find((row) => row.shift_id === shift.id);
+      if (!draft) {
+        draft = { shift_id: shift.id, counts: [], final_deposit_cents: input.amount_cents, updated_at: iso(this.now()) };
+        drafts.push(draft);
+      }
+      draft.final_deposit_cents = input.amount_cents;
+      draft.updated_at = iso(this.now());
+      return { ok: true, final_deposit_cents: input.amount_cents, cash_on_hand_cents: totals.cash_on_hand_cents };
+    });
+  }
+
+  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
@@ -1300,18 +1445,48 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff } = this.session(tx.state, token, now);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
-      const expected = countSkus(tx.state);
+      const plan = shiftClosePlan(tx.state, shift.id);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
-      if (expected.some((sku) => !bySku.has(sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count what is left of every SKU.");
+      if (plan.some((line) => !bySku.has(line.sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that had stock this shift.");
+      const finalDeposit = input.final_deposit_cents ?? 0;
+      if (!Number.isInteger(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
       const at = iso(now);
+      if (finalDeposit > 0) {
+        const totals = shiftTotals(tx.state, shift.id);
+        if (finalDeposit > totals.cash_on_hand_cents) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
+        const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", created_at: at };
+        tx.state.deposits.push(deposit);
+        enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
+          row_id: `D-${deposit.id}`,
+          deposit_id: deposit.id,
+          store_code: STORE_CODE,
+          shift_id: shift.sccx_shift_id,
+          staff_pos_id: staff.pos_id,
+          amount: centsToSheet(deposit.amount_cents),
+          note: deposit.note ?? "",
+          at,
+        }, at);
+      }
       const countId = randomUUID();
       const closingLines: ClosingLine[] = [];
-      for (const sku of expected) {
-        const line = bySku.get(sku)!;
+      for (const item of plan) {
+        const line = bySku.get(item.sku)!;
         if (!Number.isInteger(line.counted_qty) || line.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
-        const system = qtyOf(tx.state, sku);
-        if (line.counted_qty !== system && !line.variance_reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "A difference needs a reason.");
-        closingLines.push({ sku, name: productName(tx.state, sku), left: line.counted_qty, system_qty: system });
+        const variance = lineVariance({ expected_qty: item.expected_qty, counted_qty: line.counted_qty, price_cents: item.price_cents });
+        closingLines.push({
+          sku: item.sku,
+          name: item.name,
+          left: line.counted_qty,
+          system_qty: qtyOf(tx.state, item.sku),
+          price_cents: item.price_cents,
+          opening_qty: item.opening_qty,
+          received_qty: item.received_qty,
+          sold_qty: item.sold_qty,
+          expected_qty: item.expected_qty,
+          variance_qty: variance.variance_qty,
+          shortage_cents: variance.shortage_cents,
+          overage_cents: variance.overage_cents,
+        });
       }
       tx.state.counts.push({ id: countId, shift_id: shift.id, kind: "CLOSING", confirmed_at: at, created_at: at });
       for (const line of closingLines) {
@@ -1332,7 +1507,7 @@ export class PosService {
         }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
-      const closing = buildClosing(tx.state, shift, closingLines, false, at);
+      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit);
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
@@ -1654,12 +1829,31 @@ export class PosService {
           staff_pos_id: staff?.pos_id ?? "",
           ended_at: shift?.ended_at,
           sales_total: closing.sales_total_cents,
+          cash_sales: closing.cash_sales_cents ?? closing.sales_total_cents,
+          debit_sales: closing.debit_sales_cents ?? 0,
           sale_count: closing.sale_count,
           voids: closing.void_count,
           cash_on_hand: closing.cash_on_hand_cents,
           deposited: closing.deposited_cents,
+          final_deposit: closing.final_deposit_cents ?? 0,
+          shortage: closing.shortage_cents ?? 0,
+          overage: closing.overage_cents ?? 0,
+          balance: closing.balance_cents ?? 0,
           tickets: { total: closing.tickets_total, cashed: closing.tickets_cashed_out, expired: closing.tickets_expired },
           left: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, qty: line.left })),
+          variance: closing.closing_lines.map((line) => ({
+            sku: line.sku,
+            name: line.name,
+            price_cents: line.price_cents ?? 0,
+            opening_qty: line.opening_qty ?? 0,
+            received_qty: line.received_qty ?? 0,
+            sold_qty: line.sold_qty ?? 0,
+            expected_qty: line.expected_qty ?? line.system_qty,
+            counted_qty: line.left,
+            variance_qty: line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty),
+            shortage_cents: line.shortage_cents ?? 0,
+            overage_cents: line.overage_cents ?? 0,
+          })),
           no_count: closing.no_count,
           money_unit: "cents",
           summary_text: closing.summary_text,
@@ -2015,13 +2209,17 @@ export class PosService {
             const row = shiftTotals(tx.state, shift.id);
             return {
               sales_cents: sum.sales_cents + row.sales_total_cents,
+              cash_sales_cents: sum.cash_sales_cents + row.cash_sales_cents,
+              debit_sales_cents: sum.debit_sales_cents + row.debit_sales_cents,
               deposited_cents: sum.deposited_cents + row.deposited_cents,
             };
-          }, { sales_cents: 0, deposited_cents: 0 });
+          }, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, deposited_cents: 0 });
           return {
             sales_cents: totals.sales_cents,
+            cash_sales_cents: totals.cash_sales_cents,
+            debit_sales_cents: totals.debit_sales_cents,
             deposited_cents: totals.deposited_cents,
-            cash_on_hand_cents: totals.sales_cents - totals.deposited_cents,
+            cash_on_hand_cents: totals.cash_sales_cents - totals.deposited_cents,
           };
         })(),
         staff_on_shift: tx.state.shifts

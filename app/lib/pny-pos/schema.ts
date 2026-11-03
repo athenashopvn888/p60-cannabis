@@ -206,6 +206,20 @@ CREATE TABLE IF NOT EXISTS shift_closings (
   created_at timestamptz NOT NULL
 );
 
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS cash_sales_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS debit_sales_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS final_deposit_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS shortage_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS overage_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE shift_closings ADD COLUMN IF NOT EXISTS balance_cents integer NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS closing_drafts (
+  shift_id uuid PRIMARY KEY,
+  counts jsonb NOT NULL,
+  final_deposit_cents integer,
+  updated_at timestamptz NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   scope text NOT NULL,
   key text NOT NULL,

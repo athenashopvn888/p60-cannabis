@@ -15,6 +15,7 @@ export async function POST(request: Request) {
       key: idempotencyKey(request, body),
       lines: lineItems(body),
       ticket_id: body.ticket_id == null || body.ticket_id === "" ? null : String(body.ticket_id),
+      payment_method: body.payment_method == null ? null : String(body.payment_method),
     }, journal);
     const record = result as { journal_order?: DemoJournalOrder | null } & Record<string, unknown>;
     await rememberDemoOrder(Boolean(demo), journal ?? [], record.journal_order);

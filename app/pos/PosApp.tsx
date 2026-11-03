@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../lib/pny-pos/money";
+import CloseShift, { type CloseLine } from "./CloseShift";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
@@ -28,7 +29,9 @@ type View = {
   can_sell?: boolean;
   block?: string | null;
   shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
-  totals?: { sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+  totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
+  close_lines?: CloseLine[];
+  final_deposit_cents?: number | null;
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
@@ -70,7 +73,7 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "end" | "done" | null>(null);
+  const [sheet, setSheet] = useState<"cash" | "close" | "done" | null>(null);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
@@ -142,12 +145,12 @@ export default function PosApp() {
     }
   }
 
-  async function cashout() {
+  async function cashout(method: "CASH" | "DEBIT") {
     setError("");
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const result = await post("/api/pos/cashout", { lines, ticket_id: activeTicket?.id ?? null }, crypto.randomUUID());
+      const result = await post("/api/pos/cashout", { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
@@ -160,26 +163,29 @@ export default function PosApp() {
     }
   }
 
-  async function openEnd() {
+  function openEnd() {
     setError("");
-    const lines = view?.count_lines ?? [];
-    const next: Record<string, string> = {};
-    for (const line of lines) next[line.sku] = String(line.system_qty);
-    setCounts(next);
-    setReasons({});
-    setSheet("end");
+    setSheet("close");
   }
 
-  async function confirmEnd() {
+  async function saveCloseCount(sku: string, countedQty: number) {
+    setError("");
+    await post("/api/pos/shift/count", { sku, counted_qty: countedQty });
+    await load();
+  }
+
+  async function saveCloseDeposit(cents: number) {
+    setError("");
+    await post("/api/pos/shift/final-deposit", { amount_cents: cents });
+    await load();
+  }
+
+  async function confirmEnd(depositCents: number) {
     setError("");
     setBusy(true);
     try {
-      const lines = (view?.count_lines ?? []).map((line) => ({
-        sku: line.sku,
-        counted_qty: Number(counts[line.sku]),
-        variance_reason: reasons[line.sku] || undefined,
-      }));
-      await post("/api/pos/shift/end", { lines }, crypto.randomUUID());
+      const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
+      await post("/api/pos/shift/end", { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
       setSheet(null);
       setCart({});
       await load();
@@ -260,8 +266,6 @@ export default function PosApp() {
       </main>
     );
   }
-
-  const message = view.end_shift_message || "Summary will post to BOT HUB within 5 min.";
 
   return (
     <main className={styles.shell} data-testid="pos-shell">
@@ -407,53 +411,50 @@ export default function PosApp() {
         </footer>
       ) : null}
 
-      {sheet ? (
+      {sheet === "close" ? (
+        <CloseShift
+          lines={view.close_lines ?? []}
+          totals={{
+            sales_cents: view.totals?.sales_cents ?? 0,
+            cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,
+            debit_sales_cents: view.totals?.debit_sales_cents ?? 0,
+            cash_on_hand_cents: view.totals?.cash_on_hand_cents ?? 0,
+            deposited_cents: view.totals?.deposited_cents ?? 0,
+          }}
+          savedDeposit={view.final_deposit_cents ?? null}
+          busy={busy}
+          error={error}
+          onSaveCount={saveCloseCount}
+          onSaveDeposit={saveCloseDeposit}
+          onConfirm={confirmEnd}
+          onClose={() => setSheet(null)}
+        />
+      ) : null}
+      {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
-          <div className={styles.panel} data-testid={sheet === "end" ? "pos-end" : "pos-sheet"}>
+          <div className={styles.panel} data-testid="pos-sheet">
             {sheet === "cash" ? (
               <>
                 <h2>Cashout {formatMoney(total)}</h2>
-                <p>Prices include tax. Recorded as cash. No payment is taken.</p>
+                <p>Pick Cash or Debit. Debit is recorded only. No card is charged.</p>
                 {activeTicket ? <p>Ticket {activeTicket.code} will be marked paid.</p> : null}
                 {Object.entries(cart).map(([sku, qty]) => {
                   const product = products.find((item) => item.sku === sku);
                   return <p key={sku}>{qty} × {product?.name} · {formatMoney((product?.price_cents ?? 0) * qty)}</p>;
                 })}
                 {error ? <p className={styles.error}>{error}</p> : null}
-                <div className={styles.actions}>
-                  <button className={styles.secondary} type="button" onClick={() => setSheet(null)}>Back</button>
-                  <button className={styles.primary} type="button" disabled={busy} onClick={() => void cashout()}>Confirm</button>
+                <div className={styles.pay}>
+                  <button className={styles.primary} type="button" disabled={busy} onClick={() => void cashout("CASH")}>Cash</button>
+                  <button className={styles.secondary} type="button" disabled={busy} onClick={() => void cashout("DEBIT")}>Debit</button>
                 </div>
+                <button className={styles.secondary} type="button" onClick={() => setSheet(null)}>Back</button>
               </>
             ) : null}
             {sheet === "done" ? (
               <>
                 <h2>Sale {refNo}</h2>
-                <p>Prices include tax.</p>
+                <p>Recorded.</p>
                 <button className={styles.primary} type="button" onClick={() => setSheet(null)}>Done</button>
-              </>
-            ) : null}
-            {sheet === "end" ? (
-              <>
-                <h2>End Shift</h2>
-                <p data-testid="end-shift-message">{message}</p>
-                <p>Total Sales {formatMoney(view.totals?.sales_cents ?? 0)} · COH {formatMoney(view.totals?.cash_on_hand_cents ?? 0)} · Deposited {formatMoney(view.totals?.deposited_cents ?? 0)} · Tickets {view.pending_count ?? 0} still open</p>
-                {(view.count_lines ?? []).map((line) => (
-                  <div key={line.sku}>
-                    <label className={styles.countRow} style={{ margin: "0 0 8px" }}>
-                      <span><strong>{line.sku}</strong> {line.name}<br />System {line.system_qty}</span>
-                      <input inputMode="numeric" aria-label={`Left ${line.sku}`} value={counts[line.sku] ?? ""} onChange={(event) => setCounts({ ...counts, [line.sku]: event.target.value })} />
-                    </label>
-                    {Number(counts[line.sku] ?? line.system_qty) !== line.system_qty ? (
-                      <input className={styles.reason} placeholder="Reason" aria-label={`Reason for ${line.sku}`} value={reasons[line.sku] ?? ""} onChange={(event) => setReasons({ ...reasons, [line.sku]: event.target.value })} style={{ marginBottom: 8 }} />
-                    ) : null}
-                  </div>
-                ))}
-                {error ? <p className={styles.error}>{error}</p> : null}
-                <div className={styles.actions}>
-                  <button className={styles.secondary} type="button" onClick={() => setSheet(null)}>Back</button>
-                  <button className={styles.primary} type="button" disabled={busy} onClick={() => void confirmEnd()}>Confirm end</button>
-                </div>
               </>
             ) : null}
           </div>

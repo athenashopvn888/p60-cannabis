@@ -154,7 +154,7 @@ export type SaleRow = {
   ticket_id: string | null;
   total_cents: number;
   prices_tax_included: boolean;
-  payment_method: "CASH";
+  payment_method: "CASH" | "DEBIT";
   status: "COMPLETED" | "VOIDED";
   void_reason: string | null;
   voided_by: string | null;
@@ -180,15 +180,34 @@ export type DepositRow = {
   created_at: string;
 };
 
-export type ClosingLine = { sku: string; name: string; left: number; system_qty: number };
+export type ClosingLine = {
+  sku: string;
+  name: string;
+  left: number;
+  system_qty: number;
+  price_cents?: number;
+  opening_qty?: number;
+  received_qty?: number;
+  sold_qty?: number;
+  expected_qty?: number;
+  variance_qty?: number;
+  shortage_cents?: number;
+  overage_cents?: number;
+};
 
 export type ClosingRow = {
   shift_id: string;
   sales_total_cents: number;
+  cash_sales_cents?: number;
+  debit_sales_cents?: number;
   sale_count: number;
   void_count: number;
   cash_on_hand_cents: number;
   deposited_cents: number;
+  final_deposit_cents?: number;
+  shortage_cents?: number;
+  overage_cents?: number;
+  balance_cents?: number;
   tickets_total: number;
   tickets_cashed_out: number;
   tickets_expired: number;
@@ -198,6 +217,13 @@ export type ClosingRow = {
   no_count: boolean;
   summary_text: string;
   created_at: string;
+};
+
+export type ClosingDraftRow = {
+  shift_id: string;
+  counts: { sku: string; counted_qty: number }[];
+  final_deposit_cents: number | null;
+  updated_at: string;
 };
 
 export type IdemRow = {
@@ -267,6 +293,7 @@ export type State = {
   sale_lines: SaleLineRow[];
   deposits: DepositRow[];
   closings: ClosingRow[];
+  closing_drafts: ClosingDraftRow[];
   idempotency: IdemRow[];
   outbox: OutboxRow[];
   cursors: CursorRow[];
