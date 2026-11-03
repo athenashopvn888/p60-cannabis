@@ -1047,3 +1047,105 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
   });
   assert.equal((await h.svc.state(login.token)).phase, "refill");
 });
+
+test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, then is wiped", async () => {
+  const pin = "3579";
+  const sheet = new LocalSheet();
+  assert.equal(sheet.configured, false);
+  const svc = new PosService(new SheetDb(sheet), { sheet, secrets, demo: null });
+  await svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
+  const opened = await svc.openShiftWithPin({
+    staff_uid: "staff-test01",
+    display_name: "Test Till",
+    pos_id: "TEST01",
+    shift_id: "TEST01-close",
+    pin,
+  });
+  assert.equal(opened.sccx_shift_id, "TEST01-close");
+  const login = await svc.login(pin, "10.9.0.1");
+  const refillId = crypto.randomUUID();
+  sheet.tabs.POS_Refills.push({
+    row_id: refillId,
+    store_code: "PNY01",
+    sku: "1001",
+    qty: "4",
+    kind: "REFILL",
+    kitchen_status: "ACTIVE",
+    created_at: "2026-11-03T18:00:00.000Z",
+  });
+  (svc as unknown as { db: SheetDb }).db.forgetCache();
+  const opening = await svc.state(login.token);
+  await svc.openingCount(login.token, {
+    key: "test01-open",
+    lines: (opening.opening_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
+  });
+  await svc.confirmIncoming(login.token, { key: "test01-recv", lines: [{ kitchen_row_id: refillId, qty_received: 4 }] });
+  await svc.cashout(login.token, { key: "test01-cash", payment_method: "CASH", lines: [{ sku: "1001", qty: 2 }] });
+  await svc.cashout(login.token, { key: "test01-debit", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
+  const dropped = await svc.deposit(login.token, { key: "test01-drop", amount_cents: 500, note: "mid shift" });
+  assert.equal(dropped.cash_sales_cents, 2000);
+  assert.equal(dropped.debit_sales_cents, 1000);
+  assert.equal(dropped.deposited_cents, 500);
+  assert.equal(dropped.cash_on_hand_cents, 1500);
+  await rejects(() => svc.deposit(login.token, { key: "test01-over", amount_cents: 1600 }), "OVER_COH");
+
+  const till = await svc.state(login.token);
+  assert.equal(till.totals.sales_cents, 3000);
+  assert.equal(till.totals.cash_sales_cents, 2000);
+  assert.equal(till.totals.debit_sales_cents, 1000);
+  assert.equal(till.totals.deposited_cents, 500);
+  assert.equal(till.totals.cash_on_hand_cents, 1500);
+  assert.equal(till.close_lines.find((line) => line.sku === "1001")?.expected_qty, 1);
+
+  await svc.beginClose(login.token);
+  await svc.saveClosingCount(login.token, { sku: "1001", counted_qty: 0 });
+  await svc.saveFinalDeposit(login.token, { amount_cents: 1000 });
+  const resumed = new PosService(new SheetDb(sheet), { sheet, secrets, demo: null });
+  const draft = await resumed.state(login.token);
+  assert.equal(draft.phase, "end");
+  assert.equal(draft.shift.status, "CLOSING");
+  assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
+  assert.equal(draft.final_deposit_cents, 1000);
+  assert.equal(draft.totals.cash_on_hand_cents, 1500);
+
+  const ended = await resumed.endShiftFromPos(login.token, {
+    key: "test01-end",
+    lines: [{ sku: "1001", counted_qty: 0, variance_reason: "short one" }],
+    final_deposit_cents: 1000,
+  });
+  assert.equal(ended.message, END_SHIFT_MESSAGE);
+  assert.equal(ended.closing.cash_sales_cents, 2000);
+  assert.equal(ended.closing.debit_sales_cents, 1000);
+  assert.equal(ended.closing.deposited_cents, 1500);
+  assert.equal(ended.closing.cash_on_hand_cents, 500);
+  assert.equal(ended.closing.shortage_cents, 1000);
+  assert.equal(ended.closing.balance_cents, 1500);
+  assert.equal(ended.closing.final_deposit_cents, 1000);
+
+  const closed = new SheetDb(sheet);
+  const after = new PosService(closed, { sheet, secrets, demo: null });
+  await rejects(() => after.login(pin, "10.9.0.2"), "NO_SHIFT");
+  const parts = (sheet.tabs.POS_Staff ?? [])
+    .filter((row) => row.record_type === "STATE" && row.doc)
+    .sort((a, b) => a.row_id.localeCompare(b.row_id));
+  const saved = JSON.parse(parts.map((row) => row.doc).join("")) as {
+    shifts: { sccx_shift_id: string; status: string; end_reason: string | null }[];
+    deposits: { amount_cents: number; note: string | null }[];
+    closings: { shortage_cents: number; cash_on_hand_cents: number; deposited_cents: number; debit_sales_cents: number }[];
+    counts: { kind: string }[];
+  };
+  assert.equal(saved.shifts.find((row) => row.sccx_shift_id === "TEST01-close")?.status, "ENDED");
+  assert.equal(saved.shifts.find((row) => row.sccx_shift_id === "TEST01-close")?.end_reason, "POS_END");
+  assert.deepEqual(saved.deposits.map((row) => row.amount_cents).sort((a, b) => a - b), [500, 1000]);
+  assert.equal(saved.closings[0]?.shortage_cents, 1000);
+  assert.equal(saved.closings[0]?.cash_on_hand_cents, 500);
+  assert.equal(saved.closings[0]?.debit_sales_cents, 1000);
+  assert.equal(saved.counts.some((row) => row.kind === "CLOSING"), true);
+  assert.equal((sheet.tabs.POS_Deposits ?? []).map((row) => row.amount_cents).sort().join(","), "1000,500");
+  assert.equal((sheet.tabs.POS_Counts ?? []).some((row) => row.kind === "CLOSING" && row.counted_qty === "0"), true);
+  assert.equal((sheet.tabs.POS_Shifts ?? []).find((row) => row.shift_id === "TEST01-close")?.status, "ENDED");
+  assert.equal(JSON.stringify(sheet.tabs).includes(`"${pin}"`), false);
+
+  sheet.tabs = {};
+  assert.deepEqual(sheet.tabs, {});
+});
