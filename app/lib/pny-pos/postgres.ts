@@ -108,13 +108,17 @@ export class PgDb implements PosDb {
       await client.query("BEGIN");
       const existing = await client.query("SELECT doc FROM pny_state WHERE id = 'main' FOR UPDATE");
       const state = (existing.rows[0]?.doc as State | undefined) ?? emptyState();
+      const before = JSON.stringify(state);
       const tx = { state };
       const result = await fn(tx);
-      await client.query(
-        "INSERT INTO pny_state (id, doc, updated_at) VALUES ('main', $1::jsonb, now()) ON CONFLICT (id) DO UPDATE SET doc = EXCLUDED.doc, updated_at = now()",
-        [JSON.stringify(tx.state)],
-      );
-      await projectState(client, tx.state);
+      const after = JSON.stringify(tx.state);
+      if (after !== before) {
+        await client.query(
+          "INSERT INTO pny_state (id, doc, updated_at) VALUES ('main', $1::jsonb, now()) ON CONFLICT (id) DO UPDATE SET doc = EXCLUDED.doc, updated_at = now()",
+          [after],
+        );
+        await projectState(client, tx.state);
+      }
       await client.query("COMMIT");
       return result;
     } catch (error) {

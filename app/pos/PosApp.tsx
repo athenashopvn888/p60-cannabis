@@ -94,14 +94,19 @@ export default function PosApp() {
 
   useEffect(() => {
     let stop = false;
-    const run = () => {
-      if (!stop) void load();
+    let timer: number | undefined;
+    const run = async () => {
+      if (stop) return;
+      try {
+        await load();
+      } finally {
+        if (!stop) timer = window.setTimeout(() => void run(), 4000);
+      }
     };
-    run();
-    const timer = window.setInterval(run, 4000);
+    void run();
     return () => {
       stop = true;
-      window.clearInterval(timer);
+      if (timer) window.clearTimeout(timer);
     };
   }, [load]);
 
