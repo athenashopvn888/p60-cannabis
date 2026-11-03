@@ -9,16 +9,31 @@ function statements() {
   return SCHEMA_SQL.split(";").map((statement) => statement.trim()).filter(Boolean);
 }
 
-async function insertRows(client: PoolClient, table: string, rows: Record<string, unknown>[]) {
+export async function insertRows(client: PoolClient, table: string, rows: Record<string, unknown>[]) {
+  const groups = new Map<string, { keys: string[]; rows: Record<string, unknown>[] }>();
   for (const row of rows) {
     const keys = Object.keys(row);
-    const values = keys.map((key) => {
-      const value = row[key];
-      if (JSON_COLUMNS.has(key) && value != null) return JSON.stringify(value);
-      return value;
-    });
-    const placeholders = keys.map((key, index) => (JSON_COLUMNS.has(key) && row[key] != null ? `$${index + 1}::jsonb` : `$${index + 1}`));
-    await client.query(`INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders.join(", ")})`, values);
+    const signature = keys.join("\u0000");
+    const group = groups.get(signature) ?? { keys, rows: [] };
+    group.rows.push(row);
+    groups.set(signature, group);
+  }
+  for (const { keys, rows: groupedRows } of groups.values()) {
+    const rowsPerQuery = Math.max(1, Math.floor(2000 / Math.max(1, keys.length)));
+    for (let offset = 0; offset < groupedRows.length; offset += rowsPerQuery) {
+      const batch = groupedRows.slice(offset, offset + rowsPerQuery);
+      const values: unknown[] = [];
+      const tuples = batch.map((row) => {
+        const placeholders = keys.map((key) => {
+          const value = row[key];
+          values.push(JSON_COLUMNS.has(key) && value != null ? JSON.stringify(value) : value);
+          const placeholder = `$${values.length}`;
+          return JSON_COLUMNS.has(key) && value != null ? `${placeholder}::jsonb` : placeholder;
+        });
+        return `(${placeholders.join(", ")})`;
+      });
+      await client.query(`INSERT INTO ${table} (${keys.join(", ")}) VALUES ${tuples.join(", ")}`, values);
+    }
   }
 }
 
