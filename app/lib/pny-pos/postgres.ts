@@ -3,7 +3,7 @@ import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import { SCHEMA_SQL } from "./schema.ts";
 import type { State } from "./types.ts";
 
-const JSON_COLUMNS = new Set(["closing_lines", "response_json", "public_json", "payload", "detail", "counts"]);
+const JSON_COLUMNS = new Set(["closing_lines", "response_json", "public_json", "payload", "detail", "counts", "opening_counts"]);
 
 function statements() {
   return SCHEMA_SQL.split(";").map((statement) => statement.trim()).filter(Boolean);

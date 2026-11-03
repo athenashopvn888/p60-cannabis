@@ -220,6 +220,8 @@ CREATE TABLE IF NOT EXISTS closing_drafts (
   updated_at timestamptz NOT NULL
 );
 
+ALTER TABLE closing_drafts ADD COLUMN IF NOT EXISTS opening_counts jsonb;
+
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   scope text NOT NULL,
   key text NOT NULL,
