@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import flowers from "../flowers.json" with { type: "json" };
+import items from "../items.json" with { type: "json" };
 
 /** Same Apps Script as app/lib/tvStock.js. Read-only product master for PNY01. On-hand is never read. */
 export const DEFAULT_SETB_PRODUCTS_URL =
@@ -25,11 +24,7 @@ export function defaultSetbProductsUrl() {
 }
 
 export function readCommittedPnyCatalog(): { flowers: unknown[]; items: unknown[] } {
-  const lib = join(dirname(fileURLToPath(import.meta.url)), "..");
-  return {
-    flowers: JSON.parse(readFileSync(join(lib, "flowers.json"), "utf8")) as unknown[],
-    items: JSON.parse(readFileSync(join(lib, "items.json"), "utf8")) as unknown[],
-  };
+  return { flowers: flowers as unknown[], items: items as unknown[] };
 }
 
 function text(value: unknown) {
