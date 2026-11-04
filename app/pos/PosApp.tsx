@@ -288,9 +288,7 @@ export default function PosApp() {
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
       await post("/api/pos/shift/end", { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
-      setSheet(null);
       setCart({});
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
     } finally {
@@ -418,8 +416,8 @@ export default function PosApp() {
       {view.verify?.reveal && sheet == null ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <h2>Previous shift</h2>
-          <p data-testid="staff-gap-count">{view.verify.opening_off ?? 0} SKUs off</p>
-          <SkuOffList lines={view.verify.opening_lines ?? []} testId="staff-gap-list" />
+          <p data-testid="staff-gap-count">{(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length === 1 ? "1 SKU off" : `${(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length} SKUs off`}</p>
+          <SkuOffList lines={(view.verify.opening_lines ?? []).filter((line) => line.off !== 0)} testId="staff-gap-list" />
         </section>
       ) : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
@@ -562,7 +560,7 @@ export default function PosApp() {
           onSaveCount={saveCloseCount}
           onSaveDeposit={saveCloseDeposit}
           onConfirm={confirmEnd}
-          onClose={() => setSheet(null)}
+          onClose={() => { setSheet(null); void load().catch(() => undefined); }}
           stockCheck={view.stock_check}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
         />
