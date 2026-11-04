@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { groupByStrain, parseFlowerSku } from "../lib/pny-pos/flowerSku";
+import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { formatMoney } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
@@ -120,7 +120,7 @@ export default function MenuApp() {
           <p>Show this code to staff</p>
           <strong data-testid="ticket-code">{ticket.code}</strong>
           <p>{formatMoney(ticket.total_cents)}</p>
-          <p className={styles.note} data-testid="ticket-status">{paid ? "Paid. This order is closed." : "Prices include tax. Valid for 30 minutes. Staff cash this out at the till."}</p>
+          <p className={styles.note} data-testid="ticket-status">{paid ? "Paid. This order is closed." : "Valid for 30 minutes. Staff cash this out at the till."}</p>
           <button className={styles.order} type="button" onClick={() => setTicket(null)}>Order something else</button>
         </section>
       </main>
@@ -138,7 +138,7 @@ export default function MenuApp() {
             <button type="button" aria-pressed={layout === "list"} className={layout === "list" ? styles.toggleOn : styles.toggleOff} onClick={() => chooseLayout("list")}>List</button>
           </div>
         </div>
-        <p>{menu?.prices_include_tax === false ? "" : "Prices include tax."} Only available items are listed.</p>
+        <p>Only available items are listed.</p>
       </header>
       {categories.length > 0 ? (
         <div className={styles.chips} role="tablist" aria-label="Categories" data-testid="menu-categories">
@@ -158,7 +158,7 @@ export default function MenuApp() {
                 <div className={styles.name}>{block.name}</div>
                 <div className={styles.sizeRow}>
                   {block.sizes.map((item) => {
-                    const size = parseFlowerSku(item.sku)?.size ?? "";
+                    const size = bagLabel(item.sku);
                     const qty = cart[item.sku] ?? 0;
                     return (
                       <div key={item.sku} className={styles.sizePick}>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { groupByStrain, isFlowerCategory, parseFlowerSku } from "../lib/pny-pos/flowerSku";
+import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { formatMoney } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -326,7 +326,7 @@ export default function PosApp() {
                   </div>
                   <div className={styles.sizeRow}>
                     {block.sizes.map((product) => {
-                      const size = parseFlowerSku(product.sku)?.size ?? "";
+                      const size = bagLabel(product.sku);
                       const qty = cart[product.sku] ?? 0;
                       return (
                         <div key={product.sku} className={styles.sizePick}>
@@ -355,7 +355,7 @@ export default function PosApp() {
                 <ProductPhoto src={product.image_url} alt="" className={styles.thumb} placeholderClassName={styles.thumbPh} />
                 <div>
                   <div className={styles.name}>{product.name}</div>
-                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)}{product.price_source === "RAW_UNIT" ? "" : " tax incl."}</div>
+                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)}</div>
                 </div>
                 {stepper}
               </article>

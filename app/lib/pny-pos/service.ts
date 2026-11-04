@@ -32,6 +32,7 @@ import { RAW_PRICE_TTL_MS, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
 import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
 import { skuSortKey } from "./flowerSku.ts";
+import { quoteForSku } from "./sizePrice.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -570,7 +571,7 @@ function queueSnapshot(state: State, at: string) {
       category: product.category,
       active: product.setb_active && storeProduct?.enabled ? "true" : "false",
       price_cad: centsToSheet(storeProduct?.price_override_cents ?? product.default_price_cents),
-      price_label: "CAD · tax included",
+      price_label: "CAD",
       image: product.image_url ?? "",
     }, at);
     enqueue(state, "S_Stock", `ST-${STORE_CODE}-${product.sku}`, {
@@ -657,12 +658,68 @@ function requireAdmin(state: State, token: string, now: Date) {
   return session;
 }
 
-function sellingBlocked(state: State, shift: ShiftRow) {
+function sellingBlocked(_state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
-  if (!shift.opening_confirmed_at && openingPlan(state).length > 0) return "OPENING_REQUIRED";
-  if (!shift.opening_confirmed_at) return "WAITING_FOR_KITCHEN";
-  if (state.incoming.some((row) => row.status === "PENDING_CONFIRM")) return "REFILL_REQUIRED";
   return null;
+}
+
+/** Pending kitchen rows become starting stock. There is no opening count. */
+function acceptStartingStock(state: State, shift: ShiftRow, staffUid: string, at: string) {
+  const pending = state.incoming.filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0);
+  for (const row of pending) {
+    row.qty_received = row.qty_sent;
+    row.status = "CONFIRMED";
+    row.confirmed_at = at;
+    row.confirmed_shift_id = shift.id;
+    row.variance_reason = null;
+    const next = balanceAdd(state, row.sku, row.qty_sent, at, true);
+    if (next == null) continue;
+    const entry = ledger(state, row.sku, row.qty_sent, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staffUid, null, shift.id, at);
+    row.linked_ledger_id = entry.id;
+    ensureQuotedProduct(state, row.sku, at);
+    enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, state.staff.find((staff) => staff.staff_uid === staffUid)?.pos_id ?? ""), at);
+  }
+  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+  if (pending.length > 0) shift.refill_confirmed_at = at;
+}
+
+function ensureQuotedProduct(state: State, sku: string, at: string) {
+  const quote = quoteForSku(sku);
+  if (!quote || quote.cents <= 0) return;
+  let product = state.products.find((row) => row.sku === sku);
+  if (!product) {
+    product = {
+      sku,
+      sku_sort: skuSortKey(sku),
+      name: quote.name,
+      category: quote.category,
+      default_price_cents: quote.cents,
+      image_url: quote.image,
+      setb_active: true,
+      synced_at: at,
+      created_at: at,
+    };
+    state.products.push(product);
+  } else if (product.default_price_cents <= 0) {
+    product.default_price_cents = quote.cents;
+    product.name = quote.name;
+    product.category = quote.category;
+    product.setb_active = true;
+  }
+  let storeProduct = state.store_products.find((row) => row.store_code === STORE_CODE && row.sku === sku);
+  if (!storeProduct) {
+    state.store_products.push({
+      store_code: STORE_CODE,
+      sku,
+      enabled: true,
+      price_override_cents: null,
+      created_at: at,
+      updated_at: at,
+    });
+  } else if (!storeProduct.enabled && !isCigaretteCategory(product.category)) {
+    storeProduct.enabled = true;
+    storeProduct.updated_at = at;
+  }
 }
 
 function mergeLines(lines: { sku?: string; qty?: number }[]) {
@@ -1136,6 +1193,7 @@ export class PosService {
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff } = this.session(tx.state, token, now, gate);
+      acceptStartingStock(tx.state, shift, staff.staff_uid, iso(now));
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
         .filter((product) => product.setb_active)
@@ -1165,7 +1223,7 @@ export class PosService {
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
       const openingLines = openingPlan(tx.state, raw);
-      const phase = shift.status === "CLOSING" ? "end" : !shift.opening_confirmed_at && openingLines.length > 0 ? "opening" : shift.opening_confirmed_at && incoming.length ? "refill" : "sell";
+      const phase = shift.status === "CLOSING" ? "end" : "sell";
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status === "queued")
         .map((row) => Date.parse(row.created_at))
@@ -1226,7 +1284,7 @@ export class PosService {
           variance_reason: row.variance_reason,
         })),
         sheet_sync_delayed: oldestQueued != null && now.getTime() - oldestQueued >= SHEET_DELAY_MS,
-        prices_include_tax: true,
+        prices_include_tax: false,
         end_shift_message: END_SHIFT_MESSAGE,
       };
     });
@@ -1249,10 +1307,6 @@ export class PosService {
       for (const sku of expected) {
         const line = bySku.get(sku)!;
         if (!Number.isInteger(line.counted_qty) || line.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
-        const system = qtyOf(tx.state, sku);
-        if (line.counted_qty !== system && !line.variance_reason?.trim()) {
-          throw new PosError(400, "REASON_REQUIRED", "A variance needs a reason.");
-        }
       }
       tx.state.counts.push({ id: countId, shift_id: shift.id, kind: "OPENING", confirmed_at: at, created_at: at });
       for (const sku of expected) {
@@ -1300,7 +1354,6 @@ export class PosService {
         const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id);
         if (!row || row.status !== "PENDING_CONFIRM") throw new PosError(409, "ALREADY_CONFIRMED", "That incoming row is not waiting.");
         if (!Number.isInteger(line.qty_received) || line.qty_received < 0) throw new PosError(400, "BAD_QTY", "Received quantity must be a whole number.");
-        if (line.qty_received !== row.qty_sent && !line.variance_reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "A difference needs a reason.");
       }
       for (const line of input.lines) {
         const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id)!;
@@ -1387,9 +1440,6 @@ export class PosService {
       if (seen) return { committed: true, stockout: false, body: seen };
       const { shift, staff } = this.session(tx.state, token, now);
       const block = sellingBlocked(tx.state, shift);
-      if (block === "OPENING_REQUIRED") throw new PosError(409, block, "Confirm the opening count before selling.");
-      if (block === "WAITING_FOR_KITCHEN") throw new PosError(409, block, "No stock assigned yet — waiting for Kitchen.");
-      if (block === "REFILL_REQUIRED") throw new PosError(409, block, "Confirm incoming stock before selling.");
       if (block) throw new PosError(409, block, "Shift is not open for sales.");
       const at = iso(now);
       if (input.ticket_id) {
@@ -1549,8 +1599,6 @@ export class PosService {
       const plan = openingPlan(tx.state);
       if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this opening count.");
       if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
-      const system = plan.find((line) => line.sku === input.sku)?.system_qty ?? 0;
-      if (input.counted_qty !== system && !input.variance_reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "A variance needs a reason.");
       const drafts = draftsOf(tx.state);
       let draft = drafts.find((row) => row.shift_id === shift.id);
       if (!draft) {
@@ -1875,19 +1923,25 @@ export class PosService {
   async menu() {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
+    const raw = await this.rawUnitPrices();
     const body = await this.db.transaction(async (tx) => {
-      const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE" && row.opening_confirmed_at && sellingBlocked(tx.state, row) == null);
+      const now = iso(this.now());
+      const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
+      if (shift) acceptStartingStock(tx.state, shift, shift.staff_uid, now);
+      const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
           if (!SHOW_CIGARETTES && isCigaretteCategory(product.category)) return [];
+          const cents = raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
+          if (cents <= 0) return [];
           return [{
             sku: product.sku,
             name: product.name,
             category: product.category,
-            price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
+            price_cents: cents,
             image_url: product.image_url,
             availability: "Available" as const,
           }];
@@ -1898,8 +1952,8 @@ export class PosService {
         store: STORE_CODE,
         demo: Boolean(this.deps.demo),
         demo_label: this.deps.demo ? DEMO_LABEL : null,
-        ordering: Boolean(shift),
-        prices_include_tax: true,
+        ordering: Boolean(open),
+        prices_include_tax: false,
         items,
       };
     });
@@ -1957,7 +2011,7 @@ export class PosService {
         code,
         expires_at: iso(new Date(now.getTime() + TICKET_TTL_MS)),
         total_cents: total,
-        prices_include_tax: true,
+        prices_include_tax: false,
         journal_order: journalFromTicket(tx.state, ticketId),
       };
       remember(tx.state, "menu_order", input.key, body, result, now, this.deps.secrets.session);
@@ -1983,7 +2037,7 @@ export class PosService {
         paid,
         closed: paid || ticket.status === "CANCELLED" || ticket.status === "EXPIRED",
         expires_at: ticket.expires_at,
-        prices_include_tax: true,
+        prices_include_tax: false,
         total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
         journal_order: journalFromTicket(tx.state, ticket.id),
       };

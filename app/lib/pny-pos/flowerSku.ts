@@ -16,6 +16,15 @@ export function strainName(name: string) {
   return name.replace(/\s+(3g|5g|14g|28g)$/i, "").trim();
 }
 
+/** Customer and till label. 300/400/500-series 5g bags are sold as 6g. The SKU stays `-5g`. */
+export function bagLabel(sku: string) {
+  const parsed = parseFlowerSku(sku);
+  if (!parsed) return "";
+  const series = Number(parsed.base);
+  if (parsed.size === "5g" && series >= 300 && series < 600) return "6g";
+  return parsed.size;
+}
+
 export function skuSortKey(sku: string) {
   const base = parseFlowerSku(sku)?.base ?? sku;
   const value = Number(base);
