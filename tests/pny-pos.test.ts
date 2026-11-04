@@ -22,6 +22,7 @@ import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
 import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
+import { itemsFromGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
@@ -712,6 +713,7 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   assert.equal(sheetWriteAllowed("SETB_Inventory"), false);
   assert.equal(sheetWriteAllowed("POS_Sales"), true);
   assert.equal(sheetWriteAllowed("Flowers_Raw"), false);
+  assert.equal(sheetWriteAllowed("Items_Raw"), false);
   try {
     delete process.env.DATABASE_URL;
     delete process.env.PNY_POS_DEMO;
@@ -1411,4 +1413,56 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
   const sale = await h.svc.cashout(login.token, { key: "alien", lines: [{ sku: "502-3g", qty: 1 }] });
   assert.equal(sale.total_cents, 4000);
   assert.equal(h.db.state.products.find((product) => product.sku === "502-3g")?.name, "502-3g");
+});
+
+test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars", async () => {
+  const index = itemsFromGrid([
+    ["SKU", "Category", "Name", "Price_EACH"],
+    ["709", "Add Ons", "RAW CONNOISSEUR KING SIZE SLIM + TIPS", "$5"],
+    ["680, 681", "EDIBLES", "LIVE RESIN GUMMIES SOUR", "$16 / $35"],
+    ["1014", "cigarettes", "CANADIAN CLASSICS ORIGINAL", "25/carton"],
+    ["1027", "cigarettes", "MARLBORO", "$2.50"],
+    ["610, 611", "EDIBLES", "BERRY", "$10 / $12 / $14"],
+  ]);
+  assert.equal(index.get("709")?.price_cents, 500);
+  assert.equal(index.get("709")?.category, "ADD ONS");
+  assert.equal(index.get("680")?.price_cents, 1600);
+  assert.equal(index.get("681")?.price_cents, 3500);
+  const shared = itemsFromGrid([["SKU", "Name", "Price_EACH"], ["680, 681, 682, 683", "SOUR", "$16 / $35"]]);
+  assert.equal(shared.get("680")?.price_cents, 1600);
+  assert.equal(shared.get("683")?.price_cents, 1600);
+  assert.equal(index.get("1014")?.price_cents, 2500);
+  assert.equal(index.get("610")?.price_cents, 1000);
+  assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["713", "CONES", ""]]).has("713"), false);
+  assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["709.0", "RAW", "$5"]]).get("709")?.price_cents, 500);
+
+  const h = harness();
+  h.sheet.grids.Items_Raw = [
+    ["SKU", "Category", "Name", "Price_EACH"],
+    ["709", "Add Ons", "RAW CONNOISSEUR KING SIZE SLIM + TIPS", "$5"],
+    ["1027", "cigarettes", "MARLBORO", "$2.50"],
+    ["1014", "cigarettes", "CANADIAN CLASSICS ORIGINAL", "25/carton"],
+  ];
+  await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const started = await h.svc.startShift({ key: "items-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-items" });
+  const login = await h.svc.login(String(started.pin), "10.0.0.88");
+  const at = "2026-11-04T02:00:00.000Z";
+  h.db.state.balances.push(
+    { sku: "709", qty: 5, updated_at: at, created_at: at },
+    { sku: "1027", qty: 2, updated_at: at, created_at: at },
+    { sku: "1014", qty: 0, updated_at: at, created_at: at },
+  );
+  const before = h.db.state.balances.map((row) => ({ ...row }));
+  const menu = await h.svc.menu();
+  assert.equal(menu.items?.find((item) => item.sku === "709")?.name, "RAW CONNOISSEUR KING SIZE SLIM + TIPS");
+  assert.equal(menu.items?.find((item) => item.sku === "709")?.price_cents, 500);
+  assert.equal(menu.items?.find((item) => item.sku === "709")?.category, "ADD ONS");
+  assert.equal(menu.items?.some((item) => item.sku === "1014"), false);
+  assert.equal(menu.items?.find((item) => item.sku === "1027")?.price_cents, 1000);
+  assert.deepEqual(h.db.state.balances, before);
+  const view = await h.svc.state(login.token);
+  assert.equal(view.products.find((product) => product.sku === "709")?.price_cents, 500);
+  const sale = await h.svc.cashout(login.token, { key: "paper", lines: [{ sku: "709", qty: 1 }] });
+  assert.equal(sale.total_cents, 500);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "709")?.qty, 4);
 });
