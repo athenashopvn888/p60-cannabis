@@ -2625,6 +2625,128 @@ export class PosService {
     });
   }
 
+  /** Void only the two owner-approved PNY01 test sales after an external backup. */
+  async voidApprovedTriTestSales(refNos: string[], reason: string) {
+    const approved = new Set(["PNY01-00029", "PNY01-00030"]);
+    const wanted = [...new Set(refNos.map((value) => value.trim()).filter(Boolean))];
+    if (wanted.length !== 2 || wanted.some((refNo) => !approved.has(refNo))) {
+      throw new PosError(409, "SALE_SCOPE", "Only PNY01-00029 and PNY01-00030 are approved for this cleanup.");
+    }
+    if (!reason.trim()) throw new PosError(400, "REASON_REQUIRED", "A void needs a reason.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const sales = wanted.map((refNo) => tx.state.sales.find((sale) => sale.ref_no === refNo));
+      if (sales.some((sale) => !sale)) throw new PosError(404, "SALE", "An approved sale was not found.");
+      const exact = sales as State["sales"];
+      if (exact.some((sale) => sale.status !== "COMPLETED" || sale.payment_method !== "CASH")) {
+        throw new PosError(409, "SALE_STATE", "An approved sale is not a completed cash sale.");
+      }
+      const expected = new Map([
+        ["PNY01-00029", { sku: "1006", qty: 4, total: 1000 }],
+        ["PNY01-00030", { sku: "1005", qty: 2, total: 500 }],
+      ]);
+      for (const sale of exact) {
+        const lines = tx.state.sale_lines.filter((line) => line.sale_id === sale.id);
+        const match = expected.get(sale.ref_no);
+        if (!match || sale.total_cents !== match.total || lines.length !== 1 || lines[0]?.sku !== match.sku || lines[0]?.qty !== match.qty) {
+          throw new PosError(409, "SALE_MISMATCH", `${sale.ref_no} no longer matches the approved test sale.`);
+        }
+      }
+
+      const immutableBefore = JSON.stringify({
+        shifts: tx.state.shifts,
+        deposits: tx.state.deposits,
+        drafts: tx.state.closing_drafts,
+        incoming: tx.state.incoming,
+        tickets: tx.state.tickets,
+        ticket_lines: tx.state.ticket_lines,
+      });
+      const stockBefore = [...new Set(exact.flatMap((sale) => tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => line.sku)))]
+        .map((sku) => ({ sku, name: productName(tx.state, sku), qty: qtyOf(tx.state, sku) }));
+      const shiftIds = [...new Set(exact.map((sale) => sale.shift_id))];
+      const totalsBefore = shiftIds.map((shiftId) => ({ shift_id: shiftId, ...shiftTotals(tx.state, shiftId) }));
+      const backup = exact.map((sale) => describeShiftSale(tx.state, sale));
+
+      for (const sale of exact) {
+        sale.status = "VOIDED";
+        sale.void_reason = reason.trim();
+        sale.voided_by = "admin";
+        for (const line of tx.state.sale_lines.filter((row) => row.sale_id === sale.id)) {
+          const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+          if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not restore stock.");
+          ledger(tx.state, line.sku, line.qty, "VOID", "sale", sale.id, "admin", reason.trim(), sale.shift_id, at);
+        }
+        const payload = salePayload(tx.state, sale.id);
+        if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
+      }
+
+      for (const shiftId of shiftIds) {
+        const closing = tx.state.closings.find((row) => row.shift_id === shiftId);
+        const shift = tx.state.shifts.find((row) => row.id === shiftId);
+        if (!closing || !shift) continue;
+        const totals = shiftTotals(tx.state, shiftId);
+        Object.assign(closing, totals, {
+          balance_cents: closingBalance({
+            cash_sales_cents: totals.cash_sales_cents,
+            shortage_cents: closing.shortage_cents ?? 0,
+            overage_cents: closing.overage_cents ?? 0,
+            deposited_cents: totals.deposited_cents,
+          }),
+        });
+        closing.summary_text = summaryText(shift, tx.state.staff.find((row) => row.staff_uid === shift.staff_uid)?.pos_id ?? "", closing);
+        const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+        enqueue(tx.state, "S_ShiftSummary", `SS-${shift.id}`, {
+          row_id: `SS-${shift.id}`,
+          store_code: STORE_CODE,
+          shift_id: shift.sccx_shift_id,
+          staff_pos_id: staff?.pos_id ?? "",
+          start: shift.started_at,
+          end: shift.ended_at ?? at,
+          sales_total: centsToSheet(closing.sales_total_cents),
+          cash_sales: centsToSheet(closing.cash_sales_cents ?? closing.sales_total_cents),
+          debit_sales: centsToSheet(closing.debit_sales_cents ?? 0),
+          sale_count: String(closing.sale_count),
+          voids: String(closing.void_count),
+          cash_on_hand: centsToSheet(closing.cash_on_hand_cents),
+          deposited: centsToSheet(closing.deposited_cents),
+          final_deposit: centsToSheet(closing.final_deposit_cents ?? 0),
+          shortage: centsToSheet(closing.shortage_cents ?? 0),
+          overage: centsToSheet(closing.overage_cents ?? 0),
+          balance: centsToSheet(closing.balance_cents ?? 0),
+          tickets: String(closing.tickets_total),
+          no_count: closing.no_count ? "true" : "false",
+          variance: closing.closing_lines
+            .filter((line) => (line.shortage_cents ?? 0) > 0 || (line.overage_cents ?? 0) > 0)
+            .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
+            .join(" | "),
+        }, at);
+      }
+
+      if (JSON.stringify({
+        shifts: tx.state.shifts,
+        deposits: tx.state.deposits,
+        drafts: tx.state.closing_drafts,
+        incoming: tx.state.incoming,
+        tickets: tx.state.tickets,
+        ticket_lines: tx.state.ticket_lines,
+      }) !== immutableBefore) {
+        throw new PosError(409, "UNRELATED_CHANGE", "The cleanup attempted to change unrelated shift data.");
+      }
+
+      return {
+        ok: true as const,
+        sales: backup,
+        stock_before: stockBefore,
+        stock_after: stockBefore.map((row) => ({ ...row, qty: qtyOf(tx.state, row.sku) })),
+        totals_before: totalsBefore,
+        totals_after: shiftIds.map((shiftId) => ({ shift_id: shiftId, ...shiftTotals(tx.state, shiftId) })),
+      };
+    });
+    this.bumpMenu();
+    return result;
+  }
+
   /**
    * The first sale is 10 red Goose Full (1011) and 10 blue Goose Lights (1012), and nothing else.
    * Returns that sale without writing. A different cart is not a match.

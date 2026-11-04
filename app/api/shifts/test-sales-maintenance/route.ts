@@ -9,9 +9,11 @@ export async function POST(request: Request) {
   try {
     assertSecret(request.headers.get("x-shift-secret"), loadSecrets().shift);
     const body = await readBody(request);
-    if (body.op !== "preview") throw new PosError(400, "BAD_OP", "Only preview is enabled.");
     const refs = Array.isArray(body.ref_nos) ? body.ref_nos.map(String) : [];
-    return json(await (await getService()).previewTriTestSales(refs));
+    const service = await getService();
+    if (body.op === "preview") return json(await service.previewTriTestSales(refs));
+    if (body.op === "void-approved") return json(await service.voidApprovedTriTestSales(refs, String(body.reason ?? "Owner-approved test sale")));
+    throw new PosError(400, "BAD_OP", "Unsupported maintenance operation.");
   } catch (error) {
     return toResponse(error);
   }
