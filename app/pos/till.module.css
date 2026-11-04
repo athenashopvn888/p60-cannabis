@@ -489,12 +489,6 @@
   letter-spacing: 0;
 }
 
-.chipRow .chipWide {
-  flex: 1 1 100%;
-  min-height: 36px;
-  font-size: 14px;
-}
-
 @media (max-width: 480px) {
   .chip,
   .chipOn {
