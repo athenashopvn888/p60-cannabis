@@ -81,6 +81,9 @@ export type ShiftRow = {
   end_reason: string | null;
   opening_confirmed_at: string | null;
   refill_confirmed_at: string | null;
+  /** Staff verify window start. Missing until the first staff PIN login of this release. */
+  verify_opened_at?: string | null;
+  verify_release?: string | null;
   created_at: string;
 };
 
@@ -91,6 +94,7 @@ export type SessionRow = {
   expires_at: string;
   revoked_at: string | null;
   created_at: string;
+  master?: boolean;
 };
 
 export type IncomingRow = {

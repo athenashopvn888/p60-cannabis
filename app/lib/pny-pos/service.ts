@@ -3,6 +3,8 @@ import {
   DEMO_LABEL,
   DEMO_PIN,
   KITCHEN_PIN,
+  MASTER_PIN,
+  VERIFY_RELEASE,
   FULL_SCAN_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
@@ -601,8 +603,26 @@ function ensureDraft(state: State, shiftId: string, now: Date) {
   return draft;
 }
 
+function verifyAnchorMs(shift: ShiftRow) {
+  if (shift.verify_release !== VERIFY_RELEASE || !shift.verify_opened_at) return null;
+  const at = Date.parse(shift.verify_opened_at);
+  return Number.isFinite(at) ? at : null;
+}
+
+/** First staff PIN login of this release starts the two-hour window. Later staff logins leave it. */
+function startStaffVerify(shift: ShiftRow, at: string) {
+  if (shift.verify_release === VERIFY_RELEASE && shift.verify_opened_at) return;
+  shift.verify_opened_at = at;
+  shift.verify_release = VERIFY_RELEASE;
+}
+
+function denyMaster(session: { master?: boolean }) {
+  if (session.master) throw new PosError(403, "MASTER_VIEW", "Master login is view-only. Use the staff PIN to record the shift.");
+}
+
 function lockUnverified(state: State, shift: ShiftRow, actor: string, now: Date) {
-  if (now.getTime() < Date.parse(shift.started_at) + VERIFY_WINDOW_MS) return;
+  const anchor = verifyAnchorMs(shift);
+  if (anchor == null || now.getTime() < anchor + VERIFY_WINDOW_MS) return;
   const draft = ensureDraft(state, shift.id, now);
   const at = iso(now);
   let changed = false;
@@ -626,11 +646,13 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
-  const deadline = new Date(Date.parse(shift.started_at) + VERIFY_WINDOW_MS).toISOString();
-  const windowOpen = now.getTime() < Date.parse(deadline);
+  const anchor = verifyAnchorMs(shift);
+  const deadline = anchor == null ? null : new Date(anchor + VERIFY_WINDOW_MS).toISOString();
+  const windowOpen = deadline != null && now.getTime() < Date.parse(deadline);
+  const waiting = anchor == null && !lock && skus.length > 0;
   const cleared = skus.filter((sku) => draft?.opening_counts?.some((row) => row.sku === sku)).length;
   const showBanner = windowOpen && skus.length > 0 && cleared < skus.length;
-  const reveal = !showBanner && skus.length > 0;
+  const reveal = anchor != null && !showBanner && skus.length > 0;
   const opening = skus.flatMap((sku) => {
     const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
@@ -650,6 +672,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     verify: {
       show_banner: showBanner,
       deadline_at: deadline,
+      waiting,
       cleared,
       total: skus.length,
       reveal,
@@ -1448,6 +1471,7 @@ export class PosService {
           demo: true,
           gate: "pos",
         }, this.deps.secrets.session);
+        startStaffVerify(shift, at);
         tx.state.sessions.push({
           id: randomUUID(),
           shift_id: shift.id,
@@ -1471,7 +1495,8 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
-      if (!verifyPin(pin, shift.pin_hash)) {
+      const master = safeEqual(pin, MASTER_PIN);
+      if (!master && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
         if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
         const locked = shift.status === "LOCKED";
@@ -1487,6 +1512,7 @@ export class PosService {
         };
       }
       shift.pin_failed_attempts = 0;
+      if (!master) startStaffVerify(shift, at);
       const token = newToken();
       tx.state.sessions.push({
         id: randomUUID(),
@@ -1495,6 +1521,7 @@ export class PosService {
         expires_at: shift.pin_expires_at,
         revoked_at: null,
         created_at: at,
+        master,
       });
       nameLiveShift(tx.state, at);
       const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
@@ -1561,7 +1588,8 @@ export class PosService {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
-      const { shift, staff } = this.session(tx.state, token, now, gate);
+      const { shift, staff, session } = this.session(tx.state, token, now, gate);
+      const master = Boolean(session.master);
       nameLiveShift(tx.state, iso(now));
       openTillWithoutCount(shift, iso(now));
       const totals = shiftTotals(tx.state, shift.id);
@@ -1606,7 +1634,7 @@ export class PosService {
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
       const openingLines = [...openingPlan(tx.state, raw)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
       const phase = shift.status === "CLOSING" ? "end" : "sell";
-      const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false);
+      const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status === "queued")
         .map((row) => Date.parse(row.created_at))
@@ -1617,8 +1645,9 @@ export class PosService {
         demo_label: this.deps.demo ? DEMO_LABEL : null,
         sheet_configured: this.deps.sheet.configured,
         phase,
-        can_sell: sellingBlocked(tx.state, shift) == null,
-        block: sellingBlocked(tx.state, shift),
+        master,
+        can_sell: !master && sellingBlocked(tx.state, shift) == null,
+        block: master ? "MASTER_VIEW" : sellingBlocked(tx.state, shift),
         shift: {
           id: shift.id,
           sccx_shift_id: shift.sccx_shift_id,
@@ -1692,7 +1721,8 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "opening_count", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
       const expected = openingPlan(tx.state).map((line) => line.sku);
@@ -1742,7 +1772,8 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "incoming_confirm", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
       const at = iso(now);
@@ -1783,7 +1814,8 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "kitchen_refill", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now, "any");
+      const { shift, staff, session } = this.session(tx.state, token, now, "any");
+      denyMaster(session);
       if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the original stock first.");
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
@@ -1836,7 +1868,8 @@ export class PosService {
       absorbDemoJournal(tx.state, journal);
       const seen = replay(tx.state, "cashout", input.key, body, now, this.deps.secrets.session);
       if (seen) return { committed: true, stockout: false, body: seen };
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       const block = sellingBlocked(tx.state, shift);
       if (block) throw new PosError(409, block, "Shift is not open for sales.");
       const at = iso(now);
@@ -1926,7 +1959,8 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "deposit", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
@@ -1959,7 +1993,8 @@ export class PosService {
     if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
-      const { shift } = this.session(tx.state, token, now);
+      const { shift, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
@@ -2020,7 +2055,8 @@ export class PosService {
   async openTicket(token: string, ticketId: string, journal?: DemoJournalOrder[]) {
     return this.db.transaction(async (tx) => {
       absorbDemoJournal(tx.state, journal);
-      const { shift } = this.session(tx.state, token, this.now());
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket cannot be opened.");
@@ -2038,7 +2074,8 @@ export class PosService {
 
   async cancelTicket(token: string, ticketId: string) {
     return this.db.transaction(async (tx) => {
-      const { shift } = this.session(tx.state, token, this.now());
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
       const ticket = tx.state.tickets.find((row) => row.id === ticketId && row.shift_id === shift.id);
       if (!ticket) throw new PosError(404, "TICKET", "Ticket was not found.");
       if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket cannot be cancelled.");
@@ -2049,7 +2086,8 @@ export class PosService {
 
   async beginClose(token: string) {
     return this.db.transaction(async (tx) => {
-      const { shift } = this.session(tx.state, token, this.now());
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
       if (shift.status === "ACTIVE") shift.status = "CLOSING";
       if (shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       return { ok: true, status: shift.status, message: END_SHIFT_MESSAGE };
@@ -2059,10 +2097,11 @@ export class PosService {
   async saveOpeningCount(token: string, input: { sku: string; counted_qty: number; variance_reason?: string }) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       lockUnverified(tx.state, shift, staff.staff_uid, now);
-      if (now.getTime() >= Date.parse(shift.started_at) + VERIFY_WINDOW_MS) {
+      if (verifyAnchorMs(shift) == null || now.getTime() >= (verifyAnchorMs(shift) as number) + VERIFY_WINDOW_MS) {
         throw new PosError(409, "VERIFY_CLOSED", "The verify window is closed. Uncleared SKUs are accepted as-is.");
       }
       const sku = input.sku.trim();
@@ -2139,7 +2178,8 @@ export class PosService {
 
   async saveClosingCount(token: string, input: { sku: string; counted_qty: number }) {
     return this.db.transaction(async (tx) => {
-      const { shift } = this.session(tx.state, token, this.now());
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id);
       if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this close.");
@@ -2161,7 +2201,8 @@ export class PosService {
 
   async saveFinalDeposit(token: string, input: { amount_cents: number }) {
     return this.db.transaction(async (tx) => {
-      const { shift } = this.session(tx.state, token, this.now());
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
@@ -2193,7 +2234,8 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff } = this.session(tx.state, token, now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id, raw);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
@@ -2824,7 +2866,8 @@ export class PosService {
     const end = Date.parse("2026-11-04T02:00:00.000Z");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
-      const { shift } = this.session(tx.state, token, now);
+      const { shift, session } = this.session(tx.state, token, now);
+      denyMaster(session);
       const describe = (saleId: string) => {
         const sale = tx.state.sales.find((row) => row.id === saleId);
         if (!sale) return null;

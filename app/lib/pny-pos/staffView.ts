@@ -32,7 +32,7 @@ export function blindStaffState<T extends Row>(view: T): T {
   const verify = view.verify && typeof view.verify === "object" ? (view.verify as Row) : null;
   if (verify) {
     next.verify = {
-      ...pick(verify, ["show_banner", "deadline_at", "cleared", "total", "reveal", "opening_off"]),
+      ...pick(verify, ["show_banner", "deadline_at", "waiting", "cleared", "total", "reveal", "opening_off"]),
       lines: rows(verify.lines).map((row) => pick(row, ["sku", "text", "name", "price_cents", "counted_qty", "locked"])),
       opening_lines: offLines(verify.opening_lines),
     };

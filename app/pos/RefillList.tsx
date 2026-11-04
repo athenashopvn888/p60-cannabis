@@ -8,11 +8,13 @@ export type PendingRefill = { kitchen_row_id: string; sku: string; text: string;
 export default function RefillList({
   lines,
   busy,
+  viewOnly,
   onClose,
   onReceive,
 }: {
   lines: PendingRefill[];
   busy: boolean;
+  viewOnly?: boolean;
   onClose: () => void;
   onReceive: (lines: { kitchen_row_id: string; qty_received: number }[]) => Promise<void>;
 }) {
@@ -65,13 +67,14 @@ export default function RefillList({
           </div>
         ))}
         {error ? <p className={styles.error}>{error}</p> : null}
-        {lines.length > 0 && !editing ? (
+        {viewOnly ? <p>Master view only. Receiving is saved with the staff PIN.</p> : null}
+        {lines.length > 0 && !editing && !viewOnly ? (
           <div className={styles.refillActions}>
             <button className={styles.primary} type="button" data-testid="refill-received" disabled={busy} onClick={() => void onReceive(lines.map((line) => ({ kitchen_row_id: line.kitchen_row_id, qty_received: line.qty_sent })))}>Received</button>
             <button className={styles.secondary} type="button" data-testid="refill-report" disabled={busy} onClick={startEdit}>Report error</button>
           </div>
         ) : null}
-        {editing ? (
+        {editing && !viewOnly ? (
           <button className={styles.primary} type="button" data-testid="refill-confirm" disabled={busy} onClick={() => void confirmEdit()}>Confirm</button>
         ) : null}
       </div>

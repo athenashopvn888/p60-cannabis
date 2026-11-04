@@ -31,6 +31,7 @@ type View = {
   demo_label?: string | null;
   demo_pin?: string | null;
   phase?: string;
+  master?: boolean;
   can_sell?: boolean;
   block?: string | null;
   shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
@@ -48,7 +49,8 @@ type View = {
   end_shift_message?: string;
   verify?: {
     show_banner?: boolean;
-    deadline_at?: string;
+    deadline_at?: string | null;
+    waiting?: boolean;
     reveal?: boolean;
     lines?: VerifyLine[];
     opening_off?: number;
@@ -289,6 +291,7 @@ export default function PosApp() {
   }
 
   async function saveVerifyLine(sku: string, countedQty: number) {
+    if (view?.master) return;
     setError("");
     await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty });
     await load();
@@ -372,7 +375,7 @@ export default function PosApp() {
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
-          <div className={styles.brand}>PNY01 · {view.shift?.staff_name}</div>
+          <div className={styles.brand}>PNY01 · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
           <div className={styles.headerActions}>
             {view.phase === "sell" ? (
               <>
@@ -380,21 +383,27 @@ export default function PosApp() {
                   Refill
                   {(view.incoming?.length ?? 0) > 0 ? <span className={styles.refillBadge} data-testid="refill-badge">{view.incoming?.length}</span> : null}
                 </button>
-                <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" onClick={openDeposit}>+Deposit</button>
+                <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
                 <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
                 <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
               </>
             ) : null}
             <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
-            <button className={styles.ghost} type="button" onClick={() => void openEnd()}>End Shift</button>
+            <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
           </div>
         </div>
       </header>
+      {view.phase === "sell" && view.verify?.waiting ? (
+        <div className={styles.verifyBanner} data-testid="verify-banner">Master view · timer starts at the first staff login</div>
+      ) : null}
       {view.phase === "sell" && verifyOpen && view.verify?.deadline_at ? (
         <>
           <VerifyBanner deadline={view.verify.deadline_at} />
-          <CountCard lines={view.verify.lines ?? []} busy={busy} allowExtra onSave={saveVerifyLine} />
+          <CountCard lines={view.verify.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
         </>
+      ) : null}
+      {view.phase === "sell" && view.verify?.waiting ? (
+        <CountCard lines={view.verify.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
       ) : null}
       {view.verify?.reveal && sheet == null ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
@@ -417,7 +426,7 @@ export default function PosApp() {
         />
       ) : null}
 
-      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
+      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">

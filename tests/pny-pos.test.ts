@@ -1748,6 +1748,47 @@ test("verify expected uses only received refills, and a short receipt is a refil
   assert.equal(blind.incoming?.length ?? 0, 0);
 });
 
+test("master login does not start the verify window and cannot change the shift", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "ob-master", sku: "1001", qty: 2 });
+  await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const started = await h.svc.startShift({ key: "start-master", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-master" });
+  const shift = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
+  const hash = shift?.pin_hash;
+  const openedAt = shift?.started_at;
+  h.clock.t = new Date(h.clock.t.getTime() + 30 * 60 * 1000);
+  const master = await h.svc.login("1988", "10.8.0.1");
+  const preview = await h.svc.state(master.token);
+  const during = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
+  assert.equal(preview.master, true);
+  assert.equal(preview.shift?.status, "ACTIVE");
+  assert.equal(preview.verify?.waiting, true);
+  assert.equal(preview.verify?.deadline_at, null);
+  assert.equal(preview.verify?.show_banner, false);
+  assert.equal(during?.verify_opened_at ?? null, null);
+  assert.equal(during?.pin_hash, hash);
+  assert.equal(during?.started_at, openedAt);
+  const before = qty(h.db, "1001");
+  await rejects(() => h.svc.cashout(master.token, { key: "master-sale", lines: [{ sku: "1001", qty: 1 }] }), "MASTER_VIEW");
+  await rejects(() => h.svc.saveOpeningCount(master.token, { sku: "1001", counted_qty: 1 }), "MASTER_VIEW");
+  assert.equal(qty(h.db, "1001"), before);
+  const staff = await h.svc.login(String(started.pin), "10.8.0.2");
+  const live = await h.svc.state(staff.token);
+  const after = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
+  assert.equal(live.master, false);
+  assert.equal(live.verify?.show_banner, true);
+  assert.equal(after?.pin_hash, hash);
+  const anchor = Date.parse(after?.verify_opened_at ?? "");
+  assert.equal(anchor, h.clock.t.getTime());
+  assert.equal(Date.parse(live.verify?.deadline_at ?? "") - anchor, 2 * 60 * 60 * 1000);
+  h.clock.t = new Date(h.clock.t.getTime() + 10 * 60 * 1000);
+  await h.svc.login(String(started.pin), "10.8.0.3");
+  const again = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
+  assert.equal(Date.parse(again?.verify_opened_at ?? ""), anchor);
+});
+
 test("a deposit equal to cash on hand is allowed", async () => {
   const h = await readyTill();
   await h.svc.cashout(h.token, { key: "exact-sale", lines: [{ sku: "1001", qty: 1 }] });
