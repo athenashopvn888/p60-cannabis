@@ -1114,6 +1114,19 @@ export function reconcile(state: State) {
   return { ok: rows.every((row) => row.ok) && shifts.every((shift) => shift.cash_ok), skus: rows, shifts, cash_ok: shifts.every((shift) => shift.cash_ok) };
 }
 
+/** First completed sale whose lines are exactly 10 red Goose Full and 10 blue Goose Lights. */
+function gooseCartonSale(state: State, shiftId: string) {
+  const sales = state.sales
+    .filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED")
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  return sales.find((sale) => {
+    const lines = state.sale_lines.filter((line) => line.sale_id === sale.id);
+    if (lines.length !== 2) return false;
+    const qty = new Map(lines.map((line) => [line.sku, line.qty]));
+    return qty.size === 2 && qty.get("1011") === 10 && qty.get("1012") === 10;
+  });
+}
+
 function describeShiftSale(state: State, sale: State["sales"][number]) {
   const seller = state.staff.find((row) => row.staff_uid === sale.staff_uid);
   const ticket = sale.ticket_id ? state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
@@ -2516,6 +2529,94 @@ export class PosService {
         sales_total_cents: totals.sales_total_cents,
         cash_on_hand_cents: totals.cash_on_hand_cents,
         feed_cursor: backup.cursor,
+      };
+    });
+    if (!result.ok) throw new PosError(result.status, result.code, result.message);
+    this.bumpMenu();
+    return result;
+  }
+
+  /**
+   * The first sale is 10 red Goose Full (1011) and 10 blue Goose Lights (1012), and nothing else.
+   * Returns that sale without writing. A different cart is not a match.
+   */
+  async exportGooseCartonSale(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const sale = gooseCartonSale(tx.state, shift.id);
+      if (!sale) return { ok: false as const, status: 409, code: "NO_MATCH", message: "No sale is exactly 10 Goose Red and 10 Goose Blue." };
+      const totals = shiftTotals(tx.state, shift.id);
+      return {
+        ok: true as const,
+        shift_id: shift.sccx_shift_id,
+        sale: describeShiftSale(tx.state, sale),
+        stock: ["1011", "1012"].map((sku) => ({ sku, qty: qtyOf(tx.state, sku) })),
+        sales_total_cents: totals.sales_total_cents,
+        cash_on_hand_cents: totals.cash_on_hand_cents,
+        deposited_cents: totals.deposited_cents,
+      };
+    });
+  }
+
+  /** Void only that Goose carton sale. Other sales, deposits, and the shift stay. */
+  async voidGooseCartonSale(shiftId: string, reason: string) {
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const sale = gooseCartonSale(tx.state, shift.id);
+      if (!sale) return { ok: false as const, status: 409, code: "NO_MATCH", message: "No sale is exactly 10 Goose Red and 10 Goose Blue." };
+      if (!reason.trim()) throw new PosError(400, "REASON_REQUIRED", "A void needs a reason.");
+      const totals = shiftTotals(tx.state, shift.id);
+      const cashAfter = totals.cash_sales_cents - (sale.payment_method === "DEBIT" ? 0 : sale.total_cents);
+      if (depositAboveCash(totals.deposited_cents, cashAfter)) {
+        return { ok: false as const, status: 409, code: "DEPOSIT_ABOVE", message: "Voiding this cash sale would put deposits above cash on hand.", deposited_cents: totals.deposited_cents, cash_after_cents: cashAfter };
+      }
+      const pin = shift.pin_hash;
+      const status = shift.status;
+      const started = shift.started_at;
+      const opened = shift.verify_opened_at;
+      const counts = JSON.stringify(tx.state.closing_drafts ?? []);
+      const deposits = JSON.stringify(tx.state.deposits);
+      const incoming = JSON.stringify(tx.state.incoming);
+      const otherIds = tx.state.sales.filter((row) => row.shift_id === shift.id && row.id !== sale.id).map((row) => ({ id: row.id, status: row.status }));
+      const backup = describeShiftSale(tx.state, sale);
+      const stock_before = backup.items.map((item) => ({ sku: item.sku, qty: qtyOf(tx.state, item.sku) }));
+      sale.status = "VOIDED";
+      sale.void_reason = reason.trim();
+      sale.voided_by = "admin";
+      for (const line of tx.state.sale_lines.filter((row) => row.sale_id === sale.id)) {
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not restore stock.");
+        ledger(tx.state, line.sku, line.qty, "VOID", "sale", sale.id, "admin", reason.trim(), sale.shift_id, at);
+      }
+      const payload = salePayload(tx.state, sale.id);
+      if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
+      const othersMoved = tx.state.sales.some((row) => {
+        const prior = otherIds.find((item) => item.id === row.id);
+        return prior != null && prior.status !== row.status;
+      });
+      if (othersMoved) throw new PosError(409, "SHIFT_UNCHANGED", "The void changed another sale.");
+      if (
+        shift.pin_hash !== pin
+        || shift.status !== status
+        || shift.started_at !== started
+        || shift.verify_opened_at !== opened
+        || JSON.stringify(tx.state.closing_drafts ?? []) !== counts
+        || JSON.stringify(tx.state.deposits) !== deposits
+        || JSON.stringify(tx.state.incoming) !== incoming
+      ) {
+        throw new PosError(409, "SHIFT_UNCHANGED", "The void would have changed the shift, counts, deposits, or refills.");
+      }
+      const after = shiftTotals(tx.state, shift.id);
+      return {
+        ok: true as const,
+        sale: backup,
+        stock_before,
+        stock_after: backup.items.map((item) => ({ sku: item.sku, qty: qtyOf(tx.state, item.sku) })),
+        sales_total_cents: after.sales_total_cents,
+        cash_on_hand_cents: after.cash_on_hand_cents,
+        deposited_cents: after.deposited_cents,
       };
     });
     if (!result.ok) throw new PosError(result.status, result.code, result.message);

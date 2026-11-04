@@ -1953,6 +1953,44 @@ test("voiding the only sale restores stock and the feed treats the next ring as 
   assert.equal(sold.total_cents > 0, true);
 });
 
+test("voiding the goose carton sale leaves the other sales and deposits", async () => {
+  const h = await readyTill({ "1011": 20, "1012": 20, "1006": 8 });
+  await h.svc.syncSetb([
+    { sku: "1011", name: "CANADIAN GOOSE FULL", category: "CIGARETTES", price_cents: 250, active: true },
+    { sku: "1012", name: "CANADIAN GOOSE LIGHTS", category: "CIGARETTES", price_cents: 250, active: true },
+    { sku: "1006", name: "CANADIAN FULL", category: "CIGARETTES", price_cents: 250, active: true },
+  ]);
+  await h.svc.cashout(h.token, { key: "goose", payment_method: "CASH", lines: [{ sku: "1011", qty: 10 }, { sku: "1012", qty: 10 }] });
+  const other = await h.svc.cashout(h.token, { key: "other", payment_method: "CASH", lines: [{ sku: "1006", qty: 4 }] });
+  await h.svc.deposit(h.token, { key: "keep-deposit", amount_cents: 500 });
+  const found = await h.svc.exportGooseCartonSale(h.shiftId);
+  assert.equal(found.ok, true);
+  if (!found.ok) return;
+  assert.equal(found.sale.items.find((item) => item.sku === "1011")?.qty, 10);
+  assert.equal(found.sale.items.find((item) => item.sku === "1012")?.qty, 10);
+  const shift = h.db.state.shifts.find((row) => row.sccx_shift_id === h.shiftId || row.id === h.shiftId);
+  assert.ok(shift);
+  const pin = shift.pin_hash;
+  const deposits = JSON.stringify(h.db.state.deposits);
+  const counts = JSON.stringify(h.db.state.closing_drafts ?? []);
+  const incoming = JSON.stringify(h.db.state.incoming);
+  const undone = await h.svc.voidGooseCartonSale(h.shiftId, "Re-ring Goose cartons for SCCx");
+  assert.equal(undone.sale.id, found.sale.id);
+  assert.equal(qty(h.db, "1011"), 20);
+  assert.equal(qty(h.db, "1012"), 20);
+  assert.equal(qty(h.db, "1006"), 4);
+  assert.equal(h.db.state.sales.find((sale) => sale.id === other.id || sale.ref_no === other.ref_no)?.status ?? h.db.state.sales.find((sale) => sale.id !== found.sale.id)?.status, "COMPLETED");
+  assert.equal(h.db.state.sales.find((sale) => sale.id === found.sale.id)?.status, "VOIDED");
+  assert.equal(undone.deposited_cents, 500);
+  assert.equal(undone.cash_on_hand_cents, undone.sales_total_cents - 500);
+  const kept = h.db.state.shifts.find((row) => row.id === shift.id);
+  assert.equal(kept?.pin_hash, pin);
+  assert.equal(kept?.status, "ACTIVE");
+  assert.equal(JSON.stringify(h.db.state.deposits), deposits);
+  assert.equal(JSON.stringify(h.db.state.closing_drafts ?? []), counts);
+  assert.equal(JSON.stringify(h.db.state.incoming), incoming);
+});
+
 test("restarting the verify deadline changes only the clock", async () => {
   const h = await readyTill({ "1001": 4, "1002": 2 });
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
