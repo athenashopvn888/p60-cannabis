@@ -6,7 +6,7 @@ import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/mon
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
-type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string };
+type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string; flower_type?: string; thc?: string };
 type Menu = {
   demo?: boolean;
   demo_label?: string | null;
@@ -156,6 +156,7 @@ export default function MenuApp() {
               <article key={`${block.category}-${block.base}`} className={layout === "list" ? styles.listRow : styles.card} data-strain={block.base}>
                 {layout === "grid" ? <ProductPhoto src={block.sizes[0]?.image_url} alt="" className={styles.hero} placeholderClassName={styles.heroPh} /> : null}
                 <div className={styles.name}>{block.name}</div>
+                {[block.sizes[0]?.flower_type, block.sizes[0]?.thc].filter(Boolean).length > 0 ? <div className={styles.note}>{[block.sizes[0]?.flower_type, block.sizes[0]?.thc].filter(Boolean).join(" · ")}</div> : null}
                 <div className={styles.sizeRow}>
                   {block.sizes.map((item) => {
                     const size = bagLabel(item.sku);

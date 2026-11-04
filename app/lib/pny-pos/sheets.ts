@@ -5,7 +5,7 @@ import type { SheetRow } from "./types.ts";
 export type SheetTabSpec = { title: string; headers: string[] };
 
 /** Tabs the till must not overwrite. Items_raw_price is read for prices. SETB inventory pages stay untouched. */
-const BLOCKED_WRITE_TABS = new Set(["Items_raw_price", "Products", "S_Stock", "K_Allocations"]);
+const BLOCKED_WRITE_TABS = new Set(["Items_raw_price", "Products", "S_Stock", "K_Allocations", "Flowers_Raw"]);
 
 export function sheetWriteAllowed(tab: string) {
   if (BLOCKED_WRITE_TABS.has(tab)) return false;
@@ -16,6 +16,8 @@ export function sheetWriteAllowed(tab: string) {
 export type SheetClient = {
   configured: boolean;
   readRows(tab: string): Promise<SheetRow[]>;
+  readGrid?(tab: string): Promise<string[][]>;
+  writeGrid?(tab: string, grid: string[][]): Promise<void>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
   deleteRows(tab: string, rowIds: string[]): Promise<void>;
@@ -26,10 +28,21 @@ export class LocalSheet implements SheetClient {
   configured = false;
   reachable = true;
   tabs: Record<string, Record<string, string>[]> = {};
+  grids: Record<string, string[][]> = {};
 
   async readRows(tab: string): Promise<SheetRow[]> {
     if (!this.reachable) throw new SheetUnavailable();
     return (this.tabs[tab] ?? []).map((row, index) => ({ ...row, _sheet_row: String(index + 2) }));
+  }
+
+  async readGrid(tab: string) {
+    if (!this.reachable) throw new SheetUnavailable();
+    return this.grids[tab] ?? [];
+  }
+
+  async writeGrid(tab: string, grid: string[][]) {
+    if (tab !== "Flowers_Raw" || grid.length === 0) return;
+    this.grids[tab] = grid.map((row) => [...row]);
   }
 
   async ensureTabs(specs: SheetTabSpec[]) {
@@ -148,6 +161,21 @@ export class GoogleSheet implements SheetClient {
     }
   }
 
+  async readGrid(tab: string) {
+    const data = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
+    const values = (data.values as string[][] | undefined) ?? [];
+    return values.map((row) => row.map((cell) => String(cell ?? "")));
+  }
+
+  async writeGrid(tab: string, grid: string[][]) {
+    if (tab !== "Flowers_Raw" || grid.length < 2) return;
+    await this.ensureTabs([{ title: tab, headers: grid[0].map((cell) => String(cell ?? "")) }]);
+    await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
+      method: "PUT",
+      body: JSON.stringify({ values: grid }),
+    });
+  }
+
   async readRows(tab: string): Promise<SheetRow[]> {
     const data = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
     const values = (data.values as string[][] | undefined) ?? [];
@@ -233,6 +261,7 @@ export class GoogleSheet implements SheetClient {
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
     if (rows.length === 0) return;
+    if (tab !== "Items_raw_price" && !sheetWriteAllowed(tab)) return;
     const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
     const values = (raw.values as string[][] | undefined) ?? [];
     let headers = (values[0] ?? []).map((cell) => String(cell ?? "").trim());

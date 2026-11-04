@@ -367,8 +367,16 @@
 
 .strainHead {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.strainDetail {
+  flex: 1 0 100%;
+  color: #78716c;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .sizeRow {

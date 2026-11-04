@@ -15,7 +15,7 @@ export function blindStaffState<T extends Row>(view: T): T {
   const next: Row = { ...view };
   next.products = rows(view.products)
     .filter((row) => Number(row.qty ?? 0) > 0)
-    .map((row) => pick(row, ["sku", "sku_sort", "name", "category", "price_cents", "price_source", "image_url"]));
+    .map((row) => pick(row, ["sku", "sku_sort", "name", "category", "price_cents", "price_source", "image_url", "flower_type", "thc"]));
   next.opening_lines = rows(view.opening_lines).map((row) => pick(row, ["sku", "name", "price_cents", "counted_qty", "variance_reason"]));
   next.close_lines = rows(view.close_lines).map((row) => pick(row, ["sku", "name", "price_cents", "counted_qty"]));
   next.count_lines = rows(view.count_lines).map((row) => pick(row, ["sku", "name"]));

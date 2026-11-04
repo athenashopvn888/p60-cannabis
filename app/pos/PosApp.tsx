@@ -11,7 +11,7 @@ import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
-type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null };
+type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null; flower_type?: string; thc?: string };
 
 function compareSku(a: string, b: string) {
   return a.localeCompare(b, "en", { numeric: true });
@@ -405,6 +405,7 @@ export default function PosApp() {
                   <div className={styles.strainHead}>
                     <span className={styles.sku}>{block.base}</span>
                     <span className={styles.listName}>{block.name}</span>
+                    {[block.sizes[0]?.flower_type, block.sizes[0]?.thc].filter(Boolean).length > 0 ? <span className={styles.strainDetail}>{[block.sizes[0]?.flower_type, block.sizes[0]?.thc].filter(Boolean).join(" · ")}</span> : null}
                   </div>
                   <div className={styles.sizeRow}>
                     {block.sizes.map((product) => {
