@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
@@ -9,8 +9,10 @@ import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import SkuOffList, { type OffLine } from "./SkuOffList";
-import VerifyBanner from "./VerifyBanner";
-import VerifyCount, { type VerifyLine } from "./VerifyCount";
+import CountCard from "./CountCard";
+import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
+
+type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
@@ -85,8 +87,7 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | "verify" | null>(null);
-  const verifyOpened = useRef(false);
+  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | null>(null);
   const [depositPin, setDepositPin] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [qrOpen, setQrOpen] = useState(false);
@@ -114,15 +115,7 @@ export default function PosApp() {
   }, []);
 
   usePosPoll(load);
-
-  useEffect(() => {
-    if (!view?.authenticated || verifyOpened.current) return;
-    if (sessionStorage.getItem("pny-open-verify") === "1") {
-      verifyOpened.current = true;
-      sessionStorage.removeItem("pny-open-verify");
-      setSheet("verify");
-    }
-  }, [view?.authenticated]);
+  const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
 
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
@@ -372,9 +365,6 @@ export default function PosApp() {
   return (
     <main className={styles.shell} data-testid="pos-shell">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
-      {view.verify?.show_banner && view.verify.deadline_at && sheet !== "verify" && sheet !== "close" ? (
-        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => setSheet("verify")} />
-      ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}</div>
@@ -391,6 +381,12 @@ export default function PosApp() {
           </div>
         </div>
       </header>
+      {view.phase === "sell" && verifyOpen && view.verify?.deadline_at ? (
+        <>
+          <VerifyBanner deadline={view.verify.deadline_at} />
+          <CountCard lines={view.verify.lines ?? []} busy={busy} allowExtra onSave={saveVerifyLine} />
+        </>
+      ) : null}
       {view.verify?.reveal && sheet == null ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <h2>Previous shift</h2>
@@ -548,18 +544,7 @@ export default function PosApp() {
           onConfirm={confirmEnd}
           onClose={() => setSheet(null)}
           stockCheck={view.stock_check}
-          deadline={view.verify?.show_banner ? view.verify.deadline_at ?? null : null}
-          onOpenVerify={() => setSheet("verify")}
-        />
-      ) : null}
-      {sheet === "verify" ? (
-        <VerifyCount
-          lines={view.verify?.lines ?? []}
-          deadline={view.verify?.show_banner ? view.verify.deadline_at ?? null : null}
-          busy={busy}
-          error={error}
-          onSave={saveVerifyLine}
-          onClose={() => setSheet(null)}
+          deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
         />
       ) : null}
       {summaryText ? (
@@ -583,7 +568,7 @@ export default function PosApp() {
       ) : null}
       {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
       {depositCode ? <DepositSlip code={depositCode} onDone={() => setDepositCode(null)} /> : null}
-      {sheet && sheet !== "close" && sheet !== "verify" ? (
+      {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
           <div className={styles.panel} data-testid="pos-sheet">
             {sheet === "cash" ? (

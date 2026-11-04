@@ -1640,11 +1640,15 @@ export class PosService {
           const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
           return [...shiftClosePlan(tx.state, shift.id, raw)]
             .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)))
-            .map((line) => ({
-              ...line,
-              system_qty: qtyOf(tx.state, line.sku),
-              counted_qty: draft?.counts.find((row) => row.sku === line.sku)?.counted_qty ?? null,
-            }));
+            .map((line) => {
+              const meta = countMeta(tx.state, line.sku);
+              return {
+                ...line,
+                text: staffSkuText(line.sku, meta.bag),
+                system_qty: qtyOf(tx.state, line.sku),
+                counted_qty: draft?.counts.find((row) => row.sku === line.sku)?.counted_qty ?? null,
+              };
+            });
         })(),
         verify: counted.verify,
         stock_check: counted.stock_check,

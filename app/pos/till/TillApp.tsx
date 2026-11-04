@@ -6,7 +6,7 @@ import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
 import { usePosPoll } from "../usePosPoll";
 import DepositSlip from "../DepositSlip";
-import VerifyBanner from "../VerifyBanner";
+import VerifyBanner, { useVerifyOpen } from "../VerifyBanner";
 
 type View = {
   authenticated?: boolean;
@@ -51,6 +51,7 @@ export default function TillApp() {
   }, []);
 
   usePosPoll(load);
+  const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
 
   async function signIn() {
     setError("");
@@ -122,8 +123,8 @@ export default function TillApp() {
   return (
     <main className={styles.shell} data-testid="pos-till">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
-      {view.verify?.show_banner && view.verify.deadline_at ? (
-        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { sessionStorage.setItem("pny-open-verify", "1"); window.location.href = "/pos"; }} />
+      {verifyOpen && view.verify?.deadline_at ? (
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = "/pos"; }} />
       ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>

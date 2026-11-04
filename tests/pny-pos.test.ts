@@ -1603,18 +1603,65 @@ test("a count on zero stock is flagged and does not invent quantity", async () =
   assert.equal(row?.expected_qty, 0);
 });
 
-test("after two hours uncleared SKUs are accepted as-is and sales still work", async () => {
-  const h = await readyTill({ "1001": 4 });
+test("after two hours the verify card closes and uncounted SKUs are accepted with no discrepancy", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 4 });
+  h.db.state.closings.push({
+    shift_id: "previous",
+    sales_total_cents: 0,
+    sale_count: 0,
+    void_count: 0,
+    cash_on_hand_cents: 0,
+    deposited_cents: 0,
+    tickets_total: 0,
+    tickets_cashed_out: 0,
+    tickets_expired: 0,
+    closing_lines: [
+      { sku: "1001", name: "Flower", left: 10, system_qty: 10 },
+      { sku: "1002", name: "Gummy", left: 4, system_qty: 4 },
+    ],
+    sccx_ack_at: null,
+    sccx_attempts: 0,
+    no_count: false,
+    summary_text: "",
+    created_at: "2026-11-03T14:00:00.000Z",
+  });
+  h.db.state.incoming.push({
+    kitchen_row_id: "refill-1001",
+    batch_id: "b",
+    store_code: "PNY01",
+    sku: "1001",
+    qty_sent: 3,
+    kind: "REFILL",
+    kitchen_created_at: null,
+    imported_at: "2026-11-03T15:00:00.000Z",
+    status: "CONFIRMED",
+    qty_received: 3,
+    variance_reason: null,
+    confirmed_shift_id: h.shiftId,
+    confirmed_at: "2026-11-03T15:00:00.000Z",
+    linked_ledger_id: null,
+    created_at: "2026-11-03T15:00:00.000Z",
+  });
+  await h.svc.cashout(h.token, { key: "window-sale", lines: [{ sku: "1001", qty: 2 }] });
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 1 });
+  const before = qty(h.db, "1001");
   h.clock.t = new Date(h.clock.t.getTime() + 2 * 60 * 60 * 1000 + 1000);
   const locked = await h.svc.state(h.token);
+  const accepted = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
   assert.equal(locked.verify.show_banner, false);
-  assert.equal(qty(h.db, "1001"), 4);
-  assert.equal(h.db.state.audit.some((row) => row.action === "VERIFY_ACCEPTED" && row.detail.sku === "1001"), true);
+  assert.equal(accepted?.accepted_as_is, true);
+  assert.equal(accepted?.expected_qty, 11);
+  assert.equal(accepted?.counted_qty, 11);
+  assert.equal(locked.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
+  assert.equal(locked.verify.opening_lines.some((line) => line.sku === "1001"), false);
+  assert.equal(locked.stock_check.opening.lines.find((line) => line.sku === "1002")?.off, -3);
+  assert.equal(qty(h.db, "1001"), before);
   await rejects(() => h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 1 }), "VERIFY_CLOSED");
-  assert.equal(qty(h.db, "1001"), 4);
   const sale = await h.svc.cashout(h.token, { key: "after-window", lines: [{ sku: "1001", qty: 1 }] });
   assert.equal(sale.total_cents, 1000);
-  assert.equal(qty(h.db, "1001"), 3);
+  const still = await h.svc.state(h.token);
+  assert.equal(still.verify.show_banner, false);
+  assert.equal(still.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
 });
 
 test("a deposit equal to cash on hand is allowed", async () => {

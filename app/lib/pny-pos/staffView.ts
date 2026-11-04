@@ -26,7 +26,7 @@ export function blindStaffState<T extends Row>(view: T): T {
     .filter((row) => Number(row.qty ?? 0) > 0)
     .map((row) => pick(row, ["sku", "sku_sort", "name", "category", "price_cents", "price_source", "image_url", "flower_type", "thc"]));
   next.opening_lines = rows(view.opening_lines).map((row) => pick(row, ["sku", "name", "price_cents", "counted_qty", "variance_reason"]));
-  next.close_lines = rows(view.close_lines).map((row) => pick(row, ["sku", "name", "price_cents", "counted_qty"]));
+  next.close_lines = rows(view.close_lines).map((row) => pick(row, ["sku", "name", "text", "price_cents", "counted_qty"]));
   next.count_lines = rows(view.count_lines).map((row) => pick(row, ["sku", "name"]));
   next.incoming = rows(view.incoming).map((row) => pick(row, ["kitchen_row_id", "sku", "name", "kind"]));
   const verify = view.verify && typeof view.verify === "object" ? (view.verify as Row) : null;
