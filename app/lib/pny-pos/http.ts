@@ -20,7 +20,7 @@ const cookieBase = {
 
 export function toResponse(error: unknown) {
   if (error instanceof PosError) {
-    return Response.json({ ok: false, error: error.message, code: error.code }, { status: error.status, headers: { "cache-control": "no-store" } });
+    return Response.json({ ok: false, error: error.message, code: error.code, ...error.details }, { status: error.status, headers: { "cache-control": "no-store" } });
   }
   if (error instanceof SheetUnavailable) {
     return Response.json(

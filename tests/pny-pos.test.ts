@@ -1026,11 +1026,13 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   assert.match(sheet.tabs.POS_Shifts[0]?.pin_hash ?? "", /^scrypt\$/);
   assert.equal(sheet.tabs.POS_Sales.map((row) => row.payment_method).sort().join(","), "CASH,DEBIT");
   assert.equal(sheet.tabs.POS_Refills[0]?.status, "CONFIRMED");
-  const other = await live.openShiftWithPin({ staff_uid: "staff-other", display_name: "Other", pin: "1357" });
-  assert.equal(other.ok, true);
-  await rejects(() => live.login(pin, "10.0.0.9"), "BAD_PIN");
-  const otherLogin = await live.login("1357", "10.0.0.9");
-  assert.equal(otherLogin.staff_name, "Other");
+  const status = await live.openShiftStatus();
+  assert.equal(status.active, true);
+  assert.equal(status.open_by, "Anom");
+  await rejects(() => live.openShiftWithPin({ staff_uid: "staff-other", display_name: "Other", pin: "1357" }), "TILL_OPEN");
+  const stillOpen = await live.login(pin, "10.0.0.9");
+  assert.equal(stillOpen.staff_name, "Anom");
+  assert.equal(sheet.tabs.POS_Staff.some((row) => row.staff_uid === "staff-other"), false);
 });
 
 test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
@@ -2190,6 +2192,49 @@ test("master login does not start the verify window and cannot change the shift"
   await h.svc.login(String(started.pin), "10.8.0.3");
   const again = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
   assert.equal(Date.parse(again?.verify_opened_at ?? ""), anchor);
+});
+
+test("master PIN can view the last ended shift without reopening it", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "ob-ended-master", sku: "1001", qty: 2 });
+  await h.svc.importRoster({ key: "roster-ended", staff: [{ staff_uid: "staff-ended", pos_id: "E1", display_name: "Ended Staff", active: true }] });
+  const started = await h.svc.startShift({ key: "start-ended-master", store: "PNY01", staff_ref: "staff-ended", shift_id: "sccx-ended-master" });
+  const staffLogin = await h.svc.login(String(started.pin), "10.8.1.1");
+  const shift = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-ended-master");
+  assert.ok(shift);
+  shift.status = "ENDED";
+  shift.ended_at = h.clock.t.toISOString();
+  shift.end_reason = "POS_END";
+  const verifyOpenedAt = shift.verify_opened_at ?? null;
+  const oldSession = h.db.state.sessions.find((row) => row.shift_id === shift.id);
+  if (oldSession) oldSession.revoked_at = h.clock.t.toISOString();
+  await rejects(() => h.svc.login(String(started.pin), "10.8.1.2"), "NO_SHIFT");
+
+  const master = await h.svc.login("1988", "10.8.1.3");
+  const preview = await h.svc.state(master.token);
+  assert.equal(preview.master, true);
+  assert.equal(preview.shift?.status, "ENDED");
+  assert.equal(shift.status, "ENDED");
+  assert.equal(shift.verify_opened_at ?? null, verifyOpenedAt);
+  await rejects(() => h.svc.cashout(master.token, { key: "ended-master-sale", lines: [{ sku: "1001", qty: 1 }] }), "MASTER_VIEW");
+  await rejects(() => h.svc.beginClose(master.token), "MASTER_VIEW");
+  assert.equal(h.db.state.sales.length, 0);
+  await rejects(() => h.svc.state(staffLogin.token), "NO_SESSION");
+
+  const nextPin = String(started.pin) === "1357" ? "2468" : "1357";
+  const reopened = await h.svc.openShiftWithPin({
+    staff_uid: "staff-ended",
+    display_name: "Ended Staff",
+    pos_id: "E1",
+    shift_id: "sccx-ended-master-next",
+    pin: nextPin,
+  });
+  assert.equal(reopened.ok, true);
+  await rejects(() => h.svc.login(String(started.pin), "10.8.1.4"), "BAD_PIN");
+  const nextLogin = await h.svc.login(nextPin, "10.8.1.5");
+  assert.equal(nextLogin.staff_name, "Ended Staff");
 });
 
 test("a deposit equal to cash on hand is allowed", async () => {
