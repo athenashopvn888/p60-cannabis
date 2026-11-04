@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { inStockCategories } from "../app/lib/pny-pos/money.ts";
+import { inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -369,6 +369,9 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
     assert.equal(names.has(banned), false, banned);
   }
   assert.deepEqual(inStockCategories([{ category: "Vape", qty: 0 }, { category: "Flower", qty: 2 }, { category: "Edible", qty: 1 }]), ["Edible", "Flower"]);
+  assert.deepEqual(sortCategories([
+    "Concentrates", "AA", "Vape", "CIGARETTES", "Exotic", "Budget", "ADD ONS", "Premium", "AAA+", "Edibles", "Flower", "tobacco",
+  ]), ["Exotic", "Premium", "AAA+", "AA", "Budget", "ADD ONS", "CIGARETTES", "tobacco", "Edibles", "Concentrates", "Flower", "Vape"]);
 });
 
 test("12. a kitchen allocation is incoming and not sellable until it is confirmed", async () => {

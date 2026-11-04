@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
-import { formatMoney } from "../lib/pny-pos/money";
+import { formatMoney, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import { usePosPoll } from "./usePosPoll";
@@ -310,7 +310,7 @@ export default function PosApp() {
             <input id="pos-search" className={styles.search} placeholder="Search SKU or name" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <div className={styles.chips} role="tablist" aria-label="Categories">
-            {["All", ...(view.categories ?? [])].map((chip) => (
+            {["All", ...sortCategories(view.categories ?? [])].map((chip) => (
               <button key={chip} type="button" role="tab" aria-selected={chip === category} data-category={chip} className={chip === category ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
                 {chip}
               </button>
