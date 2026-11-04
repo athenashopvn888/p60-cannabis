@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { categoryChipLabel, defaultCategory, inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -401,6 +401,10 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   assert.equal(categoryChipLabel("VAPE PENS"), "Nic Vape");
   assert.equal(categoryChipLabel("EXOTIC"), "EXOTIC");
   assert.equal(categoryChipLabel("CONCENTRATES"), "CONCENTRATES");
+  const chips = layoutCategoryChips(["EXOTIC", "PREMIUM", "AAA+", "AA", "BUDGET", "ADD ONS", "CIGARETTES", "EDIBLES", "VAPE DISPOSABLE", "VAPE PENS"]);
+  assert.deepEqual(chips.wide, ["ADD ONS"]);
+  assert.equal(chips.rest[5], "VAPE PENS");
+  assert.equal(chips.rest.includes("ADD ONS"), false);
   assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
 });
 
@@ -653,7 +657,8 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   const nameRow = posHeader.split("headerActions")[0] ?? "";
   const actionRow = posHeader.split("headerActions")[1] ?? "";
   assert.match(nameRow, /data-testid="customer-qr"/);
-  assert.doesNotMatch(actionRow, /customer-qr/);
+  assert.match(nameRow, /data-testid="tickets-tab"/);
+  assert.doesNotMatch(actionRow, /customer-qr|tickets-tab/);
   const refillAt = actionRow.indexOf('data-testid="pos-refill"');
   const summaryAt = actionRow.indexOf('data-testid="pos-summary"');
   const tillAt = actionRow.indexOf('data-testid="open-till"');
@@ -1594,12 +1599,12 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   assert.match(dock, /<VerifyBanner slim/);
   assert.match(dock, /<CountCard\s+compact/);
   assert.match(dock, /className=\{styles\.footerBar\}/);
-  const sellAt = dock.indexOf(">Sell<");
-  const ticketAt = dock.indexOf('data-testid="tickets-tab"');
   const clearAt = dock.indexOf('data-testid="clear-cart"');
   const cashAt = dock.indexOf(">Cashout<");
   const valueAt = dock.indexOf('data-testid="cart-total"');
-  assert.ok(sellAt >= 0 && sellAt < ticketAt && ticketAt < clearAt && clearAt < cashAt && cashAt < valueAt);
+  assert.ok(clearAt >= 0 && clearAt < cashAt && cashAt < valueAt);
+  assert.doesNotMatch(dock, />Sell<|tickets-tab/);
+  assert.match(posSource, /data-testid="tickets-back"/);
   const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
   assert.match(service, /sortCountSkus\(state, skus\)/);
   assert.match(service, /close_lines: \(\(\) => \{[\s\S]*?compareCount/);
@@ -1708,6 +1713,30 @@ test("jumping to a later SKU accepts earlier blank counts as expected and leaves
   assert.equal(lines.some((line) => line.sku === "1001"), false);
   assert.equal(lines.some((line) => line.sku === "1003"), false);
   assert.equal(lines.find((line) => line.sku === "1002")?.off, -4);
+});
+
+test("restarting the verify deadline changes only the clock", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 2 });
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  shift.verify_opened_at = "2026-11-04T17:38:18.755Z";
+  shift.verify_release = "staff-verify-2026-11-04";
+  const pin = shift.pin_hash;
+  const status = shift.status;
+  const balances = JSON.stringify(h.db.state.balances);
+  const sales = JSON.stringify(h.db.state.sales);
+  const counts = JSON.stringify(h.db.state.closing_drafts ?? []);
+  const result = await h.svc.restartVerifyDeadline(shift.sccx_shift_id);
+  const again = h.db.state.shifts.find((row) => row.id === shift.id);
+  assert.equal(result.ok, true);
+  assert.equal(again?.pin_hash, pin);
+  assert.equal(again?.status, status);
+  assert.equal(again?.verify_release, "staff-verify-2026-11-04");
+  assert.notEqual(again?.verify_opened_at, "2026-11-04T17:38:18.755Z");
+  assert.equal(Date.parse(result.deadline_at) - Date.parse(result.verify_opened_at), 2 * 60 * 60 * 1000);
+  assert.equal(JSON.stringify(h.db.state.balances), balances);
+  assert.equal(JSON.stringify(h.db.state.sales), sales);
+  assert.equal(JSON.stringify(h.db.state.closing_drafts ?? []), counts);
 });
 
 test("a count on zero stock is flagged and does not invent quantity", async () => {
