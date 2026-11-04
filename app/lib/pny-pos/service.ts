@@ -1009,11 +1009,11 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
   const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
   if (session) {
     const shift = state.shifts.find((row) => row.id === session.shift_id);
-    if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+    if (!shift || (!session.master && shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
       throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
     }
     const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
-    if (!staff?.active) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
+    if (!staff || (!session.master && !staff.active)) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
     return { session, shift, staff };
   }
   throw new PosError(401, "NO_SESSION", "Sign in again. This server does not have that session.");
@@ -1416,9 +1416,25 @@ export class PosService {
     });
   }
 
+  /** Read-only SCCx preflight. It never opens, closes, or changes a shift. */
+  async openShiftStatus() {
+    return this.db.transaction(async (tx) => {
+      const shift = openShifts(tx.state)[0];
+      if (!shift) return { ok: true as const, active: false as const };
+      const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+      return {
+        ok: true as const,
+        active: true as const,
+        status: shift.status,
+        open_by: staff?.display_name || staff?.pos_id || shift.staff_uid,
+        shift_id: shift.id,
+      };
+    });
+  }
+
   /**
    * Open today's shift with a chosen PIN. The PIN is hashed and is not returned or audited.
-   * One open shift per store: any other open shift is ended.
+   * One open shift per store: an existing open shift is a conflict and is never changed.
    */
   async openShiftWithPin(input: { staff_uid: string; display_name?: string; pos_id?: string; sccx_id?: string; shift_id?: string; pin: string }) {
     if (!/^\d{4}$/.test(input.pin)) throw new PosError(400, "BAD_PIN", "PIN must be 4 digits.");
@@ -1428,6 +1444,13 @@ export class PosService {
       const at = iso(now);
       const staffUid = input.staff_uid.trim();
       if (!staffUid) throw new PosError(400, "STAFF", "staff_uid is required.");
+      const existing = openShifts(tx.state)[0];
+      if (existing) {
+        const openStaff = tx.state.staff.find((row) => row.staff_uid === existing.staff_uid);
+        throw new PosError(409, "TILL_OPEN", "The till is already open.", {
+          open_by: openStaff?.display_name || openStaff?.pos_id || existing.staff_uid,
+        });
+      }
       let staff = tx.state.staff.find((row) => row.staff_uid === staffUid || row.sccx_id === staffUid);
       if (!staff) {
         staff = {
@@ -1449,21 +1472,6 @@ export class PosService {
       }
       const day = new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
       let sccxId = input.shift_id?.trim() || `pny01-${staff.staff_uid}-${day}`;
-      const mine = tx.state.shifts.find((row) => row.staff_uid === staff!.staff_uid && row.status !== "ENDED");
-      for (const previous of openShifts(tx.state)) {
-        if (mine && previous.id === mine.id) continue;
-        const closing = buildClosing(tx.state, previous, noCountLines(tx.state), true, at);
-        finishShift(tx.state, previous, "REPLACED", at, closing);
-        queueClosingSheets(tx.state, previous, tx.state.closings.find((row) => row.shift_id === previous.id) ?? closing, at);
-      }
-      if (mine) {
-        mine.pin_hash = hashPin(pin);
-        mine.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
-        mine.pin_failed_attempts = 0;
-        if (mine.status !== "CLOSING") mine.status = "ACTIVE";
-        audit(tx.state, "SHIFT_PIN_SET", "shift", mine.id, staff.staff_uid, { sccx_shift_id: mine.sccx_shift_id }, at);
-        return { ok: true as const, staff_name: staff.display_name, expires_at: mine.pin_expires_at, shift_id: mine.id, sccx_shift_id: mine.sccx_shift_id };
-      }
       if (tx.state.shifts.some((shift) => shift.sccx_shift_id === sccxId)) sccxId = `${sccxId}-${now.getTime().toString(36)}`;
       const store = tx.state.stores.find((row) => row.code === STORE_CODE);
       if (!store) throw new PosError(404, "STORE", "Store is missing.");
@@ -1567,13 +1575,32 @@ export class PosService {
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
-      const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
+      const master = safeEqual(pin, MASTER_PIN);
+      let shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
+      if (!shift && master) {
+        shift = tx.state.shifts
+          .filter((row) => row.store_code === STORE_CODE && row.status === "ENDED")
+          .sort((a, b) => (b.ended_at || b.created_at).localeCompare(a.ended_at || a.created_at))[0];
+        if (shift) {
+          const token = newToken();
+          tx.state.sessions.push({
+            id: randomUUID(),
+            shift_id: shift.id,
+            token_hash: sha256(token),
+            expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+            revoked_at: null,
+            created_at: at,
+            master: true,
+          });
+          const staff = tx.state.staff.find((row) => row.staff_uid === shift!.staff_uid);
+          return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
+        }
+      }
       if (!shift) return { ok: false as const, status: 401, code: "NO_SHIFT", message: "No shift is active." };
       if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
-      const master = safeEqual(pin, MASTER_PIN);
       if (!master && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
         if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
@@ -1668,8 +1695,10 @@ export class PosService {
       expireTickets(tx.state, now.getTime());
       const { shift, staff, session } = this.session(tx.state, token, now, gate);
       const master = Boolean(session.master);
-      nameLiveShift(tx.state, iso(now));
-      openTillWithoutCount(shift, iso(now));
+      if (!master) {
+        nameLiveShift(tx.state, iso(now));
+        openTillWithoutCount(shift, iso(now));
+      }
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
         .filter((product) => product.setb_active)

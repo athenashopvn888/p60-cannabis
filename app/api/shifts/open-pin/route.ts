@@ -4,6 +4,17 @@ import { getService, loadSecrets } from "@/app/lib/pny-pos/runtime";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** Read-only SCCx preflight for the one-till-at-a-time rule. */
+export async function GET(request: Request) {
+  try {
+    assertSecret(request.headers.get("x-shift-secret"), loadSecrets().shift);
+    const service = await getService();
+    return json(await service.openShiftStatus());
+  } catch (error) {
+    return toResponse(error);
+  }
+}
+
 /** Opens one PNY01 shift for a known staff member. The PIN arrives in a header and is never returned. */
 export async function POST(request: Request) {
   try {
