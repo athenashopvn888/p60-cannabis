@@ -18,6 +18,9 @@ export type SheetClient = {
   readRows(tab: string): Promise<SheetRow[]>;
   readGrid?(tab: string): Promise<string[][]>;
   writeGrid?(tab: string, grid: string[][]): Promise<void>;
+  listTitles?(): Promise<string[]>;
+  copyTabHidden?(from: string, to: string): Promise<void>;
+  writeExactGrid?(tab: string, grid: string[][]): Promise<void>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
   deleteRows(tab: string, rowIds: string[]): Promise<void>;
@@ -170,6 +173,34 @@ export class GoogleSheet implements SheetClient {
   async writeGrid(tab: string, grid: string[][]) {
     if ((tab !== "Flowers_Raw" && tab !== "Items_Raw") || grid.length < 2) return;
     await this.ensureTabs([{ title: tab, headers: grid[0].map((cell) => String(cell ?? "")) }]);
+    await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
+      method: "PUT",
+      body: JSON.stringify({ values: grid }),
+    });
+  }
+
+  async listTitles() {
+    const meta = await this.sheetsFetch("?fields=sheets.properties.title");
+    const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
+    return sheets.map((sheet) => sheet.properties?.title ?? "").filter(Boolean);
+  }
+
+  async copyTabHidden(from: string, to: string) {
+    const values = await this.readGrid(from);
+    await this.sheetsFetch(":batchUpdate", {
+      method: "POST",
+      body: JSON.stringify({ requests: [{ addSheet: { properties: { title: to, hidden: true } } }] }),
+    });
+    if (values.length === 0) return;
+    await this.sheetsFetch(`/values/${encodeURIComponent(`${to}!A1`)}?valueInputOption=RAW`, {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    });
+  }
+
+  async writeExactGrid(tab: string, grid: string[][]) {
+    if (tab !== "Items_raw_price" || grid.length === 0) return;
+    await this.sheetsFetch(`/values/${encodeURIComponent(tab)}:clear`, { method: "POST", body: "{}" });
     await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
       method: "PUT",
       body: JSON.stringify({ values: grid }),

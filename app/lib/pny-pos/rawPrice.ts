@@ -34,6 +34,7 @@ export function unitPricesFromRawRows(rows: SheetRow[]) {
   for (const row of rows) {
     const sku = skuKey(cell(row, "SKU"));
     if (!sku) continue;
+    if (/^(ambiguous|missing|unparsed)/i.test(cell(row, "Price_Flag"))) continue;
     const cents = unitPriceCents(cell(row, "Unit_Price"));
     if (cents == null || map.has(sku)) continue;
     map.set(sku, cents);

@@ -33,7 +33,7 @@ import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from ".
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { parseFlowerSku, skuSortKey } from "./flowerSku.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
-import { fetchPublishedItemGrid, itemsFromGrid, lookupItem, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
+import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import type { SheetClient } from "./sheets.ts";
@@ -347,9 +347,9 @@ function productName(state: State, sku: string) {
   return state.products.find((product) => product.sku === sku)?.name ?? sku;
 }
 
-function pricedItem(sku: string, record: ItemRecord) {
-  const pack = cigarettePackCents(sku, record.category, record.name);
-  return pack ?? record.price_cents;
+function pricedItem(_sku: string, record: ItemRecord) {
+  if (/\b(marlboro|belmont)\b/i.test(record.name)) return 1000;
+  return record.price_cents;
 }
 
 function presentCatalogItem<T extends { sku: string; name: string; category: string; price_cents: number; image_url?: string | null }>(item: T, flowers: FlowerIndex | null, items: ItemIndex | null): T {
@@ -359,11 +359,14 @@ function presentCatalogItem<T extends { sku: string; name: string; category: str
     return pack != null ? { ...shown, price_cents: pack } : shown;
   }
   const record = lookupItem(items, item.sku);
-  const shown = record
-    ? { ...item, name: record.name || item.name, category: record.category || item.category, image_url: record.image ?? item.image_url ?? null, price_cents: record.price_cents > 0 ? record.price_cents : item.price_cents }
-    : item;
-  const pack = cigarettePackCents(shown.sku, shown.category, shown.name);
-  return pack != null ? { ...shown, price_cents: pack } : shown;
+  if (!record) return item;
+  return {
+    ...item,
+    name: record.name || item.name,
+    category: record.category || item.category,
+    image_url: record.image ?? item.image_url ?? null,
+    price_cents: pricedItem(item.sku, record),
+  };
 }
 
 function stockedCatalogRows(state: State, items: ItemIndex | null) {
@@ -404,14 +407,14 @@ function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?:
       },
     };
   }
+  if (record) {
+    const cents = pricedItem(sku, record);
+    if (cents > 0) return { cents, source: "RAW_UNIT" as const, product };
+  }
   const packCents = cigarettePackCents(sku, product.category, product.name);
   if (packCents != null) return { cents: packCents, source: "RAW_UNIT" as const, product };
   const fromFlower = flowerPriceCents(flowers, sku);
   if (fromFlower != null) return { cents: fromFlower, source: "RAW_UNIT" as const, product };
-  if (record && !parseFlowerSku(sku)) {
-    const cents = pricedItem(sku, record);
-    if (cents > 0) return { cents, source: "RAW_UNIT" as const, product };
-  }
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return { cents: fromSheet, source: "RAW_UNIT" as const, product };
   if (storeProduct.price_override_cents != null) return { cents: storeProduct.price_override_cents, source: "STORE_OVERRIDE" as const, product };
@@ -425,11 +428,11 @@ function qtyOf(state: State, sku: string) {
 function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null) {
   const product = state.products.find((item) => item.sku === sku);
   const record = lookupItem(items, sku);
+  if (record && record.price_cents > 0) return pricedItem(sku, record);
   const packCents = cigarettePackCents(sku, product?.category ?? record?.category, product?.name ?? record?.name);
   if (packCents != null) return packCents;
   const fromFlower = flowerPriceCents(flowers, sku);
   if (fromFlower != null) return fromFlower;
-  if (record && !parseFlowerSku(sku) && record.price_cents > 0) return record.price_cents;
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return fromSheet;
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
@@ -886,12 +889,11 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
-  private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string> } | null = null;
+  private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
+  private itemsSynced = false;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
   private flowerFlight: Promise<FlowerIndex> | null = null;
-  private itemCache: { at: number; index: ItemIndex } | null = null;
-  private itemFlight: Promise<ItemIndex> | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -911,10 +913,19 @@ export class PosService {
     if (this.rawPriceFlight) return this.rawPriceFlight;
     this.rawPriceFlight = (async () => {
       try {
+        if (this.deps.sheet.configured && this.deps.sheet.readGrid && this.deps.sheet.listTitles && this.deps.sheet.copyTabHidden && this.deps.sheet.writeExactGrid && !this.itemsSynced) {
+          try {
+            await syncItemsRawPrice(this.deps.sheet as Parameters<typeof syncItemsRawPrice>[0]);
+            this.itemsSynced = true;
+          } catch {
+            this.itemsSynced = false;
+          }
+        }
         const rows = await this.deps.sheet.readRows("Items_raw_price");
         const map = unitPricesFromRawRows(rows);
         const notes = cartonNotesFromRawRows(rows);
-        this.rawPriceCache = { at: now, map, notes };
+        const items = itemsFromPriceSheetRows(rows);
+        this.rawPriceCache = { at: now, map, notes, items };
         return map;
       } catch (error) {
         if (error instanceof SheetUnavailable) return this.rawPriceCache?.map ?? new Map();
@@ -983,52 +994,10 @@ export class PosService {
     return index;
   }
 
-  /** Non-flower names, prices, and pictures. Reads the PNY Items_Raw mirror. An empty mirror keeps the current catalog. */
+  /** Non-flower names, prices, and pictures from Items_raw_price. An empty sheet keeps the current catalog. */
   private async itemIndex() {
-    const now = this.now().getTime();
-    if (this.itemCache && now - this.itemCache.at < RAW_PRICE_TTL_MS) return this.itemCache.index;
-    if (this.itemFlight) return this.itemFlight;
-    this.itemFlight = this.loadItemIndex(now).finally(() => {
-      this.itemFlight = null;
-    });
-    return this.itemFlight;
-  }
-
-  private async loadItemIndex(now: number) {
-    const readGrid = this.deps.sheet.readGrid?.bind(this.deps.sheet);
-    let index: ItemIndex = new Map();
-    let mirrorMissing = false;
-    let mirrorRead = false;
-    if (readGrid) {
-      try {
-        index = itemsFromGrid(await readGrid("Items_Raw"));
-        mirrorRead = true;
-      } catch (error) {
-        const status = error instanceof SheetUnavailable ? error.httpStatus : null;
-        mirrorMissing = status === 400 || status === 404;
-        if (!mirrorMissing && this.itemCache?.index.size) return this.itemCache.index;
-      }
-    }
-    if (index.size === 0 && (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview")) {
-      try {
-        const grid = await fetchPublishedItemGrid();
-        const published = itemsFromGrid(grid);
-        if (published.size > 0) {
-          if ((mirrorMissing || mirrorRead) && this.deps.sheet.configured && process.env.VERCEL_ENV === "production" && process.env.PNY_SHEET_READ_ONLY !== "1") {
-            try {
-              await this.deps.sheet.writeGrid?.("Items_Raw", grid);
-            } catch {
-              // Names still come from the read. The mirror can be filled on a later request.
-            }
-          }
-          index = published;
-        }
-      } catch {
-        if (this.itemCache?.index.size) return this.itemCache.index;
-      }
-    }
-    this.itemCache = { at: now, index };
-    return index;
+    await this.rawUnitPrices();
+    return this.rawPriceCache?.items ?? new Map();
   }
 
   private demoPinAllowed() {
@@ -2240,7 +2209,16 @@ export class PosService {
       const seen = new Set(items.map((item) => item.sku));
       for (const extra of stockedCatalogRows(tx.state, itemCatalog)) {
         if (seen.has(extra.sku) || extra.qty <= 0) continue;
-        items.push({ sku: extra.sku, name: extra.name, category: extra.category, price_cents: extra.price_cents, image_url: extra.image_url, availability: "Available" as const });
+        const carton = notes.get(extra.sku);
+        items.push({
+          sku: extra.sku,
+          name: extra.name,
+          category: extra.category,
+          price_cents: extra.price_cents,
+          image_url: extra.image_url,
+          availability: "Available" as const,
+          ...(carton ? { carton_note: carton } : {}),
+        });
       }
       return {
         ok: true,
