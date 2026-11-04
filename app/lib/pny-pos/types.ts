@@ -311,7 +311,7 @@ export type State = {
   cursors: CursorRow[];
   audit: AuditRow[];
   admin_sessions: AdminSessionRow[];
-  /** Last issued Deposit #. D0001 is 1. Missing on shifts saved before sequential numbers. */
+  /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
 };
 

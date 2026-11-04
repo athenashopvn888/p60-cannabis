@@ -1042,10 +1042,11 @@
 
 .depositSlipCode {
   margin: 0;
-  font-size: 76px;
+  max-width: 100%;
+  font-size: 40px;
   font-weight: 850;
-  letter-spacing: 0.06em;
-  line-height: 0.95;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
 }
 
 .depositSlipNote {

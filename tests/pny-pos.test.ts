@@ -25,7 +25,7 @@ import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCen
 import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
-import { depositCodeLabel } from "../app/lib/pny-pos/depositCode.ts";
+import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -1695,9 +1695,9 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   const first = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
   const again = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
   const second = await h.svc.deposit(h.token, { key: "slip-b", amount_cents: 100 });
-  assert.equal(first.deposit_code, "D0001");
-  assert.equal(again.deposit_code, "D0001");
-  assert.equal(second.deposit_code, "D0002");
+  assert.equal(first.deposit_code, "PNY-D0001");
+  assert.equal(again.deposit_code, "PNY-D0001");
+  assert.equal(second.deposit_code, "PNY-D0002");
   assert.equal(h.db.state.deposit_seq, 2);
   assert.equal(h.db.state.deposits.filter((row) => row.deposit_code === first.deposit_code).length, 1);
   h.db.state.deposits.push({
@@ -1712,11 +1712,13 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.match(summary.text, new RegExp(`Deposit ${first.deposit_code} `));
   assert.match(summary.text, /Deposit n\/a /);
   assert.equal(depositCodeLabel(undefined), "n/a");
+  assert.equal(depositCodeLabel("D0004"), "D0004");
   assert.equal(depositCodeLabel(first.deposit_code), first.deposit_code);
+  assert.equal(nextDepositSeq(0, ["D0004", "PNY-D0002"]), 5);
   const finalDeposit = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200 });
   const repeated = await h.svc.saveFinalDeposit(h.token, { amount_cents: 150 });
-  assert.equal(finalDeposit.deposit_code, "D0003");
-  assert.equal(repeated.deposit_code, "D0003");
+  assert.equal(finalDeposit.deposit_code, "PNY-D0003");
+  assert.equal(repeated.deposit_code, "PNY-D0003");
   const view = await h.svc.state(h.token);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "slip-end",
@@ -1730,7 +1732,8 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   const admin = await h.svc.adminState(h.admin);
   assert.equal(admin.deposits.find((row) => row.id === finals[0]?.id)?.deposit_code, finalDeposit.deposit_code);
   assert.equal(admin.deposits.find((row) => row.id === "old-deposit")?.deposit_code, null);
-  assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Write this Deposit # on a slip of paper and attach it to the money\./);
+  assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Write the full Deposit #, including PNY, on a slip of paper and attach it to the money\./);
   assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
-  assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.depositSlipCode[\s\S]*font-size:\s*76px/);
+  assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /deposit_code/);
+  assert.match(summary.text, /PNY-D0001/);
 });

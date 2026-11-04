@@ -525,7 +525,7 @@ function issueDepositCode(state: State) {
 
 function releaseTailDepositCode(state: State, code: string | null | undefined) {
   if (!code) return false;
-  const match = /^D(\d{4})$/.exec(code);
+  const match = /^(?:PNY-)?D(\d{4})$/.exec(code);
   if (!match) return false;
   const seq = Number(match[1]);
   if (state.deposit_seq !== seq) return false;
