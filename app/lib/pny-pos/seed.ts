@@ -163,6 +163,67 @@ export function applyDemoSeed(state: State, now: Date) {
     { id: crypto.randomUUID(), ticket_id: TICKET_A, sku: ticketA.sku, qty: 1, unit_price_cents_snapshot: ticketA.price_cents },
     { id: crypto.randomUUID(), ticket_id: TICKET_B, sku: ticketB.sku, qty: 2, unit_price_cents_snapshot: ticketB.price_cents },
   );
+  const pendingSkus = ["504-3g", "507-3g"].filter((sku) => catalog.some((product) => product.sku === sku));
+  for (const [index, sku] of pendingSkus.entries()) {
+    state.incoming.push({
+      kitchen_row_id: `55555555-5555-4555-8555-55555555555${index}`,
+      batch_id: "demo-pending",
+      store_code: STORE_CODE,
+      sku,
+      qty_sent: index === 0 ? 2 : 1,
+      kind: "REFILL",
+      kitchen_created_at: at,
+      imported_at: at,
+      status: "PENDING_CONFIRM",
+      qty_received: null,
+      variance_reason: null,
+      confirmed_shift_id: null,
+      confirmed_at: null,
+      linked_ledger_id: null,
+      created_at: at,
+    });
+  }
+  const issueSku = catalog.some((product) => product.sku === "490-3g") ? "490-3g" : "";
+  if (issueSku) {
+    const balance = state.balances.find((row) => row.sku === issueSku);
+    if (balance) balance.qty += 2;
+    state.ledger.push({
+      id: crypto.randomUUID(),
+      sku: issueSku,
+      qty_delta: 2,
+      movement_type: "INCOMING_CONFIRM",
+      ref_type: "incoming",
+      ref_id: "demo-refill-issue",
+      actor: "staff-demo-tri",
+      reason: null,
+      shift_id: SHIFT_ID,
+      created_at: at,
+    });
+    state.incoming.push({
+      kitchen_row_id: "66666666-6666-4666-8666-666666666666",
+      batch_id: "demo-issue",
+      store_code: STORE_CODE,
+      sku: issueSku,
+      qty_sent: 4,
+      kind: "REFILL",
+      kitchen_created_at: at,
+      imported_at: at,
+      status: "PARTIAL",
+      qty_received: 2,
+      variance_reason: null,
+      confirmed_shift_id: SHIFT_ID,
+      confirmed_at: at,
+      linked_ledger_id: null,
+      created_at: at,
+    });
+  }
+  state.closing_drafts.push({
+    shift_id: SHIFT_ID,
+    counts: state.balances.filter((row) => row.qty > 0).map((row) => ({ sku: row.sku, counted_qty: row.qty })),
+    opening_counts: [],
+    final_deposit_cents: null,
+    updated_at: at,
+  });
   state.audit.push({
     id: crypto.randomUUID(),
     action: "DEMO_SEED",

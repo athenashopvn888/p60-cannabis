@@ -10,6 +10,7 @@ import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import SkuOffList, { type OffLine } from "./SkuOffList";
 import CountCard from "./CountCard";
+import RefillList, { type PendingRefill } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
@@ -40,7 +41,7 @@ type View = {
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
-  incoming?: { kitchen_row_id: string; sku: string; name: string; kind: string }[];
+  incoming?: PendingRefill[];
   tickets?: Ticket[];
   pending_count?: number;
   sheet_sync_delayed?: boolean;
@@ -53,7 +54,11 @@ type View = {
     opening_off?: number;
     opening_lines?: OffLine[];
   };
-  stock_check?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
+  stock_check?: {
+    opening: { offCount: number; ready?: boolean; lines: OffLine[] };
+    closing: { offCount: number; ready?: boolean; lines: OffLine[] };
+    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
+  };
   error?: string;
   code?: string;
 };
@@ -96,8 +101,7 @@ export default function PosApp() {
   const [summaryDeposits, setSummaryDeposits] = useState<{ deposit_code?: string | null; amount_cents: number; at: string }[]>([]);
   const [depositCode, setDepositCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [counts, setCounts] = useState<Record<string, string>>({});
-  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [refillOpen, setRefillOpen] = useState(false);
   const [refNo, setRefNo] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
@@ -314,19 +318,15 @@ export default function PosApp() {
     }
   }
 
-  async function confirmRefill() {
+  async function receiveRefills(lines: { kitchen_row_id: string; qty_received: number }[]) {
     setError("");
     setBusy(true);
     try {
-      const lines = (view?.incoming ?? []).map((row) => ({
-        kitchen_row_id: row.kitchen_row_id,
-        qty_received: Number(counts[row.kitchen_row_id] ?? ""),
-        variance_reason: reasons[row.kitchen_row_id] || undefined,
-      }));
       await post("/api/pos/incoming/confirm", { lines }, crypto.randomUUID());
+      setRefillOpen(false);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Receipt was not saved");
+      setError(err instanceof Error ? err.message : "Refill was not saved");
     } finally {
       setBusy(false);
     }
@@ -376,6 +376,10 @@ export default function PosApp() {
           <div className={styles.headerActions}>
             {view.phase === "sell" ? (
               <>
+                <button className={styles.cornerBtn} type="button" data-testid="pos-refill" onClick={() => setRefillOpen(true)}>
+                  Refill
+                  {(view.incoming?.length ?? 0) > 0 ? <span className={styles.refillBadge} data-testid="refill-badge">{view.incoming?.length}</span> : null}
+                </button>
                 <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" onClick={openDeposit}>+Deposit</button>
                 <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
                 <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
@@ -401,8 +405,7 @@ export default function PosApp() {
       ) : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
       {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
-      {(view.incoming?.length ?? 0) > 0 && view.phase !== "opening" ? <div className={styles.banner}>Incoming stock is waiting to be confirmed.</div> : null}
-      {error && !sheet ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
+      {error && !sheet && !refillOpen ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
 
       {view.phase === "opening" ? (
         <OpeningCount
@@ -414,21 +417,7 @@ export default function PosApp() {
         />
       ) : null}
 
-      {view.phase === "refill" ? (
-        <section className={styles.body} data-testid="pos-refill">
-          <div className={styles.pad}><h2>Confirm refill</h2><p>Enter the quantity received. A difference needs a reason.</p></div>
-          {(view.incoming ?? []).map((row) => (
-              <div key={row.kitchen_row_id}>
-                <label className={styles.countRow}>
-                  <span><strong>{row.sku}</strong> {row.name}</span>
-                  <input inputMode="numeric" aria-label={`Received ${row.sku}`} value={counts[row.kitchen_row_id] ?? ""} onChange={(event) => setCounts({ ...counts, [row.kitchen_row_id]: event.target.value.replace(/[^\d]/g, "") })} />
-                </label>
-                <input className={styles.reason} placeholder="Reason if different" aria-label={`Reason for ${row.sku}`} value={reasons[row.kitchen_row_id] ?? ""} onChange={(event) => setReasons({ ...reasons, [row.kitchen_row_id]: event.target.value })} style={{ margin: "0 12px 8px", width: "calc(100% - 24px)" }} />
-              </div>
-          ))}
-          <div className={styles.pad}><button className={styles.primary} type="button" disabled={busy} onClick={() => void confirmRefill()}>Confirm received</button></div>
-        </section>
-      ) : null}
+      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">

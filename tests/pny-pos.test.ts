@@ -211,13 +211,18 @@ test("5. a pending refill is starting stock and 105-28g of 2 needs no reason", a
     linked_ledger_id: null,
     created_at: "2026-11-03T18:00:00.000Z",
   });
-  const view = await h.svc.state(login.token);
-  assert.equal(view.phase, "sell");
-  assert.equal(view.block, null);
+  const waiting = await h.svc.state(login.token);
+  assert.equal(waiting.phase, "sell");
+  assert.equal(waiting.block, null);
+  assert.equal(qty(h.db, "105-28g"), 0);
+  assert.equal(waiting.incoming?.find((row) => row.kitchen_row_id === refillId)?.qty_sent, 2);
+  assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === refillId)?.status, "PENDING_CONFIRM");
+  await h.svc.confirmIncoming(login.token, { key: "receive-105", lines: [{ kitchen_row_id: refillId, qty_received: 2 }] });
   assert.equal(qty(h.db, "105-28g"), 2);
   const refill = h.db.state.incoming.find((row) => row.kitchen_row_id === refillId);
   assert.equal(refill?.status, "CONFIRMED");
   assert.equal(refill?.qty_received, 2);
+  assert.equal(refill?.qty_sent, 2);
   const menu = await h.svc.menu();
   assert.equal(menu.prices_include_tax, false);
   assert.equal(menu.items?.some((item) => item.sku === "105-28g" && item.price_cents === 4000), true);
@@ -254,8 +259,13 @@ test("a sized refill is listed on the menu and tobacco stays off", async () => {
       created_at: "2026-11-03T18:00:00.000Z",
     });
   }
+  const waiting = await h.svc.state(login.token);
+  assert.equal(waiting.phase, "sell");
+  assert.equal(qty(h.db, "313-5g"), 0);
+  assert.equal((await h.svc.menu()).items?.some((item) => item.sku === "313-5g"), false);
+  const pending = h.db.state.incoming.filter((row) => row.status === "PENDING_CONFIRM");
+  await h.svc.confirmIncoming(login.token, { key: "receive-sized", lines: pending.map((row) => ({ kitchen_row_id: row.kitchen_row_id, qty_received: row.qty_sent })) });
   const view = await h.svc.state(login.token);
-  assert.equal(view.phase, "sell");
   assert.equal(view.products.some((product) => product.sku === "313-5g" && product.price_cents === 3000), true);
   const menu = await h.svc.menu();
   assert.equal(menu.prices_include_tax, false);
@@ -394,6 +404,9 @@ test("12. a kitchen allocation is incoming and not sellable until it is confirme
   assert.equal(h.db.state.incoming[0]?.status, "PENDING_CONFIRM");
   const view = await h.svc.state(h.token);
   assert.equal(view.phase, "sell");
+  assert.equal(qty(h.db, "1001"), 1);
+  assert.equal(h.db.state.incoming[0]?.status, "PENDING_CONFIRM");
+  await h.svc.confirmIncoming(h.token, { key: "receive-alloc", lines: [{ kitchen_row_id: rowId, qty_received: 3 }] });
   assert.equal(qty(h.db, "1001"), 4);
   assert.equal(h.db.state.incoming[0]?.qty_received, 3);
   await h.svc.cashout(h.token, { key: "after", lines: [{ sku: "1001", qty: 1 }] });
@@ -852,7 +865,9 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   db.forgetCache();
   const opening = await svc.state(login.token);
   assert.equal(opening.phase, "sell");
-  assert.equal(opening.products.find((product) => product.sku === "1001")?.qty, 2);
+  assert.equal(opening.products.find((product) => product.sku === "1001")?.qty ?? 0, 0);
+  await svc.confirmIncoming(login.token, { key: "receive-sheet", lines: [{ kitchen_row_id: refillId, qty_received: 2 }] });
+  assert.equal((await svc.state(login.token)).products.find((product) => product.sku === "1001")?.qty, 2);
   const cash = await svc.cashout(login.token, { key: "cash-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "CASH" });
   const debit = await svc.cashout(login.token, { key: "debit-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "DEBIT" });
   assert.equal(cash.payment_method, "CASH");
@@ -1221,6 +1236,8 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
   }
   const view = await h.svc.state(login.token);
   assert.equal(view.phase, "sell");
+  assert.equal(qty(h.db, "1002"), 0);
+  await h.svc.confirmIncoming(login.token, { key: "receive-1002", lines: [{ kitchen_row_id: rowId, qty_received: 3 }] });
   assert.equal(qty(h.db, "1002"), 3);
   assert.equal(qty(h.db, "1001"), 4);
 });
@@ -1253,7 +1270,9 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   (svc as unknown as { db: SheetDb }).db.forgetCache();
   const stocked = await svc.state(login.token);
   assert.equal(stocked.phase, "sell");
-  assert.equal(stocked.products.find((product) => product.sku === "1001")?.qty, 4);
+  assert.equal(stocked.products.find((product) => product.sku === "1001")?.qty ?? 0, 0);
+  await svc.confirmIncoming(login.token, { key: "test01-receive", lines: [{ kitchen_row_id: refillId, qty_received: 4 }] });
+  assert.equal((await svc.state(login.token)).products.find((product) => product.sku === "1001")?.qty, 4);
   await svc.cashout(login.token, { key: "test01-cash", payment_method: "CASH", lines: [{ sku: "1001", qty: 2 }] });
   await svc.cashout(login.token, { key: "test01-debit", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
   const dropped = await svc.deposit(login.token, { key: "test01-drop", amount_cents: 500, note: "mid shift" });
@@ -1408,6 +1427,9 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
       created_at: "2026-11-03T18:00:00.000Z",
     });
   }
+  await h.svc.state(login.token);
+  const pending = h.db.state.incoming.filter((row) => row.status === "PENDING_CONFIRM");
+  await h.svc.confirmIncoming(login.token, { key: "receive-flower", lines: pending.map((row) => ({ kitchen_row_id: row.kitchen_row_id, qty_received: row.qty_sent })) });
   const view = await h.svc.state(login.token);
   const shown = view.products.find((product) => product.sku === "502-3g");
   assert.equal(shown?.name, "ALIEN SMACK PINK 3g");
@@ -1667,6 +1689,63 @@ test("after two hours the verify card closes and uncounted SKUs are accepted wit
   const still = await h.svc.state(h.token);
   assert.equal(still.verify.show_banner, false);
   assert.equal(still.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
+});
+
+test("verify expected uses only received refills, and a short receipt is a refill issue", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 4 });
+  h.db.state.closings.push({
+    shift_id: "previous",
+    sales_total_cents: 0,
+    sale_count: 0,
+    void_count: 0,
+    cash_on_hand_cents: 0,
+    deposited_cents: 0,
+    tickets_total: 0,
+    tickets_cashed_out: 0,
+    tickets_expired: 0,
+    closing_lines: [{ sku: "1001", name: "Flower", left: 10, system_qty: 10 }],
+    sccx_ack_at: null,
+    sccx_attempts: 0,
+    no_count: false,
+    summary_text: "",
+    created_at: "2026-11-03T14:00:00.000Z",
+  });
+  const pending = crypto.randomUUID();
+  h.db.state.incoming.push({
+    kitchen_row_id: pending,
+    batch_id: "wait",
+    store_code: "PNY01",
+    sku: "1001",
+    qty_sent: 5,
+    kind: "REFILL",
+    kitchen_created_at: null,
+    imported_at: "2026-11-03T15:00:00.000Z",
+    status: "PENDING_CONFIRM",
+    qty_received: null,
+    variance_reason: null,
+    confirmed_shift_id: null,
+    confirmed_at: null,
+    linked_ledger_id: null,
+    created_at: "2026-11-03T15:00:00.000Z",
+  });
+  await h.svc.state(h.token);
+  assert.equal(qty(h.db, "1001"), 10);
+  await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 10 });
+  const frozen = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
+  assert.equal(frozen?.expected_qty, 10);
+  await h.svc.confirmIncoming(h.token, { key: "short-refill", lines: [{ kitchen_row_id: pending, qty_received: 2 }] });
+  assert.equal(qty(h.db, "1001"), 12);
+  assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === pending)?.qty_sent, 5);
+  const view = await h.svc.state(h.token);
+  const issue = view.stock_check.refills.lines.find((line) => line.sku === "1001");
+  assert.equal(view.stock_check.refills.count, 1);
+  assert.equal(issue?.sent, 5);
+  assert.equal(issue?.received, 2);
+  assert.equal(issue?.diff, -3);
+  const blind = blindStaffState(view);
+  assert.equal(blind.stock_check.refills.lines[0]?.sent, 5);
+  assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
+  assert.equal(blind.incoming?.length ?? 0, 0);
 });
 
 test("a deposit equal to cash on hand is allowed", async () => {

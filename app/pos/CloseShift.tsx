@@ -40,7 +40,11 @@ export default function CloseShift({
   onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
   onConfirm: (depositCents: number) => Promise<void>;
   onClose: () => void;
-  stockCheck?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
+  stockCheck?: {
+    opening: { offCount: number; ready?: boolean; lines: OffLine[] };
+    closing: { offCount: number; ready?: boolean; lines: OffLine[] };
+    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
+  };
   deadline?: string | null;
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "deposit" : "count");
@@ -118,6 +122,19 @@ export default function CloseShift({
               <h3>Closing count</h3>
               <p>{stockCheck?.closing.ready === false ? "Count still open" : `${stockCheck?.closing.offCount ?? 0} SKUs off`}</p>
               <SkuOffList lines={stockCheck?.closing.lines ?? []} testId="closing-sku-list" />
+            </section>
+            <section className={styles.stockRose} data-testid="refill-issues">
+              <h3>Refill issues</h3>
+              <p>{(stockCheck?.refills?.count ?? 0) === 1 ? "1 refill issue" : `${stockCheck?.refills?.count ?? 0} refill issues`}</p>
+              {(stockCheck?.refills?.lines ?? []).map((line) => (
+                <div key={line.sku} className={styles.refillIssue} data-testid="refill-issue-row">
+                  <div className={styles.offRow}>
+                    <strong>{line.text}</strong>
+                    <strong className={line.diff < 0 ? styles.offShort : line.diff > 0 ? styles.offOver : styles.offEven}>{line.diff > 0 ? `+${line.diff}` : String(line.diff)}</strong>
+                  </div>
+                  <p className={styles.refillMeta}>sent {line.sent} · received {line.received}</p>
+                </div>
+              ))}
             </section>
             <button className={styles.primary} type="button" disabled={busy || done < lines.length} onClick={() => void onConfirm(depositCents)}>Confirm & End Shift</button>
           </div>

@@ -645,6 +645,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   });
   const closingLines = arrangeOff(closing, closePlan.map((line) => line.sku));
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
+  const refills = refillIssues(state, shift.id);
   return {
     verify: {
       show_banner: showBanner,
@@ -671,6 +672,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     stock_check: {
       opening: { offCount: reveal ? offCount(openingLines) : 0, ready: reveal, lines: reveal ? openingLines : [] },
       closing: { offCount: offCount(closingLines), ready: closePlan.length > 0 && closingLines.length === closePlan.length, lines: closingLines },
+      refills,
     },
     verify_admin: demo
       ? {
@@ -689,6 +691,26 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
         }
       : undefined,
   };
+}
+
+function refillIssues(state: State, shiftId: string) {
+  const grouped = new Map<string, { sent: number; received: number }>();
+  for (const row of state.incoming) {
+    if (row.confirmed_shift_id !== shiftId) continue;
+    if (row.status !== "CONFIRMED" && row.status !== "PARTIAL" && row.status !== "REJECTED") continue;
+    const current = grouped.get(row.sku) ?? { sent: 0, received: 0 };
+    current.sent += row.qty_sent;
+    current.received += row.qty_received ?? 0;
+    grouped.set(row.sku, current);
+  }
+  const lines = sortCountSkus(state, grouped.keys()).flatMap((sku) => {
+    const totals = grouped.get(sku);
+    if (!totals || totals.received === totals.sent) return [];
+    const product = state.products.find((row) => row.sku === sku);
+    const size = sizeLabel(sku, product?.category, product?.name);
+    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff: totals.received - totals.sent }];
+  });
+  return { count: lines.length, lines };
 }
 
 function countSkus(state: State) {
@@ -946,24 +968,9 @@ function sellingBlocked(_state: State, shift: ShiftRow) {
   return null;
 }
 
-/** Pending kitchen rows become starting stock. There is no opening count. */
-function acceptStartingStock(state: State, shift: ShiftRow, staffUid: string, at: string) {
-  const pending = state.incoming.filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0);
-  for (const row of pending) {
-    row.qty_received = row.qty_sent;
-    row.status = "CONFIRMED";
-    row.confirmed_at = at;
-    row.confirmed_shift_id = shift.id;
-    row.variance_reason = null;
-    const next = balanceAdd(state, row.sku, row.qty_sent, at, true);
-    if (next == null) continue;
-    const entry = ledger(state, row.sku, row.qty_sent, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staffUid, null, shift.id, at);
-    row.linked_ledger_id = entry.id;
-    ensureQuotedProduct(state, row.sku, at);
-    enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, state.staff.find((staff) => staff.staff_uid === staffUid)?.pos_id ?? ""), at);
-  }
+/** Selling does not wait on an opening count. Pending refills stay pending until staff receive them. */
+function openTillWithoutCount(shift: ShiftRow, at: string) {
   if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
-  if (pending.length > 0) shift.refill_confirmed_at = at;
 }
 
 function ensureQuotedProduct(state: State, sku: string, at: string) {
@@ -1556,7 +1563,7 @@ export class PosService {
       expireTickets(tx.state, now.getTime());
       const { shift, staff } = this.session(tx.state, token, now, gate);
       nameLiveShift(tx.state, iso(now));
-      acceptStartingStock(tx.state, shift, staff.staff_uid, iso(now));
+      openTillWithoutCount(shift, iso(now));
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
         .filter((product) => product.setb_active)
@@ -1576,8 +1583,13 @@ export class PosService {
         products.push({ ...extra, sku_sort: skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
       const incoming = tx.state.incoming
-        .filter((row) => row.status === "PENDING_CONFIRM")
-        .map((row) => ({ kitchen_row_id: row.kitchen_row_id, sku: row.sku, name: productName(tx.state, row.sku), qty_sent: row.qty_sent, kind: row.kind }));
+        .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
+        .map((row) => {
+          const product = tx.state.products.find((item) => item.sku === row.sku);
+          const size = sizeLabel(row.sku, product?.category, product?.name);
+          return { kitchen_row_id: row.kitchen_row_id, sku: row.sku, text: staffSkuText(row.sku, size), qty_sent: row.qty_sent, kind: row.kind };
+        })
+        .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
         .filter((ticket) => ticket.shift_id === shift.id && (ticket.status === "PENDING" || ticket.status === "OPEN"))
         .map((ticket) => ({
@@ -1731,7 +1743,7 @@ export class PosService {
       const seen = replay(tx.state, "incoming_confirm", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
       const { shift, staff } = this.session(tx.state, token, now);
-      if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the opening count first.");
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
       const at = iso(now);
       for (const line of input.lines) {
@@ -1749,7 +1761,9 @@ export class PosService {
         if (line.qty_received > 0) {
           const next = balanceAdd(tx.state, row.sku, line.qty_received, at, true);
           if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive stock.");
-          ledger(tx.state, row.sku, line.qty_received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
+          const entry = ledger(tx.state, row.sku, line.qty_received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
+          row.linked_ledger_id = entry.id;
+          ensureQuotedProduct(tx.state, row.sku, at);
         }
         enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
       }
@@ -2446,7 +2460,7 @@ export class PosService {
       const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
       if (shift) {
         nameLiveShift(tx.state, now);
-        acceptStartingStock(tx.state, shift, shift.staff_uid, now);
+        openTillWithoutCount(shift, now);
       }
       const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products
