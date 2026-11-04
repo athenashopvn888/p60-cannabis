@@ -32,7 +32,7 @@ import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from 
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { parseFlowerSku, skuSortKey } from "./flowerSku.ts";
-import { mintDepositCode } from "./depositCode.ts";
+import { formatDepositCode, nextDepositSeq } from "./depositCode.ts";
 import type { DemoDraft } from "./demoDraft.ts";
 import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } from "./verifyCount.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
@@ -509,19 +509,30 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     .filter((line) => line.opening_qty + line.received_qty > 0);
 }
 
-function usedDepositCodes(state: State) {
-  const used = new Set<string>();
-  for (const row of state.deposits) if (row.deposit_code) used.add(row.deposit_code);
-  for (const draft of state.closing_drafts ?? []) if (draft.final_deposit_code) used.add(draft.final_deposit_code);
-  return used;
-}
-
 function issueDepositCode(state: State) {
+  const existing = [
+    ...state.deposits.map((row) => row.deposit_code),
+    ...(state.closing_drafts ?? []).map((row) => row.final_deposit_code),
+  ];
   try {
-    return mintDepositCode(usedDepositCodes(state));
+    const seq = nextDepositSeq(state.deposit_seq, existing);
+    state.deposit_seq = seq;
+    return formatDepositCode(seq);
   } catch {
     throw new PosError(503, "DEPOSIT_CODE", "Could not assign a deposit number. Try again.");
   }
+}
+
+function releaseTailDepositCode(state: State, code: string | null | undefined) {
+  if (!code) return false;
+  const match = /^D(\d{4})$/.exec(code);
+  if (!match) return false;
+  const seq = Number(match[1]);
+  if (state.deposit_seq !== seq) return false;
+  if (state.deposits.some((row) => row.deposit_code === code)) return false;
+  if ((state.closing_drafts ?? []).some((row) => row.final_deposit_code === code)) return false;
+  state.deposit_seq = seq - 1;
+  return true;
 }
 
 function countMeta(state: State, sku: string) {
@@ -611,8 +622,8 @@ function staffOffLine(state: State, sku: string, off: number) {
   return { sku, text: staffSkuText(sku, size), off };
 }
 
-function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean) {
-  lockUnverified(state, shift, actor, now);
+function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
+  if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
   const deadline = new Date(Date.parse(shift.started_at) + VERIFY_WINDOW_MS).toISOString();
@@ -1583,7 +1594,7 @@ export class PosService {
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
       const openingLines = [...openingPlan(tx.state, raw)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
       const phase = shift.status === "CLOSING" ? "end" : "sell";
-      const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, Boolean(this.deps.demo));
+      const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false);
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status === "queued")
         .map((row) => Date.parse(row.created_at))
@@ -2145,9 +2156,15 @@ export class PosService {
         drafts.push(draft);
       }
       draft.final_deposit_cents = amount;
-      draft.final_deposit_code = amount > 0 ? (draft.final_deposit_code || issueDepositCode(tx.state)) : null;
+      if (amount > 0) {
+        draft.final_deposit_code = draft.final_deposit_code || issueDepositCode(tx.state);
+      } else if (draft.final_deposit_code) {
+        const issued = draft.final_deposit_code;
+        draft.final_deposit_code = null;
+        releaseTailDepositCode(tx.state, issued);
+      }
       draft.updated_at = iso(this.now());
-      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code, cash_on_hand_cents: totals.cash_on_hand_cents };
+      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
     });
   }
 
@@ -2724,6 +2741,16 @@ export class PosService {
     });
     this.bumpMenu();
     return result;
+  }
+
+  async adminCountReview(adminToken: string) {
+    return this.db.transaction(async (tx) => {
+      requireAdmin(tx.state, adminToken, this.now());
+      const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && (row.status === "ACTIVE" || row.status === "CLOSING"));
+      if (!shift) return { ok: true as const, opening: [], closing: [] };
+      const view = collectVerify(tx.state, shift, "admin", this.now(), undefined, true, false);
+      return { ok: true as const, opening: view.verify_admin?.opening ?? [], closing: view.verify_admin?.closing ?? [] };
+    });
   }
 
   async adminLogin(password: string) {

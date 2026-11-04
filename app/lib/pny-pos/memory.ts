@@ -36,6 +36,7 @@ export function emptyState(now = new Date().toISOString()): State {
     cursors: [],
     audit: [],
     admin_sessions: [],
+    deposit_seq: 0,
   };
 }
 

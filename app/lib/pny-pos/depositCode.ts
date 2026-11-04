@@ -1,19 +1,21 @@
-import { randomInt } from "node:crypto";
-
-const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-/** One uppercase letter and four digits, for example D4827. */
-export function mintDepositCode(used: Set<string>) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const code = `${LETTERS[randomInt(LETTERS.length)]}${String(randomInt(10000)).padStart(4, "0")}`;
-    if (used.has(code)) continue;
-    used.add(code);
-    return code;
+/** Next slip number. D0001, D0002, D0003. The counter moves only when a number is stored. */
+export function nextDepositSeq(current: number | undefined, existing: Array<string | null | undefined>) {
+  let max = Number.isInteger(current) && (current as number) > 0 ? (current as number) : 0;
+  for (const code of existing) {
+    const match = /^D(\d{4})$/.exec(code ?? "");
+    if (!match) continue;
+    max = Math.max(max, Number(match[1]));
   }
-  throw new Error("DEPOSIT_CODE");
+  const next = max + 1;
+  if (next > 9999) throw new Error("DEPOSIT_CODE");
+  return next;
+}
+
+export function formatDepositCode(seq: number) {
+  return `D${String(seq).padStart(4, "0")}`;
 }
 
 /** Past deposits with no stored number stay usable and display as n/a. */
 export function depositCodeLabel(code: string | null | undefined) {
-  return code && /^[A-Z]\d{4}$/.test(code) ? code : "n/a";
+  return code && /^D\d{4}$/.test(code) ? code : "n/a";
 }

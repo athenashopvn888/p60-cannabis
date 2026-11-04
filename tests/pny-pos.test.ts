@@ -1579,8 +1579,11 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(shown?.text, "#1001 each");
   assert.deepEqual(Object.keys(shown ?? {}).sort(), ["off", "sku", "text"]);
   assert.equal(view.verify_admin, undefined);
-  const blind = blindStaffState({ ...view, demo: false, verify_admin: { opening: [{ expected: 9, counted: 8 }] } });
+  const blind = blindStaffState({ ...view, demo: true, verify_admin: { opening: [{ expected: 9, counted: 8 }] } });
   assert.equal(blind.verify_admin, undefined);
+  assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
+  assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
+  assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected /);
   assert.equal(blind.stock_check.opening.lines.find((line) => line.sku === "1001")?.off, 0);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -1640,10 +1643,10 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   const first = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
   const again = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
   const second = await h.svc.deposit(h.token, { key: "slip-b", amount_cents: 100 });
-  assert.match(first.deposit_code, /^[A-Z]\d{4}$/);
-  assert.equal(again.deposit_code, first.deposit_code);
-  assert.match(second.deposit_code, /^[A-Z]\d{4}$/);
-  assert.notEqual(first.deposit_code, second.deposit_code);
+  assert.equal(first.deposit_code, "D0001");
+  assert.equal(again.deposit_code, "D0001");
+  assert.equal(second.deposit_code, "D0002");
+  assert.equal(h.db.state.deposit_seq, 2);
   assert.equal(h.db.state.deposits.filter((row) => row.deposit_code === first.deposit_code).length, 1);
   h.db.state.deposits.push({
     id: "old-deposit",
@@ -1660,8 +1663,8 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.equal(depositCodeLabel(first.deposit_code), first.deposit_code);
   const finalDeposit = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200 });
   const repeated = await h.svc.saveFinalDeposit(h.token, { amount_cents: 150 });
-  assert.match(String(finalDeposit.deposit_code), /^[A-Z]\d{4}$/);
-  assert.equal(repeated.deposit_code, finalDeposit.deposit_code);
+  assert.equal(finalDeposit.deposit_code, "D0003");
+  assert.equal(repeated.deposit_code, "D0003");
   const view = await h.svc.state(h.token);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "slip-end",

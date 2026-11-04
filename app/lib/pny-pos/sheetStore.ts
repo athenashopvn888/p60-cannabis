@@ -35,6 +35,7 @@ function normalize(parsed: State): State {
   }
   if (base.stores.length === 0) base.stores = emptyState().stores;
   if (!base.closing_drafts) base.closing_drafts = [];
+  if (typeof parsed.deposit_seq === "number" && Number.isInteger(parsed.deposit_seq)) base.deposit_seq = parsed.deposit_seq;
   return base;
 }
 

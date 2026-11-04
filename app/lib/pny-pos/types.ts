@@ -311,6 +311,8 @@ export type State = {
   cursors: CursorRow[];
   audit: AuditRow[];
   admin_sessions: AdminSessionRow[];
+  /** Last issued Deposit #. D0001 is 1. Missing on shifts saved before sequential numbers. */
+  deposit_seq?: number;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
-import AdminGaps from "./AdminGaps";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -53,7 +52,6 @@ type View = {
     opening_lines?: OffLine[];
   };
   stock_check?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
-  verify_admin?: { opening: { sku: string; text: string; off: number; counted: number | null; expected: number; added_stock?: boolean; accepted_as_is?: boolean; frozen?: boolean }[] };
   error?: string;
   code?: string;
 };
@@ -400,7 +398,6 @@ export default function PosApp() {
           <SkuOffList lines={view.verify.opening_lines ?? []} testId="staff-gap-list" />
         </section>
       ) : null}
-      {view.demo && sheet == null ? <AdminGaps rows={(view.verify_admin?.opening ?? []).filter((row) => row.counted != null)} /> : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
       {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
       {(view.incoming?.length ?? 0) > 0 && view.phase !== "opening" ? <div className={styles.banner}>Incoming stock is waiting to be confirmed.</div> : null}

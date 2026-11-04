@@ -8,16 +8,16 @@ type AdminRow = OffLine & {
   accepted_as_is?: boolean;
 };
 
-export default function AdminGaps({ rows }: { rows: AdminRow[] }) {
+export default function AdminGaps({ rows, title = "Admin count" }: { rows: AdminRow[]; title?: string }) {
   if (rows.length === 0) return null;
   return (
     <section className={styles.gapPanel} data-testid="admin-gaps">
-      <h2>Admin count</h2>
+      <h2>{title}</h2>
       {rows.map((row) => (
         <div key={row.sku}>
           <SkuOffList lines={[row]} />
           <p className={styles.adminDetail}>
-            counted {row.counted ?? "—"} · book {row.expected}
+            Counted {row.counted ?? "—"}, Expected {row.expected}
             {row.added_stock ? " · Added stock" : ""}
             {row.accepted_as_is ? " · Accepted as-is" : ""}
           </p>
