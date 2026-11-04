@@ -22,7 +22,7 @@ import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
 import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
-import { itemsFromGrid } from "../app/lib/pny-pos/itemRaw.ts";
+import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
@@ -1428,20 +1428,33 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   assert.equal(index.get("709")?.category, "ADD ONS");
   assert.equal(index.get("680")?.price_cents, 1600);
   assert.equal(index.get("681")?.price_cents, 3500);
-  const shared = itemsFromGrid([["SKU", "Name", "Price_EACH"], ["680, 681, 682, 683", "SOUR", "$16 / $35"]]);
-  assert.equal(shared.get("680")?.price_cents, 1600);
-  assert.equal(shared.get("683")?.price_cents, 1600);
-  assert.equal(index.get("1014")?.price_cents, 2500);
-  assert.equal(index.get("610")?.price_cents, 1000);
+  const shared = expandSetbItems([["SKU", "Name", "Price_EACH"], ["680, 681, 682, 683", "SOUR", "$16 / $35"]]);
+  assert.equal(shared.items.find((item) => item.sku === "680")?.flag, "ambiguous: $16 / $35");
+  assert.equal(shared.items.find((item) => item.sku === "680")?.unitCents, null);
+  assert.equal(index.get("1014")?.price_cents, 250);
+  assert.equal(index.has("610"), false);
   assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["713", "CONES", ""]]).has("713"), false);
   assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["709.0", "RAW", "$5"]]).get("709")?.price_cents, 500);
 
+  const merged = mergeItemsPriceGrid(
+    [["SKU", "Unit_Price", "Note"], ["999", "1.00", "keep me"]],
+    expandSetbItems([
+      ["S", "Type", "Category", "Name", "THC", "MG", "Price_EACH", "ImageURL", "PPromo", "Status"],
+      ["709", "", "Add Ons", "RAW CONNOISSEUR", "", "", "$5", "", "", "ACTIVE"],
+      ["240, 241", "", "cigarettes", "GRABBA", "", "", "$5", "", "", "ACTIVE"],
+      ["240, 241", "", "cigarettes", "GRABBA RedRose / RedHerring", "", "", "$5", "", "", "ACTIVE"],
+    ]).items,
+  );
+  assert.equal(merged.filter((row) => row[0] === "240").length, 1);
+  assert.equal(merged.find((row) => row[0] === "999")?.[2], "keep me");
+  assert.equal(merged[0].includes("source_row"), true);
+
   const h = harness();
-  h.sheet.grids.Items_Raw = [
-    ["SKU", "Category", "Name", "Price_EACH"],
-    ["709", "Add Ons", "RAW CONNOISSEUR KING SIZE SLIM + TIPS", "$5"],
-    ["1027", "cigarettes", "MARLBORO", "$2.50"],
-    ["1014", "cigarettes", "CANADIAN CLASSICS ORIGINAL", "25/carton"],
+  h.sheet.tabs.Items_raw_price = [
+    { SKU: "709", Unit_Price: "5.00", Name: "RAW CONNOISSEUR KING SIZE SLIM + TIPS", Category: "ADD ONS", Price_Flag: "" },
+    { SKU: "1027", Unit_Price: "10.00", Name: "MARLBORO", Category: "CIGARETTES", Price_Flag: "" },
+    { SKU: "1014", Unit_Price: "2.50", Name: "CANADIAN CLASSICS ORIGINAL", Category: "CIGARETTES", Carton_Price: "25", Price_Flag: "" },
+    { SKU: "680", Unit_Price: "", Name: "SOUR", Category: "EDIBLES", Price_Flag: "ambiguous: $16 / $35" },
   ];
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "items-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-items" });
