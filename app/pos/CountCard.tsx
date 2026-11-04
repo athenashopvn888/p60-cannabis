@@ -203,12 +203,13 @@ export default function CountCard({
           </div>
         </form>
         <div className={styles.countSide}>
-          <p className={styles.countProgress} data-testid="count-progress">{done + 1} of {lines.length}</p>
+          <p className={styles.countProgress} data-testid="count-progress">{index + 1} of {lines.length}</p>
           <button className={styles.countExpand} type="button" data-testid="count-expand" onClick={() => (expanded ? setExpanded(false) : openList())}>
             {expanded ? "Collapse" : "Expand"}
           </button>
         </div>
       </div>
+      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
       {list}
       {error}
       {ruleModal}
