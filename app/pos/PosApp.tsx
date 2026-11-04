@@ -130,6 +130,10 @@ export default function PosApp() {
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
   const showVerify = Boolean(view?.phase === "sell" && !view.verify?.reveal && (verifyOpen || view.verify?.waiting));
+  const gapKey = view?.verify?.deadline_at ? `pny-gap-dismissed:${view.verify.deadline_at}` : "";
+  const [gapsDismissed, setGapsDismissed] = useState(false);
+  const gapsStored = gapKey !== "" && typeof window !== "undefined" && window.localStorage.getItem(gapKey) === "1";
+  const showGaps = Boolean(view?.verify?.reveal && sheet == null && !gapsDismissed && !gapsStored);
 
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
@@ -428,11 +432,24 @@ export default function PosApp() {
           ) : null}
         </div>
       </header>
-      {view.verify?.reveal && sheet == null ? (
+      {showGaps && view?.verify ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
-          <h2>Previous shift</h2>
-          <p data-testid="staff-gap-count">{(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length === 1 ? "1 SKU off" : `${(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length} SKUs off`}</p>
-          <SkuOffList lines={(view.verify.opening_lines ?? []).filter((line) => line.off !== 0)} testId="staff-gap-list" />
+          <div className={styles.gapScroll}>
+            <h2>Previous shift</h2>
+            <p data-testid="staff-gap-count">{(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length === 1 ? "1 SKU off" : `${(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length} SKUs off`}</p>
+            <SkuOffList lines={(view.verify.opening_lines ?? []).filter((line) => line.off !== 0)} testId="staff-gap-list" />
+          </div>
+          <button
+            className={styles.gapDone}
+            type="button"
+            data-testid="gaps-done"
+            onClick={() => {
+              if (gapKey) window.localStorage.setItem(gapKey, "1");
+              setGapsDismissed(true);
+            }}
+          >
+            Done / Back to POS
+          </button>
         </section>
       ) : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
@@ -551,7 +568,7 @@ export default function PosApp() {
           {showVerify ? (
             <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} onSubmit={submitVerify} />
           ) : null}
-          {view.verify?.reveal ? (
+          {view.verify?.reveal && showGaps ? (
             <div className={styles.countDock} data-testid="verify-off">
               <p className={styles.countProgress}>{(view.stock_check?.opening.lines.length ?? 0) === 1 ? "1 SKU off" : `${view.stock_check?.opening.lines.length ?? 0} SKUs off`}</p>
               <SkuOffList lines={view.stock_check?.opening.lines ?? []} testId="verify-off-list" />

@@ -1599,6 +1599,8 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   assert.doesNotMatch(beforeDock, /<VerifyBanner|<CountCard/);
   assert.match(dock, /<VerifyBanner slim/);
   assert.match(dock, /<CountCard\s+compact/);
+  assert.match(posSource, /Done \/ Back to POS/);
+  assert.match(posSource, /pny-gap-dismissed:/);
   assert.match(dock, /className=\{styles\.footerBar\}/);
   const clearAt = dock.indexOf('data-testid="clear-cart"');
   const cashAt = dock.indexOf(">Cashout<");
