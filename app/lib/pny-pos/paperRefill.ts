@@ -114,7 +114,7 @@ function unsized(sku: string) {
   return !parseFlowerSku(sku);
 }
 
-export function planPaperRefills(existing: SheetRow[], catalogSkus: Set<string>) {
+export function planPaperRefills(existing: SheetRow[], catalogSkus: Set<string>): { cancel: SheetRow[]; add: SheetRow[]; flagged: string[]; units: number } {
   const already = existing.some((row) => (row.batch_id ?? "") === PAPER_BATCH);
   const cancel = existing.flatMap((row) => {
     const sku = (row.sku ?? "").trim();
