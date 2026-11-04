@@ -757,6 +757,37 @@ test("the open shift is shown as Anom and a deposit keeps the same PIN", async (
   assert.equal(again.shift?.staff_name, "Bea");
 });
 
+test("a single recent debit test sale is removed and its stock comes back", async () => {
+  const h = await readyTill({ "1001": 2 });
+  h.clock.t = new Date("2026-11-04T01:30:00.000Z");
+  await h.svc.cashout(h.token, { key: "test-debit", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
+  const sale = h.db.state.sales.find((row) => row.payment_method === "DEBIT");
+  assert.ok(sale);
+  h.sheet.tabs.POS_Sales = [{ row_id: sale.id, payment_method: "DEBIT", total_cents: "1000", status: "COMPLETED" }];
+  assert.equal(qty(h.db, "1001"), 1);
+  const removed = await h.svc.removeTestDebit(h.token);
+  assert.equal(removed.removed, true);
+  if (!removed.removed) return;
+  assert.equal(removed.sale?.total_cents, 1000);
+  assert.equal(removed.sale?.lines[0]?.sku, "1001");
+  assert.equal(removed.sale?.lines[0]?.qty, 1);
+  assert.equal(removed.debit_sales_cents, 0);
+  assert.equal(qty(h.db, "1001"), 2);
+  assert.equal(h.db.state.sales.some((row) => row.id === sale.id), false);
+  assert.equal(h.sheet.tabs.POS_Sales.some((row) => row.row_id === sale.id), false);
+
+  h.clock.t = new Date("2026-11-04T01:31:00.000Z");
+  await h.svc.cashout(h.token, { key: "debit-a", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
+  h.clock.t = new Date("2026-11-04T01:32:00.000Z");
+  await h.svc.cashout(h.token, { key: "debit-b", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
+  const before = h.db.state.sales.filter((row) => row.status === "COMPLETED").length;
+  const held = await h.svc.removeTestDebit(h.token);
+  assert.equal(held.removed, false);
+  if (held.removed) return;
+  assert.equal(held.candidates.length, 2);
+  assert.equal(h.db.state.sales.filter((row) => row.status === "COMPLETED").length, before);
+});
+
 test("sheet store keeps a hashed shift PIN, refill opening count, and cash or debit sales", async () => {
   const pin = "2468";
   const sheet = new LocalSheet();

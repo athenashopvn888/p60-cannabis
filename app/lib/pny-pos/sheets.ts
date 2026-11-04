@@ -18,6 +18,7 @@ export type SheetClient = {
   readRows(tab: string): Promise<SheetRow[]>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
+  deleteRows(tab: string, rowIds: string[]): Promise<void>;
   ensureTabs(specs: SheetTabSpec[]): Promise<void>;
 };
 
@@ -46,6 +47,13 @@ export class LocalSheet implements SheetClient {
       have.add(id);
     }
     this.tabs[tab] = list;
+  }
+
+  async deleteRows(tab: string, rowIds: string[]) {
+    if (!this.reachable) throw new SheetUnavailable();
+    const drop = new Set(rowIds.filter(Boolean));
+    if (drop.size === 0) return;
+    this.tabs[tab] = (this.tabs[tab] ?? []).filter((row) => !drop.has(row.row_id ?? ""));
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
@@ -195,6 +203,32 @@ export class GoogleSheet implements SheetClient {
         body: JSON.stringify({ values: append }),
       });
     }
+  }
+
+  async deleteRows(tab: string, rowIds: string[]) {
+    if (!sheetWriteAllowed(tab)) return;
+    const want = new Set(rowIds.map((id) => id.trim()).filter(Boolean));
+    if (want.size === 0) return;
+    const meta = await this.sheetsFetch("?fields=sheets.properties(title,sheetId)");
+    const sheets = (meta.sheets as { properties?: { title?: string; sheetId?: number } }[] | undefined) ?? [];
+    const sheetId = sheets.find((sheet) => sheet.properties?.title === tab)?.properties?.sheetId;
+    if (sheetId == null) return;
+    const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
+    const values = (raw.values as string[][] | undefined) ?? [];
+    const headers = (values[0] ?? []).map((cell) => String(cell ?? "").trim());
+    const idColumn = headers.indexOf("row_id");
+    if (idColumn < 0) return;
+    const indexes = values.slice(1).flatMap((cells, index) => (want.has(String(cells[idColumn] ?? "").trim()) ? [index + 1] : []));
+    if (indexes.length === 0) return;
+    indexes.sort((left, right) => right - left);
+    await this.sheetsFetch(":batchUpdate", {
+      method: "POST",
+      body: JSON.stringify({
+        requests: indexes.map((startIndex) => ({
+          deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex, endIndex: startIndex + 1 } },
+        })),
+      }),
+    });
   }
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
