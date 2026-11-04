@@ -21,6 +21,7 @@ import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
+import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
@@ -710,6 +711,7 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   assert.equal(sheetWriteAllowed("S_Stock"), false);
   assert.equal(sheetWriteAllowed("SETB_Inventory"), false);
   assert.equal(sheetWriteAllowed("POS_Sales"), true);
+  assert.equal(sheetWriteAllowed("Flowers_Raw"), false);
   try {
     delete process.env.DATABASE_URL;
     delete process.env.PNY_POS_DEMO;
@@ -1339,4 +1341,74 @@ test("paper refill cancels old unsized rows and loads sized bags, including unpr
   assert.equal(quoteForSku("1026")?.cents, 1000);
   assert.equal(quoteForSku("1027")?.name, "MARLBORO");
   assert.equal(quoteForSku("1027")?.cents, 1000);
+});
+
+test("Flowers_Raw names a bare flower and charges the sale price without rewriting the stored product", async () => {
+  assert.equal(saleCents("40|30"), 3000);
+  assert.equal(saleCents(""), null);
+  assert.equal(normalizeThc("36%%"), "36%");
+  const grid = [
+    ["Menu"],
+    ["SKU", "Strain", "Tier", "Type", "THC", "Price_3G", "Price_5G", "Price_14G", "Price_28G", "ImageURL"],
+    ["392", "RAINBOW KUSH", "AAA+", "IH", "30%", "20", "30", "", "", ""],
+    ["392", "RAINBOW KUSH AAA+ SALE!", "BUDGET", "IH SALE", "30%", "20|10", "30|20", "", "", "https://example.com/392.jpg"],
+    ["500", "PINK GODFATHER", "EXOTIC", "IH", "36%", "40", "60", "", "", "https://example.com/500.jpg"],
+    ["9500", "JACK HERER LTD BAG", "EXOTIC", "IH SALE", "36%", "40|30", "", "", "", "https://example.com/9500.jpg"],
+    ["502", "ALIEN SMACK PINK", "EXOTIC", "IH", "36", "40", "60", "", "", "https://example.com/502.jpg"],
+  ];
+  const index = flowersFromGrid(grid);
+  assert.equal(index.get("392")?.tier, "BUDGET");
+  assert.equal(index.get("392")?.strain, "RAINBOW KUSH");
+  assert.equal(index.get("392")?.type, "IH");
+  assert.equal(index.get("9500")?.strain, "JACK HERER LTD BAG");
+  assert.equal(index.get("500")?.strain, "PINK GODFATHER");
+  assert.notEqual(index.get("9500")?.sku, index.get("500")?.sku);
+  assert.equal(flowerPriceCents(index, "392-3g"), 1000);
+  assert.equal(flowerPriceCents(index, "9500-3g"), 3000);
+  const kept = overlayFlower({ sku: "225-5g", name: "225-5g", category: "AA", price_cents: 2000, image_url: null }, index);
+  assert.equal(kept.name, "225-5g");
+  assert.equal(kept.price_cents, 2000);
+
+  const h = harness();
+  h.sheet.grids.Flowers_Raw = grid;
+  await h.svc.syncSetb([
+    { sku: "502-3g", name: "502-3g", category: "EXOTIC", price_cents: 4000, active: true },
+    { sku: "1000", name: "BB LIGHTS", category: "Cigarettes", price_cents: 250, active: true },
+  ]);
+  await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const started = await h.svc.startShift({ key: "flower-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-flower" });
+  const login = await h.svc.login(String(started.pin), "10.0.0.77");
+  for (const sku of ["502-3g", "1000"]) {
+    h.db.state.incoming.push({
+      kitchen_row_id: crypto.randomUUID(),
+      batch_id: "paper",
+      store_code: "PNY01",
+      sku,
+      qty_sent: 2,
+      kind: "REFILL",
+      kitchen_created_at: "2026-11-03T18:00:00.000Z",
+      imported_at: "2026-11-03T18:00:00.000Z",
+      status: "PENDING_CONFIRM",
+      qty_received: null,
+      variance_reason: null,
+      confirmed_shift_id: null,
+      confirmed_at: null,
+      linked_ledger_id: null,
+      created_at: "2026-11-03T18:00:00.000Z",
+    });
+  }
+  const view = await h.svc.state(login.token);
+  const shown = view.products.find((product) => product.sku === "502-3g");
+  assert.equal(shown?.name, "ALIEN SMACK PINK 3g");
+  assert.equal(shown?.price_cents, 4000);
+  assert.equal(shown?.image_url, "https://example.com/502.jpg");
+  assert.equal(shown?.flower_type, "IH");
+  assert.equal(shown?.thc, "36%");
+  assert.equal(h.db.state.products.find((product) => product.sku === "502-3g")?.name, "502-3g");
+  assert.equal(view.products.find((product) => product.sku === "1000")?.price_cents, 250);
+  const menu = await h.svc.menu();
+  assert.equal(menu.items?.find((item) => item.sku === "502-3g")?.name, "ALIEN SMACK PINK 3g");
+  const sale = await h.svc.cashout(login.token, { key: "alien", lines: [{ sku: "502-3g", qty: 1 }] });
+  assert.equal(sale.total_cents, 4000);
+  assert.equal(h.db.state.products.find((product) => product.sku === "502-3g")?.name, "502-3g");
 });

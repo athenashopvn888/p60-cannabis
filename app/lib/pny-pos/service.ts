@@ -32,6 +32,7 @@ import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from 
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { skuSortKey } from "./flowerSku.ts";
+import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import type { SheetClient } from "./sheets.ts";
@@ -345,12 +346,14 @@ function productName(state: State, sku: string) {
   return state.products.find((product) => product.sku === sku)?.name ?? sku;
 }
 
-function priceOf(state: State, sku: string, raw?: Map<string, number>) {
+function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   if (!product?.setb_active || !storeProduct?.enabled) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
   const packCents = cigarettePackCents(sku, product.category, product.name);
   if (packCents != null) return { cents: packCents, source: "RAW_UNIT", product };
+  const fromFlower = flowerPriceCents(flowers, sku);
+  if (fromFlower != null) return { cents: fromFlower, source: "RAW_UNIT", product };
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return { cents: fromSheet, source: "RAW_UNIT", product };
   if (storeProduct.price_override_cents != null) return { cents: storeProduct.price_override_cents, source: "STORE_OVERRIDE", product };
@@ -361,10 +364,12 @@ function qtyOf(state: State, sku: string) {
   return state.balances.find((row) => row.sku === sku)?.qty ?? 0;
 }
 
-function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>) {
+function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null) {
   const product = state.products.find((item) => item.sku === sku);
   const packCents = cigarettePackCents(sku, product?.category, product?.name);
   if (packCents != null) return packCents;
+  const fromFlower = flowerPriceCents(flowers, sku);
+  if (fromFlower != null) return fromFlower;
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return fromSheet;
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
@@ -823,6 +828,8 @@ export class PosService {
   private kitchenLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string> } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
+  private flowerCache: { at: number; index: FlowerIndex } | null = null;
+  private flowerFlight: Promise<FlowerIndex> | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -860,6 +867,58 @@ export class PosService {
   private async rawCartonNotes() {
     await this.rawUnitPrices();
     return this.rawPriceCache?.notes ?? new Map<string, string>();
+  }
+
+  /**
+   * Flower names, tiers, prices, and pictures. Reads the PNY Flowers_Raw mirror.
+   * A missing or empty mirror keeps the current product. Production may copy the
+   * published flower table into that mirror once. It does not write SETB or the shift.
+   */
+  private async flowerIndex() {
+    const now = this.now().getTime();
+    if (this.flowerCache && now - this.flowerCache.at < RAW_PRICE_TTL_MS) return this.flowerCache.index;
+    if (this.flowerFlight) return this.flowerFlight;
+    this.flowerFlight = this.loadFlowerIndex(now).finally(() => {
+      this.flowerFlight = null;
+    });
+    return this.flowerFlight;
+  }
+
+  private async loadFlowerIndex(now: number) {
+    const readGrid = this.deps.sheet.readGrid?.bind(this.deps.sheet);
+    let index: FlowerIndex = new Map();
+    let mirrorMissing = false;
+    let mirrorRead = false;
+    if (readGrid) {
+      try {
+        index = flowersFromGrid(await readGrid("Flowers_Raw"));
+        mirrorRead = true;
+      } catch (error) {
+        const status = error instanceof SheetUnavailable ? error.httpStatus : null;
+        mirrorMissing = status === 400 || status === 404;
+        if (!mirrorMissing && this.flowerCache?.index.size) return this.flowerCache.index;
+      }
+    }
+    if (index.size === 0 && (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview")) {
+      try {
+        const grid = await fetchPublishedFlowerGrid();
+        const published = flowersFromGrid(grid);
+        if (published.size > 0) {
+          if ((mirrorMissing || mirrorRead) && this.deps.sheet.configured && process.env.VERCEL_ENV === "production" && process.env.PNY_SHEET_READ_ONLY !== "1") {
+            try {
+              await this.deps.sheet.writeGrid?.("Flowers_Raw", grid);
+            } catch {
+              // The names still come from the read. The mirror can be filled on a later request.
+            }
+          }
+          index = published;
+        }
+      } catch {
+        if (this.flowerCache?.index.size) return this.flowerCache.index;
+      }
+    }
+    this.flowerCache = { at: now, index };
+    return index;
   }
 
   private demoPinAllowed() {
@@ -1226,7 +1285,7 @@ export class PosService {
   }
 
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
-    const raw = await this.rawUnitPrices();
+    const [raw, flowers] = await Promise.all([this.rawUnitPrices(), this.flowerIndex()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -1243,7 +1302,8 @@ export class PosService {
           const fromSheet = raw.get(product.sku);
           const pack = cigarettePackCents(product.sku, product.category, product.name);
           const price = pack ?? fromSheet ?? storeProduct.price_override_cents ?? product.default_price_cents;
-          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: pack != null || fromSheet != null ? "RAW_UNIT" : "MENU", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
+          const item = { sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: pack != null || fromSheet != null ? "RAW_UNIT" : "MENU", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) };
+          return [pack == null ? overlayFlower(item, flowers) : item];
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const incoming = tx.state.incoming
@@ -1473,7 +1533,7 @@ export class PosService {
 
   async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
-    const raw = await this.rawUnitPrices();
+    const [raw, flowers] = await Promise.all([this.rawUnitPrices(), this.flowerIndex()]);
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -1499,7 +1559,7 @@ export class PosService {
       }
       const lines = mergeLines(input.lines);
       const priced = lines.map((line) => {
-        const price = priceOf(tx.state, line.sku, raw);
+        const price = priceOf(tx.state, line.sku, raw, flowers);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
       let stockout = false;
@@ -2027,7 +2087,7 @@ export class PosService {
   async menu() {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
-    const raw = await this.rawUnitPrices();
+    const [raw, flowers] = await Promise.all([this.rawUnitPrices(), this.flowerIndex()]);
     const notes = await this.rawCartonNotes();
     const body = await this.db.transaction(async (tx) => {
       const now = iso(this.now());
@@ -2046,12 +2106,15 @@ export class PosService {
           const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
           const carton = notes.get(product.sku);
-          return [{
+          const item = overlayFlower({
             sku: product.sku,
             name: product.name,
             category: product.category,
             price_cents: cents,
             image_url: product.image_url,
+          }, pack == null ? flowers : null);
+          return [{
+            ...item,
             availability: "Available" as const,
             ...(pack != null ? { unit_label: "per pack" } : {}),
             ...(carton ? { carton_note: carton } : {}),
@@ -2075,7 +2138,7 @@ export class PosService {
   async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
-    const raw = await this.rawUnitPrices();
+    const [raw, flowers] = await Promise.all([this.rawUnitPrices(), this.flowerIndex()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -2088,7 +2151,7 @@ export class PosService {
       const lines = mergeLines(input.lines);
       for (const line of lines) {
         try {
-          priceOf(tx.state, line.sku, raw);
+          priceOf(tx.state, line.sku, raw, flowers);
         } catch {
           throw new PosError(400, "ITEM_UNAVAILABLE", "An item in that order is unavailable.");
         }
@@ -2113,7 +2176,7 @@ export class PosService {
       });
       let total = 0;
       for (const line of lines) {
-        const price = priceOf(tx.state, line.sku, raw);
+        const price = priceOf(tx.state, line.sku, raw, flowers);
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
