@@ -1717,6 +1717,38 @@ test("moving between SKUs keeps blanks open, and Submit accepts them without cha
   assert.equal(qty(h.db, "1003"), before["1003"]);
 });
 
+test("reading state leaves an in-progress verify draft and the deadline alone", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  const opened = shift.verify_opened_at;
+  const pin = shift.pin_hash;
+  const sales = JSON.stringify(h.db.state.sales);
+  const balances = JSON.stringify(h.db.state.balances);
+  const drafts = h.db.state.closing_drafts;
+  let draft = drafts.find((row) => row.shift_id === shift.id);
+  if (!draft) {
+    draft = { shift_id: shift.id, counts: [], opening_counts: [], final_deposit_cents: null, updated_at: "2026-11-04T18:10:00.000Z" };
+    drafts.push(draft);
+  }
+  draft.opening_counts = [{ sku: "1001", counted_qty: 7, expected_qty: 10, submitted_at: "2026-11-04T18:10:00.000Z", accepted_as_is: false }];
+  draft.verify_submitted_at = null;
+  const view = await h.svc.state(h.token);
+  assert.equal(view.verify?.reveal, false);
+  assert.equal(view.verify?.lines?.find((line) => line.sku === "1001")?.counted_qty, 7);
+  assert.equal(view.stock_check.opening.lines.length, 0);
+  const kept = drafts.find((row) => row.shift_id === shift.id)?.opening_counts?.find((line) => line.sku === "1001");
+  assert.equal(kept?.counted_qty, 7);
+  assert.equal(kept?.expected_qty, 10);
+  assert.equal(kept?.submitted_at, "2026-11-04T18:10:00.000Z");
+  assert.equal(drafts.find((row) => row.shift_id === shift.id)?.verify_submitted_at ?? null, null);
+  assert.equal(shift.verify_opened_at, opened);
+  assert.equal(shift.pin_hash, pin);
+  assert.equal(shift.status, "ACTIVE");
+  assert.equal(JSON.stringify(h.db.state.sales), sales);
+  assert.equal(JSON.stringify(h.db.state.balances), balances);
+});
+
 test("restarting the verify deadline changes only the clock", async () => {
   const h = await readyTill({ "1001": 4, "1002": 2 });
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
