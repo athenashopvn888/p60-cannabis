@@ -44,25 +44,31 @@
 
 .chips {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px 16px 0;
-  scrollbar-width: none;
-}
-
-.chips::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-x: hidden;
+  padding: 8px 12px 0;
 }
 
 .chip,
 .chipOn {
   flex: none;
-  min-height: 36px;
+  min-height: 32px;
   border: 0;
   border-radius: 999px;
-  padding: 0 12px;
+  padding: 0 10px;
   font-weight: 750;
-  font-size: 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .chip,
+  .chipOn {
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
 }
 
 .chip {
