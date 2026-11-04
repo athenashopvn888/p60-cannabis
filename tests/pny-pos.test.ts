@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { defaultCategory, inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -373,6 +373,8 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   assert.deepEqual(sortCategories([
     "Concentrates", "AA", "Vape", "CIGARETTES", "Exotic", "Budget", "ADD ONS", "Premium", "AAA+", "Edibles", "Flower", "tobacco",
   ]), ["Exotic", "Premium", "AAA+", "AA", "Budget", "ADD ONS", "CIGARETTES", "tobacco", "Edibles", "Concentrates", "Flower", "Vape"]);
+  assert.equal(defaultCategory(["EXOTIC", "ADD ONS", "BUDGET"]), "ADD ONS");
+  assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
 });
 
 test("12. a kitchen allocation is incoming and not sellable until it is confirmed", async () => {
@@ -633,6 +635,10 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(bagLabel("202-5g"), "5g");
   assert.equal(bagLabel("313-3g"), "3g");
   assert.match(menuApp, /aria-label="Categories"/);
+  assert.match(menuApp, /defaultCategory/);
+  assert.doesNotMatch(menuApp, /\["All"/);
+  assert.match(posApp, /defaultCategory/);
+  assert.doesNotMatch(posApp, /\["All"/);
   assert.doesNotMatch(menuApp, /Prices include tax/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");

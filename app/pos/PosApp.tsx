@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
-import { formatMoney, sortCategories } from "../lib/pny-pos/money";
+import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -70,7 +70,7 @@ export default function PosApp() {
   const [error, setError] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("All");
+  const [category, setCategory] = useState("");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
   const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | null>(null);
   const [depositPin, setDepositPin] = useState("");
@@ -97,17 +97,19 @@ export default function PosApp() {
   usePosPoll(load);
 
   const products = view?.products ?? [];
+  const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
+  const activeCategory = categories.includes(category) ? category : defaultCategory(categories);
   const visible = useMemo(() => {
     const rows = view?.products ?? [];
     const q = query.trim().toLowerCase();
     const filtered = rows.filter((product) => {
-      if (category !== "All" && product.category !== category) return false;
+      if (product.category !== activeCategory) return false;
       if (!q) return true;
       return product.sku.includes(q) || product.name.toLowerCase().includes(q);
     });
-    if (!isFlowerCategory(category)) return filtered;
+    if (!isFlowerCategory(activeCategory)) return filtered;
     return [...filtered].sort((a, b) => compareSku(a.sku, b.sku));
-  }, [view?.products, query, category]);
+  }, [view?.products, query, activeCategory]);
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
 
   const total = products.reduce((sum, product) => sum + (cart[product.sku] ?? 0) * product.price_cents, 0);
@@ -362,8 +364,8 @@ export default function PosApp() {
             <input id="pos-search" className={styles.search} placeholder="Search SKU or name" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <div className={styles.chips} role="tablist" aria-label="Categories">
-            {["All", ...sortCategories(view.categories ?? [])].map((chip) => (
-              <button key={chip} type="button" role="tab" aria-selected={chip === category} data-category={chip} className={chip === category ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
+            {categories.map((chip) => (
+              <button key={chip} type="button" role="tab" aria-selected={chip === activeCategory} data-category={chip} className={chip === activeCategory ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
                 {chip}
               </button>
             ))}

@@ -46,6 +46,11 @@ export function sortCategories(names: string[]) {
   });
 }
 
+/** Add Ons is selected when the menu or till opens. */
+export function defaultCategory(names: string[]) {
+  return names.find((name) => categoryKey(name) === "add ons") ?? names[0] ?? "";
+}
+
 export function inStockCategories(rows: { category: string; qty: number }[]) {
   return sortCategories(rows.filter((row) => row.qty > 0).map((row) => row.category));
 }
