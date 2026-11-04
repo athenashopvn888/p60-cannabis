@@ -13,6 +13,7 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
+import { PAPER_BATCH, paperLines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
@@ -1158,4 +1159,23 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
 
   sheet.tabs = {};
   assert.deepEqual(sheet.tabs, {});
+});
+
+test("paper refill cancels old unsized rows and loads sized bags, including unpriced sizes", () => {
+  const catalog = new Set(catalogFromFeed(readCommittedPnyCatalog()).map((row) => row.sku));
+  const existing = [{ row_id: "11111111-1111-4111-8111-111111111111", store_code: "PNY01", sku: "105", qty: "8", kitchen_status: "ACTIVE", batch_id: "old" }];
+  const plan = planPaperRefills(existing, catalog);
+  assert.equal(plan.cancel[0]?.kitchen_status, "CANCELLED");
+  assert.equal(plan.cancel[0]?.sku, "105");
+  assert.equal(plan.add.length, paperLines().length);
+  assert.ok(plan.add.every((row) => row.batch_id === PAPER_BATCH && row.kind === "REFILL" && row.kitchen_status === "ACTIVE" && row.store_code === "PNY01"));
+  assert.equal(plan.add.find((row) => row.sku === "105-28g")?.qty, "2");
+  assert.equal(plan.add.find((row) => row.sku === "170-3g")?.qty, "10");
+  assert.equal(plan.add.find((row) => row.sku === "170-28g")?.qty, "2");
+  assert.equal(plan.add.find((row) => row.sku === "188")?.qty, "50");
+  assert.ok(plan.flagged.includes("170-3g"));
+  assert.ok(plan.flagged.includes("170-28g"));
+  const again = planPaperRefills([...existing, ...plan.add], catalog);
+  assert.equal(again.add.length, 0);
+  assert.equal(again.cancel.some((row) => row.sku === "188"), false);
 });
