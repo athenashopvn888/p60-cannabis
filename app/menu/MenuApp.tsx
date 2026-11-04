@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { groupByStrain, parseFlowerSku } from "../lib/pny-pos/flowerSku";
 import { formatMoney } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
@@ -67,6 +68,7 @@ export default function MenuApp() {
   );
   const activeCategory = category !== "All" && categories.includes(category) ? category : "All";
   const visible = activeCategory === "All" ? items : items.filter((item) => item.category === activeCategory);
+  const blocks = useMemo(() => groupByStrain(visible), [visible]);
   const total = items.reduce((sum, item) => sum + (cart[item.sku] ?? 0) * item.price_cents, 0);
   const lines = Object.entries(cart).filter(([, qty]) => qty > 0);
 
@@ -148,7 +150,30 @@ export default function MenuApp() {
         </div>
       ) : null}
       <section className={layout === "list" ? styles.list : styles.grid} data-layout={layout}>
-        {visible.map((item) => {
+        {blocks.map((block) => {
+          if (block.kind === "strain") {
+            return (
+              <article key={`${block.category}-${block.base}`} className={layout === "list" ? styles.listRow : styles.card} data-strain={block.base}>
+                {layout === "grid" ? <ProductPhoto src={block.sizes[0]?.image_url} alt="" className={styles.hero} placeholderClassName={styles.heroPh} /> : null}
+                <div className={styles.name}>{block.name}</div>
+                <div className={styles.sizeRow}>
+                  {block.sizes.map((item) => {
+                    const size = parseFlowerSku(item.sku)?.size ?? "";
+                    const qty = cart[item.sku] ?? 0;
+                    return (
+                      <div key={item.sku} className={styles.sizePick}>
+                        <button type="button" className={qty > 0 ? styles.sizeOn : styles.sizeBtn} data-add={item.sku} data-size={size} aria-label={`${block.name} ${size}`} disabled={!menu?.ordering || qty >= 20} onClick={() => setCart({ ...cart, [item.sku]: qty + 1 })}>
+                          {size} {formatMoney(item.price_cents)}{qty > 0 ? ` ×${qty}` : ""}
+                        </button>
+                        {qty > 0 ? <button type="button" className={styles.sizeMinus} aria-label={`Decrease ${item.name}`} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+            );
+          }
+          const item = block.item;
           const qty = cart[item.sku] ?? 0;
           if (layout === "list") {
             return (

@@ -31,6 +31,7 @@ import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
 import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
+import { skuSortKey } from "./flowerSku.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -2131,7 +2132,7 @@ export class PosService {
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, sku_sort: Number(sku) || 0, name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: STORE_CODE, sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
@@ -2141,7 +2142,7 @@ export class PosService {
           if (price != null) product.default_price_cents = price;
           if (image != null) product.image_url = image;
           product.synced_at = at;
-          product.sku_sort = Number(sku) || product.sku_sort;
+          product.sku_sort = skuSortKey(sku);
         }
         updated += 1;
       }

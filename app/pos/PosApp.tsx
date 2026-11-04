@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { groupByStrain, isFlowerCategory, parseFlowerSku } from "../lib/pny-pos/flowerSku";
 import { formatMoney } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -9,19 +10,13 @@ import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
-type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null; qty: number };
-
-const FLOWER_CATEGORIES = new Set(["flower", "flowers", "budget", "aa", "aaa", "aaa+", "premium", "exotic"]);
-
-function isFlowerCategory(category: string) {
-  return FLOWER_CATEGORIES.has(category.trim().toLowerCase());
-}
+type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null };
 
 function compareSku(a: string, b: string) {
   return a.localeCompare(b, "en", { numeric: true });
 }
 type Ticket = { id: string; code: string; status: string; expires_at: string; lines: { sku: string; name: string; qty: number }[] };
-type CountLine = { sku: string; name: string; system_qty: number };
+type CountLine = { sku: string; name: string };
 type View = {
   authenticated?: boolean;
   demo?: boolean;
@@ -38,7 +33,7 @@ type View = {
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
-  incoming?: { kitchen_row_id: string; sku: string; name: string; qty_sent: number; kind: string }[];
+  incoming?: { kitchen_row_id: string; sku: string; name: string; kind: string }[];
   tickets?: Ticket[];
   pending_count?: number;
   sheet_sync_delayed?: boolean;
@@ -109,12 +104,12 @@ export default function PosApp() {
     if (!isFlowerCategory(category)) return filtered;
     return [...filtered].sort((a, b) => compareSku(a.sku, b.sku));
   }, [view?.products, query, category]);
-  const stockCount = (name: string) => products.filter((product) => product.qty > 0 && (name === "All" || product.category === name)).length;
+  const blocks = useMemo(() => groupByStrain(visible), [visible]);
 
   const total = products.reduce((sum, product) => sum + (cart[product.sku] ?? 0) * product.price_cents, 0);
 
   function setQty(product: Product, next: number) {
-    const qty = Math.max(0, Math.min(product.qty, next));
+    const qty = Math.max(0, Math.min(99, next));
     setCart((current) => {
       const copy = { ...current };
       if (qty === 0) delete copy[product.sku];
@@ -218,7 +213,7 @@ export default function PosApp() {
     try {
       const lines = (view?.incoming ?? []).map((row) => ({
         kitchen_row_id: row.kitchen_row_id,
-        qty_received: Number(counts[row.kitchen_row_id] ?? row.qty_sent),
+        qty_received: Number(counts[row.kitchen_row_id] ?? ""),
         variance_reason: reasons[row.kitchen_row_id] || undefined,
       }));
       await post("/api/pos/incoming/confirm", { lines }, crypto.randomUUID());
@@ -295,20 +290,15 @@ export default function PosApp() {
       {view.phase === "refill" ? (
         <section className={styles.body} data-testid="pos-refill">
           <div className={styles.pad}><h2>Confirm refill</h2><p>Enter the quantity received. A difference needs a reason.</p></div>
-          {(view.incoming ?? []).map((row) => {
-            const received = Number(counts[row.kitchen_row_id] ?? row.qty_sent);
-            return (
+          {(view.incoming ?? []).map((row) => (
               <div key={row.kitchen_row_id}>
                 <label className={styles.countRow}>
-                  <span><strong>{row.sku}</strong> {row.name}<br />Sent {row.qty_sent}</span>
-                  <input inputMode="numeric" value={counts[row.kitchen_row_id] ?? String(row.qty_sent)} onChange={(event) => setCounts({ ...counts, [row.kitchen_row_id]: event.target.value })} />
+                  <span><strong>{row.sku}</strong> {row.name}</span>
+                  <input inputMode="numeric" aria-label={`Received ${row.sku}`} value={counts[row.kitchen_row_id] ?? ""} onChange={(event) => setCounts({ ...counts, [row.kitchen_row_id]: event.target.value.replace(/[^\d]/g, "") })} />
                 </label>
-                {received !== row.qty_sent ? (
-                  <input className={styles.reason} placeholder="Reason" aria-label={`Reason for ${row.sku}`} value={reasons[row.kitchen_row_id] ?? ""} onChange={(event) => setReasons({ ...reasons, [row.kitchen_row_id]: event.target.value })} style={{ margin: "0 12px 8px", width: "calc(100% - 24px)" }} />
-                ) : null}
+                <input className={styles.reason} placeholder="Reason if different" aria-label={`Reason for ${row.sku}`} value={reasons[row.kitchen_row_id] ?? ""} onChange={(event) => setReasons({ ...reasons, [row.kitchen_row_id]: event.target.value })} style={{ margin: "0 12px 8px", width: "calc(100% - 24px)" }} />
               </div>
-            );
-          })}
+          ))}
           <div className={styles.pad}><button className={styles.primary} type="button" disabled={busy} onClick={() => void confirmRefill()}>Confirm received</button></div>
         </section>
       ) : null}
@@ -323,35 +313,49 @@ export default function PosApp() {
             {["All", ...(view.categories ?? [])].map((chip) => (
               <button key={chip} type="button" role="tab" aria-selected={chip === category} data-category={chip} className={chip === category ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
                 {chip}
-                <span className={styles.countBadge} data-count={stockCount(chip)}>{stockCount(chip)}</span>
               </button>
             ))}
           </div>
-          {visible.map((product) => {
+          {blocks.map((block) => {
+            if (block.kind === "strain") {
+              return (
+                <article key={`${block.category}-${block.base}`} className={styles.strainRow} data-strain={block.base} data-layout="list">
+                  <div className={styles.strainHead}>
+                    <span className={styles.sku}>{block.base}</span>
+                    <span className={styles.listName}>{block.name}</span>
+                  </div>
+                  <div className={styles.sizeRow}>
+                    {block.sizes.map((product) => {
+                      const size = parseFlowerSku(product.sku)?.size ?? "";
+                      const qty = cart[product.sku] ?? 0;
+                      return (
+                        <div key={product.sku} className={styles.sizePick}>
+                          <button type="button" className={qty > 0 ? styles.sizeOn : styles.sizeBtn} data-add={product.sku} data-size={size} aria-label={`${block.name} ${size}`} onClick={() => setQty(product, qty + 1)}>
+                            {size} {formatMoney(product.price_cents)}{qty > 0 ? ` ×${qty}` : ""}
+                          </button>
+                          {qty > 0 ? <button type="button" className={styles.sizeMinus} aria-label={`Decrease ${product.name}`} onClick={() => setQty(product, qty - 1)}>−</button> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            }
+            const product = block.item;
             const qty = cart[product.sku] ?? 0;
             const stepper = (
               <div className={styles.stepper}>
                 <button type="button" aria-label={`Decrease ${product.name}`} disabled={qty === 0} onClick={() => setQty(product, qty - 1)}>−</button>
                 <strong>{qty}</strong>
-                <button type="button" aria-label={`Increase ${product.name}`} disabled={qty >= product.qty} data-add={product.sku} onClick={() => setQty(product, qty + 1)}>+</button>
+                <button type="button" aria-label={`Increase ${product.name}`} data-add={product.sku} onClick={() => setQty(product, qty + 1)}>+</button>
               </div>
             );
-            if (isFlowerCategory(product.category)) {
-              return (
-                <article key={product.sku} className={styles.listRow} data-sku={product.sku} data-layout="list">
-                  <span className={styles.sku}>{product.sku}</span>
-                  <span className={styles.listName}>{product.name}</span>
-                  <span className={styles.listPrice}>{formatMoney(product.price_cents)}</span>
-                  {stepper}
-                </article>
-              );
-            }
             return (
               <article key={product.sku} className={styles.row} data-sku={product.sku}>
                 <ProductPhoto src={product.image_url} alt="" className={styles.thumb} placeholderClassName={styles.thumbPh} />
                 <div>
                   <div className={styles.name}>{product.name}</div>
-                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)}{product.price_source === "RAW_UNIT" ? "" : " tax incl."} · {product.qty} demo stock</div>
+                  <div className={styles.meta}>{product.sku} · {formatMoney(product.price_cents)}{product.price_source === "RAW_UNIT" ? "" : " tax incl."}</div>
                 </div>
                 {stepper}
               </article>
@@ -370,10 +374,7 @@ export default function PosApp() {
               <div className={styles.actions} style={{ marginTop: 8 }}>
                 <button className={styles.primary} type="button" onClick={() => {
                   const next: Record<string, number> = {};
-                  for (const line of ticket.lines) {
-                    const product = products.find((item) => item.sku === line.sku);
-                    next[line.sku] = Math.min(line.qty, product?.qty ?? line.qty);
-                  }
+                  for (const line of ticket.lines) next[line.sku] = line.qty;
                   setCart(next);
                   setActiveTicket({ id: ticket.id, code: ticket.code });
                   setTab("sell");

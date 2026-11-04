@@ -243,6 +243,57 @@
   white-space: nowrap;
 }
 
+.strainRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 12px;
+}
+
+.strainHead {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sizeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sizePick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sizeBtn,
+.sizeOn,
+.sizeMinus {
+  border: 1px solid #d6d3d1;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  background: #fff;
+}
+
+.sizeOn {
+  background: #24160f;
+  color: #fff;
+  border-color: #24160f;
+}
+
+.sizeMinus {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
 .thumb,
 .thumbPh {
   width: 56px;
