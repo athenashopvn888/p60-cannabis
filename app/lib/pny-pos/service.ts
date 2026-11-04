@@ -2306,6 +2306,112 @@ export class PosService {
     });
   }
 
+  private findOpenShift(state: State, shiftId: string) {
+    const id = shiftId.trim();
+    const shift = state.shifts.find((row) => row.sccx_shift_id === id || row.id === id);
+    if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+      throw new PosError(404, "NO_SHIFT", "That shift is not open.");
+    }
+    return shift;
+  }
+
+  /** Read the submitted verify and the on-hand behind it. Does not write. */
+  async exportVerifyBackup(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      const until = now.getTime();
+      const anchor = verifyAnchorMs(shift);
+      const stock = verifySkuList(tx.state, shift.id).map((sku) => {
+        const previous = previousCloseLeft(tx.state, shift, sku);
+        const refills = refillsUntil(tx.state, shift.id, sku, until);
+        const sales = salesUntil(tx.state, shift.id, sku, until);
+        const on_hand = qtyOf(tx.state, sku);
+        const pre_count = previous != null ? previous + refills - sales : on_hand;
+        return { sku, on_hand, previous_close_left: previous, refills, sales, pre_count, delta: on_hand - pre_count };
+      });
+      return {
+        ok: true as const,
+        exported_at: iso(now),
+        shift_id: shift.sccx_shift_id,
+        shift_status: shift.status,
+        verify_opened_at: shift.verify_opened_at ?? null,
+        verify_release: shift.verify_release ?? null,
+        deadline_at: anchor == null ? null : new Date(anchor + VERIFY_WINDOW_MS).toISOString(),
+        verify_submitted_at: draft?.verify_submitted_at ?? null,
+        opening_counts: draft?.opening_counts ?? [],
+        stock,
+      };
+    });
+  }
+
+  /**
+   * Drop this shift's opening verify and put on-hand back to yesterday's close plus refills minus sales.
+   * Sales, the PIN, refills, deposits, and the verify clock stay.
+   */
+  async undoOpeningVerify(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const pin = shift.pin_hash;
+      const status = shift.status;
+      const started = shift.started_at;
+      const opened = shift.verify_opened_at;
+      const release = shift.verify_release;
+      const sales = JSON.stringify(tx.state.sales);
+      const incoming = JSON.stringify(tx.state.incoming);
+      const deposits = JSON.stringify(tx.state.deposits);
+      const until = now.getTime();
+      const stock_changes: { sku: string; from: number; to: number }[] = [];
+      for (const sku of verifySkuList(tx.state, shift.id)) {
+        const previous = previousCloseLeft(tx.state, shift, sku);
+        if (previous == null) continue;
+        const target = previous + refillsUntil(tx.state, shift.id, sku, until) - salesUntil(tx.state, shift.id, sku, until);
+        const row = tx.state.balances.find((item) => item.sku === sku);
+        const current = row?.qty ?? 0;
+        if (current === target) continue;
+        if (row) {
+          row.qty = target;
+          row.updated_at = at;
+        } else if (target !== 0) {
+          tx.state.balances.push({ sku, qty: target, updated_at: at, created_at: at });
+        }
+        stock_changes.push({ sku, from: current, to: target });
+      }
+      const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      const removed = draft?.opening_counts?.length ?? 0;
+      if (draft) {
+        draft.opening_counts = [];
+        draft.verify_submitted_at = null;
+        draft.updated_at = at;
+      }
+      if (
+        shift.pin_hash !== pin
+        || shift.status !== status
+        || shift.started_at !== started
+        || shift.verify_opened_at !== opened
+        || shift.verify_release !== release
+        || JSON.stringify(tx.state.sales) !== sales
+        || JSON.stringify(tx.state.incoming) !== incoming
+        || JSON.stringify(tx.state.deposits) !== deposits
+      ) {
+        throw new PosError(409, "SHIFT_UNCHANGED", "The verify undo would have changed sales, refills, deposits, or the shift.");
+      }
+      const anchor = verifyAnchorMs(shift);
+      return {
+        ok: true as const,
+        shift_id: shift.sccx_shift_id,
+        status: shift.status,
+        removed_counts: removed,
+        stock_changes,
+        verify_opened_at: shift.verify_opened_at ?? null,
+        deadline_at: anchor == null ? null : new Date(anchor + VERIFY_WINDOW_MS).toISOString(),
+      };
+    });
+  }
+
   /** Move only the verify clock. Counts, stock, sales, refills, PIN, and shift status stay. */
   async restartVerifyDeadline(shiftId: string) {
     return this.db.transaction(async (tx) => {
