@@ -17,6 +17,7 @@ export default function CountCard({
   compact,
   onSave,
   onJump,
+  onSubmit,
 }: {
   lines: CountCardLine[];
   busy: boolean;
@@ -24,11 +25,15 @@ export default function CountCard({
   compact?: boolean;
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
+  onSubmit?: () => Promise<void>;
 }) {
-  const pending = lines.filter((line) => line.counted_qty == null && !line.locked);
-  const done = lines.length - pending.length;
-  const current = pending[0];
-  const [qty, setQty] = useState("");
+  const [index, setIndex] = useState(() => {
+    const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
+    return open < 0 ? 0 : open;
+  });
+  const current = lines[Math.min(index, Math.max(lines.length - 1, 0))];
+  void onJump;
+  const [qty, setQty] = useState(current?.counted_qty == null ? "" : String(current.counted_qty));
   const [seen, setSeen] = useState(current?.sku ?? "");
   const [expanded, setExpanded] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -40,20 +45,14 @@ export default function CountCard({
   if (!current) return null;
   if (current.sku !== seen) {
     setSeen(current.sku);
-    setQty(drafts[current.sku] ?? "");
+    setQty(current.counted_qty == null ? (drafts[current.sku] ?? "") : String(current.counted_qty));
   }
 
-  const moreAfter = pending.length > 1;
-
   async function submitOne() {
-    if (!/^\d+$/.test(qty)) {
-      setLocalError("Enter a whole quantity.");
-      return;
-    }
     setLocalError("");
     try {
-      await onSave(current.sku, Number(qty));
-      setQty("");
+      if (/^\d+$/.test(qty)) await onSave(current.sku, Number(qty));
+      if (index < lines.length - 1) setIndex(index + 1);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
     }
@@ -88,16 +87,11 @@ export default function CountCard({
   }
 
   async function jumpTo(line: CountCardLine) {
-    if (!onJump || line.locked || line.counted_qty != null) return;
-    const index = lines.findIndex((row) => row.sku === line.sku);
+    const next = lines.findIndex((row) => row.sku === line.sku);
     setLocalError("");
     try {
-      for (const earlier of lines.slice(0, index)) {
-        if (earlier.locked || earlier.counted_qty != null) continue;
-        const value = drafts[earlier.sku] ?? "";
-        if (/^\d+$/.test(value)) await onSave(earlier.sku, Number(value));
-      }
-      await onJump(line.sku);
+      if (/^\d+$/.test(qty)) await onSave(current.sku, Number(qty));
+      setIndex(next < 0 ? 0 : next);
       setExpanded(false);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
@@ -123,13 +117,9 @@ export default function CountCard({
     <div className={styles.countList} data-testid="count-list">
       {lines.map((line) => (
         <div key={line.sku} className={styles.countListRow}>
-          {onJump ? (
-            <button type="button" className={styles.countJump} data-testid="count-jump" disabled={busy || line.locked || line.counted_qty != null} onClick={() => void jumpTo(line)}>
-              {line.text}
-            </button>
-          ) : (
-            <span>{line.text}</span>
-          )}
+          <button type="button" className={styles.countJump} data-testid="count-jump" disabled={busy || line.locked} onClick={() => void jumpTo(line)}>
+            {line.text}
+          </button>
           <input
             inputMode="numeric"
             aria-label={`Count ${line.text}`}
@@ -146,7 +136,7 @@ export default function CountCard({
           <button className={styles.countNext} type="button" disabled={busy} onClick={() => void addExtra()}>Add</button>
         </div>
       ) : null}
-      <button className={styles.countNext} type="button" disabled={busy} onClick={() => void submitAll()}>Submit</button>
+      <button className={styles.countNext} type="button" disabled={busy} onClick={() => void submitAll()}>Save drafts</button>
     </div>
   ) : null;
   const qtyInput = (
@@ -190,12 +180,13 @@ export default function CountCard({
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
-          <button className={styles.countNext} type="submit" disabled={busy} data-testid="count-next">{moreAfter ? "Next" : "Submit"}</button>
+          <button className={styles.countNext} type="submit" disabled={busy} data-testid="count-next">Next</button>
           <button className={styles.countExpand} type="button" data-testid="count-expand" onClick={() => (expanded ? setExpanded(false) : openList())}>
             <span>{expanded ? "Collapse" : "Expand"}</span>
-            <small data-testid="count-progress">{done + 1} of {lines.length}</small>
+            <small data-testid="count-progress">{index + 1} of {lines.length}</small>
           </button>
         </form>
+        {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
       </div>
     );
   }
@@ -208,7 +199,7 @@ export default function CountCard({
           <p className={styles.countSku}>{current.text}</p>
           <div className={styles.countEntry}>
             {qtyInput}
-            <button className={styles.countNext} type="submit" disabled={busy} data-testid="count-next">{moreAfter ? "Next" : "Submit"}</button>
+            <button className={styles.countNext} type="submit" disabled={busy} data-testid="count-next">Next</button>
           </div>
         </form>
         <div className={styles.countSide}>

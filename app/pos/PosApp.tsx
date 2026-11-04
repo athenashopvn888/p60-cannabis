@@ -58,6 +58,7 @@ type View = {
     deadline_at?: string | null;
     waiting?: boolean;
     reveal?: boolean;
+    submitted?: boolean;
     lines?: VerifyLine[];
     opening_off?: number;
     opening_lines?: OffLine[];
@@ -128,7 +129,7 @@ export default function PosApp() {
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
-  const showVerify = Boolean(view?.phase === "sell" && (verifyOpen || view.verify?.waiting));
+  const showVerify = Boolean(view?.phase === "sell" && !view.verify?.reveal && (verifyOpen || view.verify?.waiting));
 
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
@@ -269,6 +270,13 @@ export default function PosApp() {
     }
   }
 
+  async function submitCloseCount() {
+    if (view?.master) return;
+    setError("");
+    await post("/api/pos/shift/count-submit", {});
+    await load();
+  }
+
   async function saveCloseCount(sku: string, countedQty: number) {
     setError("");
     await post("/api/pos/shift/count", { sku, counted_qty: countedQty });
@@ -300,6 +308,13 @@ export default function PosApp() {
     if (view?.master) return;
     setError("");
     await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty });
+    await load();
+  }
+
+  async function submitVerify() {
+    if (view?.master) return;
+    setError("");
+    await post("/api/pos/counts/opening-submit", {});
     await load();
   }
 
@@ -534,7 +549,13 @@ export default function PosApp() {
           ) : null}
           {verifyOpen && view.verify?.deadline_at ? <VerifyBanner slim deadline={view.verify.deadline_at} /> : null}
           {showVerify ? (
-            <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} />
+            <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} onSubmit={submitVerify} />
+          ) : null}
+          {view.verify?.reveal ? (
+            <div className={styles.countDock} data-testid="verify-off">
+              <p className={styles.countProgress}>{(view.stock_check?.opening.lines.length ?? 0) === 1 ? "1 SKU off" : `${view.stock_check?.opening.lines.length ?? 0} SKUs off`}</p>
+              <SkuOffList lines={view.stock_check?.opening.lines ?? []} testId="verify-off-list" />
+            </div>
           ) : null}
           <div className={styles.footerBar}>
             <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
@@ -558,6 +579,7 @@ export default function PosApp() {
           busy={busy}
           error={error}
           onSaveCount={saveCloseCount}
+          onSubmitCount={submitCloseCount}
           onSaveDeposit={saveCloseDeposit}
           onConfirm={confirmEnd}
           onClose={() => { setSheet(null); void load().catch(() => undefined); }}

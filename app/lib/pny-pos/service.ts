@@ -676,9 +676,10 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   const deadline = anchor == null ? null : new Date(anchor + VERIFY_WINDOW_MS).toISOString();
   const windowOpen = deadline != null && now.getTime() < Date.parse(deadline);
   const waiting = anchor == null && !lock && skus.length > 0;
-  const cleared = skus.filter((sku) => draft?.opening_counts?.some((row) => row.sku === sku)).length;
-  const showBanner = windowOpen && skus.length > 0 && cleared < skus.length;
-  const reveal = anchor != null && !showBanner && skus.length > 0;
+  const submitted = Boolean(draft?.verify_submitted_at);
+  const cleared = skus.filter((sku) => draft?.opening_counts?.some((row) => row.sku === sku && !row.accepted_as_is)).length;
+  const showBanner = windowOpen && !submitted && skus.length > 0;
+  const reveal = submitted;
   const opening = skus.flatMap((sku) => {
     const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
@@ -691,8 +692,18 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     if (counted == null) return [];
     return [staffOffLine(state, line.sku, counted - line.expected_qty)];
   });
-  const closingAll = arrangeOff(closing, closePlan.map((line) => line.sku));
-  const closingLines = closingAll.filter((line) => line.off !== 0);
+  const closingUsesEdit = Boolean(draft?.counts.some((row) => row.edited_at || row.accepted_as_is));
+  const closingSubmitted = Boolean(draft?.closing_submitted_at);
+  const closingCompared = closePlan.flatMap((line) => {
+    const row = draft?.counts.find((entry) => entry.sku === line.sku);
+    if (!row || row.accepted_as_is) return [];
+    const expected = row.edited_at ? (row.expected_qty ?? line.expected_qty) : line.expected_qty;
+    return [staffOffLine(state, line.sku, row.counted_qty - expected)];
+  });
+  const closingSource = closingUsesEdit ? closingCompared : closing;
+  const closingAll = arrangeOff(closingSource, closePlan.map((line) => line.sku));
+  const closingReady = closingSubmitted || (!closingUsesEdit && closePlan.length > 0 && closing.length === closePlan.length);
+  const closingLines = closingReady ? closingAll.filter((line) => line.off !== 0) : [];
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
   const refills = refillIssues(state, shift.id);
   return {
@@ -703,6 +714,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
       cleared,
       total: skus.length,
       reveal,
+      submitted,
       lines: skus.map((sku) => {
         const product = state.products.find((row) => row.sku === sku);
         const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
@@ -721,7 +733,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     },
     stock_check: {
       opening: { offCount: reveal ? offCount(openingLines) : 0, ready: reveal, lines: reveal ? openingLines : [] },
-      closing: { offCount: offCount(closingLines), ready: closePlan.length > 0 && closingAll.length === closePlan.length, lines: closingLines },
+      closing: { offCount: offCount(closingLines), ready: closingReady, lines: closingLines },
       refills,
     },
     verify_admin: demo
@@ -2137,12 +2149,15 @@ export class PosService {
       if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
       const onHand = qtyOf(tx.state, sku);
       const draft = ensureDraft(tx.state, shift.id, now);
+      if (draft.verify_submitted_at) throw new PosError(409, "VERIFY_CLOSED", "The verify count is already submitted.");
+      const at = iso(now);
       const expected = expectedAtSubmit(tx.state, shift, sku, now.getTime());
       const next = {
         sku,
         counted_qty: input.counted_qty,
         expected_qty: expected,
-        submitted_at: iso(now),
+        submitted_at: at,
+        edited_at: at,
         variance_reason: null,
         added_stock: onHand === 0 && input.counted_qty > 0,
         accepted_as_is: false,
@@ -2158,41 +2173,36 @@ export class PosService {
     });
   }
 
-  /** Blank SKUs before the chosen line are accepted as expected. The chosen line stays open. */
-  async jumpOpeningCount(token: string, sku: string) {
+  /** Finish the verify count. Blank SKUs are accepted as-is. Entered drafts keep their last-edit expected. */
+  async submitVerifyCount(token: string) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
-      lockUnverified(tx.state, shift, staff.staff_uid, now);
+      const anchor = verifyAnchorMs(shift);
+      if (anchor == null || now.getTime() >= anchor + VERIFY_WINDOW_MS) {
+        throw new PosError(409, "VERIFY_CLOSED", "The verify window is closed. Uncleared SKUs are accepted as-is.");
+      }
+      finalizeVerify(tx.state, shift, staff.staff_uid, now);
+      return { ok: true, verify_submitted_at: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.verify_submitted_at ?? null };
+    });
+  }
+
+  /** Moving between SKUs does not accept the ones left blank. */
+  async jumpOpeningCount(token: string, sku: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
+      lockUnverified(tx.state, shift, "staff", now);
       const anchor = verifyAnchorMs(shift);
       if (anchor == null || now.getTime() >= anchor + VERIFY_WINDOW_MS) {
         throw new PosError(409, "VERIFY_CLOSED", "The verify window is closed. Uncleared SKUs are accepted as-is.");
       }
       const target = sku.trim();
-      const plan = verifySkuList(tx.state, shift.id);
-      const index = plan.indexOf(target);
-      if (index < 0) throw new PosError(400, "BAD_SKU", "That SKU is not in this count.");
-      const draft = ensureDraft(tx.state, shift.id, now);
-      const at = iso(now);
-      let changed = false;
-      for (const item of plan.slice(0, index)) {
-        if (draft.opening_counts?.some((row) => row.sku === item)) continue;
-        const expected = expectedAtSubmit(tx.state, shift, item, now.getTime());
-        draft.opening_counts?.push({
-          sku: item,
-          counted_qty: expected,
-          expected_qty: expected,
-          submitted_at: at,
-          variance_reason: null,
-          added_stock: false,
-          accepted_as_is: true,
-        });
-        audit(tx.state, "VERIFY_ACCEPTED", "sku", item, staff.staff_uid, { sku: item, accepted_as_is: true, jumped_to: target }, at);
-        changed = true;
-      }
-      if (changed) draft.updated_at = at;
+      if (!verifySkuList(tx.state, shift.id).includes(target)) throw new PosError(400, "BAD_SKU", "That SKU is not in this count.");
       return { ok: true, sku: target };
     });
   }
@@ -2296,12 +2306,40 @@ export class PosService {
         draft = { shift_id: shift.id, counts: [], final_deposit_cents: null, updated_at: iso(this.now()) };
         drafts.push(draft);
       }
+      if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
+      const at = iso(this.now());
+      const expected = expectedAtSubmit(tx.state, shift, input.sku, this.now().getTime());
       const existing = draft.counts.find((row) => row.sku === input.sku);
-      if (existing) existing.counted_qty = input.counted_qty;
-      else draft.counts.push({ sku: input.sku, counted_qty: input.counted_qty });
+      if (existing) {
+        existing.counted_qty = input.counted_qty;
+        existing.edited_at = at;
+        existing.expected_qty = expected;
+        existing.accepted_as_is = false;
+      } else draft.counts.push({ sku: input.sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
       draft.updated_at = iso(this.now());
       const done = plan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
       return { ok: true, done, total: plan.length };
+    });
+  }
+
+  /** Finish the closing count. Blank SKUs are accepted as-is and do not change stock. */
+  async submitClosingCount(token: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      const draft = ensureDraft(tx.state, shift.id, now);
+      if (draft.closing_submitted_at) return { ok: true, closing_submitted_at: draft.closing_submitted_at };
+      const at = iso(now);
+      for (const line of shiftClosePlan(tx.state, shift.id)) {
+        if (draft.counts.some((row) => row.sku === line.sku)) continue;
+        const expected = expectedAtSubmit(tx.state, shift, line.sku, now.getTime());
+        draft.counts.push({ sku: line.sku, counted_qty: expected, expected_qty: expected, edited_at: at, accepted_as_is: true });
+      }
+      draft.closing_submitted_at = at;
+      draft.updated_at = at;
+      return { ok: true, closing_submitted_at: at };
     });
   }
 
