@@ -2309,6 +2309,64 @@ export class PosService {
     return result;
   }
 
+  /**
+   * Remove the single completed debit sale on the open shift around 01:30 UTC.
+   * More than one match is reported and left in place.
+   */
+  async removeTestDebit(token: string) {
+    const start = Date.parse("2026-11-04T01:15:00.000Z");
+    const end = Date.parse("2026-11-04T02:00:00.000Z");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift } = this.session(tx.state, token, now);
+      const describe = (saleId: string) => {
+        const sale = tx.state.sales.find((row) => row.id === saleId);
+        if (!sale) return null;
+        const seller = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        return {
+          ref_no: sale.ref_no,
+          total_cents: sale.total_cents,
+          created_at: sale.created_at,
+          staff_name: seller?.display_name ?? "",
+          lines: tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => ({
+            sku: line.sku,
+            name: productName(tx.state, line.sku),
+            qty: line.qty,
+            unit_price_cents: line.unit_price_cents,
+          })),
+        };
+      };
+      const sales = tx.state.sales.filter((sale) => (
+        sale.shift_id === shift.id
+        && sale.status === "COMPLETED"
+        && sale.payment_method === "DEBIT"
+        && Date.parse(sale.created_at) >= start
+        && Date.parse(sale.created_at) <= end
+      ));
+      if (sales.length !== 1) {
+        return { ok: true as const, removed: false as const, candidates: sales.map((sale) => describe(sale.id)).filter((row) => row != null) };
+      }
+      const sale = sales[0]!;
+      const detail = describe(sale.id);
+      if (!detail) throw new PosError(404, "SALE", "Sale was not found.");
+      const at = iso(now);
+      for (const line of tx.state.sale_lines.filter((row) => row.sale_id === sale.id)) {
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not restore stock.");
+        ledger(tx.state, line.sku, line.qty, "VOID", "sale", sale.id, "admin", "test debit removed", sale.shift_id, at);
+      }
+      tx.state.sales = tx.state.sales.filter((row) => row.id !== sale.id);
+      tx.state.sale_lines = tx.state.sale_lines.filter((row) => row.sale_id !== sale.id);
+      tx.state.outbox = tx.state.outbox.filter((row) => row.row_id !== `S-${sale.id}`);
+      audit(tx.state, "TEST_DEBIT_REMOVED", "sale", sale.id, shift.staff_uid, detail as Json, at);
+      const totals = shiftTotals(tx.state, shift.id);
+      return { ok: true as const, removed: true as const, sale: detail, sale_id: sale.id, debit_sales_cents: totals.debit_sales_cents, cash_sales_cents: totals.cash_sales_cents };
+    });
+    if (result.removed) await this.deps.sheet.deleteRows("POS_Sales", [result.sale_id]);
+    this.bumpMenu();
+    return result;
+  }
+
   async adjust(adminToken: string, input: { key: string; sku: string; qty_delta: number; reason: string }) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
