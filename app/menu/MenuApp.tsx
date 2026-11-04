@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
-import { formatMoney, sortCategories } from "../lib/pny-pos/money";
+import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
@@ -41,7 +41,7 @@ export default function MenuApp() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
-  const [category, setCategory] = useState("All");
+  const [category, setCategory] = useState("");
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
@@ -66,8 +66,8 @@ export default function MenuApp() {
     () => sortCategories((menu?.items ?? []).map((item) => item.category)),
     [menu?.items],
   );
-  const activeCategory = category !== "All" && categories.includes(category) ? category : "All";
-  const visible = activeCategory === "All" ? items : items.filter((item) => item.category === activeCategory);
+  const activeCategory = categories.includes(category) ? category : defaultCategory(categories);
+  const visible = items.filter((item) => item.category === activeCategory);
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
   const total = items.reduce((sum, item) => sum + (cart[item.sku] ?? 0) * item.price_cents, 0);
   const lines = Object.entries(cart).filter(([, qty]) => qty > 0);
@@ -142,7 +142,7 @@ export default function MenuApp() {
       </header>
       {categories.length > 0 ? (
         <div className={styles.chips} role="tablist" aria-label="Categories" data-testid="menu-categories">
-          {["All", ...categories].map((name) => (
+          {categories.map((name) => (
             <button key={name} type="button" role="tab" aria-selected={activeCategory === name} data-category={name} className={activeCategory === name ? styles.chipOn : styles.chip} onClick={() => setCategory(name)}>
               {name}
             </button>
