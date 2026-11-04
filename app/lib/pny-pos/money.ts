@@ -76,6 +76,28 @@ export function categoryChipLabel(name: string) {
   return CHIP_LABELS[categoryKey(name)] ?? name;
 }
 
+function isAddOnCategory(name: string) {
+  const key = categoryKey(name);
+  return key === "add ons" || key === "addons" || key === "add on";
+}
+
+function isNicVapeCategory(name: string) {
+  return categoryKey(name) === "vape pens";
+}
+
+/** Add Ons is its own wide chip. Nic Vape fills the grid spot that leaves. */
+export function layoutCategoryChips(names: string[]) {
+  const wide = names.filter(isAddOnCategory);
+  const rest = names.filter((name) => !isAddOnCategory(name));
+  const nicAt = rest.findIndex(isNicVapeCategory);
+  if (nicAt <= 0) return { wide, rest };
+  const ordered = [...rest];
+  const [nic] = ordered.splice(nicAt, 1);
+  const insertAt = names.findIndex(isAddOnCategory);
+  ordered.splice(insertAt < 0 ? ordered.length : Math.min(insertAt, ordered.length), 0, nic);
+  return { wide, rest: ordered };
+}
+
 /** Add Ons is selected when the menu or till opens. */
 export function defaultCategory(names: string[]) {
   return names.find((name) => categoryKey(name) === "add ons") ?? names[0] ?? "";

@@ -2170,6 +2170,46 @@ export class PosService {
     });
   }
 
+  /** Move only the verify clock. Counts, stock, sales, refills, PIN, and shift status stay. */
+  async restartVerifyDeadline(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const id = shiftId.trim();
+      const shift = tx.state.shifts.find((row) => row.sccx_shift_id === id || row.id === id);
+      if (!shift || (shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+        throw new PosError(404, "NO_SHIFT", "That shift is not open.");
+      }
+      const pin = shift.pin_hash;
+      const status = shift.status;
+      const started = shift.started_at;
+      const release = shift.verify_release;
+      const counts = JSON.stringify(tx.state.closing_drafts ?? []);
+      const sales = JSON.stringify(tx.state.sales);
+      const balances = JSON.stringify(tx.state.balances);
+      const incoming = JSON.stringify(tx.state.incoming);
+      shift.verify_opened_at = iso(now);
+      if (
+        shift.pin_hash !== pin
+        || shift.status !== status
+        || shift.started_at !== started
+        || shift.verify_release !== release
+        || JSON.stringify(tx.state.closing_drafts ?? []) !== counts
+        || JSON.stringify(tx.state.sales) !== sales
+        || JSON.stringify(tx.state.balances) !== balances
+        || JSON.stringify(tx.state.incoming) !== incoming
+      ) {
+        throw new PosError(409, "SHIFT_UNCHANGED", "The deadline reset would have changed more than the clock.");
+      }
+      return {
+        ok: true,
+        shift_id: shift.sccx_shift_id,
+        status: shift.status,
+        verify_opened_at: shift.verify_opened_at,
+        deadline_at: new Date(now.getTime() + VERIFY_WINDOW_MS).toISOString(),
+      };
+    });
+  }
+
   async absorbForDemo(journal?: DemoJournalOrder[]) {
     if (!this.deps.demo || !journal?.length) return;
     await this.db.transaction(async (tx) => {
