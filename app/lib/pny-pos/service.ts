@@ -2141,18 +2141,23 @@ export class PosService {
         balances: tx.state.balances,
         shifts: tx.state.shifts,
       });
-      const rows = tx.state.sales
-        .filter((sale) => sale.status === "COMPLETED")
+      const allRows = tx.state.sales
         .filter((sale) => {
           const shift = tx.state.shifts.find((row) => row.id === sale.shift_id);
           return !shift || shift.store_code === STORE_CODE;
         })
-        .map((sale) => ({ sale, cursor: `${sale.created_at}|${sale.id}` }))
-        .sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
+        .map((sale, index) => ({ sale, index, cursor: `${sale.created_at}|${sale.id}` }))
+        .sort((a, b) => a.sale.created_at.localeCompare(b.sale.created_at) || a.index - b.index);
+      const rows = allRows.filter((row) => row.sale.status === "COMPLETED");
       const latest = rows.at(-1)?.cursor ?? "0";
       const cursor = since?.trim() || "";
-      const selected = cursor ? rows.filter((row) => row.cursor > cursor).slice(0, pageSize) : [];
-      const sales = selected.map(({ sale }) => {
+      const cursorIndex = cursor ? allRows.findIndex((row) => row.cursor === cursor) : -1;
+      const selected = !cursor
+        ? []
+        : cursorIndex >= 0
+          ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize)
+          : rows.filter((row) => row.cursor > cursor).slice(0, pageSize);
+      const sales = selected.map(({ sale, index: saleIndex }) => {
         const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
         const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
         const items = tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
@@ -2173,6 +2178,10 @@ export class PosService {
           staff_name: staff?.display_name ?? "",
           items,
           total_cents: sale.total_cents,
+          shift_total_cents: allRows
+            .filter((row) => row.sale.status === "COMPLETED" && row.sale.shift_id === sale.shift_id)
+            .filter((row) => row.sale.created_at < sale.created_at || (row.sale.created_at === sale.created_at && row.index <= saleIndex))
+            .reduce((sum, row) => sum + row.sale.total_cents, 0),
           payment: sale.payment_method === "DEBIT" ? "debit" as const : "cash" as const,
           store: STORE_CODE,
         };
