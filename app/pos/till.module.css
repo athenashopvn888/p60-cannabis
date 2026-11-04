@@ -93,14 +93,52 @@
 }
 
 .tillLink {
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 13px;
-  font-weight: 700;
+  background: #166534;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
   text-decoration: none;
-  min-height: 36px;
+  min-height: 30px;
   display: inline-flex;
   align-items: center;
-  padding: 0 4px;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 999px;
+}
+
+.posHeader .headerTop {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.posHeader .brand {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.posHeader .headerActions {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  width: 100%;
+  max-width: none;
+  margin-top: 8px;
+  gap: 4px;
+}
+
+.posHeader .headerActions .cornerBtn,
+.posHeader .headerActions .ghost,
+.posHeader .headerActions .tillLink {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 3px;
+  font-size: 11px;
+  white-space: nowrap;
+  min-height: 30px;
 }
 
 .tillCards {
@@ -555,9 +593,49 @@
 }
 
 .footer {
+  flex-shrink: 0;
   background: #fff;
   border-top: 1px solid #e7e5e4;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  padding: 0;
+}
+
+.footerBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+}
+
+.cartCompact {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.05;
+}
+
+.cartCompact .metricLabel {
+  color: #78716c;
+}
+
+.cartCompact .total {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.tabChip {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 8px;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  color: #1c1917;
+  font-weight: 750;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .footerMain {
@@ -581,13 +659,14 @@
 }
 
 .clearCart {
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 10px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
   border: 1px solid #d6d3d1;
   background: #fff;
   color: #57534e;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -598,14 +677,16 @@
 }
 
 .cash {
-  min-height: 48px;
-  min-width: 112px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  min-width: 88px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #166534;
   color: #fff;
   font-weight: 800;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .cash:disabled {
@@ -892,6 +973,80 @@
   padding: 10px 12px;
   text-decoration: none;
   cursor: pointer;
+}
+
+.verifySlim {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: default;
+}
+
+.countDock {
+  background: #fff;
+}
+
+.countCompact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.countCompactSku {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.countCompact input {
+  width: 46px;
+  height: 32px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  border: 2px solid #24160f;
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.countCompact .countNext,
+.countCompact .countExpand {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.countCompact .countExpand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.countCompact .countExpand small {
+  font-size: 10px;
+  font-weight: 700;
+  color: #57534e;
+}
+
+.countDock .countList {
+  margin: 0;
+  max-height: 168px;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
 }
 
 .countSplit {

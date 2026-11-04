@@ -6,7 +6,7 @@ export const VERIFY_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 export type CountMeta = { sku: string; name: string; category: string; bag: string };
 
-/** Flowers by weight, then tier. Then cigarettes, add-ons, edibles, vapes, concentrates, then the rest. */
+/** Flowers by bag weight, then lowest tier to highest. Then cigarettes, add-ons, edibles, vapes, concentrates, then the rest. */
 export function compareCount(a: CountMeta, b: CountMeta) {
   const flowerA = isFlower(a);
   const flowerB = isFlower(b);
@@ -42,7 +42,7 @@ function weightRank(bag: string) {
 
 function tierRank(category: string) {
   const key = category.trim().toLowerCase();
-  const order = ["exotic", "premium", "aaa+", "aa", "budget"];
+  const order = ["budget", "aa", "aaa+", "premium", "exotic"];
   const index = order.indexOf(key);
   return index === -1 ? order.length : index;
 }

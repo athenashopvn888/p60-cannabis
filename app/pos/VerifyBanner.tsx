@@ -41,16 +41,17 @@ function clock(ms: number) {
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export default function VerifyBanner({ deadline, onOpen }: { deadline: string; onOpen?: () => void }) {
+export default function VerifyBanner({ deadline, onOpen, slim }: { deadline: string; onOpen?: () => void; slim?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
   const label = `Verify stock count · ${clock(Date.parse(deadline) - now)}`;
-  if (!onOpen) return <div className={styles.verifyBanner} data-testid="verify-banner">{label}</div>;
+  const className = slim ? `${styles.verifyBanner} ${styles.verifySlim}` : styles.verifyBanner;
+  if (!onOpen) return <div className={className} data-testid="verify-banner">{label}</div>;
   return (
-    <button type="button" className={styles.verifyBanner} data-testid="verify-banner" onClick={onOpen}>
+    <button type="button" className={className} data-testid="verify-banner" onClick={onOpen}>
       {label}
     </button>
   );
