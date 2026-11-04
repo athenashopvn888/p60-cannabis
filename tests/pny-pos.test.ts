@@ -1907,6 +1907,52 @@ test("undoing a submitted verify restores pre-count stock and leaves the deadlin
   assert.equal(view.stock_check.opening.lines.length, 0);
 });
 
+test("a shift with two sales is listed and not voided", async () => {
+  const h = await readyTill({ "1001": 5, "1002": 5 });
+  await h.svc.cashout(h.token, { key: "sale-a", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  await h.svc.cashout(h.token, { key: "sale-b", payment_method: "DEBIT", lines: [{ sku: "1002", qty: 1 }] });
+  const listed = await h.svc.listShiftSales(h.shiftId);
+  assert.equal(listed.sales.length, 2);
+  assert.equal(listed.sales_total_cents > 0, true);
+  await rejects(() => h.svc.voidOnlyShiftSale(h.shiftId, "nope"), "MANY_SALES");
+  assert.equal(h.db.state.sales.filter((sale) => sale.status === "COMPLETED").length, 2);
+});
+
+test("voiding the only sale restores stock and the feed treats the next ring as new", async () => {
+  const h = await readyTill({ "1001": 4 });
+  const sold = await h.svc.cashout(h.token, { key: "only-sale", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(qty(h.db, "1001"), 3);
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  const pin = shift.pin_hash;
+  const opened = shift.verify_opened_at;
+  const deposits = JSON.stringify(h.db.state.deposits);
+  const incoming = JSON.stringify(h.db.state.incoming);
+  const counts = JSON.stringify(h.db.state.closing_drafts ?? []);
+  const listed = await h.svc.listShiftSales(h.shiftId);
+  assert.equal(listed.sales.length, 1);
+  assert.equal(listed.sales[0]?.payment, "cash");
+  const undone = await h.svc.voidOnlyShiftSale(h.shiftId, "Re-ring for SCCx");
+  assert.equal(undone.sales_total_cents, 0);
+  assert.equal(undone.cash_on_hand_cents, 0);
+  assert.equal(qty(h.db, "1001"), 4);
+  assert.equal(h.db.state.sales.find((sale) => sale.id === listed.sales[0]?.id)?.status, "VOIDED");
+  const kept = h.db.state.shifts.find((row) => row.id === shift.id);
+  assert.equal(kept?.pin_hash, pin);
+  assert.equal(kept?.verify_opened_at, opened);
+  assert.equal(kept?.status, "ACTIVE");
+  assert.equal(JSON.stringify(h.db.state.deposits), deposits);
+  assert.equal(JSON.stringify(h.db.state.incoming), incoming);
+  assert.equal(JSON.stringify(h.db.state.closing_drafts ?? []), counts);
+  const hidden = await h.svc.salesFeed(listed.sales[0]?.cursor ?? "0");
+  assert.equal(hidden.sales.some((sale) => sale.id === listed.sales[0]?.id), false);
+  await h.svc.cashout(h.token, { key: "rerung", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  const again = await h.svc.salesFeed(listed.sales[0]?.cursor ?? "0");
+  assert.equal(again.sales.length, 1);
+  assert.notEqual(again.sales[0]?.id, listed.sales[0]?.id);
+  assert.equal(sold.total_cents > 0, true);
+});
+
 test("restarting the verify deadline changes only the clock", async () => {
   const h = await readyTill({ "1001": 4, "1002": 2 });
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);

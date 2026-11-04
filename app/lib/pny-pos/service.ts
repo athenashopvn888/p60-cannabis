@@ -1114,6 +1114,32 @@ export function reconcile(state: State) {
   return { ok: rows.every((row) => row.ok) && shifts.every((shift) => shift.cash_ok), skus: rows, shifts, cash_ok: shifts.every((shift) => shift.cash_ok) };
 }
 
+function describeShiftSale(state: State, sale: State["sales"][number]) {
+  const seller = state.staff.find((row) => row.staff_uid === sale.staff_uid);
+  const ticket = sale.ticket_id ? state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+  return {
+    id: sale.id,
+    order_no: sale.ref_no,
+    at: sale.created_at,
+    cursor: `${sale.created_at}|${sale.id}`,
+    status: sale.status,
+    payment: sale.payment_method === "DEBIT" ? "debit" as const : "cash" as const,
+    total_cents: sale.total_cents,
+    staff_name: seller?.display_name ?? "",
+    ticket_no: ticket?.code ?? null,
+    items: state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
+      const product = state.products.find((row) => row.sku === line.sku);
+      return {
+        sku: line.sku,
+        name: product?.name ?? productName(state, line.sku),
+        size: sizeLabel(line.sku, product?.category, product?.name),
+        qty: line.qty,
+        line_price_cents: line.line_total_cents,
+      };
+    }),
+  };
+}
+
 function salePayload(state: State, saleId: string) {
   const sale = state.sales.find((row) => row.id === saleId);
   if (!sale) return;
@@ -2410,6 +2436,91 @@ export class PosService {
         deadline_at: anchor == null ? null : new Date(anchor + VERIFY_WINDOW_MS).toISOString(),
       };
     });
+  }
+
+  /** Read every sale on the shift. Does not write. */
+  async listShiftSales(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const totals = shiftTotals(tx.state, shift.id);
+      const sales = tx.state.sales
+        .filter((sale) => sale.shift_id === shift.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+        .map((sale) => describeShiftSale(tx.state, sale));
+      return {
+        ok: true as const,
+        shift_id: shift.sccx_shift_id,
+        status: shift.status,
+        sales_total_cents: totals.sales_total_cents,
+        cash_on_hand_cents: totals.cash_on_hand_cents,
+        sales,
+      };
+    });
+  }
+
+  /**
+   * Void the only completed sale on the shift and put its stock back.
+   * Refuses when the shift does not have exactly one sale.
+   * Does not change the shift, PIN, counts, deposits, or refills.
+   */
+  async voidOnlyShiftSale(shiftId: string, reason: string) {
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const shift = this.findOpenShift(tx.state, shiftId);
+      const sales = tx.state.sales.filter((sale) => sale.shift_id === shift.id);
+      if (sales.length !== 1) {
+        return { ok: false as const, status: 409, code: "MANY_SALES", message: "This shift does not have exactly one sale.", count: sales.length };
+      }
+      const sale = sales[0];
+      if (!sale || sale.status !== "COMPLETED") {
+        return { ok: false as const, status: 409, code: "VOID_FINAL", message: "That sale is already voided.", count: sales.length };
+      }
+      if (!reason.trim()) throw new PosError(400, "REASON_REQUIRED", "A void needs a reason.");
+      const pin = shift.pin_hash;
+      const status = shift.status;
+      const started = shift.started_at;
+      const opened = shift.verify_opened_at;
+      const counts = JSON.stringify(tx.state.closing_drafts ?? []);
+      const deposits = JSON.stringify(tx.state.deposits);
+      const incoming = JSON.stringify(tx.state.incoming);
+      const backup = describeShiftSale(tx.state, sale);
+      const stock_before = backup.items.map((item) => ({ sku: item.sku, qty: qtyOf(tx.state, item.sku) }));
+      sale.status = "VOIDED";
+      sale.void_reason = reason.trim();
+      sale.voided_by = "admin";
+      for (const line of tx.state.sale_lines.filter((row) => row.sale_id === sale.id)) {
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not restore stock.");
+        ledger(tx.state, line.sku, line.qty, "VOID", "sale", sale.id, "admin", reason.trim(), sale.shift_id, at);
+      }
+      const payload = salePayload(tx.state, sale.id);
+      if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
+      if (
+        shift.pin_hash !== pin
+        || shift.status !== status
+        || shift.started_at !== started
+        || shift.verify_opened_at !== opened
+        || JSON.stringify(tx.state.closing_drafts ?? []) !== counts
+        || JSON.stringify(tx.state.deposits) !== deposits
+        || JSON.stringify(tx.state.incoming) !== incoming
+      ) {
+        throw new PosError(409, "SHIFT_UNCHANGED", "The void would have changed the shift, counts, deposits, or refills.");
+      }
+      const totals = shiftTotals(tx.state, shift.id);
+      return {
+        ok: true as const,
+        sale: backup,
+        stock_before,
+        stock_after: backup.items.map((item) => ({ sku: item.sku, qty: qtyOf(tx.state, item.sku) })),
+        sales_total_cents: totals.sales_total_cents,
+        cash_on_hand_cents: totals.cash_on_hand_cents,
+        feed_cursor: backup.cursor,
+      };
+    });
+    if (!result.ok) throw new PosError(result.status, result.code, result.message);
+    this.bumpMenu();
+    return result;
   }
 
   /** Move only the verify clock. Counts, stock, sales, refills, PIN, and shift status stay. */
