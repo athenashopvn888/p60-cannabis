@@ -684,14 +684,15 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
     return [staffOffLine(state, sku, row.counted_qty - row.expected_qty)];
   });
-  const openingLines = arrangeOff(opening, skus);
+  const openingLines = arrangeOff(opening, skus).filter((line) => line.off !== 0);
   const closePlan = [...shiftClosePlan(state, shift.id, raw)].sort((a, b) => compareCount(countMeta(state, a.sku), countMeta(state, b.sku)));
   const closing = closePlan.flatMap((line) => {
     const counted = draft?.counts.find((row) => row.sku === line.sku)?.counted_qty;
     if (counted == null) return [];
     return [staffOffLine(state, line.sku, counted - line.expected_qty)];
   });
-  const closingLines = arrangeOff(closing, closePlan.map((line) => line.sku));
+  const closingAll = arrangeOff(closing, closePlan.map((line) => line.sku));
+  const closingLines = closingAll.filter((line) => line.off !== 0);
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
   const refills = refillIssues(state, shift.id);
   return {
@@ -720,7 +721,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     },
     stock_check: {
       opening: { offCount: reveal ? offCount(openingLines) : 0, ready: reveal, lines: reveal ? openingLines : [] },
-      closing: { offCount: offCount(closingLines), ready: closePlan.length > 0 && closingLines.length === closePlan.length, lines: closingLines },
+      closing: { offCount: offCount(closingLines), ready: closePlan.length > 0 && closingAll.length === closePlan.length, lines: closingLines },
       refills,
     },
     verify_admin: demo

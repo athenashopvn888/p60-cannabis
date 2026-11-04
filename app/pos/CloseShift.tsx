@@ -51,7 +51,9 @@ export default function CloseShift({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
   const [localError, setLocalError] = useState("");
-  const done = lines.filter((line) => line.counted_qty != null).length;
+  const [locking, setLocking] = useState(false);
+  const openingOff = (stockCheck?.opening.lines ?? []).filter((line) => line.off !== 0);
+  const closingOff = (stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0);
 
   useEffect(() => {
     if (step === "count" && lines.length > 0 && lines.every((line) => line.counted_qty != null)) setStep("deposit");
@@ -84,18 +86,24 @@ export default function CloseShift({
         {step === "deposit" ? (
           <form data-testid="close-deposit" onSubmit={(event) => {
             event.preventDefault();
-            void onSaveDeposit(depositCents).then((saved) => {
+            if (locking) return;
+            setLocking(true);
+            void onSaveDeposit(depositCents).then(async (saved) => {
+              await onConfirm(depositCents);
               const code = saved && typeof saved === "object" ? saved.deposit_code : null;
               if (code) {
                 setSlipCode(code);
                 setStep("slip");
               } else setStep("summary");
-            }).catch((err: unknown) => setLocalError(err instanceof Error ? err.message : "Deposit was not saved"));
+            }).catch((err: unknown) => {
+              setLocking(false);
+              setLocalError(err instanceof Error ? err.message : "Deposit was not saved");
+            });
           }}>
             <h2>Final deposit</h2>
             <p>Cash on hand before this drop is {formatMoney(totals.cash_on_hand_cents)}.</p>
             <input className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
-            <button className={styles.primary} type="submit" disabled={busy}>Save deposit</button>
+            <button className={styles.primary} type="submit" disabled={busy || locking}>Save deposit</button>
           </form>
         ) : null}
 
@@ -115,13 +123,13 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Cash left</span><strong>{formatMoney(Math.max(0, totals.cash_on_hand_cents - depositCents))}</strong></div>
             <section className={styles.stockBlue} data-testid="opening-stock-check">
               <h3>Opening verify count</h3>
-              <p>{stockCheck?.opening.ready === false ? "Count still open" : `${stockCheck?.opening.offCount ?? 0} SKUs off`}</p>
-              <SkuOffList lines={stockCheck?.opening.lines ?? []} testId="opening-sku-list" />
+              <p>{stockCheck?.opening.ready === false ? "Count still open" : openingOff.length === 1 ? "1 SKU off" : `${openingOff.length} SKUs off`}</p>
+              <SkuOffList lines={openingOff} testId="opening-sku-list" />
             </section>
             <section className={styles.stockAmber} data-testid="closing-stock-check">
               <h3>Closing count</h3>
-              <p>{stockCheck?.closing.ready === false ? "Count still open" : `${stockCheck?.closing.offCount ?? 0} SKUs off`}</p>
-              <SkuOffList lines={stockCheck?.closing.lines ?? []} testId="closing-sku-list" />
+              <p>{stockCheck?.closing.ready === false ? "Count still open" : closingOff.length === 1 ? "1 SKU off" : `${closingOff.length} SKUs off`}</p>
+              <SkuOffList lines={closingOff} testId="closing-sku-list" />
             </section>
             <section className={styles.stockRose} data-testid="refill-issues">
               <h3>Refill issues</h3>
@@ -136,7 +144,7 @@ export default function CloseShift({
                 </div>
               ))}
             </section>
-            <button className={styles.primary} type="button" disabled={busy || done < lines.length} onClick={() => void onConfirm(depositCents)}>Confirm & End Shift</button>
+            <p data-testid="shift-locked">Shift closed</p>
           </div>
         ) : null}
         {localError || error ? <p className={styles.error}>{localError || error}</p> : null}
