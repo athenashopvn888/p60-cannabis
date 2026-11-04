@@ -10,7 +10,16 @@ function pick(row: Row, keys: string[]) {
   return copy;
 }
 
-/** Staff payload. Stock counts and expected quantities stay on the server. */
+function offLines(value: unknown) {
+  return rows(value).map((row) => pick(row, ["sku", "text", "off"]));
+}
+
+function section(value: unknown) {
+  const row = value && typeof value === "object" ? (value as Row) : {};
+  return { offCount: Number(row.offCount ?? 0), ready: row.ready !== false, lines: offLines(row.lines) };
+}
+
+/** Staff payload. On-hand, expected, and total quantities stay on the server. */
 export function blindStaffState<T extends Row>(view: T): T {
   const next: Row = { ...view };
   next.products = rows(view.products)
@@ -20,5 +29,16 @@ export function blindStaffState<T extends Row>(view: T): T {
   next.close_lines = rows(view.close_lines).map((row) => pick(row, ["sku", "name", "price_cents", "counted_qty"]));
   next.count_lines = rows(view.count_lines).map((row) => pick(row, ["sku", "name"]));
   next.incoming = rows(view.incoming).map((row) => pick(row, ["kitchen_row_id", "sku", "name", "kind"]));
+  const verify = view.verify && typeof view.verify === "object" ? (view.verify as Row) : null;
+  if (verify) {
+    next.verify = {
+      ...pick(verify, ["show_banner", "deadline_at", "cleared", "total", "reveal", "opening_off"]),
+      lines: rows(verify.lines).map((row) => pick(row, ["sku", "text", "name", "price_cents", "counted_qty", "locked"])),
+      opening_lines: offLines(verify.opening_lines),
+    };
+  }
+  const stock = view.stock_check && typeof view.stock_check === "object" ? (view.stock_check as Row) : null;
+  if (stock) next.stock_check = { opening: section(stock.opening), closing: section(stock.closing) };
+  if (!view.demo) delete next.verify_admin;
   return next as T;
 }

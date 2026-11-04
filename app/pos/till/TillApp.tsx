@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
 import { usePosPoll } from "../usePosPoll";
+import VerifyBanner from "../VerifyBanner";
 
 type View = {
   authenticated?: boolean;
@@ -15,6 +16,7 @@ type View = {
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   error?: string;
   code?: string;
+  verify?: { show_banner?: boolean; deadline_at?: string };
 };
 
 async function post(url: string, body: unknown, key?: string) {
@@ -116,6 +118,9 @@ export default function TillApp() {
   return (
     <main className={styles.shell} data-testid="pos-till">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
+      {view.verify?.show_banner && view.verify.deadline_at ? (
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { sessionStorage.setItem("pny-open-verify", "1"); window.location.href = "/pos"; }} />
+      ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <Link className={styles.backLink} href="/pos">Back</Link>

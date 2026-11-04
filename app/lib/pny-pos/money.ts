@@ -7,6 +7,15 @@ export function formatMoney(cents: number) {
   return `${sign}$${dollars}.${String(abs % 100).padStart(2, "0")}`;
 }
 
+export function roundCents(amountCents: number) {
+  return Math.round(Number(amountCents));
+}
+
+/** True only when the deposit is strictly above cash on hand, after both amounts are rounded to cents. */
+export function depositAboveCash(amountCents: number, cashOnHandCents: number) {
+  return roundCents(amountCents) > roundCents(cashOnHandCents);
+}
+
 export function centsToSheet(cents: number) {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.abs(Math.trunc(cents));

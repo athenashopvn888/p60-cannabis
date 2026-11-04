@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { safeEqual } from "./crypto.ts";
+import { chunkToken, readDemoDrafts, signDemoDrafts, type DemoDraft } from "./demoDraft.ts";
 import { readDemoJournal, signDemoJournal, upsertDemoOrder, type DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import { getService, loadSecrets } from "./runtime.ts";
@@ -8,6 +9,7 @@ export const SESSION_COOKIE = "pny_pos_session";
 export const KITCHEN_COOKIE = "pny_kitchen_session";
 export const ADMIN_COOKIE = "pny_pos_admin";
 export const DEMO_JOURNAL_COOKIE = "pny_pos_demo";
+export const DEMO_DRAFT_COOKIE = "pny_pos_draft";
 
 const cookieBase = {
   httpOnly: true,
@@ -136,6 +138,40 @@ export async function saveDemoJournal(orders: DemoJournalOrder[]) {
   if (!loadSecrets().session) return;
   const value = signDemoJournal(orders, loadSecrets().session);
   (await cookies()).set(DEMO_JOURNAL_COOKIE, value, { ...cookieBase, maxAge: 60 * 60 * 14 });
+}
+
+const DRAFT_PARTS = 8;
+
+export async function loadDemoDrafts(): Promise<DemoDraft[]> {
+  const jar = await cookies();
+  const count = Number(jar.get(DEMO_DRAFT_COOKIE)?.value ?? "0");
+  if (!Number.isInteger(count) || count <= 0) return [];
+  let token = "";
+  for (let index = 0; index < count && index < DRAFT_PARTS; index += 1) token += jar.get(`${DEMO_DRAFT_COOKIE}_${index}`)?.value ?? "";
+  return readDemoDrafts(token, loadSecrets().session);
+}
+
+export async function saveDemoDrafts(drafts: DemoDraft[]) {
+  const secret = loadSecrets().session;
+  if (!secret) return;
+  const parts = chunkToken(signDemoDrafts(drafts, secret));
+  const jar = await cookies();
+  jar.set(DEMO_DRAFT_COOKIE, String(parts.length), { ...cookieBase, maxAge: 60 * 60 * 14 });
+  for (let index = 0; index < DRAFT_PARTS; index += 1) {
+    const name = `${DEMO_DRAFT_COOKIE}_${index}`;
+    if (index < parts.length) jar.set(name, parts[index] ?? "", { ...cookieBase, maxAge: 60 * 60 * 14 });
+    else jar.set(name, "", { ...cookieBase, maxAge: 0 });
+  }
+}
+
+export async function beginDemoRequest(service: { bootstrap: () => { demo: boolean }; restoreDemoDrafts: (drafts: DemoDraft[]) => Promise<void> }) {
+  if (!service.bootstrap().demo) return;
+  await service.restoreDemoDrafts(await loadDemoDrafts());
+}
+
+export async function endDemoRequest(service: { bootstrap: () => { demo: boolean }; exportDemoDrafts: () => Promise<DemoDraft[]> }) {
+  if (!service.bootstrap().demo) return;
+  await saveDemoDrafts(await service.exportDemoDrafts());
 }
 
 export async function rememberDemoOrder(demo: boolean, orders: DemoJournalOrder[], order: DemoJournalOrder | null | undefined) {

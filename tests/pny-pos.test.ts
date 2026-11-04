@@ -25,6 +25,9 @@ import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCen
 import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
+import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
+import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
+import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -1483,4 +1486,149 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   const sale = await h.svc.cashout(login.token, { key: "paper", lines: [{ sku: "709", qty: 1 }] });
   assert.equal(sale.total_cents, 500);
   assert.equal(h.db.state.balances.find((row) => row.sku === "709")?.qty, 4);
+});
+
+test("verify count order, size label, and the staff discrepancy row", () => {
+  assert.equal(sizeLabel("200-5g", "AA"), "5g");
+  assert.equal(sizeLabel("350-5g", "AAA+"), "6g");
+  assert.equal(sizeLabel("500-5g", "EXOTIC"), "6g");
+  assert.equal(sizeLabel("1027", "CIGARETTES", "MARLBORO LIGHTS - GOLD"), "pack");
+  assert.equal(staffSkuText("200-5g", "5g"), "#200 5g");
+  assert.equal(staffSkuText("350-5g", "6g"), "#350 6g");
+  assert.equal(staffSkuText("1027", "pack"), "#1027 pack");
+  assert.equal(signedOff(-2), "-2");
+  assert.equal(signedOff(1), "+1");
+  assert.equal(signedOff(0), "0");
+  assert.doesNotMatch(`${staffSkuText("200-5g", "5g")} ${signedOff(-2)}`, /[()]/);
+  assert.doesNotMatch(staffSkuText("1027", "pack"), /-/);
+  const ordered = [
+    { sku: "9", name: "other", category: "MAGIC", bag: "each" },
+    { sku: "1081", name: "vape", category: "VAPE PENS", bag: "each" },
+    { sku: "610", name: "edible", category: "EDIBLES", bag: "each" },
+    { sku: "713", name: "paper", category: "ADD ONS", bag: "each" },
+    { sku: "1027", name: "marl", category: "CIGARETTES", bag: "pack" },
+    { sku: "200-14g", name: "budget", category: "BUDGET", bag: "14g" },
+    { sku: "350-5g", name: "aaa", category: "AAA+", bag: "6g" },
+    { sku: "400-3g", name: "premium", category: "PREMIUM", bag: "3g" },
+    { sku: "500-3g", name: "exotic", category: "EXOTIC", bag: "3g" },
+  ].sort(compareCount).map((row) => row.sku);
+  assert.deepEqual(ordered, ["500-3g", "400-3g", "350-5g", "200-14g", "1027", "713", "610", "1081", "9"]);
+  const row = readFileSync("app/pos/SkuOffList.tsx", "utf8");
+  assert.match(row, /offId/);
+  assert.match(row, /off > 0 \? `\+\$\{line\.off\}` : String\(line\.off\)/);
+  assert.doesNotMatch(row, /expected|on-hand|on_hand|system_qty/i);
+  const css = readFileSync("app/pos/till.module.css", "utf8");
+  assert.match(css, /\.offList[\s\S]*flex-direction:\s*column/);
+  assert.match(css, /\.offShort[\s\S]*#dc2626/);
+  assert.match(css, /\.offOver[\s\S]*#16a34a/);
+  assert.match(css, /\.offQty[\s\S]*font-size:\s*28px/);
+  assert.match(css, /\.offId[\s\S]*font-weight:\s*800/);
+  assert.match(css, /\.stockBlue[\s\S]*#dbeafe/);
+  assert.match(css, /\.stockAmber[\s\S]*#fef3c7/);
+  const drafts = [{
+    shift_id: "s",
+    counts: [],
+    opening_counts: [{ sku: "200-5g", counted_qty: 3, expected_qty: 5, submitted_at: "2026-11-04T00:00:00.000Z" }],
+    final_deposit_cents: null,
+    updated_at: "2026-11-04T00:00:00.000Z",
+  }];
+  const token = signDemoDrafts(drafts, secrets.session);
+  assert.deepEqual(readDemoDrafts(chunkToken(token).join(""), secrets.session), drafts);
+});
+
+test("sell 2 then verify-count the remainder is 0, and a later sale does not change it", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 5 });
+  h.db.state.closings.push({
+    shift_id: "previous",
+    sales_total_cents: 0,
+    sale_count: 0,
+    void_count: 0,
+    cash_on_hand_cents: 0,
+    deposited_cents: 0,
+    tickets_total: 0,
+    tickets_cashed_out: 0,
+    tickets_expired: 0,
+    closing_lines: [{ sku: "1001", name: "Flower", left: 10, system_qty: 10 }],
+    sccx_ack_at: null,
+    sccx_attempts: 0,
+    no_count: false,
+    summary_text: "",
+    created_at: "2026-11-03T14:00:00.000Z",
+  });
+  await h.svc.syncSetb([
+    { sku: "200-5g", name: "Budget", category: "BUDGET", price_cents: 1000, active: true },
+    { sku: "350-5g", name: "AAA", category: "AAA+", price_cents: 2000, active: true },
+    { sku: "1027", name: "MARLBORO LIGHTS - GOLD", category: "CIGARETTES", price_cents: 1000, active: true },
+  ]);
+  const before = qty(h.db, "1001");
+  await h.svc.cashout(h.token, { key: "sell-two", lines: [{ sku: "1001", qty: 2 }] });
+  assert.equal(qty(h.db, "1001"), before - 2);
+  const saved = await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 8 });
+  assert.equal("off" in saved, false);
+  assert.equal(qty(h.db, "1001"), 8);
+  const row = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
+  assert.equal(row?.expected_qty, 8);
+  assert.equal(row?.counted_qty, 8);
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 5 });
+  await h.svc.cashout(h.token, { key: "sell-after", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(qty(h.db, "1001"), 7);
+  const view = await h.svc.state(h.token);
+  const shown = view.stock_check.opening.lines.find((line) => line.sku === "1001");
+  assert.equal(shown?.off, 0);
+  assert.equal(shown?.text, "#1001 each");
+  assert.deepEqual(Object.keys(shown ?? {}).sort(), ["off", "sku", "text"]);
+  assert.equal(view.verify_admin, undefined);
+  const blind = blindStaffState({ ...view, demo: false, verify_admin: { opening: [{ expected: 9, counted: 8 }] } });
+  assert.equal(blind.verify_admin, undefined);
+  assert.equal(blind.stock_check.opening.lines.find((line) => line.sku === "1001")?.off, 0);
+  await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
+  await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
+  await h.svc.saveOpeningCount(h.token, { sku: "1027", counted_qty: 2 });
+  const labels = (await h.svc.state(h.token)).verify.lines.filter((line) => ["200-5g", "350-5g", "1027"].includes(line.sku)).map((line) => line.text);
+  assert.deepEqual(labels, ["#350 6g", "#200 5g", "#1027 pack"]);
+});
+
+test("a count on zero stock is flagged and does not invent quantity", async () => {
+  const h = await readyTill({ "1001": 2, "1002": 0 });
+  const savedQty = qty(h.db, "1002");
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 3 });
+  assert.equal(qty(h.db, "1002"), savedQty);
+  const row = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1002");
+  assert.equal(row?.added_stock, true);
+  assert.equal(row?.counted_qty, 3);
+  assert.equal(row?.expected_qty, 0);
+});
+
+test("after two hours uncleared SKUs are accepted as-is and sales still work", async () => {
+  const h = await readyTill({ "1001": 4 });
+  h.clock.t = new Date(h.clock.t.getTime() + 2 * 60 * 60 * 1000 + 1000);
+  const locked = await h.svc.state(h.token);
+  assert.equal(locked.verify.show_banner, false);
+  assert.equal(qty(h.db, "1001"), 4);
+  assert.equal(h.db.state.audit.some((row) => row.action === "VERIFY_ACCEPTED" && row.detail.sku === "1001"), true);
+  await rejects(() => h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 1 }), "VERIFY_CLOSED");
+  assert.equal(qty(h.db, "1001"), 4);
+  const sale = await h.svc.cashout(h.token, { key: "after-window", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(sale.total_cents, 1000);
+  assert.equal(qty(h.db, "1001"), 3);
+});
+
+test("a deposit equal to cash on hand is allowed", async () => {
+  const h = await readyTill();
+  await h.svc.cashout(h.token, { key: "exact-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const exact = await h.svc.deposit(h.token, { key: "exact", amount_cents: 1000 });
+  assert.equal(exact.cash_on_hand_cents, 0);
+  assert.equal(exact.deposited_cents, 1000);
+  const again = await readyTill();
+  await again.svc.cashout(again.token, { key: "round-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const rounded = await again.svc.deposit(again.token, { key: "round", amount_cents: 1000.4 });
+  assert.equal(rounded.cash_on_hand_cents, 0);
+  const over = await readyTill();
+  await over.svc.cashout(over.token, { key: "over-sale", lines: [{ sku: "1001", qty: 1 }] });
+  await rejects(() => over.svc.deposit(over.token, { key: "over", amount_cents: 1000.6 }), "OVER_COH");
+  const close = await readyTill();
+  await close.svc.cashout(close.token, { key: "final-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const finalDeposit = await close.svc.saveFinalDeposit(close.token, { amount_cents: 1000 });
+  assert.equal(finalDeposit.final_deposit_cents, 1000);
+  assert.equal(finalDeposit.cash_on_hand_cents, 1000);
 });

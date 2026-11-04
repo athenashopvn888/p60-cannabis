@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
+import AdminGaps from "./AdminGaps";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
+import SkuOffList, { type OffLine } from "./SkuOffList";
+import VerifyBanner from "./VerifyBanner";
+import VerifyCount, { type VerifyLine } from "./VerifyCount";
 import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
@@ -39,6 +43,16 @@ type View = {
   pending_count?: number;
   sheet_sync_delayed?: boolean;
   end_shift_message?: string;
+  verify?: {
+    show_banner?: boolean;
+    deadline_at?: string;
+    reveal?: boolean;
+    lines?: VerifyLine[];
+    opening_off?: number;
+    opening_lines?: OffLine[];
+  };
+  stock_check?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
+  verify_admin?: { opening: { sku: string; text: string; off: number; counted: number | null; expected: number; added_stock?: boolean; accepted_as_is?: boolean; frozen?: boolean }[] };
   error?: string;
   code?: string;
 };
@@ -72,7 +86,8 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | null>(null);
+  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | "verify" | null>(null);
+  const verifyOpened = useRef(false);
   const [depositPin, setDepositPin] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [qrOpen, setQrOpen] = useState(false);
@@ -98,6 +113,15 @@ export default function PosApp() {
   }, []);
 
   usePosPoll(load);
+
+  useEffect(() => {
+    if (!view?.authenticated || verifyOpened.current) return;
+    if (sessionStorage.getItem("pny-open-verify") === "1") {
+      verifyOpened.current = true;
+      sessionStorage.removeItem("pny-open-verify");
+      setSheet("verify");
+    }
+  }, [view?.authenticated]);
 
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
@@ -258,6 +282,12 @@ export default function PosApp() {
     }
   }
 
+  async function saveVerifyLine(sku: string, countedQty: number) {
+    setError("");
+    await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty });
+    await load();
+  }
+
   async function saveOpeningLine(sku: string, countedQty: number, varianceReason?: string) {
     setError("");
     await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty, variance_reason: varianceReason });
@@ -338,6 +368,9 @@ export default function PosApp() {
   return (
     <main className={styles.shell} data-testid="pos-shell">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
+      {view.verify?.show_banner && view.verify.deadline_at && sheet !== "verify" && sheet !== "close" ? (
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => setSheet("verify")} />
+      ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}</div>
@@ -354,6 +387,14 @@ export default function PosApp() {
           </div>
         </div>
       </header>
+      {view.verify?.reveal && sheet == null ? (
+        <section className={styles.gapPanel} data-testid="staff-gaps">
+          <h2>Previous shift</h2>
+          <p data-testid="staff-gap-count">{view.verify.opening_off ?? 0} SKUs off</p>
+          <SkuOffList lines={view.verify.opening_lines ?? []} testId="staff-gap-list" />
+        </section>
+      ) : null}
+      {view.demo && sheet == null ? <AdminGaps rows={(view.verify_admin?.opening ?? []).filter((row) => row.counted != null)} /> : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
       {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
       {(view.incoming?.length ?? 0) > 0 && view.phase !== "opening" ? <div className={styles.banner}>Incoming stock is waiting to be confirmed.</div> : null}
@@ -503,6 +544,19 @@ export default function PosApp() {
           onSaveDeposit={saveCloseDeposit}
           onConfirm={confirmEnd}
           onClose={() => setSheet(null)}
+          stockCheck={view.stock_check}
+          deadline={view.verify?.show_banner ? view.verify.deadline_at ?? null : null}
+          onOpenVerify={() => setSheet("verify")}
+        />
+      ) : null}
+      {sheet === "verify" ? (
+        <VerifyCount
+          lines={view.verify?.lines ?? []}
+          deadline={view.verify?.show_banner ? view.verify.deadline_at ?? null : null}
+          busy={busy}
+          error={error}
+          onSave={saveVerifyLine}
+          onClose={() => setSheet(null)}
         />
       ) : null}
       {summaryText ? (
@@ -515,7 +569,7 @@ export default function PosApp() {
         </div>
       ) : null}
       {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
-      {sheet && sheet !== "close" ? (
+      {sheet && sheet !== "close" && sheet !== "verify" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
           <div className={styles.panel} data-testid="pos-sheet">
             {sheet === "cash" ? (

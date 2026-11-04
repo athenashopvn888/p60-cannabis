@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
+import SkuOffList, { type OffLine } from "./SkuOffList";
+import VerifyBanner from "./VerifyBanner";
 import styles from "./till.module.css";
 
 export type CloseLine = {
@@ -23,6 +25,9 @@ export default function CloseShift({
   onSaveDeposit,
   onConfirm,
   onClose,
+  stockCheck,
+  deadline,
+  onOpenVerify,
 }: {
   lines: CloseLine[];
   totals: Totals;
@@ -33,6 +38,9 @@ export default function CloseShift({
   onSaveDeposit: (cents: number) => Promise<void>;
   onConfirm: (depositCents: number) => Promise<void>;
   onClose: () => void;
+  stockCheck?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
+  deadline?: string | null;
+  onOpenVerify?: () => void;
 }) {
   const firstOpen = Math.max(0, lines.findIndex((line) => line.counted_qty == null));
   const [index, setIndex] = useState(firstOpen === -1 ? 0 : firstOpen);
@@ -92,6 +100,7 @@ export default function CloseShift({
 
   return (
     <section className={styles.close} data-testid="pos-close">
+      {deadline && onOpenVerify ? <VerifyBanner deadline={deadline} onOpen={onOpenVerify} /> : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <button className={styles.backLink} type="button" onClick={onClose}>Back</button>
@@ -144,6 +153,16 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(depositCents)}</strong></div>
             <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
             <div className={styles.summaryRow}><span>Cash left</span><strong>{formatMoney(Math.max(0, totals.cash_on_hand_cents - depositCents))}</strong></div>
+            <section className={styles.stockBlue} data-testid="opening-stock-check">
+              <h3>Opening verify count</h3>
+              <p>{stockCheck?.opening.ready === false ? "Count still open" : `${stockCheck?.opening.offCount ?? 0} SKUs off`}</p>
+              <SkuOffList lines={stockCheck?.opening.lines ?? []} testId="opening-sku-list" />
+            </section>
+            <section className={styles.stockAmber} data-testid="closing-stock-check">
+              <h3>Closing count</h3>
+              <p>{stockCheck?.closing.ready === false ? "Count still open" : `${stockCheck?.closing.offCount ?? 0} SKUs off`}</p>
+              <SkuOffList lines={stockCheck?.closing.lines ?? []} testId="closing-sku-list" />
+            </section>
             <button className={styles.primary} type="button" disabled={busy || done < lines.length} onClick={() => void onConfirm(depositCents)}>Confirm & End Shift</button>
           </div>
         ) : null}

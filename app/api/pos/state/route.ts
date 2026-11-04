@@ -1,4 +1,4 @@
-import { json, loadDemoJournal, staffToken, toResponse } from "@/app/lib/pny-pos/http";
+import { beginDemoRequest, endDemoRequest, json, loadDemoJournal, staffToken, toResponse } from "@/app/lib/pny-pos/http";
 import { getService } from "@/app/lib/pny-pos/runtime";
 import { blindStaffState } from "@/app/lib/pny-pos/staffView";
 
@@ -11,6 +11,7 @@ export async function GET() {
     const token = await staffToken();
     const journal = service.bootstrap().demo ? await loadDemoJournal() : undefined;
     if (!token) return json({ ...service.bootstrap(), authenticated: false }, 401);
+    await beginDemoRequest(service);
     try {
       const view = { ...(await service.state(token, journal)), authenticated: true } as Record<string, unknown>;
       return json(blindStaffState(view));
@@ -21,6 +22,8 @@ export async function GET() {
         return json({ ...service.bootstrap(), authenticated: false, ...body }, 401);
       }
       return response;
+    } finally {
+      await endDemoRequest(service);
     }
   } catch (error) {
     return toResponse(error);
