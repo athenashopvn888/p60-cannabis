@@ -44,7 +44,7 @@ function dollarsToCents(value: unknown) {
 
 function packPriceCents(pack: unknown) {
   if (!pack || typeof pack !== "object") return null;
-  const row = pack as PackPrice;
+  const row = pack as { regular?: number | null; sale?: number | null };
   const sale = typeof row.sale === "number" ? row.sale : null;
   const regular = typeof row.regular === "number" ? row.regular : null;
   const dollars = sale ?? regular;
