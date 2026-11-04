@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
-import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
+import { categoryChipLabel, defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -17,6 +17,12 @@ type VerifyLine = { sku: string; text: string; name: string; price_cents: number
 import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
+
+function rowsOf<T>(items: T[], size: number) {
+  const rows: T[][] = [];
+  for (let index = 0; index < items.length; index += size) rows.push(items.slice(index, index + size));
+  return rows;
+}
 
 type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null; flower_type?: string; thc?: string };
 
@@ -298,6 +304,13 @@ export default function PosApp() {
     await load();
   }
 
+  async function jumpVerify(sku: string) {
+    if (view?.master) return;
+    setError("");
+    await post("/api/pos/counts/opening-jump", { sku });
+    await load();
+  }
+
   async function saveOpeningLine(sku: string, countedQty: number, varianceReason?: string) {
     setError("");
     await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty, variance_reason: varianceReason });
@@ -378,7 +391,7 @@ export default function PosApp() {
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
           {view.phase === "sell" ? (
-            <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
+            <button className={`${styles.cornerBtn} ${styles.menuQr}`} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>MENU QR</button>
           ) : null}
         </div>
         <div className={styles.headerActions}>
@@ -426,12 +439,17 @@ export default function PosApp() {
           <div className={styles.searchWrap}>
             <label className="sr-only" htmlFor="pos-search" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>Search SKU or name</label>
             <input id="pos-search" className={styles.search} placeholder="Search SKU or name" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <button type="button" className={styles.promoComing} data-testid="promo-coming" disabled>PROMO COMING</button>
           </div>
-          <div className={styles.chips} role="tablist" aria-label="Categories">
-            {categories.map((chip) => (
-              <button key={chip} type="button" role="tab" aria-selected={chip === activeCategory} data-category={chip} className={chip === activeCategory ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
-                {chip}
-              </button>
+          <div className={styles.chipRows} role="tablist" aria-label="Categories">
+            {rowsOf(categories, 4).map((row) => (
+              <div key={row.join("|")} className={styles.chipRow}>
+                {row.map((chip) => (
+                  <button key={chip} type="button" role="tab" aria-selected={chip === activeCategory} data-category={chip} className={chip === activeCategory ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>
+                    {categoryChipLabel(chip)}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
           {blocks.map((block) => {
@@ -513,17 +531,14 @@ export default function PosApp() {
           ) : null}
           {verifyOpen && view.verify?.deadline_at ? <VerifyBanner slim deadline={view.verify.deadline_at} /> : null}
           {showVerify ? (
-            <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
+            <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} />
           ) : null}
           <div className={styles.footerBar}>
-            <div className={styles.cartCompact}>
-              <span className={styles.metricLabel}>Cart</span>
-              <strong className={styles.total} data-testid="cart-total">{formatMoney(total)}</strong>
-            </div>
+            <button type="button" className={tab === "sell" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} onClick={() => setTab("sell")}>Sell</button>
+            <button type="button" className={tab === "tickets" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} data-testid="tickets-tab" onClick={() => setTab("tickets")}>Ticket {view.pending_count ?? 0}</button>
             <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
             <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
-            <button type="button" className={tab === "sell" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} onClick={() => setTab("sell")}>Sell</button>
-            <button type="button" className={tab === "tickets" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} data-testid="tickets-tab" onClick={() => setTab("tickets")}>Tickets {view.pending_count ?? 0}</button>
+            <strong className={styles.cartValue} data-testid="cart-total">{formatMoney(total)}</strong>
           </div>
         </footer>
       ) : null}

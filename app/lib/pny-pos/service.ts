@@ -2131,6 +2131,45 @@ export class PosService {
     });
   }
 
+  /** Blank SKUs before the chosen line are accepted as expected. The chosen line stays open. */
+  async jumpOpeningCount(token: string, sku: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
+      lockUnverified(tx.state, shift, staff.staff_uid, now);
+      const anchor = verifyAnchorMs(shift);
+      if (anchor == null || now.getTime() >= anchor + VERIFY_WINDOW_MS) {
+        throw new PosError(409, "VERIFY_CLOSED", "The verify window is closed. Uncleared SKUs are accepted as-is.");
+      }
+      const target = sku.trim();
+      const plan = verifySkuList(tx.state, shift.id);
+      const index = plan.indexOf(target);
+      if (index < 0) throw new PosError(400, "BAD_SKU", "That SKU is not in this count.");
+      const draft = ensureDraft(tx.state, shift.id, now);
+      const at = iso(now);
+      let changed = false;
+      for (const item of plan.slice(0, index)) {
+        if (draft.opening_counts?.some((row) => row.sku === item)) continue;
+        const expected = expectedAtSubmit(tx.state, shift, item, now.getTime());
+        draft.opening_counts?.push({
+          sku: item,
+          counted_qty: expected,
+          expected_qty: expected,
+          submitted_at: at,
+          variance_reason: null,
+          added_stock: false,
+          accepted_as_is: true,
+        });
+        audit(tx.state, "VERIFY_ACCEPTED", "sku", item, staff.staff_uid, { sku: item, accepted_as_is: true, jumped_to: target }, at);
+        changed = true;
+      }
+      if (changed) draft.updated_at = at;
+      return { ok: true, sku: target };
+    });
+  }
+
   async absorbForDemo(journal?: DemoJournalOrder[]) {
     if (!this.deps.demo || !journal?.length) return;
     await this.db.transaction(async (tx) => {

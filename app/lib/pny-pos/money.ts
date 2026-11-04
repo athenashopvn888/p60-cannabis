@@ -55,6 +55,27 @@ export function sortCategories(names: string[]) {
   });
 }
 
+/** Short chip text. The stored category name stays unchanged. */
+const CHIP_LABELS: Record<string, string> = {
+  "add ons": "Add Ons",
+  cigarettes: "Cigs",
+  cigarette: "Cigs",
+  tobacco: "Cigs",
+  prerolls: "PreRolls",
+  "pre rolls": "PreRolls",
+  preroll: "PreRolls",
+  edibles: "Edibles",
+  edible: "Edibles",
+  "magic & others": "Magic",
+  magic: "Magic",
+  "vape disposable": "THC Vape",
+  "vape pens": "Nic Vape",
+};
+
+export function categoryChipLabel(name: string) {
+  return CHIP_LABELS[categoryKey(name)] ?? name;
+}
+
 /** Add Ons is selected when the menu or till opens. */
 export function defaultCategory(names: string[]) {
   return names.find((name) => categoryKey(name) === "add ons") ?? names[0] ?? "";
