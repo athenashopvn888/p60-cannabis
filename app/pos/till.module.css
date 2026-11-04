@@ -140,6 +140,49 @@
   padding: 0 10px;
 }
 
+.cornerBtn {
+  border: 0;
+  background: #f97316;
+  color: #fff;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.qrOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: #000;
+}
+
+.qrClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.qrCode {
+  width: min(86vmin, 560px);
+  height: min(86vmin, 560px);
+  background: #fff;
+  shape-rendering: crispEdges;
+}
+
 .body {
   flex: 1;
   overflow: auto;

@@ -19,6 +19,7 @@ import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
+import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
@@ -604,7 +605,21 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(posApp, /href="\/pos\/till"/);
   assert.match(posApp, /End Shift/);
   assert.doesNotMatch(posApp, /data-testid="total-sales"/);
-  assert.doesNotMatch(posApp, /\+Deposit/);
+  assert.match(posApp, /data-testid="pos-deposit"/);
+  assert.match(posApp, /\+Deposit/);
+  assert.match(posApp, /Customer QR/);
+  assert.match(posApp, /deposits\/confirm-pin/);
+  assert.doesNotMatch(posApp, /data-testid="cash-on-hand"|data-testid="total-deposited"|data-testid="total-sales"/);
+  const customerQr = readFileSync("app/pos/CustomerQr.tsx", "utf8");
+  assert.match(customerQr, /customerMenuQr/);
+  assert.match(readFileSync("app/pos/menuQr.ts", "utf8"), /https:\/\/www\.p60cannabis\.com\/menu/);
+  assert.match(readFileSync("app/pos/menuQr.ts", "utf8"), /from "uqr"/);
+  assert.doesNotMatch(customerQr + readFileSync("app/pos/menuQr.ts", "utf8"), /qrserver|chart\.googleapis|api\.qr/);
+  const qr = customerMenuQr();
+  assert.equal(CUSTOMER_MENU_URL, "https://www.p60cannabis.com/menu");
+  assert.equal(qr.data.length, qr.size);
+  assert.equal(qr.data[0]?.length, qr.size);
+  assert.equal(qr.data.some((row) => row.some(Boolean)), true);
   assert.match(tillApp, /data-testid="total-sales"/);
   assert.match(tillApp, /data-testid="cash-on-hand"/);
   assert.match(tillApp, /\+Deposit/);
@@ -710,6 +725,27 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   }
 });
 
+test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
+  const h = await readyTill({ "1001": 2 });
+  const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
+  const hash = shift?.pin_hash ?? "";
+  const view = await h.svc.state(h.token);
+  assert.equal(view.shift?.staff_name, "Anom");
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.pin_hash, hash);
+  await rejects(() => h.svc.confirmShiftPin(h.token, "0000"), "BAD_PIN");
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.pin_hash, hash);
+  await h.svc.confirmShiftPin(h.token, h.pin);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.pin_hash, hash);
+  await h.svc.cashout(h.token, { key: "cash-for-deposit", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  const saved = await h.svc.deposit(h.token, { key: "mid-deposit", amount_cents: 400 });
+  assert.equal(saved.deposited_cents, 400);
+  assert.equal(h.db.state.deposits.at(-1)?.amount_cents, 400);
+  const next = await h.svc.startShift({ key: "start-b", store: "PNY01", staff_ref: "staff-b", shift_id: "sccx-b" });
+  const login = await h.svc.login(String(next.pin), "10.0.0.77");
+  const again = await h.svc.state(login.token);
+  assert.equal(again.shift?.staff_name, "Bea");
+});
+
 test("sheet store keeps a hashed shift PIN, refill opening count, and cash or debit sales", async () => {
   const pin = "2468";
   const sheet = new LocalSheet();
@@ -745,7 +781,8 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   const live = new PosService(again, { sheet, secrets, demo: null });
   const relog = await live.login(pin, "10.2.0.8");
   const view = await live.state(relog.token);
-  assert.equal(view.shift.staff_name, "Tri");
+  assert.equal(view.shift.staff_name, "Anom");
+  assert.equal(sheet.tabs.POS_Staff.find((row) => row.staff_uid === "staff-tri")?.display_name, "Anom");
   assert.equal(view.totals.cash_sales_cents, 1000);
   assert.equal(view.totals.debit_sales_cents, 1000);
   assert.equal(view.products.find((product) => product.sku === "1001")?.qty, 0);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { formatMoney, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import { usePosPoll } from "./usePosPoll";
 import { ProductPhoto } from "./ProductPhoto";
@@ -71,7 +72,10 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "close" | "done" | null>(null);
+  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | null>(null);
+  const [depositPin, setDepositPin] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [qrOpen, setQrOpen] = useState(false);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
@@ -153,6 +157,48 @@ export default function PosApp() {
   function openEnd() {
     setError("");
     setSheet("close");
+  }
+
+  function openDeposit() {
+    setError("");
+    setDepositPin("");
+    setDepositAmount("");
+    setSheet("deposit-pin");
+  }
+
+  async function confirmDepositPin() {
+    setError("");
+    setBusy(true);
+    try {
+      await post("/api/pos/deposits/confirm-pin", { pin: depositPin });
+      setDepositPin("");
+      setSheet("deposit-amount");
+    } catch (err) {
+      setDepositPin("");
+      setError(failureText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDeposit() {
+    setError("");
+    const cents = Math.round(Number(depositAmount) * 100);
+    if (!Number.isInteger(cents) || cents <= 0) {
+      setError("Enter a deposit greater than zero.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
+      setDepositAmount("");
+      setSheet(null);
+      await load();
+    } catch (err) {
+      setError(failureText(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveCloseCount(sku: string, countedQty: number) {
@@ -267,6 +313,12 @@ export default function PosApp() {
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}</div>
           <div className={styles.headerActions}>
+            {view.phase === "sell" ? (
+              <>
+                <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" onClick={openDeposit}>+Deposit</button>
+                <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
+              </>
+            ) : null}
             <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
             <button className={styles.ghost} type="button" onClick={() => void openEnd()}>End Shift</button>
           </div>
@@ -422,6 +474,7 @@ export default function PosApp() {
           onClose={() => setSheet(null)}
         />
       ) : null}
+      {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
       {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
           <div className={styles.panel} data-testid="pos-sheet">
@@ -447,6 +500,40 @@ export default function PosApp() {
                 <h2>Sale {refNo}</h2>
                 <p>Recorded.</p>
                 <button className={styles.primary} type="button" onClick={() => setSheet(null)}>Done</button>
+              </>
+            ) : null}
+            {sheet === "deposit-pin" ? (
+              <>
+                <h2>Deposit</h2>
+                <p>Enter the shift PIN.</p>
+                <div className={styles.pinDisplay} aria-live="polite">{depositPin.replace(/./g, "•") || " "}</div>
+                {error ? <p className={styles.error}>{error}</p> : null}
+                <div className={styles.keys}>
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"].map((digit) => (
+                    <button
+                      key={digit}
+                      type="button"
+                      onClick={() => {
+                        if (digit === "Clear") setDepositPin("");
+                        else if (digit === "⌫") setDepositPin((current) => current.slice(0, -1));
+                        else setDepositPin((current) => (current + digit).slice(0, 4));
+                      }}
+                    >
+                      {digit}
+                    </button>
+                  ))}
+                </div>
+                <button className={styles.primary} type="button" disabled={busy || depositPin.length !== 4} onClick={() => void confirmDepositPin()}>Continue</button>
+                <button className={styles.secondary} type="button" onClick={() => { setDepositPin(""); setSheet(null); }}>Back</button>
+              </>
+            ) : null}
+            {sheet === "deposit-amount" ? (
+              <>
+                <h2>Deposit</h2>
+                <input className={styles.field} inputMode="decimal" aria-label="Deposit amount" placeholder="0.00" value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} />
+                {error ? <p className={styles.error}>{error}</p> : null}
+                <button className={styles.primary} type="button" disabled={busy} onClick={() => void saveDeposit()}>Save deposit</button>
+                <button className={styles.secondary} type="button" onClick={() => { setDepositAmount(""); setSheet(null); }}>Back</button>
               </>
             ) : null}
           </div>

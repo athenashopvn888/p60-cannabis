@@ -65,6 +65,31 @@ function audit(state: State, action: string, refType: string | null, refId: stri
   state.audit.push({ id: randomUUID(), action, ref_type: refType, ref_id: refId, actor, detail, created_at: at });
 }
 
+const TONIGHT_DISPLAY_NAME = "Anom";
+const TONIGHT_NAME_MARK = "PNY01-TONIGHT";
+
+/** Rename the staff member on the open PNY01 shift once. Does not touch the PIN. */
+function nameLiveShift(state: State, at: string) {
+  if (state.audit.some((row) => row.action === "DISPLAY_NAME" && row.ref_id === TONIGHT_NAME_MARK)) return;
+  const shift = state.shifts.find((row) => row.store_code === STORE_CODE && (row.status === "ACTIVE" || row.status === "CLOSING"));
+  if (!shift) return;
+  const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+  if (!staff) return;
+  const previous = staff.display_name;
+  if (previous !== TONIGHT_DISPLAY_NAME) {
+    staff.display_name = TONIGHT_DISPLAY_NAME;
+    staff.updated_at = at;
+  }
+  const queued = state.outbox.find((row) => row.row_id === `SH-${shift.id}`);
+  if (queued) {
+    queued.payload = { ...queued.payload, staff_name: TONIGHT_DISPLAY_NAME };
+    queued.status = "queued";
+    queued.sent_at = null;
+    queued.next_attempt_at = at;
+  }
+  audit(state, "DISPLAY_NAME", "staff", TONIGHT_NAME_MARK, staff.staff_uid, { from: previous, to: TONIGHT_DISPLAY_NAME }, at);
+}
+
 function enqueue(state: State, tab: string, rowId: string, payload: Record<string, string>, at: string) {
   const existing = state.outbox.find((row) => row.row_id === rowId);
   if (existing) {
@@ -775,6 +800,7 @@ function salePayload(state: State, saleId: string) {
     store_code: STORE_CODE,
     shift_id: shift?.sccx_shift_id ?? "",
     staff_pos_id: staff?.pos_id ?? "",
+    staff_name: staff?.display_name ?? "",
     total: centsToSheet(sale.total_cents),
     lines: lines.map((line) => `${line.sku}x${line.qty}@${centsToSheet(line.unit_price_cents)}`).join(" | "),
     status: sale.status,
@@ -1128,6 +1154,7 @@ export class PosService {
         revoked_at: null,
         created_at: at,
       });
+      nameLiveShift(tx.state, at);
       const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
       return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
     });
@@ -1193,6 +1220,7 @@ export class PosService {
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff } = this.session(tx.state, token, now, gate);
+      nameLiveShift(tx.state, iso(now));
       acceptStartingStock(tx.state, shift, staff.staff_uid, iso(now));
       const totals = shiftTotals(tx.state, shift.id);
       const products = tx.state.products
@@ -1551,6 +1579,34 @@ export class PosService {
       remember(tx.state, "deposit", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
+  }
+
+  /** Re-check the shift PIN. Does not issue a session or change the stored PIN. */
+  async confirmShiftPin(token: string, pin: string) {
+    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift } = this.session(tx.state, token, now);
+      if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
+      if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+        return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
+      }
+      if (!verifyPin(pin, shift.pin_hash)) {
+        shift.pin_failed_attempts += 1;
+        if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
+        const locked = shift.status === "LOCKED";
+        return {
+          ok: false as const,
+          status: locked ? 423 : 401,
+          code: locked ? "LOCKED" : "BAD_PIN",
+          message: locked ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN." : "That PIN is not correct.",
+        };
+      }
+      shift.pin_failed_attempts = 0;
+      return { ok: true as const };
+    });
+    if (!result.ok) throw new PosError(result.status, result.code, result.message);
+    return result;
   }
 
   async openTicket(token: string, ticketId: string, journal?: DemoJournalOrder[]) {
@@ -1927,7 +1983,10 @@ export class PosService {
     const body = await this.db.transaction(async (tx) => {
       const now = iso(this.now());
       const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
-      if (shift) acceptStartingStock(tx.state, shift, shift.staff_uid, now);
+      if (shift) {
+        nameLiveShift(tx.state, now);
+        acceptStartingStock(tx.state, shift, shift.staff_uid, now);
+      }
       const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products
         .filter((product) => product.setb_active)
