@@ -871,6 +871,8 @@ test("the sales feed returns new sales once and does not change the till", async
   assert.equal(typeof cash.items[0]?.size, "string");
   assert.equal(debit.items[0]?.qty, 2);
   assert.equal(debit.ticket_no, null);
+  assert.equal(page.sales[0]?.shift_order_number, 1);
+  assert.equal(page.sales[1]?.shift_order_number, 2);
   assert.equal(page.sales[0]?.shift_total_cents, page.sales[0]?.total_cents);
   assert.equal(
     page.sales[1]?.shift_total_cents,

@@ -2178,6 +2178,10 @@ export class PosService {
           staff_name: staff?.display_name ?? "",
           items,
           total_cents: sale.total_cents,
+          shift_order_number: allRows
+            .filter((row) => row.sale.status === "COMPLETED" && row.sale.shift_id === sale.shift_id)
+            .filter((row) => row.sale.created_at < sale.created_at || (row.sale.created_at === sale.created_at && row.index <= saleIndex))
+            .length,
           shift_total_cents: allRows
             .filter((row) => row.sale.status === "COMPLETED" && row.sale.shift_id === sale.shift_id)
             .filter((row) => row.sale.created_at < sale.created_at || (row.sale.created_at === sale.created_at && row.index <= saleIndex))
