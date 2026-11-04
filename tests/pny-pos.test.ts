@@ -1851,6 +1851,62 @@ test("reading state leaves an in-progress verify draft and the deadline alone", 
   assert.equal(JSON.stringify(h.db.state.balances), balances);
 });
 
+test("undoing a submitted verify restores pre-count stock and leaves the deadline", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 4 });
+  h.db.state.closings.push({
+    shift_id: "previous",
+    sales_total_cents: 0,
+    sale_count: 0,
+    void_count: 0,
+    cash_on_hand_cents: 0,
+    deposited_cents: 0,
+    tickets_total: 0,
+    tickets_cashed_out: 0,
+    tickets_expired: 0,
+    closing_lines: [{ sku: "1001", name: "Flower", left: 10, system_qty: 10 }],
+    sccx_ack_at: null,
+    sccx_attempts: 0,
+    no_count: false,
+    summary_text: "",
+    created_at: "2026-11-03T14:00:00.000Z",
+  });
+  await h.svc.cashout(h.token, { key: "undo-sale", lines: [{ sku: "1001", qty: 2 }] });
+  await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 5 });
+  await h.svc.submitVerifyCount(h.token);
+  const balance = h.db.state.balances.find((row) => row.sku === "1001");
+  assert.ok(balance);
+  balance.qty = 3;
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  const opened = shift.verify_opened_at;
+  const pin = shift.pin_hash;
+  const sales = JSON.stringify(h.db.state.sales);
+  const incoming = JSON.stringify(h.db.state.incoming);
+  const deposits = JSON.stringify(h.db.state.deposits);
+  const backup = await h.svc.exportVerifyBackup(h.shiftId);
+  assert.equal(backup.verify_submitted_at != null, true);
+  assert.equal(backup.opening_counts.some((row) => row.sku === "1001"), true);
+  assert.equal(backup.stock.find((row) => row.sku === "1001")?.pre_count, 8);
+  assert.equal(backup.stock.find((row) => row.sku === "1001")?.on_hand, 3);
+  const undone = await h.svc.undoOpeningVerify(h.shiftId);
+  assert.deepEqual(undone.stock_changes, [{ sku: "1001", from: 3, to: 8 }]);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "1001")?.qty, 8);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "1002")?.qty, 4);
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === shift.id)?.opening_counts?.length ?? 0, 0);
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === shift.id)?.verify_submitted_at ?? null, null);
+  assert.equal(shift.verify_opened_at, opened);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift.id)?.pin_hash, pin);
+  assert.equal(JSON.stringify(h.db.state.sales), sales);
+  assert.equal(JSON.stringify(h.db.state.incoming), incoming);
+  assert.equal(JSON.stringify(h.db.state.deposits), deposits);
+  const view = await h.svc.state(h.token);
+  assert.equal(view.shift?.status, "ACTIVE");
+  assert.equal(view.verify?.reveal, false);
+  assert.equal(view.verify?.cleared, 0);
+  assert.equal(view.verify?.total, view.verify?.lines?.length);
+  assert.equal(view.stock_check.opening.lines.length, 0);
+});
+
 test("restarting the verify deadline changes only the clock", async () => {
   const h = await readyTill({ "1001": 4, "1002": 2 });
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
