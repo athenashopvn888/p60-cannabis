@@ -2579,6 +2579,53 @@ export class PosService {
   }
 
   /**
+   * Temporary, secret-protected maintenance preview for Tri's Nov 5 test-sale cleanup.
+   * This is deliberately read-only and returns enough state to make an external backup.
+   */
+  async previewTriTestSales(refNos: string[]) {
+    return this.db.transaction(async (tx) => {
+      const requested = new Set(refNos.map((value) => value.trim()).filter(Boolean));
+      const anchor = tx.state.sales.find((sale) => sale.ref_no === "PNY01-00030");
+      const anchorTime = anchor?.created_at ?? "";
+      const torontoDay = (value: string) => new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Toronto",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(value));
+      const anchorDay = anchor ? torontoDay(anchor.created_at) : null;
+      const newerTri = tx.state.sales.filter((sale) => {
+        const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        return Boolean(anchorDay)
+          && sale.created_at > anchorTime
+          && torontoDay(sale.created_at) === anchorDay
+          && /^tri$/i.test(staff?.display_name.trim() ?? "");
+      });
+      const selected = tx.state.sales.filter((sale) => requested.has(sale.ref_no) || newerTri.some((row) => row.id === sale.id));
+      const shiftIds = [...new Set(selected.map((sale) => sale.shift_id))];
+      const skus = [...new Set(selected.flatMap((sale) => tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => line.sku)))];
+      return {
+        ok: true as const,
+        requested_missing: [...requested].filter((refNo) => !tx.state.sales.some((sale) => sale.ref_no === refNo)),
+        anchor_day_toronto: anchorDay,
+        sales: selected.map((sale) => ({
+          ...describeShiftSale(tx.state, sale),
+          staff_name: tx.state.staff.find((row) => row.staff_uid === sale.staff_uid)?.display_name ?? "",
+          payment_method: sale.payment_method,
+          explicitly_requested: requested.has(sale.ref_no),
+          newer_tri_candidate: newerTri.some((row) => row.id === sale.id),
+        })),
+        stock: skus.map((sku) => ({ sku, name: productName(tx.state, sku), qty: qtyOf(tx.state, sku) })),
+        shifts: shiftIds.map((shiftId) => ({
+          shift: tx.state.shifts.find((row) => row.id === shiftId) ?? null,
+          totals: shiftTotals(tx.state, shiftId),
+          closing: tx.state.closings.find((row) => row.shift_id === shiftId) ?? null,
+        })),
+      };
+    });
+  }
+
+  /**
    * The first sale is 10 red Goose Full (1011) and 10 blue Goose Lights (1012), and nothing else.
    * Returns that sale without writing. A different cart is not a match.
    */
