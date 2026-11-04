@@ -29,7 +29,8 @@ export function useVerifyOpen(deadline: string | null | undefined, onExpire?: ()
     }, 1000);
     return () => window.clearInterval(id);
   }, [deadline, onExpire]);
-  return Boolean(deadline) && Date.parse(deadline) > now;
+  if (!deadline) return false;
+  return Date.parse(deadline) > now;
 }
 
 function clock(ms: number) {
