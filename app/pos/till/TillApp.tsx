@@ -14,6 +14,7 @@ type View = {
   demo_label?: string | null;
   demo_pin?: string | null;
   shift?: { staff_name: string };
+  master?: boolean;
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   error?: string;
   code?: string;
@@ -42,6 +43,8 @@ export default function TillApp() {
   const [deposit, setDeposit] = useState("");
   const [open, setOpen] = useState(false);
   const [slipCode, setSlipCode] = useState<string | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
@@ -59,10 +62,30 @@ export default function TillApp() {
     try {
       await post("/api/pos/login", { pin });
       setPin("");
-      await load();
+      const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
+      const data = (await response.json()) as View;
+      setView(data);
+      setViewOnly(Boolean(data.master));
+      setUnlocked(true);
     } catch (err) {
       const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
       setError(err instanceof Error ? (code ? `${err.message} (${code})` : err.message) : "Could not sign in.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlock() {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await post("/api/pos/till/unlock", { pin });
+      setPin("");
+      setViewOnly(Boolean(result.view_only));
+      setUnlocked(true);
+    } catch (err) {
+      const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+      setError(err instanceof Error ? (code ? `${err.message} (${code})` : err.message) : "Could not open the till.");
     } finally {
       setBusy(false);
     }
@@ -87,8 +110,18 @@ export default function TillApp() {
 
   if (!view) return <main className={styles.shell}>Loading till…</main>;
 
+  const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"];
+  const pinPad = (onDigit: (digit: string) => void) => (
+    <div className={styles.keys}>
+      {digits.map((digit) => (
+        <button key={digit} type="button" onClick={() => onDigit(digit)}>
+          {digit}
+        </button>
+      ))}
+    </div>
+  );
+
   if (!view.authenticated) {
-    const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"];
     return (
       <main className={styles.shell} data-testid="pos-till-login">
         {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
@@ -97,24 +130,37 @@ export default function TillApp() {
           <p>Enter the same 4-digit shift PIN. Five wrong tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
-          <div className={styles.keys}>
-            {digits.map((digit) => (
-              <button
-                key={digit}
-                type="button"
-                onClick={() => {
-                  if (digit === "Clear") setPin("");
-                  else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-                  else setPin((current) => (current + digit).slice(0, 4));
-                }}
-              >
-                {digit}
-              </button>
-            ))}
-          </div>
+          {pinPad((digit) => {
+            if (digit === "Clear") setPin("");
+            else if (digit === "⌫") setPin((current) => current.slice(0, -1));
+            else setPin((current) => (current + digit).slice(0, 4));
+          })}
           <button className={styles.primary} type="button" disabled={pin.length !== 4 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
             Sign in
           </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (!unlocked) {
+    return (
+      <main className={styles.shell} data-testid="pos-till-gate">
+        {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
+        <section className={styles.pin}>
+          <h1 className={styles.brand}>Till</h1>
+          <p>Enter the shift PIN to open the till. Five wrong tries lock the shift.</p>
+          <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
+          {error ? <p className={styles.error}>{error}</p> : null}
+          {pinPad((digit) => {
+            if (digit === "Clear") setPin("");
+            else if (digit === "⌫") setPin((current) => current.slice(0, -1));
+            else setPin((current) => (current + digit).slice(0, 4));
+          })}
+          <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length !== 4 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
+            Open till
+          </button>
+          <Link className={styles.backLink} href="/pos" style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
@@ -129,7 +175,7 @@ export default function TillApp() {
       <header className={styles.header}>
         <div className={styles.headerTop}>
           <Link className={styles.backLink} href="/pos">Back</Link>
-          <div className={styles.brand}>Till · {view.shift?.staff_name}</div>
+          <div className={styles.brand}>Till · {view.shift?.staff_name}{viewOnly ? " · Master view" : ""}</div>
         </div>
       </header>
       <section className={styles.tillCards}>
@@ -161,7 +207,7 @@ export default function TillApp() {
             ))}
           </div>
         </article>
-        {open ? (
+        {viewOnly ? null : open ? (
           <div className={styles.tillCard}>
             <span>+Deposit</span>
             <p>Cash on hand is {formatMoney(view.totals?.cash_on_hand_cents ?? 0)}. A larger deposit is blocked.</p>

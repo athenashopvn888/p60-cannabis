@@ -796,6 +796,52 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   }
 });
 
+test("the till PIN check keeps the POS session and leaves the shift alone", async () => {
+  const h = await readyTill({ "1001": 4 });
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  const hash = shift.pin_hash;
+  const opened = shift.verify_opened_at;
+  const sessions = h.db.state.sessions.length;
+  const sales = JSON.stringify(h.db.state.sales);
+  const balances = JSON.stringify(h.db.state.balances);
+  const counts = JSON.stringify(h.db.state.closing_drafts ?? []);
+  const staff = await h.svc.unlockTill(h.token, h.pin);
+  assert.equal(staff.view_only, false);
+  const kept = h.db.state.shifts.find((row) => row.id === shift.id);
+  assert.equal(h.db.state.sessions.length, sessions);
+  assert.equal(kept?.pin_hash, hash);
+  assert.equal(kept?.verify_opened_at, opened);
+  assert.equal(kept?.pin_failed_attempts, 0);
+  assert.equal(JSON.stringify(h.db.state.sales), sales);
+  assert.equal(JSON.stringify(h.db.state.balances), balances);
+  assert.equal(JSON.stringify(h.db.state.closing_drafts ?? []), counts);
+  await rejects(() => h.svc.unlockTill(h.token, "0000"), "BAD_PIN");
+  const afterMiss = h.db.state.shifts.find((row) => row.id === shift.id);
+  assert.equal(afterMiss?.pin_failed_attempts, 1);
+  assert.equal(afterMiss?.pin_hash, hash);
+  const again = await h.svc.unlockTill(h.token, h.pin);
+  assert.equal(again.view_only, false);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift.id)?.pin_failed_attempts, 0);
+  const asMaster = await h.svc.unlockTill(h.token, "1988");
+  assert.equal(asMaster.view_only, true);
+  const still = await h.svc.state(h.token);
+  assert.equal(still.master, false);
+  assert.equal(still.can_sell, true);
+  assert.equal(h.db.state.sessions.length, sessions);
+  const master = await h.svc.login("1988", "10.9.0.1");
+  const masterView = await h.svc.unlockTill(master.token, "1988");
+  assert.equal(masterView.view_only, true);
+  const staffPinOnMaster = await h.svc.unlockTill(master.token, h.pin);
+  assert.equal(staffPinOnMaster.view_only, true);
+  await rejects(() => h.svc.deposit(master.token, { key: "master-till", amount_cents: 100 }), "MASTER_VIEW");
+  assert.equal(shift.pin_hash, hash);
+  const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
+  assert.match(tillApp, /\/api\/pos\/till\/unlock/);
+  assert.match(tillApp, /data-testid="pos-till-gate"/);
+  assert.match(tillApp, /data-testid="till-unlock"/);
+});
+
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
   const h = await readyTill({ "1001": 2 });
   const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
