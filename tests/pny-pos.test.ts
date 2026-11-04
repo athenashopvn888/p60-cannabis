@@ -1427,13 +1427,18 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   assert.equal(index.get("709")?.price_cents, 500);
   assert.equal(index.get("709")?.category, "ADD ONS");
   assert.equal(index.get("680")?.price_cents, 1600);
-  assert.equal(index.get("681")?.price_cents, 3500);
-  const shared = expandSetbItems([["SKU", "Name", "Price_EACH"], ["680, 681, 682, 683", "SOUR", "$16 / $35"]]);
-  assert.equal(shared.items.find((item) => item.sku === "680")?.flag, "ambiguous: $16 / $35");
-  assert.equal(shared.items.find((item) => item.sku === "680")?.unitCents, null);
+  assert.equal(index.get("680")?.name, "Sour 150mg Gummies IND");
+  assert.equal(index.get("681")?.price_cents, 1600);
+  assert.equal(index.get("682")?.name, "Sour 600mg Gummies IND");
+  assert.equal(index.get("713")?.price_cents, 500);
+  assert.equal(index.get("610")?.price_cents, 2000);
+  assert.equal(index.get("844")?.price_cents, 3000);
+  assert.equal(index.has("666"), false);
+  const shared = expandSetbItems([["SKU", "Name", "Price_EACH"], ["9000, 9001, 9002, 9003", "HASH", "$40 / $30"]]);
+  assert.equal(shared.items.find((item) => item.sku === "9000")?.flag, "ambiguous: $40 / $30");
+  assert.equal(shared.items.find((item) => item.sku === "9000")?.unitCents, null);
   assert.equal(index.get("1014")?.price_cents, 250);
-  assert.equal(index.has("610"), false);
-  assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["713", "CONES", ""]]).has("713"), false);
+  assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["9998", "CONES", ""]]).has("9998"), false);
   assert.equal(itemsFromGrid([["SKU", "Name", "Price_EACH"], ["709.0", "RAW", "$5"]]).get("709")?.price_cents, 500);
 
   const merged = mergeItemsPriceGrid(

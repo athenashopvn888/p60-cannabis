@@ -254,7 +254,65 @@ export function expandSetbItems(grid: string[][]) {
       }
     });
   }
+  applyPosPrices(items);
   return { items: [...items.values()], combined };
+}
+
+/** Tri's store POS prices. These replace an ambiguous SETB cell. 666 and 667 stay off. */
+const POS_UNIT_PRICES: Record<string, { name: string; cents: number; category: string }> = {
+  "668": { name: "red ROSE Grabba Shaker", cents: 2000, category: "CIGARETTES" },
+  "669": { name: "red HERRING Grabba Shaker", cents: 2000, category: "CIGARETTES" },
+  "670": { name: "X2 red ROSE Grabba Shaker", cents: 3000, category: "CIGARETTES" },
+  "671": { name: "X2 red HERRING Grabba Shaker", cents: 3000, category: "CIGARETTES" },
+  "680": { name: "Sour 150mg Gummies IND", cents: 1600, category: "EDIBLES" },
+  "681": { name: "Sour 150mg Gummies SAT", cents: 1600, category: "EDIBLES" },
+  "682": { name: "Sour 600mg Gummies IND", cents: 3500, category: "EDIBLES" },
+  "683": { name: "Sour 600mg Gummies SAT", cents: 3500, category: "EDIBLES" },
+  "840": { name: "Sour Tangie (3G) Gold Hash", cents: 4000, category: "CONCENTRATES" },
+  "841": { name: "Sour Diesel (3G) Gold Hash", cents: 4000, category: "CONCENTRATES" },
+  "842": { name: "King Louis (3G) Gold Hash", cents: 4000, category: "CONCENTRATES" },
+  "843": { name: "Chocolpe (3G) Gold Hash", cents: 4000, category: "CONCENTRATES" },
+  "844": { name: "Cherry Fritter (3G) Gold Hash", cents: 3000, category: "CONCENTRATES" },
+  "845": { name: "Lemon Lime Soda (3G) Gold Hash", cents: 4000, category: "CONCENTRATES" },
+  "610": { name: "Berry Bombs Gummies (400mg)", cents: 2000, category: "EDIBLES" },
+  "611": { name: "Stoned Berries Gummies (400mg)", cents: 2000, category: "EDIBLES" },
+  "713": { name: "RAW Paper Cones 6PK", cents: 500, category: "ADD ONS" },
+  "714": { name: "Backwoods Cigar", cents: 2500, category: "CIGARETTES" },
+  "717": { name: "RAW Paper Cones 3PK King Size", cents: 500, category: "ADD ONS" },
+  "720": { name: "Lighter Big", cents: 300, category: "ADD ONS" },
+  "960": { name: "Frazzle Stilliezl 5000mg", cents: 4000, category: "EDIBLES" },
+};
+
+function applyPosPrices(items: Map<string, ExpandedItem>) {
+  for (const [sku, price] of Object.entries(POS_UNIT_PRICES)) {
+    const current = items.get(sku);
+    const dollars = (price.cents / 100).toFixed(2).replace(/\.00$/, "");
+    if (current) {
+      current.name = price.name;
+      current.category = price.category;
+      current.unitCents = price.cents;
+      current.unit = "each";
+      current.flag = "";
+      current.priceEach = `$${dollars}`;
+      continue;
+    }
+    items.set(sku, {
+      sku,
+      name: price.name,
+      category: price.category,
+      type: "",
+      thc: "",
+      mg: "",
+      image: "",
+      status: "ACTIVE",
+      priceEach: `$${dollars}`,
+      unitCents: price.cents,
+      cartonDollars: null,
+      unit: "each",
+      sourceRows: [],
+      flag: "",
+    });
+  }
 }
 
 export function itemsFromGrid(grid: string[][]): ItemIndex {
