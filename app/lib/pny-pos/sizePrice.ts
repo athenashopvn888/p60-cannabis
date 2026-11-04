@@ -118,9 +118,34 @@ export function quoteForSku(sku: string): PriceQuote | null {
     if (standard != null) return { cents: standard, source: "Tri standard", name, category, image };
     return null;
   }
+  const pack = cigarettePackQuote(sku, catalog);
+  if (pack) return pack;
   const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
   if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
   return null;
+}
+
+/** Paper cigarette packs. Tri's price is $2.50 per pack. Test till SKUs in this range are not packs. */
+const CIGARETTE_PACKS = new Set(["1000", "1002", "1005", "1006", "1008", "1010", "1011", "1012", "1013", "1014", "1015", "1016", "1017", "1018", "1019", "1026", "1027"]);
+
+export function cigarettePackCents(sku: string, category?: string | null) {
+  if (!CIGARETTE_PACKS.has(sku.trim())) return null;
+  if (category != null && category.trim() !== "" && !["cigarettes", "tobacco"].includes(category.trim().toLowerCase())) return null;
+  return 250;
+}
+
+function cigarettePackQuote(sku: string, catalog: ReturnType<typeof catalogFromFeed>): PriceQuote | null {
+  if (!CIGARETTE_PACKS.has(sku.trim())) return null;
+  const listed = catalog.find((row) => row.sku === sku);
+  if (listed && !["cigarettes", "tobacco"].includes(listed.category.trim().toLowerCase())) return null;
+  const paper = paperLines().find((line) => line.sku === sku);
+  return {
+    cents: 250,
+    source: "Tri standard",
+    name: paper?.name || listed?.name || sku,
+    category: listed?.category || "CIGARETTES",
+    image: listed?.image_url ?? null,
+  };
 }
 
 export function rawPriceRows() {
@@ -134,7 +159,7 @@ export function rawPriceRows() {
     rows.push({
       SKU: line.sku,
       Unit_Price: (quote.cents / 100).toFixed(2),
-      Unit: "bag",
+      Unit: cigarettePackCents(line.sku) == null ? "bag" : "pack",
       Source: quote.source,
     });
   }

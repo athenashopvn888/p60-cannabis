@@ -6,7 +6,7 @@ import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/mon
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
-type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string };
+type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string };
 type Menu = {
   demo?: boolean;
   demo_label?: string | null;
@@ -180,7 +180,8 @@ export default function MenuApp() {
               <article key={item.sku} className={styles.listRow}>
                 <div className={styles.listCopy}>
                   <div className={styles.name}>{item.name}</div>
-                  <div className={styles.price}>{formatMoney(item.price_cents)}</div>
+                  <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+                  {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
                 </div>
                 <div className={styles.compact}>
                   <button type="button" aria-label={`Decrease ${item.name}`} disabled={qty === 0} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button>
@@ -194,7 +195,8 @@ export default function MenuApp() {
             <article key={item.sku} className={styles.card}>
               <ProductPhoto src={item.image_url} alt={item.name} className={styles.hero} placeholderClassName={styles.heroPh} />
               <div className={styles.name}>{item.name}</div>
-              <div className={styles.price}>{formatMoney(item.price_cents)}</div>
+              <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+              {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
               <span className={styles.available}>{item.availability}</span>
               <div className={styles.stepper}>
                 <button type="button" aria-label={`Decrease ${item.name}`} disabled={qty === 0} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button>

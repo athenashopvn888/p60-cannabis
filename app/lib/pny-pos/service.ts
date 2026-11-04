@@ -28,11 +28,11 @@ import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
-import { RAW_PRICE_TTL_MS, unitPricesFromRawRows } from "./rawPrice.ts";
+import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from "./money.ts";
-import { SHOW_CIGARETTES, isCigaretteCategory } from "../siteConfig.ts";
+import { isCigaretteCategory } from "../siteConfig.ts";
 import { skuSortKey } from "./flowerSku.ts";
-import { quoteForSku } from "./sizePrice.ts";
+import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -348,6 +348,7 @@ function priceOf(state: State, sku: string, raw?: Map<string, number>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   if (!product?.setb_active || !storeProduct?.enabled) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
+  if (cigarettePackCents(sku, product.category) != null) return { cents: 250, source: "RAW_UNIT", product };
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return { cents: fromSheet, source: "RAW_UNIT", product };
   if (storeProduct.price_override_cents != null) return { cents: storeProduct.price_override_cents, source: "STORE_OVERRIDE", product };
@@ -359,9 +360,10 @@ function qtyOf(state: State, sku: string) {
 }
 
 function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>) {
+  const product = state.products.find((item) => item.sku === sku);
+  if (cigarettePackCents(sku, product?.category) != null) return 250;
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return fromSheet;
-  const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   return storeProduct?.price_override_cents ?? product?.default_price_cents ?? 0;
 }
@@ -816,7 +818,7 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
-  private rawPriceCache: { at: number; map: Map<string, number> } | null = null;
+  private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string> } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private db: PosDb;
   private deps: PosDeps;
@@ -837,8 +839,10 @@ export class PosService {
     if (this.rawPriceFlight) return this.rawPriceFlight;
     this.rawPriceFlight = (async () => {
       try {
-        const map = unitPricesFromRawRows(await this.deps.sheet.readRows("Items_raw_price"));
-        this.rawPriceCache = { at: now, map };
+        const rows = await this.deps.sheet.readRows("Items_raw_price");
+        const map = unitPricesFromRawRows(rows);
+        const notes = cartonNotesFromRawRows(rows);
+        this.rawPriceCache = { at: now, map, notes };
         return map;
       } catch (error) {
         if (error instanceof SheetUnavailable) return this.rawPriceCache?.map ?? new Map();
@@ -848,6 +852,11 @@ export class PosService {
       }
     })();
     return this.rawPriceFlight;
+  }
+
+  private async rawCartonNotes() {
+    await this.rawUnitPrices();
+    return this.rawPriceCache?.notes ?? new Map<string, string>();
   }
 
   private demoPinAllowed() {
@@ -1229,8 +1238,9 @@ export class PosService {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled) return [];
           const fromSheet = raw.get(product.sku);
-          const price = fromSheet ?? storeProduct.price_override_cents ?? product.default_price_cents;
-          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: fromSheet == null ? "MENU" : "RAW_UNIT", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
+          const pack = cigarettePackCents(product.sku, product.category);
+          const price = pack ?? fromSheet ?? storeProduct.price_override_cents ?? product.default_price_cents;
+          return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: pack != null || fromSheet != null ? "RAW_UNIT" : "MENU", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const incoming = tx.state.incoming
@@ -1980,6 +1990,7 @@ export class PosService {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
     const raw = await this.rawUnitPrices();
+    const notes = await this.rawCartonNotes();
     const body = await this.db.transaction(async (tx) => {
       const now = iso(this.now());
       const shift = tx.state.shifts.find((row) => row.store_code === STORE_CODE && row.status === "ACTIVE");
@@ -1993,9 +2004,10 @@ export class PosService {
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
-          if (!SHOW_CIGARETTES && isCigaretteCategory(product.category)) return [];
-          const cents = raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
+          const pack = cigarettePackCents(product.sku, product.category);
+          const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
+          const carton = notes.get(product.sku);
           return [{
             sku: product.sku,
             name: product.name,
@@ -2003,6 +2015,8 @@ export class PosService {
             price_cents: cents,
             image_url: product.image_url,
             availability: "Available" as const,
+            ...(pack != null ? { unit_label: "per pack" } : {}),
+            ...(carton ? { carton_note: carton } : {}),
           }];
         })
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
