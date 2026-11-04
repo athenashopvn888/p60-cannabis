@@ -7,6 +7,7 @@ export type DemoCount = {
   counted_qty: number;
   expected_qty?: number;
   submitted_at?: string;
+  edited_at?: string;
   added_stock?: boolean;
   accepted_as_is?: boolean;
   variance_reason?: string | null;
@@ -14,8 +15,10 @@ export type DemoCount = {
 
 export type DemoDraft = {
   shift_id: string;
-  counts: { sku: string; counted_qty: number }[];
+  counts: { sku: string; counted_qty: number; edited_at?: string; expected_qty?: number; accepted_as_is?: boolean }[];
   opening_counts: DemoCount[];
+  verify_submitted_at?: string | null;
+  closing_submitted_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   updated_at: string;

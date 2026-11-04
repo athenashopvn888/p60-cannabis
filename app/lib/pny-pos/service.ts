@@ -620,20 +620,46 @@ function denyMaster(session: { master?: boolean }) {
   if (session.master) throw new PosError(403, "MASTER_VIEW", "Master login is view-only. Use the staff PIN to record the shift.");
 }
 
+function countMoment(row: { edited_at?: string; submitted_at?: string } | undefined, fallback: number) {
+  const at = Date.parse(row?.edited_at || row?.submitted_at || "");
+  return Number.isFinite(at) ? at : fallback;
+}
+
+/** Close the verify count. Entered drafts keep the expected from their last edit. Blanks are accepted as-is. */
+function finalizeVerify(state: State, shift: ShiftRow, actor: string, now: Date) {
+  const draft = ensureDraft(state, shift.id, now);
+  if (draft.verify_submitted_at) return;
+  const at = iso(now);
+  const moment = now.getTime();
+  for (const sku of verifySkuList(state, shift.id)) {
+    const row = draft.opening_counts?.find((entry) => entry.sku === sku);
+    if (row?.accepted_as_is && row.expected_qty != null) continue;
+    const entered = row && !row.accepted_as_is && (row.edited_at || row.submitted_at);
+    const expected = expectedAtSubmit(state, shift, sku, entered ? countMoment(row, moment) : moment);
+    if (entered && row) {
+      row.expected_qty = expected;
+      row.edited_at = row.edited_at || row.submitted_at;
+      row.accepted_as_is = false;
+      row.added_stock = qtyOf(state, sku) === 0 && row.counted_qty > 0;
+    } else if (row) {
+      row.counted_qty = expected;
+      row.expected_qty = expected;
+      row.accepted_as_is = true;
+      row.submitted_at = at;
+      row.added_stock = false;
+    } else {
+      draft.opening_counts?.push({ sku, counted_qty: expected, expected_qty: expected, submitted_at: at, variance_reason: null, added_stock: false, accepted_as_is: true });
+    }
+    audit(state, entered ? "VERIFY_COUNT" : "VERIFY_ACCEPTED", "sku", sku, actor, { sku, accepted_as_is: !entered }, at);
+  }
+  draft.verify_submitted_at = at;
+  draft.updated_at = at;
+}
+
 function lockUnverified(state: State, shift: ShiftRow, actor: string, now: Date) {
   const anchor = verifyAnchorMs(shift);
   if (anchor == null || now.getTime() < anchor + VERIFY_WINDOW_MS) return;
-  const draft = ensureDraft(state, shift.id, now);
-  const at = iso(now);
-  let changed = false;
-  for (const sku of verifySkuList(state, shift.id)) {
-    if (draft.opening_counts?.some((row) => row.sku === sku)) continue;
-    const expected = expectedAtSubmit(state, shift, sku, now.getTime());
-    draft.opening_counts?.push({ sku, counted_qty: expected, expected_qty: expected, submitted_at: at, variance_reason: null, added_stock: false, accepted_as_is: true });
-    audit(state, "VERIFY_ACCEPTED", "sku", sku, actor, { sku, accepted_as_is: true }, at);
-    changed = true;
-  }
-  if (changed) draft.updated_at = at;
+  finalizeVerify(state, shift, actor, now);
 }
 
 function staffOffLine(state: State, sku: string, off: number) {
@@ -686,7 +712,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
           name: product?.name ?? productName(state, sku),
           price_cents: sellingPriceCents(state, sku, raw),
           counted_qty: row && !row.accepted_as_is ? row.counted_qty : null,
-          locked: Boolean(row?.accepted_as_is),
+          locked: false,
         };
       }),
       opening_off: reveal ? offCount(openingLines) : 0,

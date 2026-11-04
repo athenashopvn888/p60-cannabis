@@ -35,6 +35,7 @@ export default function CountCard({
   const [extraSku, setExtraSku] = useState("");
   const [extraQty, setExtraQty] = useState("");
   const [localError, setLocalError] = useState("");
+  const [ruleOpen, setRuleOpen] = useState(false);
 
   if (!current) return null;
   if (current.sku !== seen) {
@@ -158,12 +159,34 @@ export default function CountCard({
     />
   );
   const error = localError ? <p className={styles.error}>{localError}</p> : null;
+  const ruleButton = (
+    <button className={styles.countRuleBtn} type="button" data-testid="count-rule" onClick={() => setRuleOpen(true)}>Stock Count Rule</button>
+  );
+  const ruleModal = ruleOpen ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="count-rule-title" data-testid="count-rule-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="count-rule-title">Stock Count Rule</h2>
+        <p>Count every SKU by bag size. You can go back and fix any SKU before you tap Submit.</p>
+        <p>Selling during the count is fine. The system accounts for those sales.</p>
+        <p>Tap Submit once when you are done. Any SKU you leave blank is accepted as-is, and you take responsibility for it.</p>
+        <p>You have 2 hours. After that the count closes and blank SKUs are accepted.</p>
+        <p>After Submit you only see SKUs that are off. + means over. − means short.</p>
+        <section className={styles.ruleNotice} data-testid="count-rule-notice">
+          <h3>Final report</h3>
+          <p>If any quantity you enter is different from what the system expects, it will show in the final report.</p>
+        </section>
+        <button className={styles.primary} type="button" data-testid="count-rule-close" onClick={() => setRuleOpen(false)}>Close</button>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
       <div data-testid="count-card" className={styles.countDock}>
+        <div className={styles.countRuleRow}>{ruleButton}</div>
         {list}
         {error}
+        {ruleModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -179,6 +202,7 @@ export default function CountCard({
 
   return (
     <div data-testid="count-card">
+      <div className={styles.countRuleRow}>{ruleButton}</div>
       <div className={styles.countSplit}>
         <form className={styles.countMain} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <p className={styles.countSku}>{current.text}</p>
@@ -196,6 +220,7 @@ export default function CountCard({
       </div>
       {list}
       {error}
+      {ruleModal}
     </div>
   );
 }
