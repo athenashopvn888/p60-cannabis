@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
-import { formatMoney } from "../lib/pny-pos/money";
+import { formatMoney, sortCategories } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
@@ -63,7 +63,7 @@ export default function MenuApp() {
 
   const items = menu?.items ?? [];
   const categories = useMemo(
-    () => [...new Set((menu?.items ?? []).map((item) => item.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () => sortCategories((menu?.items ?? []).map((item) => item.category)),
     [menu?.items],
   );
   const activeCategory = category !== "All" && categories.includes(category) ? category : "All";

@@ -22,6 +22,30 @@ export function formatStoreTime(iso: string) {
   }).format(new Date(iso));
 }
 
+/** Chip order for the customer menu and the till. Anything else follows, A to Z. */
+const CATEGORY_ORDER = ["exotic", "premium", "aaa+", "aa", "budget", "add ons", "cigarettes", "edibles", "concentrates"];
+
+function categoryKey(name: string) {
+  return name.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function categoryRank(name: string) {
+  const key = categoryKey(name);
+  const tobacco = key === "cigarette" || key === "tobacco";
+  const edible = key === "edible";
+  const concentrate = key === "concentrate";
+  const addOns = key === "addons" || key === "add on";
+  const rank = CATEGORY_ORDER.indexOf(tobacco ? "cigarettes" : edible ? "edibles" : concentrate ? "concentrates" : addOns ? "add ons" : key);
+  return rank === -1 ? CATEGORY_ORDER.length : rank;
+}
+
+export function sortCategories(names: string[]) {
+  return [...new Set(names.map((name) => name.trim()).filter(Boolean))].sort((a, b) => {
+    const rank = categoryRank(a) - categoryRank(b);
+    return rank === 0 ? a.localeCompare(b) : rank;
+  });
+}
+
 export function inStockCategories(rows: { category: string; qty: number }[]) {
-  return [...new Set(rows.filter((row) => row.qty > 0).map((row) => row.category))].sort((a, b) => a.localeCompare(b));
+  return sortCategories(rows.filter((row) => row.qty > 0).map((row) => row.category));
 }
