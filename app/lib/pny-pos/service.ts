@@ -2088,6 +2088,73 @@ export class PosService {
     return result;
   }
 
+  /**
+   * Read completed sales after an exclusive cursor.
+   * Does not change sales, stock, counts, refills, the PIN, or the shift.
+   * An empty cursor bootstraps at the latest sale and returns no history.
+   */
+  async salesFeed(since: string | null, limit = 50) {
+    const pageSize = Math.min(50, Math.max(1, Math.trunc(limit) || 50));
+    return this.db.transaction(async (tx) => {
+      const before = JSON.stringify({
+        sales: tx.state.sales,
+        lines: tx.state.sale_lines,
+        balances: tx.state.balances,
+        shifts: tx.state.shifts,
+      });
+      const rows = tx.state.sales
+        .filter((sale) => sale.status === "COMPLETED")
+        .filter((sale) => {
+          const shift = tx.state.shifts.find((row) => row.id === sale.shift_id);
+          return !shift || shift.store_code === STORE_CODE;
+        })
+        .map((sale) => ({ sale, cursor: `${sale.created_at}|${sale.id}` }))
+        .sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
+      const latest = rows.at(-1)?.cursor ?? "0";
+      const cursor = since?.trim() || "";
+      const selected = cursor ? rows.filter((row) => row.cursor > cursor).slice(0, pageSize) : [];
+      const sales = selected.map(({ sale }) => {
+        const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+        const items = tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
+          const product = tx.state.products.find((row) => row.sku === line.sku);
+          return {
+            sku: line.sku,
+            name: product?.name ?? productName(tx.state, line.sku),
+            size: sizeLabel(line.sku, product?.category, product?.name),
+            qty: line.qty,
+            line_price_cents: line.line_total_cents,
+          };
+        });
+        return {
+          id: sale.id,
+          order_no: sale.ref_no,
+          ticket_no: ticket?.code ?? null,
+          at: sale.created_at,
+          staff_name: staff?.display_name ?? "",
+          items,
+          total_cents: sale.total_cents,
+          payment: sale.payment_method === "DEBIT" ? "debit" as const : "cash" as const,
+          store: STORE_CODE,
+        };
+      });
+      const after = JSON.stringify({
+        sales: tx.state.sales,
+        lines: tx.state.sale_lines,
+        balances: tx.state.balances,
+        shifts: tx.state.shifts,
+      });
+      if (after !== before) throw new PosError(500, "FEED_WRITE", "The sales feed must not change the till.");
+      return {
+        ok: true as const,
+        store: STORE_CODE,
+        sales,
+        next_cursor: selected.at(-1)?.cursor ?? (cursor || latest),
+        bootstrap: !cursor,
+      };
+    });
+  }
+
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
   async shiftSummary(token: string) {
     return this.db.transaction(async (tx) => {

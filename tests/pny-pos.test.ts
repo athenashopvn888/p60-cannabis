@@ -12,6 +12,7 @@ import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
+import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
@@ -840,6 +841,59 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   assert.match(tillApp, /\/api\/pos\/till\/unlock/);
   assert.match(tillApp, /data-testid="pos-till-gate"/);
   assert.match(tillApp, /data-testid="till-unlock"/);
+});
+
+test("the sales feed returns new sales once and does not change the till", async () => {
+  const h = await readyTill({ "1001": 5, "1002": 5 });
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.ok(shift);
+  const hash = shift.pin_hash;
+  const order = await h.svc.placeOrder({ key: "feed-ticket", lines: [{ sku: "1001", qty: 1 }] }, "10.6.0.1");
+  const ticket = (await h.svc.state(h.token)).tickets.find((row) => row.code === order.code);
+  assert.ok(ticket);
+  await h.svc.cashout(h.token, { key: "feed-cash", payment_method: "CASH", ticket_id: ticket.id, lines: ticket.lines.map((line) => ({ sku: line.sku, qty: line.qty })) });
+  await h.svc.cashout(h.token, { key: "feed-debit", payment_method: "DEBIT", lines: [{ sku: "1002", qty: 2 }] });
+  const balances = JSON.stringify(h.db.state.balances);
+  const sales = JSON.stringify(h.db.state.sales);
+  const boot = await h.svc.salesFeed(null);
+  assert.equal(boot.bootstrap, true);
+  assert.equal(boot.sales.length, 0);
+  assert.equal(boot.store, "PNY01");
+  const page = await h.svc.salesFeed("0");
+  assert.equal(page.sales.length, 2);
+  const cash = page.sales.find((row) => row.payment === "cash");
+  const debit = page.sales.find((row) => row.payment === "debit");
+  assert.ok(cash && debit);
+  assert.equal(cash.ticket_no, order.code);
+  assert.equal(cash.store, "PNY01");
+  assert.equal(cash.staff_name.length > 0, true);
+  assert.equal(cash.items[0]?.qty, 1);
+  assert.equal(typeof cash.items[0]?.size, "string");
+  assert.equal(debit.items[0]?.qty, 2);
+  assert.equal(debit.ticket_no, null);
+  const repeat = await h.svc.salesFeed("0");
+  assert.deepEqual(repeat.sales.map((row) => row.id), page.sales.map((row) => row.id));
+  const second = await h.svc.salesFeed(`${page.sales[0]?.at}|${page.sales[0]?.id}`);
+  assert.equal(second.sales.length, 1);
+  assert.equal(second.sales[0]?.id, page.sales[1]?.id);
+  const done = await h.svc.salesFeed(second.next_cursor);
+  assert.equal(done.sales.length, 0);
+  assert.equal(done.next_cursor, second.next_cursor);
+  assert.equal(JSON.stringify(h.db.state.balances), balances);
+  assert.equal(JSON.stringify(h.db.state.sales), sales);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift.id)?.pin_hash, hash);
+  const savedToken = process.env.SALES_FEED_TOKEN;
+  process.env.SALES_FEED_TOKEN = "feed-test-token";
+  try {
+    assert.equal(salesFeedTokenOk("feed-test-token"), true);
+    assert.equal(salesFeedTokenOk("other-token"), false);
+    assert.equal(salesFeedTokenOk(null), false);
+    delete process.env.SALES_FEED_TOKEN;
+    assert.equal(salesFeedTokenOk("feed-test-token"), false);
+  } finally {
+    if (savedToken == null) delete process.env.SALES_FEED_TOKEN;
+    else process.env.SALES_FEED_TOKEN = savedToken;
+  }
 });
 
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
