@@ -636,7 +636,12 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.doesNotMatch(menuApp, /Prices include tax/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
+  const posCss = readFileSync("app/pos/till.module.css", "utf8");
   assert.match(menuCss, /grid-template-columns:\s*1fr 1fr/);
+  assert.match(menuCss, /\.chips\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(posCss, /\.chips\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.doesNotMatch(menuCss, /\.chips\s*\{[^}]*overflow-x:\s*auto/s);
+  assert.doesNotMatch(posCss, /\.chips\s*\{[^}]*overflow-x:\s*auto/s);
   assert.equal(hideMobileBottomBar("/hours"), false);
   assert.match(SCHEMA_SQL, /CHECK \(qty >= 0\)/);
   assert.match(SCHEMA_SQL, /OPENING_BALANCE|INCOMING_CONFIRM|COUNT_VARIANCE/);
