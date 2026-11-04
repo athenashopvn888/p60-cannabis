@@ -1335,5 +1335,8 @@ test("paper refill cancels old unsized rows and loads sized bags, including unpr
   assert.equal(part2.add.some((row) => row.sku === "600" || row.sku === "606" || row.sku === "593" || row.sku === "601"), false);
   assert.equal(part2.add.find((row) => row.sku === "607")?.qty, "1");
   assert.equal(quoteForSku("1000")?.cents, 250);
+  assert.equal(quoteForSku("1006")?.cents, 250);
+  assert.equal(quoteForSku("1026")?.cents, 1000);
   assert.equal(quoteForSku("1027")?.name, "MARLBORO");
+  assert.equal(quoteForSku("1027")?.cents, 1000);
 });

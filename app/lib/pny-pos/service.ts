@@ -349,7 +349,8 @@ function priceOf(state: State, sku: string, raw?: Map<string, number>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
   if (!product?.setb_active || !storeProduct?.enabled) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
-  if (cigarettePackCents(sku, product.category) != null) return { cents: 250, source: "RAW_UNIT", product };
+  const packCents = cigarettePackCents(sku, product.category, product.name);
+  if (packCents != null) return { cents: packCents, source: "RAW_UNIT", product };
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return { cents: fromSheet, source: "RAW_UNIT", product };
   if (storeProduct.price_override_cents != null) return { cents: storeProduct.price_override_cents, source: "STORE_OVERRIDE", product };
@@ -362,7 +363,8 @@ function qtyOf(state: State, sku: string) {
 
 function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>) {
   const product = state.products.find((item) => item.sku === sku);
-  if (cigarettePackCents(sku, product?.category) != null) return 250;
+  const packCents = cigarettePackCents(sku, product?.category, product?.name);
+  if (packCents != null) return packCents;
   const fromSheet = raw?.get(sku);
   if (fromSheet != null) return fromSheet;
   const storeProduct = state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === sku);
@@ -1239,7 +1241,7 @@ export class PosService {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled) return [];
           const fromSheet = raw.get(product.sku);
-          const pack = cigarettePackCents(product.sku, product.category);
+          const pack = cigarettePackCents(product.sku, product.category, product.name);
           const price = pack ?? fromSheet ?? storeProduct.price_override_cents ?? product.default_price_cents;
           return [{ sku: product.sku, sku_sort: product.sku_sort, name: product.name, category: product.category, price_cents: price, price_source: pack != null || fromSheet != null ? "RAW_UNIT" : "MENU", image_url: product.image_url, qty: qtyOf(tx.state, product.sku) }];
         })
@@ -2040,7 +2042,7 @@ export class PosService {
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === STORE_CODE && item.sku === product.sku);
           if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
-          const pack = cigarettePackCents(product.sku, product.category);
+          const pack = cigarettePackCents(product.sku, product.category, product.name);
           const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
           const carton = notes.get(product.sku);
