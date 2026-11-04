@@ -2056,6 +2056,38 @@ export class PosService {
     return result;
   }
 
+  /**
+   * Check the staff or master PIN before the till totals.
+   * Keeps the current session and does not change the stored PIN.
+   */
+  async unlockTill(token: string, pin: string) {
+    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, session } = this.session(tx.state, token, now);
+      if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
+      if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+        return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN is expired." };
+      }
+      const masterPin = safeEqual(pin, MASTER_PIN);
+      if (!masterPin && !verifyPin(pin, shift.pin_hash)) {
+        shift.pin_failed_attempts += 1;
+        if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
+        const locked = shift.status === "LOCKED";
+        return {
+          ok: false as const,
+          status: locked ? 423 : 401,
+          code: locked ? "LOCKED" : "BAD_PIN",
+          message: locked ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN." : "That PIN is not correct.",
+        };
+      }
+      if (shift.pin_failed_attempts !== 0) shift.pin_failed_attempts = 0;
+      return { ok: true as const, view_only: Boolean(session.master) || masterPin };
+    });
+    if (!result.ok) throw new PosError(result.status, result.code, result.message);
+    return result;
+  }
+
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
   async shiftSummary(token: string) {
     return this.db.transaction(async (tx) => {
