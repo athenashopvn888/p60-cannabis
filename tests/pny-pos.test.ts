@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { defaultCategory, inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { categoryChipLabel, defaultCategory, inStockCategories, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -391,6 +391,16 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
     "Concentrates", "AA", "Vape", "CIGARETTES", "Exotic", "Budget", "ADD ONS", "Premium", "AAA+", "Edibles", "Flower", "tobacco",
   ]), ["Exotic", "Premium", "AAA+", "AA", "Budget", "ADD ONS", "CIGARETTES", "tobacco", "Edibles", "Concentrates", "Flower", "Vape"]);
   assert.equal(defaultCategory(["EXOTIC", "ADD ONS", "BUDGET"]), "ADD ONS");
+  assert.equal(categoryChipLabel("ADD ONS"), "Add Ons");
+  assert.equal(categoryChipLabel("CIGARETTES"), "Cigs");
+  assert.equal(categoryChipLabel("PREROLLS"), "PreRolls");
+  assert.equal(categoryChipLabel("PRE-ROLLS"), "PreRolls");
+  assert.equal(categoryChipLabel("EDIBLES"), "Edibles");
+  assert.equal(categoryChipLabel("MAGIC & OTHERS"), "Magic");
+  assert.equal(categoryChipLabel("VAPE DISPOSABLE"), "THC Vape");
+  assert.equal(categoryChipLabel("VAPE PENS"), "Nic Vape");
+  assert.equal(categoryChipLabel("EXOTIC"), "EXOTIC");
+  assert.equal(categoryChipLabel("CONCENTRATES"), "CONCENTRATES");
   assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
 });
 
@@ -634,7 +644,11 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.doesNotMatch(clearCart, /post\(|fetch\(|cashout\(/);
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
-  assert.match(posApp, /Customer QR/);
+  assert.match(posApp, /MENU QR/);
+  assert.doesNotMatch(posApp, /Customer QR/);
+  assert.match(posApp, /PROMO COMING/);
+  assert.match(posApp, /categoryChipLabel/);
+  assert.match(posApp, /opening-jump/);
   const posHeader = posApp.split("posHeader")[1]?.split("</header>")[0] ?? "";
   const nameRow = posHeader.split("headerActions")[0] ?? "";
   const actionRow = posHeader.split("headerActions")[1] ?? "";
@@ -1580,6 +1594,12 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   assert.match(dock, /<VerifyBanner slim/);
   assert.match(dock, /<CountCard\s+compact/);
   assert.match(dock, /className=\{styles\.footerBar\}/);
+  const sellAt = dock.indexOf(">Sell<");
+  const ticketAt = dock.indexOf('data-testid="tickets-tab"');
+  const clearAt = dock.indexOf('data-testid="clear-cart"');
+  const cashAt = dock.indexOf(">Cashout<");
+  const valueAt = dock.indexOf('data-testid="cart-total"');
+  assert.ok(sellAt >= 0 && sellAt < ticketAt && ticketAt < clearAt && clearAt < cashAt && cashAt < valueAt);
   const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
   assert.match(service, /sortCountSkus\(state, skus\)/);
   assert.match(service, /close_lines: \(\(\) => \{[\s\S]*?compareCount/);
@@ -1659,6 +1679,35 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   await h.svc.saveOpeningCount(h.token, { sku: "1027", counted_qty: 2 });
   const labels = (await h.svc.state(h.token)).verify.lines.filter((line) => ["200-5g", "350-5g", "1027"].includes(line.sku)).map((line) => line.text);
   assert.deepEqual(labels, ["#200 5g", "#350 6g", "#1027 pack"]);
+});
+
+test("jumping to a later SKU accepts earlier blank counts as expected and leaves stock unchanged", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 });
+  await h.svc.syncSetb([
+    { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
+    { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
+    { sku: "1003", name: "Wax", category: "Concentrates", price_cents: 800, active: true },
+  ]);
+  const before = { "1001": qty(h.db, "1001"), "1002": qty(h.db, "1002"), "1003": qty(h.db, "1003") };
+  await h.svc.jumpOpeningCount(h.token, "1002");
+  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  const skipped = draft?.opening_counts?.find((line) => line.sku === "1001");
+  assert.equal(skipped?.accepted_as_is, true);
+  assert.equal(skipped?.counted_qty, skipped?.expected_qty);
+  assert.equal(draft?.opening_counts?.some((line) => line.sku === "1002"), false);
+  assert.equal(draft?.opening_counts?.some((line) => line.sku === "1003"), false);
+  assert.equal(qty(h.db, "1001"), before["1001"]);
+  assert.equal(qty(h.db, "1002"), before["1002"]);
+  assert.equal(qty(h.db, "1003"), before["1003"]);
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 1 });
+  h.clock.t = new Date(h.clock.t.getTime() + 2 * 60 * 60 * 1000 + 1000);
+  const locked = await h.svc.state(h.token);
+  const lines = locked.stock_check.opening.lines;
+  const saved = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1002");
+  assert.equal(saved?.accepted_as_is, false);
+  assert.equal(lines.some((line) => line.sku === "1001"), false);
+  assert.equal(lines.some((line) => line.sku === "1003"), false);
+  assert.equal(lines.find((line) => line.sku === "1002")?.off, -4);
 });
 
 test("a count on zero stock is flagged and does not invent quantity", async () => {

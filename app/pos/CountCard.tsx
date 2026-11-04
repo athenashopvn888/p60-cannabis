@@ -16,12 +16,14 @@ export default function CountCard({
   allowExtra,
   compact,
   onSave,
+  onJump,
 }: {
   lines: CountCardLine[];
   busy: boolean;
   allowExtra?: boolean;
   compact?: boolean;
   onSave: (sku: string, countedQty: number) => Promise<void>;
+  onJump?: (sku: string) => Promise<void>;
 }) {
   const pending = lines.filter((line) => line.counted_qty == null && !line.locked);
   const done = lines.length - pending.length;
@@ -37,7 +39,7 @@ export default function CountCard({
   if (!current) return null;
   if (current.sku !== seen) {
     setSeen(current.sku);
-    setQty("");
+    setQty(drafts[current.sku] ?? "");
   }
 
   const moreAfter = pending.length > 1;
@@ -84,6 +86,23 @@ export default function CountCard({
     }
   }
 
+  async function jumpTo(line: CountCardLine) {
+    if (!onJump || line.locked || line.counted_qty != null) return;
+    const index = lines.findIndex((row) => row.sku === line.sku);
+    setLocalError("");
+    try {
+      for (const earlier of lines.slice(0, index)) {
+        if (earlier.locked || earlier.counted_qty != null) continue;
+        const value = drafts[earlier.sku] ?? "";
+        if (/^\d+$/.test(value)) await onSave(earlier.sku, Number(value));
+      }
+      await onJump(line.sku);
+      setExpanded(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not saved");
+    }
+  }
+
   async function addExtra() {
     if (!extraSku.trim() || !/^\d+$/.test(extraQty)) {
       setLocalError("Enter the SKU and a whole quantity.");
@@ -102,8 +121,14 @@ export default function CountCard({
   const list = expanded ? (
     <div className={styles.countList} data-testid="count-list">
       {lines.map((line) => (
-        <label key={line.sku} className={styles.countListRow}>
-          <span>{line.text}</span>
+        <div key={line.sku} className={styles.countListRow}>
+          {onJump ? (
+            <button type="button" className={styles.countJump} data-testid="count-jump" disabled={busy || line.locked || line.counted_qty != null} onClick={() => void jumpTo(line)}>
+              {line.text}
+            </button>
+          ) : (
+            <span>{line.text}</span>
+          )}
           <input
             inputMode="numeric"
             aria-label={`Count ${line.text}`}
@@ -111,7 +136,7 @@ export default function CountCard({
             disabled={line.locked}
             onChange={(event) => setDrafts({ ...drafts, [line.sku]: event.target.value.replace(/[^\d]/g, "") })}
           />
-        </label>
+        </div>
       ))}
       {allowExtra ? (
         <div className={styles.countListRow}>

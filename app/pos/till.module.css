@@ -302,6 +302,14 @@
   white-space: nowrap;
 }
 
+.menuQr {
+  flex: 0 0 auto;
+  background: #1d4ed8;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
 .qrOverlay {
   position: fixed;
   inset: 0;
@@ -356,6 +364,7 @@
 
 .body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 0 0 8px;
 }
@@ -364,19 +373,52 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
   background: #f3efe6;
   padding: 10px 12px 8px;
 }
 
 .search {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   min-height: 44px;
   border: 1px solid #d6d3d1;
   border-radius: 12px;
-  padding: 0 12px;
+  padding: 0 10px;
   font-size: 16px;
   background: #fff;
+}
+
+.promoComing {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px dashed #a8a29e;
+  border-radius: 12px;
+  background: #fafaf9;
+  color: #78716c;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.promoComing:disabled {
+  opacity: 1;
+}
+
+.chipRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.chipRow {
+  display: flex;
+  gap: 6px;
 }
 
 .chips {
@@ -391,15 +433,25 @@
 .chipOn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   border: 1px solid #d6d3d1;
   background: #fff;
   border-radius: 999px;
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 6px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
+}
+
+.chipRow .chip,
+.chipRow .chipOn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 10px;
+  letter-spacing: 0;
 }
 
 @media (max-width: 480px) {
@@ -593,6 +645,8 @@
 }
 
 .footer {
+  position: relative;
+  z-index: 5;
   flex-shrink: 0;
   background: #fff;
   border-top: 1px solid #e7e5e4;
@@ -601,10 +655,29 @@
 
 .footerBar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
   flex-wrap: nowrap;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+}
+
+.footerBar .tabChip,
+.footerBar .clearCart,
+.footerBar .cash,
+.footerBar .cartValue {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .cartCompact {
@@ -623,6 +696,14 @@
 .cartCompact .total {
   font-size: 15px;
   white-space: nowrap;
+}
+
+.cartValue {
+  color: #1c1917;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  font-size: 13px;
 }
 
 .tabChip {
@@ -1145,6 +1226,22 @@
   border-bottom: 1px solid #e7e5e4;
   font-size: 18px;
   font-weight: 800;
+}
+
+.countJump {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-weight: 800;
+  padding: 0;
+}
+
+.countJump:disabled {
+  color: #a8a29e;
 }
 
 .countList > .countNext {
