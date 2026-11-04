@@ -614,6 +614,11 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(posApp, /href="\/pos\/till"/);
   assert.match(posApp, /End Shift/);
   assert.doesNotMatch(posApp, /data-testid="total-sales"/);
+  assert.match(posApp, /data-testid="clear-cart"/);
+  assert.match(posApp, /disabled=\{cartEmpty\}/);
+  const clearCart = posApp.split("function clearCart()")[1]?.slice(0, 120) ?? "";
+  assert.match(clearCart, /setCart\(\{\}\)/);
+  assert.doesNotMatch(clearCart, /post\(|fetch\(|cashout\(/);
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
   assert.match(posApp, /Customer QR/);

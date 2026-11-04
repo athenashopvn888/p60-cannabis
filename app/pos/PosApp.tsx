@@ -134,6 +134,11 @@ export default function PosApp() {
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
 
   const total = products.reduce((sum, product) => sum + (cart[product.sku] ?? 0) * product.price_cents, 0);
+  const cartEmpty = Object.keys(cart).length === 0;
+
+  function clearCart() {
+    setCart({});
+  }
 
   function setQty(product: Product, next: number) {
     const qty = Math.max(0, Math.min(99, next));
@@ -517,7 +522,10 @@ export default function PosApp() {
               <div className={styles.metricLabel}>Cart</div>
               <div className={styles.total} data-testid="cart-total">{formatMoney(total)}</div>
             </div>
-            <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
+            <div className={styles.checkout}>
+              <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
+              <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
+            </div>
           </div>
           <div className={styles.tabs}>
             <button type="button" className={tab === "sell" ? styles.tabOn : undefined} onClick={() => setTab("sell")}>Sell</button>

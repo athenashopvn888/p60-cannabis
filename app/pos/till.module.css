@@ -498,9 +498,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+.checkout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.clearCart {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid #d6d3d1;
+  background: #fff;
+  color: #57534e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.clearCart:disabled {
+  color: #a8a29e;
+  border-color: #e7e5e4;
+  background: #fafaf9;
+}
+
 .cash {
   min-height: 48px;
-  min-width: 128px;
+  min-width: 112px;
   border: 0;
   border-radius: 14px;
   background: #166534;
