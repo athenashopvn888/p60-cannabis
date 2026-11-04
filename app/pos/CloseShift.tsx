@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
+import DepositSlip from "./DepositSlip";
 import SkuOffList, { type OffLine } from "./SkuOffList";
 import VerifyBanner from "./VerifyBanner";
 import styles from "./till.module.css";
@@ -35,7 +36,7 @@ export default function CloseShift({
   busy: boolean;
   error: string;
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
-  onSaveDeposit: (cents: number) => Promise<void>;
+  onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
   onConfirm: (depositCents: number) => Promise<void>;
   onClose: () => void;
   stockCheck?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] } };
@@ -44,7 +45,8 @@ export default function CloseShift({
 }) {
   const firstOpen = Math.max(0, lines.findIndex((line) => line.counted_qty == null));
   const [index, setIndex] = useState(firstOpen === -1 ? 0 : firstOpen);
-  const [step, setStep] = useState<"count" | "deposit" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "deposit" : "count");
+  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "deposit" : "count");
+  const [slipCode, setSlipCode] = useState<string | null>(null);
   const [qty, setQty] = useState(lines[index]?.counted_qty == null ? "" : String(lines[index]?.counted_qty));
   const [jump, setJump] = useState("");
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
@@ -134,13 +136,23 @@ export default function CloseShift({
         {step === "deposit" ? (
           <form data-testid="close-deposit" onSubmit={(event) => {
             event.preventDefault();
-            void onSaveDeposit(depositCents).then(() => setStep("summary")).catch((err: unknown) => setLocalError(err instanceof Error ? err.message : "Deposit was not saved"));
+            void onSaveDeposit(depositCents).then((saved) => {
+              const code = saved && typeof saved === "object" ? saved.deposit_code : null;
+              if (code) {
+                setSlipCode(code);
+                setStep("slip");
+              } else setStep("summary");
+            }).catch((err: unknown) => setLocalError(err instanceof Error ? err.message : "Deposit was not saved"));
           }}>
             <h2>Final deposit</h2>
             <p>Cash on hand before this drop is {formatMoney(totals.cash_on_hand_cents)}.</p>
             <input className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
             <button className={styles.primary} type="submit" disabled={busy}>Save deposit</button>
           </form>
+        ) : null}
+
+        {step === "slip" && slipCode ? (
+          <DepositSlip code={slipCode} onDone={() => setStep("summary")} />
         ) : null}
 
         {step === "summary" ? (

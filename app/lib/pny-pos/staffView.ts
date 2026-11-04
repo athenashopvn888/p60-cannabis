@@ -39,6 +39,7 @@ export function blindStaffState<T extends Row>(view: T): T {
   }
   const stock = view.stock_check && typeof view.stock_check === "object" ? (view.stock_check as Row) : null;
   if (stock) next.stock_check = { opening: section(stock.opening), closing: section(stock.closing) };
+  next.deposits = rows(view.deposits).map((row) => pick(row, ["id", "deposit_code", "amount_cents", "created_at"]));
   if (!view.demo) delete next.verify_admin;
   return next as T;
 }

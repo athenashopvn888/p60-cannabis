@@ -6,6 +6,7 @@ import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flower
 import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
 import AdminGaps from "./AdminGaps";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import SkuOffList, { type OffLine } from "./SkuOffList";
@@ -93,6 +94,8 @@ export default function PosApp() {
   const [qrOpen, setQrOpen] = useState(false);
   const [summaryPin, setSummaryPin] = useState("");
   const [summaryText, setSummaryText] = useState("");
+  const [summaryDeposits, setSummaryDeposits] = useState<{ deposit_code?: string | null; amount_cents: number; at: string }[]>([]);
+  const [depositCode, setDepositCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -203,6 +206,7 @@ export default function PosApp() {
       setSummaryPin("");
       const data = await fetch("/api/pos/summary", { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
       if (!data.ok) throw new Error(data.error || "Summary was not loaded");
+      setSummaryDeposits(Array.isArray(data.deposits) ? data.deposits : []);
       setSummaryText(String(data.text ?? ""));
       setSheet(null);
     } catch (err) {
@@ -243,9 +247,10 @@ export default function PosApp() {
     }
     setBusy(true);
     try {
-      await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
       setDepositAmount("");
       setSheet(null);
+      if (typeof saved.deposit_code === "string") setDepositCode(saved.deposit_code);
       await load();
     } catch (err) {
       setError(failureText(err));
@@ -262,8 +267,9 @@ export default function PosApp() {
 
   async function saveCloseDeposit(cents: number) {
     setError("");
-    await post("/api/pos/shift/final-deposit", { amount_cents: cents });
+    const saved = await post("/api/pos/shift/final-deposit", { amount_cents: cents });
     await load();
+    return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
 
   async function confirmEnd(depositCents: number) {
@@ -563,12 +569,23 @@ export default function PosApp() {
         <div className={styles.summaryPage} data-testid="shift-summary">
           <button className={styles.qrClose} type="button" aria-label="Close" onClick={() => setSummaryText("")}>×</button>
           <h2>Today's Summary</h2>
+          {summaryDeposits.length > 0 ? (
+            <div className={styles.depositList} data-testid="summary-deposits">
+              {summaryDeposits.map((row) => (
+                <div key={`${row.at}-${row.amount_cents}`} className={styles.depositLine}>
+                  <span>{row.deposit_code || "n/a"}</span>
+                  <strong>{formatMoney(row.amount_cents)}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <pre className={styles.summaryText}>{summaryText}</pre>
           <button className={styles.primary} type="button" data-testid="copy-summary" onClick={() => void copySummary()}>Copy</button>
           {copied ? <p className={styles.copied} data-testid="copied-toast">Copied</p> : null}
         </div>
       ) : null}
       {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
+      {depositCode ? <DepositSlip code={depositCode} onDone={() => setDepositCode(null)} /> : null}
       {sheet && sheet !== "close" && sheet !== "verify" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
           <div className={styles.panel} data-testid="pos-sheet">

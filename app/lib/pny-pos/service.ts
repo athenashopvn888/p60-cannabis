@@ -32,6 +32,7 @@ import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from 
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { parseFlowerSku, skuSortKey } from "./flowerSku.ts";
+import { mintDepositCode } from "./depositCode.ts";
 import type { DemoDraft } from "./demoDraft.ts";
 import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } from "./verifyCount.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
@@ -506,6 +507,21 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
       };
     })
     .filter((line) => line.opening_qty + line.received_qty > 0);
+}
+
+function usedDepositCodes(state: State) {
+  const used = new Set<string>();
+  for (const row of state.deposits) if (row.deposit_code) used.add(row.deposit_code);
+  for (const draft of state.closing_drafts ?? []) if (draft.final_deposit_code) used.add(draft.final_deposit_code);
+  return used;
+}
+
+function issueDepositCode(state: State) {
+  try {
+    return mintDepositCode(usedDepositCodes(state));
+  } catch {
+    throw new PosError(503, "DEPOSIT_CODE", "Could not assign a deposit number. Try again.");
+  }
 }
 
 function countMeta(state: State, sku: string) {
@@ -1597,6 +1613,10 @@ export class PosService {
           cash_on_hand_cents: totals.cash_on_hand_cents,
           deposited_cents: totals.deposited_cents,
         },
+        deposits: tx.state.deposits
+          .filter((row) => row.shift_id === shift.id)
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((row) => ({ id: row.id, deposit_code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
         categories: inStockCategories(products),
         products,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
@@ -1884,11 +1904,13 @@ export class PosService {
       const totals = shiftTotals(tx.state, shift.id);
       if (depositAboveCash(amount, totals.cash_on_hand_cents)) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
       const at = iso(now);
-      tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: amount, note: input.note?.trim() || null, created_at: at });
+      const deposit_code = issueDepositCode(tx.state);
+      tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: amount, note: input.note?.trim() || null, deposit_code, created_at: at });
       const deposit = tx.state.deposits[tx.state.deposits.length - 1]!;
       enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
         row_id: `D-${deposit.id}`,
         deposit_id: deposit.id,
+        deposit_code,
         store_code: STORE_CODE,
         shift_id: shift.sccx_shift_id,
         staff_pos_id: staff.pos_id,
@@ -1897,7 +1919,7 @@ export class PosService {
         at: deposit.created_at,
       }, at);
       const next = shiftTotals(tx.state, shift.id);
-      const result = { ok: true, ...next, sales_cents: next.sales_total_cents };
+      const result = { ok: true, deposit_code, ...next, sales_cents: next.sales_total_cents };
       remember(tx.state, "deposit", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
@@ -1953,7 +1975,7 @@ export class PosService {
       const deposits = tx.state.deposits
         .filter((deposit) => deposit.shift_id === shift.id)
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
-        .map((deposit) => ({ at: deposit.created_at, amount_cents: deposit.amount_cents }));
+        .map((deposit) => ({ at: deposit.created_at, amount_cents: deposit.amount_cents, deposit_code: deposit.deposit_code ?? null }));
       const when = iso(now);
       return {
         ok: true as const,
@@ -2058,6 +2080,7 @@ export class PosService {
           existing.counts = draft.counts ?? [];
           existing.opening_counts = draft.opening_counts ?? [];
           existing.final_deposit_cents = draft.final_deposit_cents ?? null;
+          existing.final_deposit_code = draft.final_deposit_code ?? null;
           existing.updated_at = draft.updated_at || existing.updated_at;
         } else {
           rows.push({
@@ -2065,6 +2088,7 @@ export class PosService {
             counts: draft.counts ?? [],
             opening_counts: draft.opening_counts ?? [],
             final_deposit_cents: draft.final_deposit_cents ?? null,
+            final_deposit_code: draft.final_deposit_code ?? null,
             updated_at: draft.updated_at || iso(this.now()),
           });
         }
@@ -2079,6 +2103,7 @@ export class PosService {
       counts: row.counts ?? [],
       opening_counts: row.opening_counts ?? [],
       final_deposit_cents: row.final_deposit_cents,
+      final_deposit_code: row.final_deposit_code ?? null,
       updated_at: row.updated_at,
     })));
   }
@@ -2120,8 +2145,9 @@ export class PosService {
         drafts.push(draft);
       }
       draft.final_deposit_cents = amount;
+      draft.final_deposit_code = amount > 0 ? (draft.final_deposit_code || issueDepositCode(tx.state)) : null;
       draft.updated_at = iso(this.now());
-      return { ok: true, final_deposit_cents: amount, cash_on_hand_cents: totals.cash_on_hand_cents };
+      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code, cash_on_hand_cents: totals.cash_on_hand_cents };
     });
   }
 
@@ -2143,11 +2169,14 @@ export class PosService {
       if (finalDeposit > 0) {
         const totals = shiftTotals(tx.state, shift.id);
         if (depositAboveCash(finalDeposit, totals.cash_on_hand_cents)) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
-        const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", created_at: at };
+        const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
+        const deposit_code = reserved || issueDepositCode(tx.state);
+        const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", deposit_code, created_at: at };
         tx.state.deposits.push(deposit);
         enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
           row_id: `D-${deposit.id}`,
           deposit_id: deposit.id,
+          deposit_code,
           store_code: STORE_CODE,
           shift_id: shift.sccx_shift_id,
           staff_pos_id: staff.pos_id,
@@ -3026,6 +3055,7 @@ export class PosService {
         deposits: tx.state.deposits.map((deposit) => ({
           id: deposit.id,
           amount_cents: deposit.amount_cents,
+          deposit_code: deposit.deposit_code ?? null,
           note: deposit.note,
           created_at: deposit.created_at,
           staff_name: tx.state.staff.find((row) => row.staff_uid === deposit.staff_uid)?.display_name ?? "",

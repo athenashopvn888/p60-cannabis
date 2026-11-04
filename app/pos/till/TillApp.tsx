@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
 import { usePosPoll } from "../usePosPoll";
+import DepositSlip from "../DepositSlip";
 import VerifyBanner from "../VerifyBanner";
 
 type View = {
@@ -17,6 +18,7 @@ type View = {
   error?: string;
   code?: string;
   verify?: { show_banner?: boolean; deadline_at?: string };
+  deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
 };
 
 async function post(url: string, body: unknown, key?: string) {
@@ -39,6 +41,7 @@ export default function TillApp() {
   const [busy, setBusy] = useState(false);
   const [deposit, setDeposit] = useState("");
   const [open, setOpen] = useState(false);
+  const [slipCode, setSlipCode] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
@@ -69,9 +72,10 @@ export default function TillApp() {
     const cents = Math.round(Number(deposit) * 100);
     setBusy(true);
     try {
-      await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
       setDeposit("");
       setOpen(false);
+      if (typeof saved.deposit_code === "string") setSlipCode(saved.deposit_code);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deposit failed");
@@ -147,6 +151,14 @@ export default function TillApp() {
         <article className={styles.tillCard} data-testid="total-deposited">
           <span>Total Deposited</span>
           <strong>{formatMoney(view.totals?.deposited_cents ?? 0)}</strong>
+          <div className={styles.depositList} data-testid="till-deposits">
+            {(view.deposits ?? []).map((row) => (
+              <div key={row.id} className={styles.depositLine}>
+                <span>{row.deposit_code || "n/a"}</span>
+                <strong>{formatMoney(row.amount_cents)}</strong>
+              </div>
+            ))}
+          </div>
         </article>
         {open ? (
           <div className={styles.tillCard}>
@@ -163,6 +175,7 @@ export default function TillApp() {
           <button className={styles.depositBtn} type="button" onClick={() => { setError(""); setOpen(true); }}>+Deposit</button>
         )}
       </section>
+      {slipCode ? <DepositSlip code={slipCode} onDone={() => setSlipCode(null)} /> : null}
     </main>
   );
 }

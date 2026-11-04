@@ -178,6 +178,8 @@ export type DepositRow = {
   amount_cents: number;
   note: string | null;
   created_at: string;
+  /** Server-issued slip number. Missing on deposits saved before this field existed. */
+  deposit_code?: string | null;
 };
 
 export type ClosingLine = {
@@ -232,6 +234,7 @@ export type ClosingDraftRow = {
     accepted_as_is?: boolean;
   }[];
   final_deposit_cents: number | null;
+  final_deposit_code?: string | null;
   updated_at: string;
 };
 

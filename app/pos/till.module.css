@@ -891,3 +891,83 @@
 .orderOn {
   background: #f5f5f4;
 }
+
+.depositSlip {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: #f3efe6;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 28px 20px;
+  gap: 18px;
+}
+
+.depositSlipLabel {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.depositSlipCode {
+  margin: 0;
+  font-size: 76px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 0.95;
+}
+
+.depositSlipNote {
+  margin: 0;
+  max-width: 18rem;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.depositSlip .primary {
+  flex: 0 0 auto;
+  width: min(100%, 20rem);
+  min-height: 56px;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.depositList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.depositLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.tillCard .depositLine span,
+.depositLine span {
+  display: inline;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #1c1917;
+  font-weight: 800;
+}
+
+.tillCard .depositLine strong {
+  display: inline;
+  font-size: 22px;
+}

@@ -17,6 +17,7 @@ export type DemoDraft = {
   counts: { sku: string; counted_qty: number }[];
   opening_counts: DemoCount[];
   final_deposit_cents: number | null;
+  final_deposit_code?: string | null;
   updated_at: string;
 };
 

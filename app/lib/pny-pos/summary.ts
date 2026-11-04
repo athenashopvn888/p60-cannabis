@@ -1,10 +1,11 @@
 import { STORE_CODE, STORE_TZ } from "./constants.ts";
 import { bagLabel, strainName } from "./flowerSku.ts";
+import { depositCodeLabel } from "./depositCode.ts";
 import { formatMoney, formatStoreTime } from "./money.ts";
 
 export type SummaryLine = { sku: string; name: string; qty: number; line_total_cents: number };
 export type SummarySale = { at: string; payment: string; total_cents: number; lines: SummaryLine[] };
-export type SummaryDeposit = { at: string; amount_cents: number };
+export type SummaryDeposit = { at: string; amount_cents: number; deposit_code?: string | null };
 
 export function storeDate(iso: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -43,7 +44,7 @@ export function summaryPlainText(input: { staff: string; when: string; sales: Su
   });
   if (input.deposits.length > 0) {
     lines.push("");
-    for (const deposit of input.deposits) lines.push(`Deposit ${formatStoreTime(deposit.at)} ${formatMoney(deposit.amount_cents)}`);
+    for (const deposit of input.deposits) lines.push(`Deposit ${depositCodeLabel(deposit.deposit_code)} ${formatStoreTime(deposit.at)} ${formatMoney(deposit.amount_cents)}`);
   }
   return lines.join("\n");
 }

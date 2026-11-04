@@ -25,6 +25,7 @@ import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCen
 import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
+import { depositCodeLabel } from "../app/lib/pny-pos/depositCode.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -1631,4 +1632,50 @@ test("a deposit equal to cash on hand is allowed", async () => {
   const finalDeposit = await close.svc.saveFinalDeposit(close.token, { amount_cents: 1000 });
   assert.equal(finalDeposit.final_deposit_cents, 1000);
   assert.equal(finalDeposit.cash_on_hand_cents, 1000);
+});
+
+test("each new deposit gets a unique slip number and a past deposit stays n/a", async () => {
+  const h = await readyTill();
+  await h.svc.cashout(h.token, { key: "slip-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const first = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
+  const again = await h.svc.deposit(h.token, { key: "slip-a", amount_cents: 400 });
+  const second = await h.svc.deposit(h.token, { key: "slip-b", amount_cents: 100 });
+  assert.match(first.deposit_code, /^[A-Z]\d{4}$/);
+  assert.equal(again.deposit_code, first.deposit_code);
+  assert.match(second.deposit_code, /^[A-Z]\d{4}$/);
+  assert.notEqual(first.deposit_code, second.deposit_code);
+  assert.equal(h.db.state.deposits.filter((row) => row.deposit_code === first.deposit_code).length, 1);
+  h.db.state.deposits.push({
+    id: "old-deposit",
+    shift_id: h.shiftId,
+    staff_uid: "staff-a",
+    amount_cents: 50,
+    note: null,
+    created_at: "2026-11-03T14:00:00.000Z",
+  });
+  const summary = await h.svc.shiftSummary(h.token);
+  assert.match(summary.text, new RegExp(`Deposit ${first.deposit_code} `));
+  assert.match(summary.text, /Deposit n\/a /);
+  assert.equal(depositCodeLabel(undefined), "n/a");
+  assert.equal(depositCodeLabel(first.deposit_code), first.deposit_code);
+  const finalDeposit = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200 });
+  const repeated = await h.svc.saveFinalDeposit(h.token, { amount_cents: 150 });
+  assert.match(String(finalDeposit.deposit_code), /^[A-Z]\d{4}$/);
+  assert.equal(repeated.deposit_code, finalDeposit.deposit_code);
+  const view = await h.svc.state(h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, {
+    key: "slip-end",
+    final_deposit_cents: 150,
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
+  });
+  assert.equal(ended.message, END_SHIFT_MESSAGE);
+  const finals = h.db.state.deposits.filter((row) => row.note === "final deposit");
+  assert.equal(finals.length, 1);
+  assert.equal(finals[0]?.deposit_code, finalDeposit.deposit_code);
+  const admin = await h.svc.adminState(h.admin);
+  assert.equal(admin.deposits.find((row) => row.id === finals[0]?.id)?.deposit_code, finalDeposit.deposit_code);
+  assert.equal(admin.deposits.find((row) => row.id === "old-deposit")?.deposit_code, null);
+  assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Write this Deposit # on a slip of paper and attach it to the money\./);
+  assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
+  assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.depositSlipCode[\s\S]*font-size:\s*76px/);
 });
