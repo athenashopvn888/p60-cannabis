@@ -1,6 +1,7 @@
 import { STORE_CODE } from "./constants.ts";
 import { SheetUnavailable } from "./errors.ts";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
+import { skuSortKey } from "./flowerSku.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
@@ -47,14 +48,16 @@ function stateFromStaffRows(rows: SheetRow[]): State | null {
   }
 }
 
-/** Catalog only. On-hand stays empty until a confirmed refill or count. */
-function hydrateCatalog(state: State) {
-  if (state.products.length > 0) return;
+/** Add missing catalog SKUs. Does not create on-hand. */
+function mergeCatalog(state: State) {
   const at = new Date().toISOString();
+  let added = 0;
   for (const product of catalogFromFeed(readCommittedPnyCatalog())) {
+    if (state.products.some((row) => row.sku === product.sku)) continue;
+    added += 1;
     state.products.push({
       sku: product.sku,
-      sku_sort: Number(product.sku) || 0,
+      sku_sort: skuSortKey(product.sku),
       name: product.name,
       category: product.category,
       default_price_cents: product.price_cents,
@@ -72,6 +75,7 @@ function hydrateCatalog(state: State) {
       updated_at: at,
     });
   }
+  return added > 0;
 }
 
 function mergeKitchenRefills(state: State, rows: SheetRow[]) {
@@ -167,6 +171,7 @@ export class SheetDb implements PosDb {
   private refillRaw = new Map<string, SheetRow>();
   private sheet: SheetClient;
   private cacheMs: number;
+  private needsSave = false;
 
   constructor(sheet: SheetClient, cacheMs = POS_SHEET_CACHE_MS) {
     this.sheet = sheet;
@@ -204,7 +209,7 @@ export class SheetDb implements PosDb {
       if (id) this.refillRaw.set(id, { ...row });
     }
     const state = stateFromStaffRows(staffRows) ?? emptyState();
-    hydrateCatalog(state);
+    if (mergeCatalog(state)) this.needsSave = true;
     mergeKitchenRefills(state, refillRows);
     this.cache = { state, at: Date.now() };
     return state;
@@ -333,7 +338,10 @@ export class SheetDb implements PosDb {
       const loaded = await this.load();
       const snapshot = structuredClone(loaded) as State;
       const result = await fn({ state: snapshot });
-      if (JSON.stringify(snapshot) !== JSON.stringify(loaded)) await this.save(snapshot);
+      if (JSON.stringify(snapshot) !== JSON.stringify(loaded) || this.needsSave) {
+        await this.save(snapshot);
+        this.needsSave = false;
+      }
       return result;
     });
     this.tail = run.then(

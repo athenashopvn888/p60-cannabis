@@ -133,6 +133,41 @@
   min-height: 52px;
 }
 
+.sizeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sizePick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sizeBtn,
+.sizeOn,
+.sizeMinus {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sizeOn {
+  background: #14532d;
+  color: #fff;
+  border-color: #14532d;
+}
+
+.sizeMinus {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .listCopy {
   flex: 1;
   min-width: 0;

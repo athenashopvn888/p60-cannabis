@@ -1,5 +1,6 @@
 import { DEMO_PIN, STORE_CODE, STORE_TZ } from "./constants.ts";
 import { hashPin } from "./crypto.ts";
+import { skuSortKey } from "./flowerSku.ts";
 import { catalogFromFeed, readCommittedPnyCatalog, type SetbProduct } from "./setbFeed.ts";
 import type { State } from "./types.ts";
 
@@ -42,7 +43,7 @@ export function applyDemoSeed(state: State, now: Date) {
     const enabled = active && product.sku !== disabledSku;
     state.products.push({
       sku: product.sku,
-      sku_sort: Number(product.sku) || 0,
+      sku_sort: skuSortKey(product.sku),
       name: product.name,
       category: product.category,
       default_price_cents: product.price_cents,

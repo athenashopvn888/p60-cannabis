@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { closingBalance, lineVariance } from "../lib/pny-pos/closing";
+import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import styles from "./till.module.css";
 
@@ -9,11 +8,6 @@ export type CloseLine = {
   sku: string;
   name: string;
   price_cents: number;
-  opening_qty: number;
-  received_qty: number;
-  sold_qty: number;
-  expected_qty: number;
-  system_qty: number;
   counted_qty: number | null;
 };
 
@@ -42,7 +36,7 @@ export default function CloseShift({
 }) {
   const firstOpen = Math.max(0, lines.findIndex((line) => line.counted_qty == null));
   const [index, setIndex] = useState(firstOpen === -1 ? 0 : firstOpen);
-  const [step, setStep] = useState<"count" | "variance" | "deposit" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "variance" : "count");
+  const [step, setStep] = useState<"count" | "deposit" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "deposit" : "count");
   const [qty, setQty] = useState(lines[index]?.counted_qty == null ? "" : String(lines[index]?.counted_qty));
   const [jump, setJump] = useState("");
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
@@ -50,21 +44,8 @@ export default function CloseShift({
   const done = lines.filter((line) => line.counted_qty != null).length;
   const current = lines[index];
 
-  const reviewed = useMemo(() => lines.map((line) => {
-    const counted = line.counted_qty ?? 0;
-    const variance = lineVariance({ expected_qty: line.expected_qty, counted_qty: counted, price_cents: line.price_cents });
-    return { ...line, counted, ...variance };
-  }), [lines]);
-  const shortage = reviewed.reduce((sum, line) => sum + line.shortage_cents, 0);
-  const overage = reviewed.reduce((sum, line) => sum + line.overage_cents, 0);
   const depositCents = Math.round(Number(deposit || 0) * 100);
   const deposited = totals.deposited_cents + (Number.isFinite(depositCents) ? depositCents : 0);
-  const balance = closingBalance({
-    cash_sales_cents: totals.cash_sales_cents,
-    shortage_cents: shortage,
-    overage_cents: overage,
-    deposited_cents: deposited,
-  });
 
   function show(next: number) {
     const line = lines[next];
@@ -77,7 +58,7 @@ export default function CloseShift({
 
   async function saveAndAdvance() {
     if (!current) {
-      setStep("variance");
+      setStep("deposit");
       return;
     }
     if (!/^\d+$/.test(qty)) {
@@ -95,7 +76,7 @@ export default function CloseShift({
     const before = lines.findIndex((line) => line.counted_qty == null && line.sku !== current.sku);
     const waiting = after >= 0 ? after : before;
     if (waiting >= 0) show(waiting);
-    else setStep("variance");
+    else setStep("deposit");
   }
 
   function goToSku() {
@@ -133,28 +114,12 @@ export default function CloseShift({
                   <button className={styles.secondary} type="button" aria-label="Next SKU" disabled={index >= lines.length - 1} onClick={() => show(index + 1)}>›</button>
                 </div>
               </>
-            ) : <p>No stock to count this shift.</p>}
+            ) : <p>Nothing to count.</p>}
             <div className={styles.jump}>
               <input className={styles.field} aria-label="Go to SKU" placeholder="Go to SKU #" value={jump} onChange={(event) => setJump(event.target.value)} />
               <button className={styles.secondary} type="button" onClick={goToSku}>Go</button>
             </div>
           </form>
-        ) : null}
-
-        {step === "variance" ? (
-          <>
-            <h2>Variance</h2>
-            <p>Expected is opening stock plus confirmed refills, minus what was sold.</p>
-            {reviewed.map((line) => (
-              <article key={line.sku} className={styles.ticket}>
-                <strong>{line.sku}</strong> {line.name}
-                <p className={styles.meta}>Expected {line.expected_qty} · Counted {line.counted} · {line.variance_qty < 0 ? `Short ${-line.variance_qty}` : line.variance_qty > 0 ? `Over ${line.variance_qty}` : "Even"}</p>
-                <p>{line.shortage_cents > 0 ? `Shortage ${formatMoney(line.shortage_cents)}` : line.overage_cents > 0 ? `Credit ${formatMoney(line.overage_cents)}` : formatMoney(0)}</p>
-              </article>
-            ))}
-            <p>Shortage {formatMoney(shortage)} · Overage credit {formatMoney(overage)}</p>
-            <button className={styles.primary} type="button" onClick={() => setStep("deposit")}>Final deposit</button>
-          </>
         ) : null}
 
         {step === "deposit" ? (
@@ -178,12 +143,7 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Earlier deposits</span><strong>{formatMoney(totals.deposited_cents)}</strong></div>
             <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(depositCents)}</strong></div>
             <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
-            <div className={styles.summaryRow}><span>Stock shortage</span><strong>{formatMoney(shortage)}</strong></div>
-            {reviewed.filter((line) => line.shortage_cents > 0).map((line) => (
-              <p key={line.sku} className={styles.meta}>{line.sku} {line.name} · short {line.shortage_qty} · {formatMoney(line.shortage_cents)}</p>
-            ))}
-            <div className={styles.summaryRow}><span>Stock overage</span><strong>{formatMoney(overage)}</strong></div>
-            <p className={styles.balance} data-testid="close-balance">{balance > 0 ? `Staff short ${formatMoney(balance)}` : balance < 0 ? `Over ${formatMoney(-balance)}` : "Even $0.00"}</p>
+            <div className={styles.summaryRow}><span>Cash left</span><strong>{formatMoney(Math.max(0, totals.cash_on_hand_cents - depositCents))}</strong></div>
             <button className={styles.primary} type="button" disabled={busy || done < lines.length} onClick={() => void onConfirm(depositCents)}>Confirm & End Shift</button>
           </div>
         ) : null}

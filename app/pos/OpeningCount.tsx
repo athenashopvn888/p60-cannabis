@@ -8,8 +8,6 @@ export type OpeningLine = {
   sku: string;
   name: string;
   price_cents: number;
-  system_qty: number;
-  incoming_qty: number;
   counted_qty: number | null;
   variance_reason?: string | null;
 };
@@ -32,11 +30,11 @@ export default function OpeningCount({
   const [qty, setQty] = useState(lines[index]?.counted_qty == null ? "" : String(lines[index]?.counted_qty));
   const [reason, setReason] = useState(lines[index]?.variance_reason ?? "");
   const [jump, setJump] = useState("");
+  const [askReason, setAskReason] = useState(false);
   const [localError, setLocalError] = useState("");
   const done = lines.filter((line) => line.counted_qty != null).length;
   const current = lines[index];
   const entered = /^\d+$/.test(qty) ? Number(qty) : null;
-  const needsReason = current != null && entered != null && entered !== current.system_qty;
 
   function show(next: number) {
     const line = lines[next];
@@ -44,6 +42,7 @@ export default function OpeningCount({
     setIndex(next);
     setQty(line.counted_qty == null ? "" : String(line.counted_qty));
     setReason(line.variance_reason ?? "");
+    setAskReason(false);
     setLocalError("");
   }
 
@@ -53,15 +52,13 @@ export default function OpeningCount({
       setLocalError("Enter a whole quantity.");
       return;
     }
-    if (entered !== current.system_qty && !reason.trim()) {
-      setLocalError("A difference needs a reason.");
-      return;
-    }
     setLocalError("");
     try {
-      await onSave(current.sku, entered, entered === current.system_qty ? undefined : reason.trim());
+      await onSave(current.sku, entered, reason.trim() || undefined);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Count was not saved");
+      const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+      if (code === "REASON_REQUIRED") setAskReason(true);
+      setLocalError(code === "REASON_REQUIRED" ? "A reason is required." : err instanceof Error ? err.message : "Count was not saved");
       return;
     }
     const after = lines.findIndex((line, lineIndex) => lineIndex > index && line.counted_qty == null && line.sku !== current.sku);
@@ -95,9 +92,9 @@ export default function OpeningCount({
             <>
               <h2 className={styles.skuTitle}>{current.sku}</h2>
               <p className={styles.name}>{current.name}</p>
-              <p>{formatMoney(current.price_cents)} · System {current.system_qty}{current.incoming_qty > 0 ? ` · Incoming ${current.incoming_qty}` : ""}</p>
+              <p>{formatMoney(current.price_cents)}</p>
               <input className={styles.qtyInput} inputMode="numeric" aria-label={`Count ${current.sku}`} value={qty} onChange={(event) => setQty(event.target.value.replace(/[^\d]/g, ""))} autoFocus />
-              {needsReason ? <input className={styles.field} placeholder="Reason" aria-label={`Reason for ${current.sku}`} value={reason} onChange={(event) => setReason(event.target.value)} /> : null}
+              {askReason ? <input className={styles.field} placeholder="Reason" aria-label={`Reason for ${current.sku}`} value={reason} onChange={(event) => setReason(event.target.value)} /> : null}
               <div className={styles.navRow}>
                 <button className={styles.secondary} type="button" aria-label="Previous SKU" disabled={index === 0} onClick={() => show(index - 1)}>‹</button>
                 <button className={styles.primary} type="submit" disabled={busy}>Enter</button>

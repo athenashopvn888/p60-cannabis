@@ -531,8 +531,11 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
   assert.match(posApp, /isFlowerCategory/);
   assert.match(posApp, /data-layout="list"/);
-  assert.match(posApp, /data-count=\{stockCount\(chip\)\}/);
-  assert.match(posApp, /product\.qty > 0 && \(name === "All" \|\| product\.category === name\)/);
+  assert.match(posApp, /data-size=/);
+  assert.doesNotMatch(posApp, /stockCount|demo stock|qty_sent|System /);
+  assert.doesNotMatch(readFileSync("app/pos/OpeningCount.tsx", "utf8"), /System |incoming_qty|system_qty/);
+  assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /Expected |shortage_qty|system_qty/);
+  assert.doesNotMatch(tillApp, /system_qty|Sent /);
   assert.doesNotMatch(posApp.split('data-layout="list"')[0]?.split("isFlowerCategory(product.category)")[1] ?? "", /ProductPhoto/);
   assert.match(posApp, /usePosPoll/);
   const poll = readFileSync("app/pos/usePosPoll.ts", "utf8");
@@ -548,6 +551,7 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(tillApp, /\+Deposit/);
   assert.match(tillApp, />Back</);
   assert.match(menuApp, /listRow/);
+  assert.match(menuApp, /data-size=/);
   assert.match(menuApp, /aria-label="Categories"/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
@@ -705,16 +709,22 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
       { sku: "392", name: "SECOND", tier: "BUDGET", price5g: { regular: 10, sale: null }, image: "https://cdn.example/second.webp" },
     ],
   });
-  const flower = rows.find((row) => row.sku === "490");
-  assert.equal(flower?.price_cents, 3000);
-  assert.equal(flower?.image_url, "https://cdn.example/pink.webp");
-  assert.equal(flower?.category, "PREMIUM");
-  assert.equal(rows.filter((row) => row.sku === "392").length, 1);
+  const three = rows.find((row) => row.sku === "490-3g");
+  const five = rows.find((row) => row.sku === "490-5g");
+  assert.equal(three?.name, "PINK JOKER 3g");
+  assert.equal(three?.price_cents, 3000);
+  assert.equal(five?.name, "PINK JOKER 5g");
+  assert.equal(five?.price_cents, 4000);
+  assert.equal(three?.image_url, "https://cdn.example/pink.webp");
+  assert.equal(three?.category, "PREMIUM");
+  assert.equal(rows.some((row) => row.sku === "490"), false);
+  assert.equal(rows.filter((row) => row.sku === "392-5g").length, 1);
+  assert.equal(rows.find((row) => row.sku === "392-5g")?.price_cents, 1000);
   assert.deepEqual(rows.filter((row) => row.sku === "613" || row.sku === "614").map((row) => row.price_cents), [4000, 5500]);
   assert.equal(JSON.stringify(rows).includes("on_hand"), false);
   assert.equal(JSON.stringify(rows).includes("\"stock\""), false);
   const committed = catalogFromFeed(readCommittedPnyCatalog());
-  assert.ok(committed.some((row) => row.sku === "490" && row.name === "PINK JOKER" && row.image_url?.startsWith("https://")));
+  assert.ok(committed.some((row) => row.sku === "490-3g" && row.name === "PINK JOKER 3g" && row.image_url?.startsWith("https://")));
   const tv = readFileSync("app/lib/tvStock.js", "utf8");
   assert.match(tv, /AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4/);
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("store=PNY01"), true);
@@ -770,7 +780,7 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   const menu = await svc.menu();
   assert.equal(menu.demo, true);
   assert.ok((menu.items?.length ?? 0) > 20);
-  assert.equal(menu.items?.some((item) => item.sku === "490" && item.name === "PINK JOKER"), true);
+  assert.equal(menu.items?.some((item) => item.sku === "490-3g" && item.name === "PINK JOKER 3g"), true);
   assert.equal(menu.items?.every((item) => item.availability === "Available" && typeof item.image_url === "string" && item.image_url.length > 0), true);
   assert.equal(menu.items?.some((item) => item.category === "CIGARETTES"), false);
   assert.equal(keysDeep(menu).has("qty"), false);

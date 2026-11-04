@@ -42,13 +42,14 @@ function dollarsToCents(value: unknown) {
   return Math.round(amount * 100);
 }
 
-function flowerPriceCents(row: Record<string, unknown>) {
-  const packs = [row.price3g, row.price5g, row.price14g, row.price28g].filter((pack): pack is PackPrice => Boolean(pack) && typeof pack === "object");
-  const prices = packs
-    .map((pack) => (typeof pack?.sale === "number" ? pack.sale : pack?.regular))
-    .map((price) => (typeof price === "number" ? Math.round(price * 100) : null))
-    .filter((price): price is number => price != null);
-  return prices.length ? Math.min(...prices) : 0;
+function packPriceCents(pack: unknown) {
+  if (!pack || typeof pack !== "object") return null;
+  const row = pack as PackPrice;
+  const sale = typeof row.sale === "number" ? row.sale : null;
+  const regular = typeof row.regular === "number" ? row.regular : null;
+  const dollars = sale ?? regular;
+  if (dollars == null || !Number.isFinite(dollars) || dollars < 0) return null;
+  return Math.round(dollars * 100);
 }
 
 function splitSkus(raw: unknown) {
@@ -73,14 +74,30 @@ function withoutStock(row: Record<string, unknown>) {
 function fromFlower(row: Record<string, unknown>): SetbProduct[] {
   const sku = text(row.sku);
   if (!sku) return [];
-  return [{
-    sku,
-    name: text(row.name) || sku,
-    category: text(row.tier) || text(row.category) || "Flower",
-    price_cents: flowerPriceCents(row),
-    image_url: imageOf(row),
-    active: row.active !== false && row.setb_active !== false,
-  }];
+  const name = text(row.name) || sku;
+  const category = text(row.tier) || text(row.category) || "Flower";
+  const image = imageOf(row);
+  const active = row.active !== false && row.setb_active !== false;
+  const packs: [string, unknown][] = [
+    ["3g", row.price3g],
+    ["5g", row.price5g],
+    ["14g", row.price14g],
+    ["28g", row.price28g],
+  ];
+  const products: SetbProduct[] = [];
+  for (const [size, pack] of packs) {
+    const price = packPriceCents(pack);
+    if (price == null) continue;
+    products.push({
+      sku: `${sku}-${size}`,
+      name: `${name} ${size}`,
+      category,
+      price_cents: price,
+      image_url: image,
+      active,
+    });
+  }
+  return products;
 }
 
 function fromItem(row: Record<string, unknown>): SetbProduct[] {
