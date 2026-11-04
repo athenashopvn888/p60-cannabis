@@ -1451,11 +1451,38 @@
 }
 
 .gapPanel {
-  margin: 8px 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: #fff;
-  border: 1px solid #e7e5e4;
+}
+
+.gapScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 16px 8px;
+}
+
+.gapDone {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 56px;
+  border: 0;
+  border-top: 1px solid #e7e5e4;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
 }
 
 .adminDetail {
