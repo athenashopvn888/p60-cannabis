@@ -1686,7 +1686,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.deepEqual(labels, ["#200 5g", "#350 6g", "#1027 pack"]);
 });
 
-test("jumping to a later SKU accepts earlier blank counts as expected and leaves stock unchanged", async () => {
+test("moving between SKUs keeps blanks open, and Submit accepts them without changing stock", async () => {
   const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 });
   await h.svc.syncSetb([
     { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
@@ -1695,24 +1695,26 @@ test("jumping to a later SKU accepts earlier blank counts as expected and leaves
   ]);
   const before = { "1001": qty(h.db, "1001"), "1002": qty(h.db, "1002"), "1003": qty(h.db, "1003") };
   await h.svc.jumpOpeningCount(h.token, "1002");
-  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
-  const skipped = draft?.opening_counts?.find((line) => line.sku === "1001");
-  assert.equal(skipped?.accepted_as_is, true);
-  assert.equal(skipped?.counted_qty, skipped?.expected_qty);
-  assert.equal(draft?.opening_counts?.some((line) => line.sku === "1002"), false);
-  assert.equal(draft?.opening_counts?.some((line) => line.sku === "1003"), false);
+  const open = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  assert.equal(open?.opening_counts?.length ?? 0, 0);
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 1 });
+  const edited = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1002");
+  assert.ok(edited?.edited_at);
+  assert.equal(edited?.expected_qty, 5);
+  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 4 });
+  const fixed = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1002");
+  assert.equal(fixed?.counted_qty, 4);
+  const hidden = await h.svc.state(h.token);
+  assert.equal(hidden.stock_check.opening.lines.length, 0);
+  await h.svc.submitVerifyCount(h.token);
+  const locked = await h.svc.state(h.token);
+  const lines = locked.stock_check.opening.lines;
+  assert.equal(lines.some((line) => line.sku === "1001"), false);
+  assert.equal(lines.some((line) => line.sku === "1003"), false);
+  assert.equal(lines.find((line) => line.sku === "1002")?.off, -1);
   assert.equal(qty(h.db, "1001"), before["1001"]);
   assert.equal(qty(h.db, "1002"), before["1002"]);
   assert.equal(qty(h.db, "1003"), before["1003"]);
-  await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 1 });
-  h.clock.t = new Date(h.clock.t.getTime() + 2 * 60 * 60 * 1000 + 1000);
-  const locked = await h.svc.state(h.token);
-  const lines = locked.stock_check.opening.lines;
-  const saved = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1002");
-  assert.equal(saved?.accepted_as_is, false);
-  assert.equal(lines.some((line) => line.sku === "1001"), false);
-  assert.equal(lines.some((line) => line.sku === "1003"), false);
-  assert.equal(lines.find((line) => line.sku === "1002")?.off, -4);
 });
 
 test("restarting the verify deadline changes only the clock", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import CountCard from "./CountCard";
 import DepositSlip from "./DepositSlip";
@@ -25,6 +25,7 @@ export default function CloseShift({
   busy,
   error,
   onSaveCount,
+  onSubmitCount,
   onSaveDeposit,
   onConfirm,
   onClose,
@@ -37,6 +38,7 @@ export default function CloseShift({
   busy: boolean;
   error: string;
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
+  onSubmitCount?: () => Promise<void>;
   onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
   onConfirm: (depositCents: number) => Promise<void>;
   onClose: () => void;
@@ -47,17 +49,13 @@ export default function CloseShift({
   };
   deadline?: string | null;
 }) {
-  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(lines.length === 0 || lines.every((line) => line.counted_qty != null) ? "deposit" : "count");
+  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(lines.length === 0 ? "deposit" : "count");
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
   const [localError, setLocalError] = useState("");
   const [locking, setLocking] = useState(false);
   const openingOff = (stockCheck?.opening.lines ?? []).filter((line) => line.off !== 0);
   const closingOff = (stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0);
-
-  useEffect(() => {
-    if (step === "count" && lines.length > 0 && lines.every((line) => line.counted_qty != null)) setStep("deposit");
-  }, [lines, step]);
 
   const verifyOpen = useVerifyOpen(deadline);
   const depositCents = Math.round(Number(deposit || 0) * 100);
@@ -79,6 +77,10 @@ export default function CloseShift({
               lines={lines.map((line) => ({ sku: line.sku, text: line.text || `#${line.sku}`, counted_qty: line.counted_qty }))}
               busy={busy}
               onSave={onSaveCount}
+              onSubmit={async () => {
+                await onSubmitCount?.();
+                setStep("deposit");
+              }}
             />
           </>
         ) : null}
