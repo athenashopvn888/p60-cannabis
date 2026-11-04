@@ -3,6 +3,7 @@ import { SheetUnavailable } from "./errors.ts";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import { skuSortKey } from "./flowerSku.ts";
 import { planPaperRefills } from "./paperRefill.ts";
+import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
@@ -173,6 +174,7 @@ export class SheetDb implements PosDb {
   private sheet: SheetClient;
   private cacheMs: number;
   private needsSave = false;
+  private pricesAppended = false;
 
   constructor(sheet: SheetClient, cacheMs = POS_SHEET_CACHE_MS) {
     this.sheet = sheet;
@@ -219,6 +221,14 @@ export class SheetDb implements PosDb {
       }),
     ]);
     const refillRows = this.sheet.configured ? await this.applyPaperRefills(readRefills) : readRefills;
+    if (this.sheet.configured && !this.pricesAppended) {
+      try {
+        await this.sheet.appendRows("Items_raw_price", rawPriceRows(), "SKU");
+        this.pricesAppended = true;
+      } catch {
+        // Quoted prices also live on the product. A price-sheet miss must not block the till.
+      }
+    }
     this.stateParts = staffRows.filter((row) => row.record_type === "STATE" && row.doc).length;
     this.refillRaw = new Map();
     for (const row of refillRows) {

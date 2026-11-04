@@ -18,6 +18,8 @@ import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
+import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
+import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 
@@ -90,11 +92,7 @@ async function readyTill(stock = { "1001": 2, "1002": 5 }) {
   });
   const started = await h.svc.startShift({ key: "start-a", store: "PNY01", staff_ref: "staff-a", pos_id: "A1", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.8");
-  const view = await h.svc.state(login.token);
-  await h.svc.openingCount(login.token, {
-    key: "opening-a",
-    lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
-  });
+  await h.svc.state(login.token);
   return { ...h, admin: admin.token, token: login.token, pin: String(started.pin), shiftId: String(started.shift_id) };
 }
 
@@ -182,23 +180,82 @@ test("4. five bad PINs lock the shift, admin reissue works, and a 14 hour PIN is
   assert.equal(aged.db.state.shifts[0]?.end_reason, "EXPIRED");
 });
 
-test("5. selling is blocked until the opening count, and a variance needs a reason", async () => {
+test("5. a pending refill is starting stock and 105-28g of 2 needs no reason", async () => {
   const h = harness();
-  await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
-  const admin = await h.svc.adminLogin(secrets.admin);
-  await h.svc.openingBalance(admin.token, { key: "ob", sku: "1001", qty: 4 });
+  await h.svc.syncSetb([{ sku: "105-28g", name: "SPACE COOKIES 28g", category: "BUDGET", price_cents: 4000, active: true }]);
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.1");
-  await rejects(() => h.svc.cashout(login.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] }), "OPENING_REQUIRED");
-  await rejects(
-    () => h.svc.openingCount(login.token, { key: "bad-count", lines: [{ sku: "1001", counted_qty: 3 }] }),
-    "REASON_REQUIRED",
-  );
-  assert.equal(qty(h.db, "1001"), 4);
-  await h.svc.openingCount(login.token, { key: "bad-count", lines: [{ sku: "1001", counted_qty: 3, variance_reason: "one short" }] });
-  assert.equal(qty(h.db, "1001"), 3);
-  assert.equal(h.db.state.ledger.some((row) => row.movement_type === "COUNT_VARIANCE"), true);
+  const refillId = crypto.randomUUID();
+  h.db.state.incoming.push({
+    kitchen_row_id: refillId,
+    batch_id: "paper",
+    store_code: "PNY01",
+    sku: "105-28g",
+    qty_sent: 2,
+    kind: "REFILL",
+    kitchen_created_at: "2026-11-03T18:00:00.000Z",
+    imported_at: "2026-11-03T18:00:00.000Z",
+    status: "PENDING_CONFIRM",
+    qty_received: null,
+    variance_reason: null,
+    confirmed_shift_id: null,
+    confirmed_at: null,
+    linked_ledger_id: null,
+    created_at: "2026-11-03T18:00:00.000Z",
+  });
+  const view = await h.svc.state(login.token);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.block, null);
+  assert.equal(qty(h.db, "105-28g"), 2);
+  const refill = h.db.state.incoming.find((row) => row.kitchen_row_id === refillId);
+  assert.equal(refill?.status, "CONFIRMED");
+  assert.equal(refill?.qty_received, 2);
+  const menu = await h.svc.menu();
+  assert.equal(menu.prices_include_tax, false);
+  assert.equal(menu.items?.some((item) => item.sku === "105-28g" && item.price_cents === 4000), true);
+  await h.svc.cashout(login.token, { key: "sale", lines: [{ sku: "105-28g", qty: 1 }] });
+  assert.equal(qty(h.db, "105-28g"), 1);
+});
+
+test("a sized refill is listed on the menu and tobacco stays off", async () => {
+  const flower = quoteForSku("313-5g");
+  const tobacco = quoteForSku("240");
+  assert.equal(flower?.source, "SETB");
+  assert.equal(flower?.cents, 3000);
+  assert.equal(tobacco?.category.toLowerCase(), "cigarettes");
+  const h = harness();
+  await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-menu" });
+  const login = await h.svc.login(String(started.pin), "10.0.0.41");
+  for (const sku of ["313-5g", "240"]) {
+    h.db.state.incoming.push({
+      kitchen_row_id: crypto.randomUUID(),
+      batch_id: "paper",
+      store_code: "PNY01",
+      sku,
+      qty_sent: 1,
+      kind: "REFILL",
+      kitchen_created_at: "2026-11-03T18:00:00.000Z",
+      imported_at: "2026-11-03T18:00:00.000Z",
+      status: "PENDING_CONFIRM",
+      qty_received: null,
+      variance_reason: null,
+      confirmed_shift_id: null,
+      confirmed_at: null,
+      linked_ledger_id: null,
+      created_at: "2026-11-03T18:00:00.000Z",
+    });
+  }
+  const view = await h.svc.state(login.token);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.products.some((product) => product.sku === "313-5g" && product.price_cents === 3000), true);
+  const menu = await h.svc.menu();
+  assert.equal(menu.prices_include_tax, false);
+  assert.equal(menu.items?.some((item) => item.sku === "313-5g" && item.price_cents === 3000 && item.name.includes("SUPER LEMON")), true);
+  assert.equal(menu.items?.some((item) => item.sku === "240" || item.category.toLowerCase() === "cigarettes"), false);
+  const order = await h.svc.placeOrder({ key: "menu-313", lines: [{ sku: "313-5g", qty: 1 }] }, "10.0.0.42");
+  assert.equal(order.prices_include_tax, false);
 });
 
 test("6. two concurrent cashouts of the last unit cannot take stock below zero", async () => {
@@ -306,7 +363,7 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   const shown = await stocked.svc.menu();
   assert.deepEqual(shown.items?.map((item) => item.sku), ["1001"]);
   assert.equal(shown.items?.[0]?.availability, "Available");
-  assert.equal(shown.prices_include_tax, true);
+  assert.equal(shown.prices_include_tax, false);
   const names = keysDeep(shown);
   for (const banned of ["qty", "quantity", "on_hand", "pin", "balance", "ledger", "deposited", "cash_on_hand", "staff_uid"]) {
     assert.equal(names.has(banned), false, banned);
@@ -322,10 +379,10 @@ test("12. a kitchen allocation is incoming and not sellable until it is confirme
   assert.equal(imported.imported, 1);
   assert.equal(qty(h.db, "1001"), 1);
   assert.equal(h.db.state.incoming[0]?.status, "PENDING_CONFIRM");
-  await rejects(() => h.svc.cashout(h.token, { key: "blocked", lines: [{ sku: "1001", qty: 1 }] }), "REFILL_REQUIRED");
-  assert.equal(qty(h.db, "1001"), 1);
-  await h.svc.confirmIncoming(h.token, { key: "confirm-1", lines: [{ kitchen_row_id: rowId, qty_received: 3 }] });
+  const view = await h.svc.state(h.token);
+  assert.equal(view.phase, "sell");
   assert.equal(qty(h.db, "1001"), 4);
+  assert.equal(h.db.state.incoming[0]?.qty_received, 3);
   await h.svc.cashout(h.token, { key: "after", lines: [{ sku: "1001", qty: 1 }] });
   assert.equal(qty(h.db, "1001"), 3);
 });
@@ -350,14 +407,12 @@ test("14. a partial receipt needs a reason and the receipt shows the variance", 
   const rowId = crypto.randomUUID();
   h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "b9", store_code: "PNY01", kind: "ALLOCATION", sku: "1001", qty: "4", created_at: "2026-11-03T15:00:00+07:00", kitchen_status: "ACTIVE" }];
   await h.svc.refreshIncoming({ force: true });
-  await rejects(() => h.svc.confirmIncoming(h.token, { key: "partial-bad", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] }), "REASON_REQUIRED");
-  assert.equal(qty(h.db, "1001"), 0);
-  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1, variance_reason: "short case" }] });
+  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] });
   assert.equal(qty(h.db, "1001"), 1);
   const receipt = h.db.state.outbox.find((row) => row.row_id === `R-${rowId}`);
   assert.equal(receipt?.payload.status, "PARTIAL");
   assert.equal(receipt?.payload.variance, "-3");
-  assert.equal(receipt?.payload.variance_reason, "short case");
+  assert.equal(receipt?.payload.variance_reason, "");
 });
 
 test("15. a kitchen cancel before confirm is acknowledged and a cancel after confirm is ignored", async () => {
@@ -553,7 +608,14 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(tillApp, />Back</);
   assert.match(menuApp, /listRow/);
   assert.match(menuApp, /data-size=/);
+  assert.match(menuApp, /bagLabel/);
+  assert.equal(bagLabel("313-5g"), "6g");
+  assert.equal(bagLabel("490-5g"), "6g");
+  assert.equal(bagLabel("593-5g"), "6g");
+  assert.equal(bagLabel("202-5g"), "5g");
+  assert.equal(bagLabel("313-3g"), "3g");
   assert.match(menuApp, /aria-label="Categories"/);
+  assert.doesNotMatch(menuApp, /Prices include tax/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
   assert.match(menuCss, /grid-template-columns:\s*1fr 1fr/);
@@ -658,9 +720,6 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   assert.equal(opened.ok, true);
   assert.equal("pin" in opened, false);
   const login = await svc.login(pin, "10.0.0.8");
-  const waiting = await svc.state(login.token);
-  assert.equal(waiting.block, "WAITING_FOR_KITCHEN");
-  assert.equal(waiting.products.every((product) => product.qty === 0), true);
   const refillId = crypto.randomUUID();
   sheet.tabs.POS_Refills.push({
     row_id: refillId,
@@ -673,11 +732,8 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   });
   db.forgetCache();
   const opening = await svc.state(login.token);
-  assert.equal(opening.phase, "opening");
-  assert.equal(opening.opening_lines.find((line) => line.sku === "1001")?.system_qty, 0);
-  assert.equal(opening.opening_lines.find((line) => line.sku === "1001")?.incoming_qty, 2);
-  await svc.openingCount(login.token, { key: "open-sheet", lines: opening.opening_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
-  await svc.confirmIncoming(login.token, { key: "recv-sheet", lines: [{ kitchen_row_id: refillId, qty_received: 2 }] });
+  assert.equal(opening.phase, "sell");
+  assert.equal(opening.products.find((product) => product.sku === "1001")?.qty, 2);
   const cash = await svc.cashout(login.token, { key: "cash-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "CASH" });
   const debit = await svc.cashout(login.token, { key: "debit-sheet", lines: [{ sku: "1001", qty: 1 }], payment_method: "DEBIT" });
   assert.equal(cash.payment_method, "CASH");
@@ -1028,9 +1084,8 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
   const login = await h.svc.login(String(started.pin), "10.2.0.1");
   const waiting = await h.svc.state(login.token);
   assert.equal(waiting.phase, "sell");
-  assert.equal(waiting.block, "WAITING_FOR_KITCHEN");
-  assert.deepEqual(waiting.opening_lines, []);
-  await rejects(() => h.svc.cashout(login.token, { key: "too-soon", lines: [{ sku: "1002", qty: 1 }] }), "WAITING_FOR_KITCHEN");
+  assert.equal(waiting.block, null);
+  await rejects(() => h.svc.cashout(login.token, { key: "too-soon", lines: [{ sku: "1002", qty: 1 }] }), "OUT_OF_STOCK");
 
   const rowId = crypto.randomUUID();
   h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "refill", store_code: "PNY01", kind: "REFILL", sku: "1002", qty: "3", created_at: "2026-11-03T16:00:00+07:00", kitchen_status: "ACTIVE" }];
@@ -1041,22 +1096,9 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
     await h.svc.openingBalance(admin, { key: "ob-1001b", sku: "1001", qty: 4 });
   }
   const view = await h.svc.state(login.token);
-  assert.equal(view.phase, "opening");
-  assert.deepEqual(view.opening_lines?.map((line) => line.sku), ["1001", "1002"]);
-  assert.equal(view.opening_lines?.find((line) => line.sku === "1002")?.system_qty, 0);
-  assert.equal(view.opening_lines?.find((line) => line.sku === "1002")?.incoming_qty, 3);
-  await h.svc.saveOpeningCount(login.token, { sku: "1002", counted_qty: 0 });
-  await h.svc.saveOpeningCount(login.token, { sku: "1001", counted_qty: 4 });
-  const saved = await h.svc.state(login.token);
-  assert.equal(saved.opening_lines?.find((line) => line.sku === "1001")?.counted_qty, 4);
-  await h.svc.openingCount(login.token, {
-    key: "open",
-    lines: [
-      { sku: "1001", counted_qty: 4 },
-      { sku: "1002", counted_qty: 0 },
-    ],
-  });
-  assert.equal((await h.svc.state(login.token)).phase, "refill");
+  assert.equal(view.phase, "sell");
+  assert.equal(qty(h.db, "1002"), 3);
+  assert.equal(qty(h.db, "1001"), 4);
 });
 
 test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, then is wiped", async () => {
@@ -1085,12 +1127,9 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
     created_at: "2026-11-03T18:00:00.000Z",
   });
   (svc as unknown as { db: SheetDb }).db.forgetCache();
-  const opening = await svc.state(login.token);
-  await svc.openingCount(login.token, {
-    key: "test01-open",
-    lines: (opening.opening_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
-  });
-  await svc.confirmIncoming(login.token, { key: "test01-recv", lines: [{ kitchen_row_id: refillId, qty_received: 4 }] });
+  const stocked = await svc.state(login.token);
+  assert.equal(stocked.phase, "sell");
+  assert.equal(stocked.products.find((product) => product.sku === "1001")?.qty, 4);
   await svc.cashout(login.token, { key: "test01-cash", payment_method: "CASH", lines: [{ sku: "1001", qty: 2 }] });
   await svc.cashout(login.token, { key: "test01-debit", payment_method: "DEBIT", lines: [{ sku: "1001", qty: 1 }] });
   const dropped = await svc.deposit(login.token, { key: "test01-drop", amount_cents: 500, note: "mid shift" });

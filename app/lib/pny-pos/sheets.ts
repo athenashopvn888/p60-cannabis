@@ -17,6 +17,7 @@ export type SheetClient = {
   configured: boolean;
   readRows(tab: string): Promise<SheetRow[]>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
+  appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
   ensureTabs(specs: SheetTabSpec[]): Promise<void>;
 };
 
@@ -32,6 +33,19 @@ export class LocalSheet implements SheetClient {
 
   async ensureTabs(specs: SheetTabSpec[]) {
     for (const spec of specs) if (!this.tabs[spec.title]) this.tabs[spec.title] = [];
+  }
+
+  async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
+    if (!this.reachable) throw new SheetUnavailable();
+    const list = this.tabs[tab] ?? [];
+    const have = new Set(list.map((row) => (row[idHeader] ?? row.SKU ?? "").trim()).filter(Boolean));
+    for (const row of rows) {
+      const id = (row[idHeader] ?? "").trim();
+      if (!id || have.has(id)) continue;
+      list.push({ ...row });
+      have.add(id);
+    }
+    this.tabs[tab] = list;
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
@@ -181,6 +195,42 @@ export class GoogleSheet implements SheetClient {
         body: JSON.stringify({ values: append }),
       });
     }
+  }
+
+  async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
+    if (rows.length === 0) return;
+    const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
+    const values = (raw.values as string[][] | undefined) ?? [];
+    let headers = (values[0] ?? []).map((cell) => String(cell ?? "").trim());
+    while (headers.length > 0 && headers[headers.length - 1] === "") headers.pop();
+    const extra = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((key) => key && !headers.includes(key));
+    if (headers.length === 0) headers = Object.keys(rows[0] ?? {});
+    else if (extra.length) headers = [...headers, ...extra];
+    if (values.length === 0 || extra.length) {
+      await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
+        method: "PUT",
+        body: JSON.stringify({ values: [headers] }),
+      });
+    }
+    const idColumn = headers.findIndex((header) => header.toLowerCase() === idHeader.toLowerCase());
+    const have = new Set<string>();
+    if (idColumn >= 0) {
+      for (const cells of values.slice(1)) {
+        const id = String(cells[idColumn] ?? "").trim();
+        if (id) have.add(id);
+      }
+    }
+    const append = rows
+      .filter((row) => {
+        const id = (row[idHeader] ?? "").trim();
+        return id && !have.has(id);
+      })
+      .map((row) => headers.map((header) => row[header] ?? ""));
+    if (append.length === 0) return;
+    await this.sheetsFetch(`/values/${encodeURIComponent(tab)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: "POST",
+      body: JSON.stringify({ values: append }),
+    });
   }
 }
 
