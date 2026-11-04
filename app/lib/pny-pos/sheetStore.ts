@@ -2,6 +2,7 @@ import { STORE_CODE } from "./constants.ts";
 import { SheetUnavailable } from "./errors.ts";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import { skuSortKey } from "./flowerSku.ts";
+import { planPaperRefills } from "./paperRefill.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
@@ -182,6 +183,21 @@ export class SheetDb implements PosDb {
     this.cache = null;
   }
 
+  private async applyPaperRefills(rows: SheetRow[]) {
+    const catalog = new Set(catalogFromFeed(readCommittedPnyCatalog()).map((product) => product.sku));
+    const plan = planPaperRefills(rows, catalog);
+    const writes = [...plan.cancel, ...plan.add];
+    if (writes.length === 0) return rows;
+    await this.sheet.upsert("POS_Refills", writes);
+    const byId = new Map<string, SheetRow>();
+    for (const row of rows) {
+      const id = text(row, "row_id") || text(row, "kitchen_row_id");
+      if (id) byId.set(id, row);
+    }
+    for (const row of writes) byId.set(row.row_id, { ...(byId.get(row.row_id) ?? {}), ...row });
+    return [...byId.values()];
+  }
+
   private async ensure() {
     if (!this.ready) {
       this.ready = this.sheet.ensureTabs(POS_TAB_SPECS).catch((error: unknown) => {
@@ -195,13 +211,14 @@ export class SheetDb implements PosDb {
   private async load(): Promise<State> {
     if (this.cache && Date.now() - this.cache.at < this.cacheMs) return this.cache.state;
     await this.ensure();
-    const [staffRows, refillRows] = await Promise.all([
+    const [staffRows, readRefills] = await Promise.all([
       this.sheet.readRows("POS_Staff"),
       this.sheet.readRows("POS_Refills").catch((error: unknown) => {
         if (error instanceof SheetUnavailable && error.httpStatus === 400) return [] as SheetRow[];
         throw error;
       }),
     ]);
+    const refillRows = this.sheet.configured ? await this.applyPaperRefills(readRefills) : readRefills;
     this.stateParts = staffRows.filter((row) => row.record_type === "STATE" && row.doc).length;
     this.refillRaw = new Map();
     for (const row of refillRows) {
