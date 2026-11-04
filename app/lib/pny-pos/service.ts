@@ -33,6 +33,7 @@ import { centsToSheet, formatMoney, formatStoreTime, inStockCategories } from ".
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { skuSortKey } from "./flowerSku.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
+import { summaryPlainText } from "./summary.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -1617,6 +1618,41 @@ export class PosService {
     });
     if (!result.ok) throw new PosError(result.status, result.code, result.message);
     return result;
+  }
+
+  /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
+  async shiftSummary(token: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, staff } = this.session(tx.state, token, now);
+      const sales = tx.state.sales
+        .filter((sale) => sale.shift_id === shift.id && sale.status === "COMPLETED")
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((sale) => ({
+          at: sale.created_at,
+          payment: sale.payment_method,
+          total_cents: sale.total_cents,
+          lines: tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => ({
+            sku: line.sku,
+            name: productName(tx.state, line.sku),
+            qty: line.qty,
+            line_total_cents: line.line_total_cents,
+          })),
+        }));
+      const deposits = tx.state.deposits
+        .filter((deposit) => deposit.shift_id === shift.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((deposit) => ({ at: deposit.created_at, amount_cents: deposit.amount_cents }));
+      const when = iso(now);
+      return {
+        ok: true as const,
+        staff: staff.display_name,
+        when,
+        sales,
+        deposits,
+        text: summaryPlainText({ staff: staff.display_name, when, sales, deposits }),
+      };
+    });
   }
 
   async openTicket(token: string, ticketId: string, journal?: DemoJournalOrder[]) {
