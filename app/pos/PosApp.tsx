@@ -446,14 +446,7 @@ export default function PosApp() {
             <button type="button" className={styles.promoComing} data-testid="promo-coming" disabled>PROMO COMING</button>
           </div>
           <div className={styles.chipRows} role="tablist" aria-label="Categories">
-            {categoryLayout.wide.map((chip) => (
-              <div key={chip} className={styles.chipRow}>
-                <button type="button" role="tab" aria-selected={chip === activeCategory} data-category={chip} className={chip === activeCategory ? `${styles.chipOn} ${styles.chipWide}` : `${styles.chip} ${styles.chipWide}`} onClick={() => setCategory(chip)}>
-                  {categoryChipLabel(chip)}
-                </button>
-              </div>
-            ))}
-            {rowsOf(categoryLayout.rest, 4).map((row) => (
+            {rowsOf(categoryLayout, 4).map((row) => (
               <div key={row.join("|")} className={styles.chipRow}>
                 {row.map((chip) => (
                   <button key={chip} type="button" role="tab" aria-selected={chip === activeCategory} data-category={chip} className={chip === activeCategory ? styles.chipOn : styles.chip} onClick={() => setCategory(chip)}>

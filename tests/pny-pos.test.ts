@@ -401,10 +401,11 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   assert.equal(categoryChipLabel("VAPE PENS"), "Nic Vape");
   assert.equal(categoryChipLabel("EXOTIC"), "EXOTIC");
   assert.equal(categoryChipLabel("CONCENTRATES"), "CONCENTRATES");
-  const chips = layoutCategoryChips(["EXOTIC", "PREMIUM", "AAA+", "AA", "BUDGET", "ADD ONS", "CIGARETTES", "EDIBLES", "VAPE DISPOSABLE", "VAPE PENS"]);
-  assert.deepEqual(chips.wide, ["ADD ONS"]);
-  assert.equal(chips.rest[5], "VAPE PENS");
-  assert.equal(chips.rest.includes("ADD ONS"), false);
+  const source = ["EXOTIC", "PREMIUM", "AAA+", "AA", "BUDGET", "ADD ONS", "CIGARETTES", "EDIBLES", "VAPE DISPOSABLE", "VAPE PENS"];
+  const chips = layoutCategoryChips(source);
+  assert.equal(chips[5], "VAPE PENS");
+  assert.equal(chips[source.length - 1], "ADD ONS");
+  assert.deepEqual(chips.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS"), source.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS"));
   assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
 });
 
