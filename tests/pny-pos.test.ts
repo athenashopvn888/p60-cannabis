@@ -11,9 +11,9 @@ import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
-import { unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
+import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
-import { PAPER_BATCH, paperLines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
+import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
@@ -254,7 +254,8 @@ test("a sized refill is listed on the menu and tobacco stays off", async () => {
   const menu = await h.svc.menu();
   assert.equal(menu.prices_include_tax, false);
   assert.equal(menu.items?.some((item) => item.sku === "313-5g" && item.price_cents === 3000 && item.name.includes("SUPER LEMON")), true);
-  assert.equal(menu.items?.some((item) => item.sku === "240" || item.category.toLowerCase() === "cigarettes"), false);
+  assert.equal(menu.items?.some((item) => item.sku === "240" && item.category.toLowerCase() === "cigarettes" && item.price_cents === 500), true);
+  assert.equal(JSON.stringify(menu).includes("\"qty\""), false);
   const order = await h.svc.placeOrder({ key: "menu-313", lines: [{ sku: "313-5g", qty: 1 }] }, "10.0.0.42");
   assert.equal(order.prices_include_tax, false);
 });
@@ -921,7 +922,9 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.ok((menu.items?.length ?? 0) > 20);
   assert.equal(menu.items?.some((item) => item.sku === "490-3g" && item.name === "PINK JOKER 3g"), true);
   assert.equal(menu.items?.every((item) => item.availability === "Available" && typeof item.image_url === "string" && item.image_url.length > 0), true);
-  assert.equal(menu.items?.some((item) => item.category === "CIGARETTES"), false);
+  const packs = menu.items?.filter((item) => item.category === "CIGARETTES" && Number(item.sku) >= 1000 && Number(item.sku) <= 1027) ?? [];
+  assert.equal(packs.length > 0, true);
+  assert.equal(packs.every((item) => item.price_cents === 250 && item.unit_label === "per pack"), true);
   assert.equal(keysDeep(menu).has("qty"), false);
   assert.equal(keysDeep(menu).has("on_hand"), false);
   const login = await svc.login(DEMO_PIN, "10.0.0.1");
@@ -1112,6 +1115,8 @@ test("cash stays in the drawer and debit does not, and the close balance uses sh
 
 test("SKU 1000 rings the raw pack price with no tax and ignores the client price", async () => {
   assert.equal(unitPricesFromRawRows([{ SKU: "1000", Unit: "pack", Unit_Price: "$2.50", Carton_Price: "25", Packs_per_carton: "10", Needs_Review: "" }]).get("1000"), 250);
+  assert.equal(cartonNote("25", "10"), "Carton $25 · 10 per carton");
+  assert.equal(cartonNote("", ""), null);
   assert.equal(unitPricesFromRawRows([{ SKU: "1001", Unit_Price: "" }]).has("1001"), false);
 
   const h = await readyTill({ "1001": 2 });
@@ -1299,4 +1304,12 @@ test("paper refill cancels old unsized rows and loads sized bags, including unpr
   const again = planPaperRefills([...existing, ...plan.add], catalog);
   assert.equal(again.add.length, 0);
   assert.equal(again.cancel.some((row) => row.sku === "188"), false);
+  const part1 = plan.add.filter((row) => !paperPart2Lines().some((line) => line.sku === row.sku));
+  const part2 = planPaperRefills([...existing, ...part1], catalog);
+  assert.equal(part2.add.find((row) => row.sku === "1000")?.qty, "30");
+  assert.equal(part2.add.find((row) => row.sku === "1000")?.kind, "REFILL");
+  assert.equal(part2.add.some((row) => row.sku === "600" || row.sku === "606" || row.sku === "593" || row.sku === "601"), false);
+  assert.equal(part2.add.find((row) => row.sku === "607")?.qty, "1");
+  assert.equal(quoteForSku("1000")?.cents, 250);
+  assert.equal(quoteForSku("1027")?.name, "MARLBORO");
 });

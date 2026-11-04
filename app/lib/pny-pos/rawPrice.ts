@@ -40,3 +40,30 @@ export function unitPricesFromRawRows(rows: SheetRow[]) {
   }
   return map;
 }
+
+function dollars(cents: number) {
+  const text = (cents / 100).toFixed(2);
+  return `$${text.endsWith(".00") ? text.slice(0, -3) : text}`;
+}
+
+/** Carton text from the raw price row. This is not an on-hand quantity. */
+export function cartonNote(cartonRaw: string, packsRaw: string) {
+  const cents = unitPriceCents(cartonRaw);
+  const packs = Number(packsRaw.trim());
+  const packCount = Number.isInteger(packs) && packs > 0 ? packs : null;
+  if (cents == null && packCount == null) return null;
+  if (cents != null && packCount != null) return `Carton ${dollars(cents)} · ${packCount} per carton`;
+  if (cents != null) return `Carton ${dollars(cents)}`;
+  return `${packCount} per carton`;
+}
+
+export function cartonNotesFromRawRows(rows: SheetRow[]) {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const sku = skuKey(cell(row, "SKU"));
+    if (!sku || map.has(sku)) continue;
+    const note = cartonNote(cell(row, "Carton_Price"), cell(row, "Packs_per_carton"));
+    if (note) map.set(sku, note);
+  }
+  return map;
+}
