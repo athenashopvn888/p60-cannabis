@@ -283,6 +283,7 @@ export class SheetDb implements PosDb {
       created_at: sale.created_at,
       doc: JSON.stringify({
         sale,
+        staff_name: state.staff.find((row) => row.staff_uid === sale.staff_uid)?.display_name ?? "",
         lines: state.sale_lines.filter((line) => line.sale_id === sale.id),
       }),
     }));
