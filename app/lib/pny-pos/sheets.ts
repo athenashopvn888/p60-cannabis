@@ -5,7 +5,7 @@ import type { SheetRow } from "./types.ts";
 export type SheetTabSpec = { title: string; headers: string[] };
 
 /** Tabs the till must not overwrite. Items_raw_price is read for prices. SETB inventory pages stay untouched. */
-const BLOCKED_WRITE_TABS = new Set(["Items_raw_price", "Products", "S_Stock", "K_Allocations", "Flowers_Raw"]);
+const BLOCKED_WRITE_TABS = new Set(["Items_raw_price", "Products", "S_Stock", "K_Allocations", "Flowers_Raw", "Items_Raw"]);
 
 export function sheetWriteAllowed(tab: string) {
   if (BLOCKED_WRITE_TABS.has(tab)) return false;
@@ -41,7 +41,7 @@ export class LocalSheet implements SheetClient {
   }
 
   async writeGrid(tab: string, grid: string[][]) {
-    if (tab !== "Flowers_Raw" || grid.length === 0) return;
+    if ((tab !== "Flowers_Raw" && tab !== "Items_Raw") || grid.length === 0) return;
     this.grids[tab] = grid.map((row) => [...row]);
   }
 
@@ -168,7 +168,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async writeGrid(tab: string, grid: string[][]) {
-    if (tab !== "Flowers_Raw" || grid.length < 2) return;
+    if ((tab !== "Flowers_Raw" && tab !== "Items_Raw") || grid.length < 2) return;
     await this.ensureTabs([{ title: tab, headers: grid[0].map((cell) => String(cell ?? "")) }]);
     await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
       method: "PUT",
