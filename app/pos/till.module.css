@@ -183,6 +183,26 @@
   shape-rendering: crispEdges;
 }
 
+.summaryPage {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  overflow: auto;
+  background: #f3efe6;
+  color: #1c1917;
+  padding: 56px 16px 24px;
+}
+
+.summaryText {
+  white-space: pre-wrap;
+  font: 14px/1.45 ui-monospace, monospace;
+}
+
+.copied {
+  margin: 8px 0 0;
+  font-weight: 800;
+}
+
 .body {
   flex: 1;
   overflow: auto;

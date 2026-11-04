@@ -72,10 +72,13 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | null>(null);
+  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | null>(null);
   const [depositPin, setDepositPin] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [qrOpen, setQrOpen] = useState(false);
+  const [summaryPin, setSummaryPin] = useState("");
+  const [summaryText, setSummaryText] = useState("");
+  const [copied, setCopied] = useState(false);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
@@ -166,6 +169,30 @@ export default function PosApp() {
     setDepositPin("");
     setDepositAmount("");
     setSheet("deposit-pin");
+  }
+
+  async function openSummary() {
+    setError("");
+    setBusy(true);
+    try {
+      await post("/api/pos/deposits/confirm-pin", { pin: summaryPin });
+      setSummaryPin("");
+      const data = await fetch("/api/pos/summary", { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
+      if (!data.ok) throw new Error(data.error || "Summary was not loaded");
+      setSummaryText(String(data.text ?? ""));
+      setSheet(null);
+    } catch (err) {
+      setSummaryPin("");
+      setError(failureText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copySummary() {
+    await navigator.clipboard.writeText(summaryText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   }
 
   async function confirmDepositPin() {
@@ -319,6 +346,7 @@ export default function PosApp() {
               <>
                 <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" onClick={openDeposit}>+Deposit</button>
                 <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
+                <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
               </>
             ) : null}
             <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
@@ -476,6 +504,15 @@ export default function PosApp() {
           onClose={() => setSheet(null)}
         />
       ) : null}
+      {summaryText ? (
+        <div className={styles.summaryPage} data-testid="shift-summary">
+          <button className={styles.qrClose} type="button" aria-label="Close" onClick={() => setSummaryText("")}>×</button>
+          <h2>Today's Summary</h2>
+          <pre className={styles.summaryText}>{summaryText}</pre>
+          <button className={styles.primary} type="button" data-testid="copy-summary" onClick={() => void copySummary()}>Copy</button>
+          {copied ? <p className={styles.copied} data-testid="copied-toast">Copied</p> : null}
+        </div>
+      ) : null}
       {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
       {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
@@ -502,6 +539,25 @@ export default function PosApp() {
                 <h2>Sale {refNo}</h2>
                 <p>Recorded.</p>
                 <button className={styles.primary} type="button" onClick={() => setSheet(null)}>Done</button>
+              </>
+            ) : null}
+            {sheet === "summary-pin" ? (
+              <>
+                <h2>Summary</h2>
+                <p>Enter the shift PIN.</p>
+                <div className={styles.pinDisplay} aria-live="polite">{summaryPin.replace(/./g, "•") || " "}</div>
+                {error ? <p className={styles.error}>{error}</p> : null}
+                <div className={styles.keys}>
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"].map((digit) => (
+                    <button key={digit} type="button" onClick={() => {
+                      if (digit === "Clear") setSummaryPin("");
+                      else if (digit === "⌫") setSummaryPin((current) => current.slice(0, -1));
+                      else setSummaryPin((current) => (current + digit).slice(0, 4));
+                    }}>{digit}</button>
+                  ))}
+                </div>
+                <button className={styles.primary} type="button" disabled={busy || summaryPin.length !== 4} onClick={() => void openSummary()}>Continue</button>
+                <button className={styles.secondary} type="button" onClick={() => { setSummaryPin(""); setSheet(null); }}>Back</button>
               </>
             ) : null}
             {sheet === "deposit-pin" ? (

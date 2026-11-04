@@ -789,6 +789,30 @@ test("a single recent debit test sale is removed and its stock comes back", asyn
   assert.equal(h.db.state.sales.filter((row) => row.status === "COMPLETED").length, before);
 });
 
+test("today's summary is read-only and copies plain text without stock or variance", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 2 });
+  await h.svc.cashout(h.token, { key: "sum-cash", payment_method: "CASH", lines: [{ sku: "1001", qty: 1 }] });
+  await h.svc.cashout(h.token, { key: "sum-debit", payment_method: "DEBIT", lines: [{ sku: "1002", qty: 1 }] });
+  await h.svc.deposit(h.token, { key: "sum-dep", amount_cents: 200 });
+  const hash = h.db.state.shifts.find((row) => row.status === "ACTIVE")?.pin_hash;
+  const salesBefore = h.db.state.sales.length;
+  const stockBefore = qty(h.db, "1001");
+  const summary = await h.svc.shiftSummary(h.token);
+  assert.match(summary.text, /PNY01/);
+  assert.match(summary.text, /Anom/);
+  assert.match(summary.text, /Cash: \$10\.00/);
+  assert.match(summary.text, /Debit: \$5\.00/);
+  assert.match(summary.text, /Deposits: \$2\.00/);
+  assert.match(summary.text, /Grand total: \$15\.00/);
+  assert.match(summary.text, /1 × Flower/);
+  assert.doesNotMatch(summary.text, /variance|on_hand|system_qty|shortage/i);
+  assert.equal(h.db.state.sales.length, salesBefore);
+  assert.equal(qty(h.db, "1001"), stockBefore);
+  assert.equal(h.db.state.shifts.find((row) => row.status === "ACTIVE")?.pin_hash, hash);
+  assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="pos-summary"/);
+  assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8").split('data-testid="pos-summary"')[1]?.slice(0, 80) ?? "", /\$|formatMoney/);
+});
+
 test("sheet store keeps a hashed shift PIN, refill opening count, and cash or debit sales", async () => {
   const pin = "2468";
   const sheet = new LocalSheet();
