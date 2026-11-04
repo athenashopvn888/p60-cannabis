@@ -227,16 +227,20 @@ export type ClosingRow = {
 
 export type ClosingDraftRow = {
   shift_id: string;
-  counts: { sku: string; counted_qty: number }[];
+  counts: { sku: string; counted_qty: number; edited_at?: string; expected_qty?: number; accepted_as_is?: boolean }[];
   opening_counts?: {
     sku: string;
     counted_qty: number;
     variance_reason?: string | null;
     expected_qty?: number;
     submitted_at?: string;
+    edited_at?: string;
     added_stock?: boolean;
     accepted_as_is?: boolean;
   }[];
+  /** Set when staff tap Submit, or when the 2-hour window closes the count for them. */
+  verify_submitted_at?: string | null;
+  closing_submitted_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   updated_at: string;

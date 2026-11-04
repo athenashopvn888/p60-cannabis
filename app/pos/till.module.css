@@ -1116,6 +1116,76 @@
   background: #fff;
 }
 
+.countRuleRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px 0;
+}
+
+.countRuleBtn {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: underline;
+  padding: 2px 0;
+}
+
+.ruleScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(28, 25, 23, 0.55);
+}
+
+.ruleSheet {
+  width: min(100%, 420px);
+  max-height: 92vh;
+  overflow: auto;
+  box-sizing: border-box;
+  background: #fff;
+  color: #1c1917;
+  border-radius: 16px 16px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.ruleSheet h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.ruleSheet p {
+  margin: 0 0 10px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.ruleNotice {
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 2px solid #c2410c;
+  border-radius: 12px;
+  background: #fff7ed;
+}
+
+.ruleNotice h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.ruleNotice p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.ruleSheet .primary {
+  width: 100%;
+}
+
 .countCompact {
   display: flex;
   align-items: center;
