@@ -122,6 +122,7 @@ export default function PosApp() {
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
+  const showVerify = Boolean(view?.phase === "sell" && (verifyOpen || view.verify?.waiting));
 
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
@@ -373,38 +374,30 @@ export default function PosApp() {
   return (
     <main className={styles.shell} data-testid="pos-shell">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
-      <header className={styles.header}>
+      <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>PNY01 · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
-          <div className={styles.headerActions}>
-            {view.phase === "sell" ? (
-              <>
-                <button className={styles.cornerBtn} type="button" data-testid="pos-refill" onClick={() => setRefillOpen(true)}>
-                  Refill
-                  {(view.incoming?.length ?? 0) > 0 ? <span className={styles.refillBadge} data-testid="refill-badge">{view.incoming?.length}</span> : null}
-                </button>
-                <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
-                <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
-                <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
-              </>
-            ) : null}
-            <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
-            <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
-          </div>
+          {view.phase === "sell" ? (
+            <button className={styles.cornerBtn} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>Customer QR</button>
+          ) : null}
+        </div>
+        <div className={styles.headerActions}>
+          {view.phase === "sell" ? (
+            <button className={styles.cornerBtn} type="button" data-testid="pos-refill" onClick={() => setRefillOpen(true)}>
+              Refill
+              {(view.incoming?.length ?? 0) > 0 ? <span className={styles.refillBadge} data-testid="refill-badge">{view.incoming?.length}</span> : null}
+            </button>
+          ) : null}
+          {view.phase === "sell" ? (
+            <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
+          ) : null}
+          <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
+          <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
+          {view.phase === "sell" ? (
+            <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
+          ) : null}
         </div>
       </header>
-      {view.phase === "sell" && view.verify?.waiting ? (
-        <div className={styles.verifyBanner} data-testid="verify-banner">Master view · timer starts at the first staff login</div>
-      ) : null}
-      {view.phase === "sell" && verifyOpen && view.verify?.deadline_at ? (
-        <>
-          <VerifyBanner deadline={view.verify.deadline_at} />
-          <CountCard lines={view.verify.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
-        </>
-      ) : null}
-      {view.phase === "sell" && view.verify?.waiting ? (
-        <CountCard lines={view.verify.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
-      ) : null}
       {view.verify?.reveal && sheet == null ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <h2>Previous shift</h2>
@@ -514,20 +507,23 @@ export default function PosApp() {
       ) : null}
 
       {view.phase === "sell" ? (
-        <footer className={styles.footer}>
-          <div className={styles.footerMain}>
-            <div>
-              <div className={styles.metricLabel}>Cart</div>
-              <div className={styles.total} data-testid="cart-total">{formatMoney(total)}</div>
+        <footer className={styles.footer} data-testid="pos-dock">
+          {view.verify?.waiting ? (
+            <div className={`${styles.verifyBanner} ${styles.verifySlim}`} data-testid="verify-banner">Master view · timer starts at the first staff login</div>
+          ) : null}
+          {verifyOpen && view.verify?.deadline_at ? <VerifyBanner slim deadline={view.verify.deadline_at} /> : null}
+          {showVerify ? (
+            <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} />
+          ) : null}
+          <div className={styles.footerBar}>
+            <div className={styles.cartCompact}>
+              <span className={styles.metricLabel}>Cart</span>
+              <strong className={styles.total} data-testid="cart-total">{formatMoney(total)}</strong>
             </div>
-            <div className={styles.checkout}>
-              <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
-              <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
-            </div>
-          </div>
-          <div className={styles.tabs}>
-            <button type="button" className={tab === "sell" ? styles.tabOn : undefined} onClick={() => setTab("sell")}>Sell</button>
-            <button type="button" className={tab === "tickets" ? styles.tabOn : undefined} data-testid="tickets-tab" onClick={() => setTab("tickets")}>Tickets {view.pending_count ?? 0}</button>
+            <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
+            <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
+            <button type="button" className={tab === "sell" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} onClick={() => setTab("sell")}>Sell</button>
+            <button type="button" className={tab === "tickets" ? `${styles.tabChip} ${styles.tabOn}` : styles.tabChip} data-testid="tickets-tab" onClick={() => setTab("tickets")}>Tickets {view.pending_count ?? 0}</button>
           </div>
         </footer>
       ) : null}

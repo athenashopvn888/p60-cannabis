@@ -635,6 +635,19 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
   assert.match(posApp, /Customer QR/);
+  const posHeader = posApp.split("posHeader")[1]?.split("</header>")[0] ?? "";
+  const nameRow = posHeader.split("headerActions")[0] ?? "";
+  const actionRow = posHeader.split("headerActions")[1] ?? "";
+  assert.match(nameRow, /data-testid="customer-qr"/);
+  assert.doesNotMatch(actionRow, /customer-qr/);
+  const refillAt = actionRow.indexOf('data-testid="pos-refill"');
+  const summaryAt = actionRow.indexOf('data-testid="pos-summary"');
+  const tillAt = actionRow.indexOf('data-testid="open-till"');
+  const endAt = actionRow.indexOf("End Shift");
+  const depositAt = actionRow.indexOf('data-testid="pos-deposit"');
+  assert.ok(refillAt >= 0 && refillAt < summaryAt && summaryAt < tillAt && tillAt < endAt && endAt < depositAt);
+  assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.tillLink \{[^}]*background:\s*#166534/);
+  assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.posHeader \.headerActions \{[^}]*flex-wrap:\s*nowrap/);
   assert.match(posApp, /deposits\/confirm-pin/);
   assert.doesNotMatch(posApp, /data-testid="cash-on-hand"|data-testid="total-deposited"|data-testid="total-sales"/);
   const customerQr = readFileSync("app/pos/CustomerQr.tsx", "utf8");
@@ -1531,16 +1544,45 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   assert.doesNotMatch(staffSkuText("1027", "pack"), /-/);
   const ordered = [
     { sku: "9", name: "other", category: "MAGIC", bag: "each" },
+    { sku: "801", name: "wax", category: "CONCENTRATES", bag: "each" },
     { sku: "1081", name: "vape", category: "VAPE PENS", bag: "each" },
     { sku: "610", name: "edible", category: "EDIBLES", bag: "each" },
     { sku: "713", name: "paper", category: "ADD ONS", bag: "each" },
     { sku: "1027", name: "marl", category: "CIGARETTES", bag: "pack" },
+    { sku: "510-28g", name: "exotic", category: "EXOTIC", bag: "28g" },
+    { sku: "410-28g", name: "premium", category: "PREMIUM", bag: "28g" },
+    { sku: "210-14g", name: "budget later", category: "BUDGET", bag: "14g" },
     { sku: "200-14g", name: "budget", category: "BUDGET", bag: "14g" },
+    { sku: "502-5g", name: "exotic 6", category: "EXOTIC", bag: "6g" },
+    { sku: "400-5g", name: "premium 6", category: "PREMIUM", bag: "6g" },
+    { sku: "360-5g", name: "aaa later", category: "AAA+", bag: "6g" },
     { sku: "350-5g", name: "aaa", category: "AAA+", bag: "6g" },
-    { sku: "400-3g", name: "premium", category: "PREMIUM", bag: "3g" },
+    { sku: "182-5g", name: "budget 5", category: "BUDGET", bag: "5g" },
+    { sku: "502-3g", name: "exotic later", category: "EXOTIC", bag: "3g" },
     { sku: "500-3g", name: "exotic", category: "EXOTIC", bag: "3g" },
+    { sku: "400-3g", name: "premium", category: "PREMIUM", bag: "3g" },
+    { sku: "307-3g", name: "aaa", category: "AAA+", bag: "3g" },
+    { sku: "277-3g", name: "aa", category: "AA", bag: "3g" },
+    { sku: "190-3g", name: "budget later", category: "BUDGET", bag: "3g" },
+    { sku: "182-3g", name: "budget first", category: "BUDGET", bag: "3g" },
   ].sort(compareCount).map((row) => row.sku);
-  assert.deepEqual(ordered, ["500-3g", "400-3g", "350-5g", "200-14g", "1027", "713", "610", "1081", "9"]);
+  assert.deepEqual(ordered, [
+    "182-3g", "190-3g", "277-3g", "307-3g", "400-3g", "500-3g", "502-3g",
+    "182-5g", "350-5g", "360-5g", "400-5g", "502-5g",
+    "200-14g", "210-14g",
+    "410-28g", "510-28g",
+    "1027", "713", "610", "1081", "801", "9",
+  ]);
+  const posSource = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const beforeDock = posSource.split('data-testid="pos-dock"')[0] ?? "";
+  const dock = posSource.split('data-testid="pos-dock"')[1]?.split("</footer>")[0] ?? "";
+  assert.doesNotMatch(beforeDock, /<VerifyBanner|<CountCard/);
+  assert.match(dock, /<VerifyBanner slim/);
+  assert.match(dock, /<CountCard\s+compact/);
+  assert.match(dock, /className=\{styles\.footerBar\}/);
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(service, /sortCountSkus\(state, skus\)/);
+  assert.match(service, /close_lines: \(\(\) => \{[\s\S]*?compareCount/);
   const row = readFileSync("app/pos/SkuOffList.tsx", "utf8");
   assert.match(row, /offId/);
   assert.match(row, /off > 0 \? `\+\$\{line\.off\}` : String\(line\.off\)/);
@@ -1616,7 +1658,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
   await h.svc.saveOpeningCount(h.token, { sku: "1027", counted_qty: 2 });
   const labels = (await h.svc.state(h.token)).verify.lines.filter((line) => ["200-5g", "350-5g", "1027"].includes(line.sku)).map((line) => line.text);
-  assert.deepEqual(labels, ["#350 6g", "#200 5g", "#1027 pack"]);
+  assert.deepEqual(labels, ["#200 5g", "#350 6g", "#1027 pack"]);
 });
 
 test("a count on zero stock is flagged and does not invent quantity", async () => {
