@@ -24,8 +24,9 @@ export function toResponse(error: unknown) {
     return Response.json({ ok: false, error: error.message, code: error.code, ...error.details }, { status: error.status, headers: { "cache-control": "no-store" } });
   }
   if (error instanceof SheetUnavailable) {
+    console.error("sheet_unavailable", error.message);
     return Response.json(
-      { ok: false, error: "The inventory sheet is busy. Try again in a moment.", code: error.code },
+      { ok: false, error: "The inventory sheet is busy. Try again in a moment.", code: error.code, sheet_status: error.httpStatus },
       { status: 503, headers: { "cache-control": "no-store" } },
     );
   }
