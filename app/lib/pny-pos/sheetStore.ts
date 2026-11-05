@@ -7,12 +7,20 @@ import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
+import {
+  chunkHighWater,
+  mergeWrites,
+  packSlice,
+  packState,
+  readStateFromStaff,
+  sameStoreConflict,
+  touchedStores,
+} from "./stateMerge.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
+import { randomUUID } from "node:crypto";
 
 /** Server-side read cache. Hidden tabs already stop polling; this keeps a warm instance off the sheet. */
 export const POS_SHEET_CACHE_MS = 25_000;
-const CHUNK = 30_000;
-
 export const POS_TAB_SPECS: SheetTabSpec[] = [
   { title: "POS_Staff", headers: ["row_id", "record_type", "staff_uid", "sccx_id", "pos_id", "display_name", "active", "updated_at", "created_at", "doc"] },
   { title: "POS_Shifts", headers: ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"] },
@@ -39,19 +47,11 @@ function normalize(parsed: State): State {
   if (typeof parsed.deposit_seq === "number" && Number.isInteger(parsed.deposit_seq)) base.deposit_seq = parsed.deposit_seq;
   if (typeof parsed.deposit_seq_pny02 === "number" && Number.isInteger(parsed.deposit_seq_pny02)) base.deposit_seq_pny02 = parsed.deposit_seq_pny02;
   if (Array.isArray(parsed.stock_labels)) base.stock_labels = parsed.stock_labels;
+  if (typeof parsed.state_revision === "number" && Number.isInteger(parsed.state_revision)) base.state_revision = parsed.state_revision;
+  if (typeof parsed.state_write_token === "string") base.state_write_token = parsed.state_write_token;
+  if (typeof parsed.revision_pny01 === "number" && Number.isInteger(parsed.revision_pny01)) base.revision_pny01 = parsed.revision_pny01;
+  if (typeof parsed.revision_pny02 === "number" && Number.isInteger(parsed.revision_pny02)) base.revision_pny02 = parsed.revision_pny02;
   return base;
-}
-
-function stateFromStaffRows(rows: SheetRow[]): State | null {
-  const parts = rows
-    .filter((row) => row.record_type === "STATE" && row.row_id?.startsWith("STATE-") && row.doc)
-    .sort((a, b) => a.row_id.localeCompare(b.row_id));
-  if (parts.length === 0) return null;
-  try {
-    return normalize(JSON.parse(parts.map((row) => row.doc).join("")) as State);
-  } catch {
-    throw new SheetUnavailable("POS sheet state could not be read.");
-  }
 }
 
 /** Add missing catalog SKUs. Does not create on-hand. */
@@ -128,41 +128,6 @@ function mergeKitchenRefills(state: State, rows: SheetRow[]) {
   }
 }
 
-function packState(state: State, previousParts: number): Record<string, string>[] {
-  const json = JSON.stringify(state);
-  const parts: Record<string, string>[] = [];
-  for (let index = 0; index * CHUNK < json.length || index === 0; index += 1) {
-    parts.push({
-      row_id: `STATE-${String(index).padStart(3, "0")}`,
-      record_type: "STATE",
-      staff_uid: "",
-      sccx_id: "",
-      pos_id: "",
-      display_name: "",
-      active: "",
-      updated_at: "",
-      created_at: "",
-      doc: json.slice(index * CHUNK, (index + 1) * CHUNK),
-    });
-    if ((index + 1) * CHUNK >= json.length) break;
-  }
-  for (let index = parts.length; index < previousParts; index += 1) {
-    parts.push({
-      row_id: `STATE-${String(index).padStart(3, "0")}`,
-      record_type: "STATE_RETIRED",
-      staff_uid: "",
-      sccx_id: "",
-      pos_id: "",
-      display_name: "",
-      active: "",
-      updated_at: "",
-      created_at: "",
-      doc: "",
-    });
-  }
-  return parts;
-}
-
 /**
  * POS source of truth on the PNY Mobile Inventory sheet.
  * Readable rows live on POS_Staff, POS_Shifts, POS_Sales, POS_Refills, POS_Counts, and POS_Deposits.
@@ -215,8 +180,8 @@ export class SheetDb implements PosDb {
     await this.ready;
   }
 
-  private async load(): Promise<State> {
-    if (this.cache && Date.now() - this.cache.at < this.cacheMs) return this.cache.state;
+  private async load(fresh = false): Promise<State> {
+    if (!fresh && this.cache && Date.now() - this.cache.at < this.cacheMs) return this.cache.state;
     await this.ensure();
     const [staffRows, readRefills] = await Promise.all([
       this.sheet.readRows("POS_Staff"),
@@ -234,13 +199,15 @@ export class SheetDb implements PosDb {
         // Quoted prices also live on the product. A price-sheet miss must not block the till.
       }
     }
-    this.stateParts = staffRows.filter((row) => row.record_type === "STATE" && row.doc).length;
+    this.stateParts = chunkHighWater(staffRows, "STATE-");
     this.refillRaw = new Map();
     for (const row of refillRows) {
       const id = text(row, "row_id") || text(row, "kitchen_row_id");
       if (id) this.refillRaw.set(id, { ...row });
     }
-    const state = stateFromStaffRows(staffRows) ?? emptyState();
+    const packed = readStateFromStaff(staffRows);
+    const state = packed ? normalize(packed.state) : emptyState();
+    if (packed?.recovered) this.needsSave = true;
     if (mergeCatalog(state)) this.needsSave = true;
     mergeKitchenRefills(state, refillRows);
     this.cache = { state, at: Date.now() };
@@ -401,9 +368,45 @@ export class SheetDb implements PosDb {
     }
   }
 
+  private lockRow(token: string) {
+    return {
+      row_id: "STATE-LOCK",
+      record_type: "STATE_LOCK",
+      staff_uid: "",
+      sccx_id: "",
+      pos_id: "",
+      display_name: "",
+      active: "",
+      updated_at: new Date().toISOString(),
+      created_at: "",
+      doc: token,
+    };
+  }
+
+  private async acquireLock(): Promise<string | null> {
+    const token = randomUUID();
+    await this.sheet.upsert("POS_Staff", [this.lockRow(token)]);
+    const rows = await this.sheet.readRows("POS_Staff");
+    return rows.find((row) => row.row_id === "STATE-LOCK")?.doc === token ? token : null;
+  }
+
+  private async releaseLock(token: string) {
+    const rows = await this.sheet.readRows("POS_Staff");
+    if (rows.find((row) => row.row_id === "STATE-LOCK")?.doc !== token) return;
+    await this.sheet.upsert("POS_Staff", [this.lockRow("")]);
+  }
+
   private async save(state: State, previousPny2 = "") {
     await this.ensure();
-    for (const group of this.project(state)) {
+    const existing = await this.sheet.readRows("POS_Staff");
+    this.stateParts = chunkHighWater(existing, "STATE-");
+    const groups = this.project(state);
+    const staff = groups.find((group) => group.tab === "POS_Staff");
+    if (staff) {
+      staff.rows.push(...packSlice(state, "PNY01", chunkHighWater(existing, "P1-")));
+      staff.rows.push(...packSlice(state, "PNY02", chunkHighWater(existing, "P2-")));
+    }
+    for (const group of groups) {
       if (group.rows.length) await this.sheet.upsert(group.tab, group.rows);
     }
     if (this.pny2StockKey(state) !== previousPny2) await this.writePny2Stock(state);
@@ -421,20 +424,44 @@ export class SheetDb implements PosDb {
 
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     const run = this.tail.then(async () => {
-      const loaded = await this.load();
-      const snapshot = structuredClone(loaded) as State;
-      const previousPny2 = this.pny2StockKey(loaded);
-      const result = await fn({ state: snapshot });
-      if (JSON.stringify(snapshot) !== JSON.stringify(loaded) || this.needsSave) {
-        await this.save(snapshot, previousPny2);
-        this.needsSave = false;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const loaded = await this.load(true);
+        const snapshot = structuredClone(loaded) as State;
+        const previousPny2 = this.pny2StockKey(loaded);
+        const result = await fn({ state: snapshot });
+        const changed = JSON.stringify(snapshot) !== JSON.stringify(loaded) || this.needsSave;
+        if (!changed) {
+          try {
+            this.onCommit?.(snapshot);
+          } catch {
+            // Stock history must not undo a committed sale.
+          }
+          return result;
+        }
+        const touched = touchedStores(loaded, snapshot);
+        const token = await this.acquireLock();
+        if (!token) continue;
+        try {
+          const fresh = await this.load(true);
+          if (sameStoreConflict(loaded, fresh, touched)) continue;
+          const merged = mergeWrites(fresh, loaded, snapshot);
+          merged.state_write_token = token;
+          await this.save(merged, previousPny2);
+          this.needsSave = false;
+          this.cache = null;
+          const saved = await this.load(true);
+          if (saved.state_write_token !== token) continue;
+          try {
+            this.onCommit?.(merged);
+          } catch {
+            // Stock history must not undo a committed sale.
+          }
+          return result;
+        } finally {
+          await this.releaseLock(token);
+        }
       }
-      try {
-        this.onCommit?.(snapshot);
-      } catch {
-        // Stock history must not undo a committed sale.
-      }
-      return result;
+      throw new SheetUnavailable("The till changed while saving. Try again.");
     });
     this.tail = run.then(
       () => undefined,
