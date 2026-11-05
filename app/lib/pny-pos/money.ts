@@ -85,21 +85,34 @@ function isNicVapeCategory(name: string) {
   return categoryKey(name) === "vape pens";
 }
 
-/** Same grid. Add Ons and Nic Vape trade places, and nothing else changes size. */
+function isCigCategory(name: string) {
+  const key = categoryKey(name);
+  return key === "cigarettes" || key === "cigarette" || key === "tobacco";
+}
+
+function swapAt(names: string[], left: number, right: number) {
+  if (left < 0 || right < 0 || left === right) return;
+  const saved = names[left];
+  names[left] = names[right];
+  names[right] = saved;
+}
+
+/** Same grid. Nic Vape stays in Add Ons' old cell. Cigs takes the wide last cell, and Add Ons takes Cigs' old cell. */
 export function layoutCategoryChips(names: string[]) {
   const ordered = [...names];
-  const addOnAt = ordered.findIndex(isAddOnCategory);
-  const nicAt = ordered.findIndex(isNicVapeCategory);
-  if (addOnAt < 0 || nicAt < 0 || addOnAt === nicAt) return ordered;
-  const addOn = ordered[addOnAt];
-  ordered[addOnAt] = ordered[nicAt];
-  ordered[nicAt] = addOn;
+  swapAt(ordered, ordered.findIndex(isAddOnCategory), ordered.findIndex(isNicVapeCategory));
+  swapAt(ordered, ordered.findIndex(isCigCategory), ordered.findIndex(isAddOnCategory));
   return ordered;
 }
 
-/** Add Ons is selected when the menu or till opens. */
+/** Add Ons is selected when the customer menu opens. */
 export function defaultCategory(names: string[]) {
   return names.find((name) => categoryKey(name) === "add ons") ?? names[0] ?? "";
+}
+
+/** Cigs is selected when the POS opens. */
+export function posDefaultCategory(names: string[]) {
+  return names.find(isCigCategory) ?? defaultCategory(names);
 }
 
 export function inStockCategories(rows: { category: string; qty: number }[]) {

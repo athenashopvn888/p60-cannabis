@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, posDefaultCategory, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -405,9 +405,13 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   const source = ["EXOTIC", "PREMIUM", "AAA+", "AA", "BUDGET", "ADD ONS", "CIGARETTES", "EDIBLES", "VAPE DISPOSABLE", "VAPE PENS"];
   const chips = layoutCategoryChips(source);
   assert.equal(chips[5], "VAPE PENS");
-  assert.equal(chips[source.length - 1], "ADD ONS");
-  assert.deepEqual(chips.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS"), source.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS"));
+  assert.equal(chips[6], "ADD ONS");
+  assert.equal(chips[source.length - 1], "CIGARETTES");
+  assert.deepEqual(chips.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS" && name !== "CIGARETTES"), source.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS" && name !== "CIGARETTES"));
   assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
+  assert.equal(posDefaultCategory(["ADD ONS", "CIGARETTES", "EDIBLES"]), "CIGARETTES");
+  assert.match(readFileSync("app/menu/MenuApp.tsx", "utf8"), /defaultCategory\(categories\)/);
+  assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /posDefaultCategory\(categories\)/);
 });
 
 test("12. a kitchen allocation is incoming and not sellable until it is confirmed", async () => {
