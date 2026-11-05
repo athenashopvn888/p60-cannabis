@@ -1,3 +1,4 @@
+import { STORE_TZ } from "./constants.ts";
 import type { State } from "./types.ts";
 
 /** Same columns the Kitchen app writes. Append-only. */
@@ -18,6 +19,65 @@ export const STOCK_HISTORY_HEADERS = [
 ] as const;
 
 export type StockHistoryRow = Record<(typeof STOCK_HISTORY_HEADERS)[number], string>;
+
+/** Inventory-sheet tab: quarter key -> spreadsheet id. `analytics` is not used. */
+export const HISTORY_CONFIG_TAB = "History_Config";
+
+const warnedQuarters = new Set<string>();
+
+export function historyPeriod(iso: string, timeZone = STORE_TZ) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit" }).formatToParts(new Date(iso));
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const quarter = `${year}-Q${Math.ceil(Number(month) / 3)}`;
+  return { quarter, tab: `History_${year}-${month}` };
+}
+
+/** `2026-Q4=sheetId,2027-Q1=sheetId`. Env overrides the History_Config tab. */
+export function parseHistorySheetEnv(raw: string | undefined) {
+  const map = new Map<string, string>();
+  if (!raw) return map;
+  for (const part of raw.split(/[\n,]/)) {
+    const trimmed = part.trim();
+    const split = trimmed.indexOf("=");
+    if (split <= 0) continue;
+    const key = trimmed.slice(0, split).trim();
+    const id = trimmed.slice(split + 1).trim();
+    if (key && id) map.set(key, id);
+  }
+  return map;
+}
+
+export function historySheetConfig(rows: { key?: string; quarter?: string; spreadsheet_id?: string }[], envRaw: string | undefined) {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const key = String(row.key || row.quarter || "").trim();
+    const id = String(row.spreadsheet_id || "").trim();
+    if (key && id && key.toLowerCase() !== "analytics") map.set(key, id);
+  }
+  for (const [key, id] of parseHistorySheetEnv(envRaw)) map.set(key, id);
+  return map;
+}
+
+export function warnMissingHistorySheet(quarter: string) {
+  if (warnedQuarters.has(quarter)) return;
+  warnedQuarters.add(quarter);
+  console.warn(`PNY stock history spreadsheet for ${quarter} is not configured. Appending to Stock_History on the inventory sheet. Set PNY_HISTORY_SHEETS or the History_Config tab.`);
+}
+
+export function planHistoryWrites(rows: StockHistoryRow[], config: Map<string, string>) {
+  const planned: { spreadsheetId: string | null; quarter: string; tab: string; rows: StockHistoryRow[] }[] = [];
+  for (const row of rows) {
+    const period = historyPeriod(row.timestamp_iso);
+    const spreadsheetId = config.get(period.quarter)?.trim() || null;
+    const tab = spreadsheetId ? period.tab : STOCK_HISTORY_TAB;
+    if (!spreadsheetId) warnMissingHistorySheet(period.quarter);
+    const existing = planned.find((item) => item.spreadsheetId === spreadsheetId && item.tab === tab);
+    if (existing) existing.rows.push(row);
+    else planned.push({ spreadsheetId, quarter: period.quarter, tab, rows: [row] });
+  }
+  return planned;
+}
 
 const pending = new WeakMap<State, string[]>();
 

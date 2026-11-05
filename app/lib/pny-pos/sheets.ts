@@ -1,6 +1,6 @@
 import { createSign } from "node:crypto";
 import { SheetUnavailable } from "./errors.ts";
-import { STOCK_HISTORY_HEADERS, STOCK_HISTORY_TAB } from "./stockHistory.ts";
+import { HISTORY_CONFIG_TAB, historySheetConfig, planHistoryWrites, STOCK_HISTORY_HEADERS, STOCK_HISTORY_TAB, type StockHistoryRow } from "./stockHistory.ts";
 import type { SheetRow } from "./types.ts";
 
 export type SheetTabSpec = { title: string; headers: string[] };
@@ -34,6 +34,8 @@ export class LocalSheet implements SheetClient {
   reachable = true;
   tabs: Record<string, Record<string, string>[]> = {};
   grids: Record<string, string[][]> = {};
+  /** Other spreadsheets, keyed by id, then tab. Used for quarterly history files. */
+  books: Record<string, Record<string, Record<string, string>[]>> = {};
 
   async readRows(tab: string): Promise<SheetRow[]> {
     if (!this.reachable) throw new SheetUnavailable();
@@ -54,11 +56,26 @@ export class LocalSheet implements SheetClient {
     for (const spec of specs) if (!this.tabs[spec.title]) this.tabs[spec.title] = [];
   }
 
-  async appendStockHistory(rows: Record<string, string>[]) {
+  async appendStockHistory(rows: StockHistoryRow[]) {
     if (!this.reachable || rows.length === 0) return;
-    const list = this.tabs[STOCK_HISTORY_TAB] ?? [];
-    for (const row of rows) list.push({ ...row });
-    this.tabs[STOCK_HISTORY_TAB] = list;
+    const configRows = (this.tabs[HISTORY_CONFIG_TAB] ?? []).map((row) => ({
+      key: row.key,
+      quarter: row.quarter,
+      spreadsheet_id: row.spreadsheet_id,
+    }));
+    for (const plan of planHistoryWrites(rows, historySheetConfig(configRows, process.env.PNY_HISTORY_SHEETS))) {
+      if (!plan.spreadsheetId) {
+        const list = this.tabs[STOCK_HISTORY_TAB] ?? [];
+        for (const row of plan.rows) list.push({ ...row });
+        this.tabs[STOCK_HISTORY_TAB] = list;
+        continue;
+      }
+      const book = this.books[plan.spreadsheetId] ?? {};
+      const list = book[plan.tab] ?? [];
+      for (const row of plan.rows) list.push({ ...row });
+      book[plan.tab] = list;
+      this.books[plan.spreadsheetId] = book;
+    }
   }
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
@@ -137,10 +154,10 @@ export class GoogleSheet implements SheetClient {
     return json.access_token;
   }
 
-  private async sheetsFetch(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  private async sheetsFetch(path: string, init?: RequestInit, sheetId = this.sheetId): Promise<Record<string, unknown>> {
     const token = await this.accessToken();
     const send = () =>
-      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${this.sheetId}${path}`, {
+      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}${path}`, {
         ...init,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
       });
@@ -299,19 +316,58 @@ export class GoogleSheet implements SheetClient {
     });
   }
 
-  async appendStockHistory(rows: Record<string, string>[]) {
-    if (!this.configured || rows.length === 0) return;
+  private historyConfigAt = 0;
+  private historyConfig = new Map<string, string>();
+
+  private async loadHistoryConfig() {
+    const now = Date.now();
+    if (now - this.historyConfigAt < 60_000) return this.historyConfig;
+    let rows: SheetRow[] = [];
+    try {
+      rows = await this.readRows(HISTORY_CONFIG_TAB);
+    } catch {
+      rows = [];
+    }
+    this.historyConfig = historySheetConfig(rows, process.env.PNY_HISTORY_SHEETS);
+    this.historyConfigAt = now;
+    return this.historyConfig;
+  }
+
+  private async ensureTabOn(sheetId: string, title: string, headers: readonly string[]) {
+    const meta = await this.sheetsFetch("?fields=sheets.properties.title", undefined, sheetId);
+    const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
+    if (sheets.some((sheet) => sheet.properties?.title === title)) return;
+    await this.sheetsFetch(":batchUpdate", {
+      method: "POST",
+      body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
+    }, sheetId);
+    await this.sheetsFetch(`/values/${encodeURIComponent(`${title}!A1`)}?valueInputOption=RAW`, {
+      method: "PUT",
+      body: JSON.stringify({ values: [headers] }),
+    }, sheetId);
+  }
+
+  private async appendValues(sheetId: string, tab: string, rows: StockHistoryRow[]) {
     const values = rows.map((row) => STOCK_HISTORY_HEADERS.map((header) => row[header] ?? ""));
-    const append = () => this.sheetsFetch(`/values/${encodeURIComponent(`${STOCK_HISTORY_TAB}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+    const append = () => this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
       method: "POST",
       body: JSON.stringify({ values }),
-    });
+    }, sheetId);
     try {
       await append();
     } catch (error) {
       if (!(error instanceof SheetUnavailable) || error.httpStatus !== 400) throw error;
-      await this.ensureTabs([{ title: STOCK_HISTORY_TAB, headers: [...STOCK_HISTORY_HEADERS] }]);
+      await this.ensureTabOn(sheetId, tab, STOCK_HISTORY_HEADERS);
       await append();
+    }
+  }
+
+  async appendStockHistory(rows: StockHistoryRow[]) {
+    if (!this.configured || rows.length === 0) return;
+    const config = await this.loadHistoryConfig();
+    for (const plan of planHistoryWrites(rows, config)) {
+      const sheetId = plan.spreadsheetId ?? this.sheetId;
+      await this.appendValues(sheetId, plan.tab, plan.rows);
     }
   }
 

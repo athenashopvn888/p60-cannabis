@@ -29,6 +29,7 @@ import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
 import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
+import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -2447,4 +2448,31 @@ test("stock history appends one row per changed SKU and a sheet failure still se
   const still = await broken.svc.cashout(broken.token, { key: "hist-down", lines: [{ sku: "1001", qty: 1 }] });
   assert.equal(still.ref_no.startsWith("PNY01-"), true);
   assert.equal(qty(broken.db, "1001"), 1);
+});
+
+test("stock history uses the quarterly spreadsheet and monthly tab when configured", async () => {
+  assert.deepEqual(historyPeriod("2026-11-03T15:00:00.000Z"), { quarter: "2026-Q4", tab: "History_2026-11" });
+  assert.equal(historySheetConfig([{ key: "2026-Q4", spreadsheet_id: "from-tab" }, { key: "analytics", spreadsheet_id: "skip" }], "2026-Q4=from-env").get("2026-Q4"), "from-env");
+  assert.equal(historySheetConfig([{ key: "2026-Q4", spreadsheet_id: "from-tab" }], undefined).get("analytics"), undefined);
+  const saved = process.env.PNY_HISTORY_SHEETS;
+  process.env.PNY_HISTORY_SHEETS = "2026-Q4=hist-q4";
+  try {
+    const h = await readyTill({ "1001": 3, "1002": 1 });
+    h.sheet.configured = true;
+    const sold = await h.svc.cashout(h.token, { key: "hist-q", lines: [{ sku: "1001", qty: 1 }] });
+    const stored = h.sheet.books["hist-q4"]?.["History_2026-11"] ?? [];
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0]?.note, sold.ref_no);
+    assert.equal(stored[0]?.event, "sale");
+    assert.equal(stored[0]?.source, "pos");
+    assert.equal(h.sheet.tabs.Stock_History, undefined);
+    delete process.env.PNY_HISTORY_SHEETS;
+    h.sheet.tabs.History_Config = [{ key: "2026-Q4", spreadsheet_id: "from-config" }];
+    await h.svc.cashout(h.token, { key: "hist-config", lines: [{ sku: "1001", qty: 1 }] });
+    assert.equal(h.sheet.books["from-config"]?.["History_2026-11"]?.length, 1);
+    assert.equal(h.sheet.books["hist-q4"]?.["History_2026-11"]?.length, 1);
+  } finally {
+    if (saved == null) delete process.env.PNY_HISTORY_SHEETS;
+    else process.env.PNY_HISTORY_SHEETS = saved;
+  }
 });
