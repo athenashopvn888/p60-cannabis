@@ -384,6 +384,7 @@ export class SheetDb implements PosDb {
     const rows = state.balances.filter((row) => row.store_code === "PNY02").map((row) => {
       const product = state.products.find((item) => item.sku === row.sku);
       return {
+        row_id: row.sku,
         sku: row.sku,
         name: product?.name ?? "",
         category: product?.category ?? "",
