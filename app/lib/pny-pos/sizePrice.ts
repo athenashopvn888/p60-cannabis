@@ -2,6 +2,7 @@ import flowers from "../flowers.json" with { type: "json" };
 import { parseFlowerSku } from "./flowerSku.ts";
 import { paperLines } from "./paperRefill.ts";
 import sheetMenu from "./setbFlowerMenu.json" with { type: "json" };
+import { posUnitPrice } from "./itemRaw.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 
 export type PriceQuote = {
@@ -122,6 +123,8 @@ export function quoteForSku(sku: string): PriceQuote | null {
   if (pack) return pack;
   const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
   if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
+  const pos = posUnitPrice(sku);
+  if (pos) return { cents: pos.cents, source: "Tri standard", name: pos.name, category: pos.category, image: null };
   return null;
 }
 
@@ -161,9 +164,12 @@ export function rawPriceRows() {
     seen.add(line.sku);
     rows.push({
       SKU: line.sku,
+      Name: quote.name,
+      Category: quote.category,
       Unit_Price: (quote.cents / 100).toFixed(2),
       Unit: cigarettePackCents(line.sku) == null ? "bag" : "pack",
       Source: quote.source,
+      Price_Flag: "",
     });
   }
   return rows;

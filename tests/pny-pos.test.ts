@@ -21,9 +21,9 @@ import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
-import { quoteForSku } from "../app/lib/pny-pos/sizePrice.ts";
+import { quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
 import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
-import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/pny-pos/itemRaw.ts";
+import { expandSetbItems, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
@@ -1674,6 +1674,82 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   const sale = await h.svc.cashout(login.token, { key: "paper", lines: [{ sku: "709", qty: 1 }] });
   assert.equal(sale.total_cents, 500);
   assert.equal(h.db.state.balances.find((row) => row.sku === "709")?.qty, 4);
+});
+
+test("missing cone and lighter rows are appended, and a priced sheet row is kept", async () => {
+  assert.equal(quoteForSku("713")?.cents, 500);
+  assert.equal(quoteForSku("713")?.name, "RAW Paper Cones 6PK");
+  assert.equal(quoteForSku("717")?.cents, 500);
+  assert.equal(quoteForSku("720")?.cents, 300);
+  assert.equal(rawPriceRows().find((row) => row.SKU === "713")?.Unit_Price, "5.00");
+  assert.equal(rawPriceRows().find((row) => row.SKU === "717")?.Name, "RAW Paper Cones 3PK King Size");
+  assert.equal(rawPriceRows().find((row) => row.SKU === "720")?.Unit_Price, "3.00");
+
+  const existing = [
+    ["SKU", "Unit_Price", "Note", "Name", "Category", "Price_Flag"],
+    ["999", "1.00", "keep me", "Extra", "ADD ONS", ""],
+    ["711", "3.00", "ok", "RAW PAPER ORGANIC HEMP 1 1/4", "ADD ONS", ""],
+    ["720", "", "bad", "", "", "unparsed: 3"],
+  ];
+  const plan = planItemsPriceRepair(existing, expandSetbItems([
+    ["S", "Type", "Category", "Name", "THC", "MG", "Price_EACH"],
+    ["711", "", "Add Ons", "RAW PAPER ORGANIC HEMP 1 1/4", "", "", "$3"],
+    ["713", "", "Add Ons", "RAW PAPER CONES", "", "", "5"],
+    ["717", "", "Add Ons", "RAW PAPER CONES", "", "", "5"],
+    ["720", "", "Add Ons", "LIGHTER BIG", "", "", "3"],
+  ]).items);
+  const skuAt = plan.header.findIndex((header) => header.toLowerCase() === "sku");
+  const noteAt = plan.header.findIndex((header) => header.toLowerCase() === "note");
+  const priceAt = plan.header.findIndex((header) => header.toLowerCase() === "unit_price");
+  const nameAt = plan.header.findIndex((header) => header.toLowerCase() === "name");
+  const appended = new Set(plan.append.map((row) => row[skuAt]));
+  const repaired = new Set(plan.updates.map((update) => update.values[skuAt]));
+  assert.equal(appended.has("713"), true);
+  assert.equal(appended.has("717"), true);
+  assert.equal(appended.has("720"), false);
+  assert.equal(appended.has("999"), false);
+  assert.equal(appended.has("711"), false);
+  assert.equal(repaired.has("720"), true);
+  assert.equal(repaired.has("999"), false);
+  assert.equal(repaired.has("711"), false);
+  const lighter = plan.updates.find((update) => update.values[skuAt] === "720");
+  assert.equal(lighter?.row, 4);
+  assert.equal(lighter?.values[priceAt], "3.00");
+  assert.equal(lighter?.values[nameAt], "Lighter Big");
+  assert.equal(lighter?.values[noteAt], "bad");
+  const cones = plan.append.find((row) => row[skuAt] === "713");
+  assert.equal(cones?.[priceAt], "5.00");
+  assert.equal(cones?.[nameAt], "RAW Paper Cones 6PK");
+
+  const fromSheet = itemsFromPriceSheetRows([
+    { SKU: "711", Unit_Price: "3.00", Name: "RAW PAPER ORGANIC HEMP 1 1/4", Category: "ADD ONS", Price_Flag: "" },
+  ]);
+  assert.equal(fromSheet.get("713")?.price_cents, 500);
+  assert.equal(fromSheet.get("717")?.name, "RAW Paper Cones 3PK King Size");
+  assert.equal(fromSheet.get("720")?.price_cents, 300);
+  assert.equal(fromSheet.get("711")?.price_cents, 300);
+
+  const h = harness();
+  const at = "2026-11-04T02:00:00.000Z";
+  h.sheet.tabs.Items_raw_price = [
+    { SKU: "711", Unit_Price: "3.00", Name: "RAW PAPER ORGANIC HEMP 1 1/4", Category: "ADD ONS", Price_Flag: "" },
+  ];
+  h.db.state.balances.push(
+    { sku: "713", qty: 2, updated_at: at, created_at: at },
+    { sku: "717", qty: 2, updated_at: at, created_at: at },
+    { sku: "720", qty: 10, updated_at: at, created_at: at },
+    { sku: "714", qty: 0, updated_at: at, created_at: at },
+  );
+  const before = h.sheet.tabs.Items_raw_price.map((row) => ({ ...row }));
+  const menu = await h.svc.menu();
+  assert.equal(menu.items?.find((item) => item.sku === "713")?.name, "RAW Paper Cones 6PK");
+  assert.equal(menu.items?.find((item) => item.sku === "713")?.price_cents, 500);
+  assert.equal(menu.items?.find((item) => item.sku === "713")?.category, "ADD ONS");
+  assert.equal(menu.items?.find((item) => item.sku === "717")?.price_cents, 500);
+  assert.equal(menu.items?.find((item) => item.sku === "720")?.name, "Lighter Big");
+  assert.equal(menu.items?.find((item) => item.sku === "720")?.price_cents, 300);
+  assert.equal(menu.items?.some((item) => item.sku === "714"), false);
+  assert.deepEqual(h.sheet.tabs.Items_raw_price, before);
 });
 
 test("verify count order, size label, and the staff discrepancy row", () => {

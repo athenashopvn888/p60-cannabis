@@ -1234,7 +1234,6 @@ export class PosService {
   private kitchenLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
-  private itemsSynced = false;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
   private flowerFlight: Promise<FlowerIndex> | null = null;
   private db: PosDb;
@@ -1254,19 +1253,21 @@ export class PosService {
     return this.deps.now?.() ?? new Date();
   }
 
-  /** Read Items_raw_price.Unit_Price. Does not write the sheet. A failed read keeps the last good cache. */
+  /**
+   * Read Items_raw_price.Unit_Price. Missing SETB rows are appended, never deleted.
+   * A failed read keeps the last good cache.
+   */
   private async rawUnitPrices() {
     const now = this.now().getTime();
     if (this.rawPriceCache && now - this.rawPriceCache.at < RAW_PRICE_TTL_MS) return this.rawPriceCache.map;
     if (this.rawPriceFlight) return this.rawPriceFlight;
     this.rawPriceFlight = (async () => {
       try {
-        if (this.deps.sheet.configured && this.deps.sheet.readGrid && this.deps.sheet.listTitles && this.deps.sheet.copyTabHidden && this.deps.sheet.writeExactGrid && !this.itemsSynced) {
+        if (this.deps.sheet.configured && this.deps.sheet.readGrid && this.deps.sheet.repairPriceGrid) {
           try {
             await syncItemsRawPrice(this.deps.sheet as Parameters<typeof syncItemsRawPrice>[0]);
-            this.itemsSynced = true;
           } catch {
-            this.itemsSynced = false;
+            // The menu still sells rows already on the sheet.
           }
         }
         const rows = await this.deps.sheet.readRows("Items_raw_price");

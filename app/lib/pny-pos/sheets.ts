@@ -22,6 +22,7 @@ export type SheetClient = {
   listTitles?(): Promise<string[]>;
   copyTabHidden?(from: string, to: string): Promise<void>;
   writeExactGrid?(tab: string, grid: string[][]): Promise<void>;
+  repairPriceGrid?(tab: string, plan: { header: string[]; headerChanged: boolean; append: string[][]; updates: { row: number; values: string[] }[] }): Promise<void>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
   appendStockHistory(rows: Record<string, string>[]): Promise<void>;
@@ -226,10 +227,46 @@ export class GoogleSheet implements SheetClient {
 
   async writeExactGrid(tab: string, grid: string[][]) {
     if (tab !== "Items_raw_price" || grid.length === 0) return;
-    await this.sheetsFetch(`/values/${encodeURIComponent(tab)}:clear`, { method: "POST", body: "{}" });
-    await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
-      method: "PUT",
-      body: JSON.stringify({ values: grid }),
+    await this.repairPriceGrid(tab, { header: grid[0] ?? [], headerChanged: true, append: grid.slice(1), updates: [] });
+  }
+
+  /** Add missing Items_raw_price rows and fill blank ones. Does not clear or delete. */
+  async repairPriceGrid(tab: string, plan: { header: string[]; headerChanged: boolean; append: string[][]; updates: { row: number; values: string[] }[] }) {
+    if (tab !== "Items_raw_price" || plan.header.length === 0) return;
+    if (!plan.headerChanged && plan.append.length === 0 && plan.updates.length === 0) return;
+    if (plan.headerChanged) {
+      await this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}?valueInputOption=RAW`, {
+        method: "PUT",
+        body: JSON.stringify({ values: [plan.header] }),
+      });
+    }
+    if (plan.updates.length > 0) {
+      await this.sheetsFetch("/values:batchUpdate", {
+        method: "POST",
+        body: JSON.stringify({
+          valueInputOption: "RAW",
+          data: plan.updates.map((update) => ({ range: `${tab}!A${update.row}`, values: [update.values] })),
+        }),
+      });
+    }
+    if (plan.append.length === 0) return;
+    const current = await this.readGrid(tab);
+    const headers = (current[0] ?? plan.header).map((cell) => String(cell ?? ""));
+    const skuAt = Math.max(0, headers.findIndex((header) => header.trim().toLowerCase().replace(/[\s_]+/g, "") === "sku"));
+    const have = new Set<string>();
+    for (const row of current.slice(1)) {
+      const sku = String(row[skuAt] ?? "").trim().replace(/\.0$/, "").replace(/\s+/g, "");
+      if (/^\d+$/.test(sku)) have.add(sku);
+    }
+    const planSkuAt = Math.max(0, plan.header.findIndex((header) => header.trim().toLowerCase().replace(/[\s_]+/g, "") === "sku"));
+    const append = plan.append.filter((row) => {
+      const sku = String(row[planSkuAt] ?? "").trim().replace(/\.0$/, "").replace(/\s+/g, "");
+      return /^\d+$/.test(sku) && !have.has(sku);
+    });
+    if (append.length === 0) return;
+    await this.sheetsFetch(`/values/${encodeURIComponent(tab)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: "POST",
+      body: JSON.stringify({ values: append }),
     });
   }
 

@@ -6,7 +6,7 @@ export const SETB_SHEET_ID = "14rt5bBuyMnvG62kcw5J1dy7kvm-adM06a3UqM_BREvE";
 export const SETB_ITEMS_CSV =
   `https://docs.google.com/spreadsheets/d/${SETB_SHEET_ID}/export?format=csv&gid=688068813`;
 
-/** Dated hidden copy of Items_raw_price taken before the SETB fill. */
+/** Hidden copy left by the old full rewrite. Repair no longer clears the tab, so this tab is not written again. */
 export const ITEMS_PRICE_BACKUP = "Items_raw_price_backup_2026-11-04";
 
 export type ItemRecord = {
@@ -283,6 +283,10 @@ const POS_UNIT_PRICES: Record<string, { name: string; cents: number; category: s
   "960": { name: "Frazzle Stilliezl 5000mg", cents: 4000, category: "EDIBLES" },
 };
 
+export function posUnitPrice(sku: string) {
+  return POS_UNIT_PRICES[normalizeItemSku(sku)] ?? null;
+}
+
 function applyPosPrices(items: Map<string, ExpandedItem>) {
   for (const [sku, price] of Object.entries(POS_UNIT_PRICES)) {
     const current = items.get(sku);
@@ -333,6 +337,21 @@ export function itemsFromGrid(grid: string[][]): ItemIndex {
 function setCell(headers: string[], line: string[], name: string, value: string) {
   const at = headers.findIndex((header) => headerKey(header) === headerKey(name));
   if (at >= 0) line[at] = value;
+}
+
+function lineCell(headers: string[], line: string[], name: string) {
+  const at = headers.findIndex((header) => headerKey(header) === headerKey(name));
+  return at >= 0 ? String(line[at] ?? "") : "";
+}
+
+function priceUsable(headers: string[], line: string[]) {
+  if (/^(ambiguous|missing|unparsed)/i.test(lineCell(headers, line, "Price_Flag"))) return false;
+  return saleCents(lineCell(headers, line, "Unit_Price")) != null;
+}
+
+function nameUsable(headers: string[], line: string[], sku: string) {
+  const name = lineCell(headers, line, "Name").replace(/\s+/g, " ").trim();
+  return name.length > 0 && name !== sku;
 }
 
 /** Keep every existing column and any SKU that SETB does not list. One row per SKU. */
@@ -422,7 +441,23 @@ export function itemsFromPriceSheetRows(rows: Record<string, string>[]): ItemInd
       image: /^https?:\/\//i.test(image) ? image : null,
     });
   }
+  overlayPosPrices(index);
   return index;
+}
+
+/** Store prices Tri set by hand. A usable sheet row wins. A missing or flagged row uses these. */
+function overlayPosPrices(index: ItemIndex) {
+  for (const [sku, price] of Object.entries(POS_UNIT_PRICES)) {
+    const current = index.get(sku);
+    if (current && current.price_cents > 0 && current.name.trim() && current.name.trim() !== sku) continue;
+    index.set(sku, {
+      sku,
+      name: price.name,
+      category: price.category,
+      price_cents: price.cents,
+      image: current?.image ?? null,
+    });
+  }
 }
 
 export function lookupItem(index: ItemIndex | null | undefined, sku: string) {
@@ -436,26 +471,89 @@ export async function fetchSetbItemGrid() {
   return parseCsv(await response.text());
 }
 
-type PriceSheet = {
-  readGrid(tab: string): Promise<string[][]>;
-  listTitles(): Promise<string[]>;
-  copyTabHidden(from: string, to: string): Promise<void>;
-  writeExactGrid(tab: string, grid: string[][]): Promise<void>;
+export type ItemsPriceRepair = {
+  header: string[];
+  headerChanged: boolean;
+  append: string[][];
+  updates: { row: number; values: string[] }[];
 };
 
-/** Back up Items_raw_price, then fill one expanded SETB row per SKU. Does not write SETB. */
+/**
+ * Rows to add or fill on Items_raw_price. An existing SKU with a usable price and name
+ * is left as it is. Nothing is removed.
+ */
+export function planItemsPriceRepair(existing: string[][], items: ExpandedItem[]): ItemsPriceRepair {
+  const base = existing.length > 0 ? existing : [["SKU", "Unit_Price", "Unit", "Source"]];
+  const desired = mergeItemsPriceGrid(base, items);
+  const headers = desired[0] ?? [];
+  const oldHeaders = (existing[0] ?? []).map((cell) => String(cell ?? "").trim());
+  while (oldHeaders.length > 0 && oldHeaders[oldHeaders.length - 1] === "") oldHeaders.pop();
+  const headerChanged = headers.length !== oldHeaders.length
+    || headers.some((header, index) => headerKey(header) !== headerKey(oldHeaders[index] ?? ""));
+  const skuAt = Math.max(0, headers.findIndex((header) => headerKey(header) === "sku"));
+  const oldSkuAt = Math.max(0, oldHeaders.findIndex((header) => headerKey(header) === "sku"));
+  const have = new Map<string, { row: number; line: string[] }>();
+  for (let index = 1; index < existing.length; index += 1) {
+    const line = existing[index] ?? [];
+    const sku = normalizeItemSku(String(line[oldSkuAt] ?? ""));
+    if (!/^\d+$/.test(sku) || have.has(sku)) continue;
+    have.set(sku, { row: index + 1, line });
+  }
+  const append: string[][] = [];
+  const updates: { row: number; values: string[] }[] = [];
+  for (const row of desired.slice(1)) {
+    const sku = normalizeItemSku(String(row[skuAt] ?? ""));
+    if (!/^\d+$/.test(sku)) continue;
+    const prior = have.get(sku);
+    if (!prior) {
+      append.push(row);
+      continue;
+    }
+    const fixPrice = !priceUsable(oldHeaders, prior.line) && saleCents(lineCell(headers, row, "Unit_Price")) != null;
+    const desiredName = lineCell(headers, row, "Name").replace(/\s+/g, " ").trim();
+    const fixName = !nameUsable(oldHeaders, prior.line, sku) && desiredName.length > 0 && desiredName !== sku;
+    if (!fixPrice && !fixName) continue;
+    const next = headers.map(() => "");
+    oldHeaders.forEach((header, index) => {
+      const at = headers.findIndex((name) => headerKey(name) === headerKey(header));
+      if (at >= 0) next[at] = String(prior.line[index] ?? "");
+    });
+    if (fixPrice) {
+      for (const name of ["Unit_Price", "Unit", "Source", "Price_Flag", "Price_EACH", "Carton_Price"]) {
+        setCell(headers, next, name, lineCell(headers, row, name));
+      }
+    }
+    if (fixName) {
+      for (const name of ["Name", "Category", "ImageURL", "Type", "THC", "MG", "Status", "source_row"]) {
+        const value = lineCell(headers, row, name);
+        if (value) setCell(headers, next, name, value);
+      }
+    }
+    updates.push({ row: prior.row, values: next });
+  }
+  return { header: headers, headerChanged, append, updates };
+}
+
+type PriceSheet = {
+  readGrid(tab: string): Promise<string[][]>;
+  repairPriceGrid(tab: string, plan: ItemsPriceRepair): Promise<void>;
+};
+
+/** Append or fill Items_raw_price from SETB. Does not delete rows and does not write SETB. */
 export async function syncItemsRawPrice(sheet: PriceSheet) {
+  if (process.env.PNY_SHEET_READ_ONLY === "1") {
+    return { appended: [] as string[], repaired: [] as string[], skipped: "read-only" };
+  }
   const existing = await sheet.readGrid("Items_raw_price");
-  const titles = await sheet.listTitles();
-  if (!titles.includes(ITEMS_PRICE_BACKUP)) await sheet.copyTabHidden("Items_raw_price", ITEMS_PRICE_BACKUP);
   const setb = expandSetbItems(await fetchSetbItemGrid());
-  const merged = mergeItemsPriceGrid(existing, setb.items);
-  await sheet.writeExactGrid("Items_raw_price", merged);
+  const plan = planItemsPriceRepair(existing, setb.items);
+  const skuAt = Math.max(0, plan.header.findIndex((header) => headerKey(header) === "sku"));
+  if (plan.headerChanged || plan.append.length > 0 || plan.updates.length > 0) {
+    await sheet.repairPriceGrid("Items_raw_price", plan);
+  }
   return {
-    backup: ITEMS_PRICE_BACKUP,
-    rows: merged.length - 1,
-    setbSkus: setb.items.length,
-    flagged: setb.items.filter((item) => item.flag).map((item) => ({ sku: item.sku, name: item.name, flag: item.flag, source: item.sourceRows.join(", ") })),
-    combined: setb.combined,
+    appended: plan.append.map((row) => String(row[skuAt] ?? "")),
+    repaired: plan.updates.map((update) => String(update.values[skuAt] ?? "")),
+    skipped: "",
   };
 }
