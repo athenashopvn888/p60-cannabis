@@ -23,7 +23,7 @@ import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
 import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
-import { expandSetbItems, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
+import { expandSetbItems, expandSkuCell, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
@@ -1750,6 +1750,59 @@ test("missing cone and lighter rows are appended, and a priced sheet row is kept
   assert.equal(menu.items?.find((item) => item.sku === "720")?.price_cents, 300);
   assert.equal(menu.items?.some((item) => item.sku === "714"), false);
   assert.deepEqual(h.sheet.tabs.Items_raw_price, before);
+});
+
+test("combined SETB rows split per SKU and a MANUAL price stays put", () => {
+  assert.deepEqual(expandSkuCell("887/888/889"), ["887", "888", "889"]);
+  assert.deepEqual(expandSkuCell("930-932"), ["930", "931", "932"]);
+  assert.deepEqual(expandSkuCell("701, 702"), ["701", "702"]);
+  const split = expandSetbItems([
+    ["S", "Type", "Category", "Name", "THC", "MG", "Price_EACH"],
+    ["887/888/889", "", "Vape Disposable", "GOOBER", "", "", "$35"],
+    ["930-932", "", "PREROLLS", "KNOCK OUT HYBRID/INDICA/SATIVA", "", "", "$25"],
+    ["701, 702", "", "cigarettes", "BACKWOODS", "", "", "$20"],
+  ]);
+  for (const sku of ["887", "888", "889"]) assert.equal(split.items.find((item) => item.sku === sku)?.unitCents, 3500);
+  for (const sku of ["930", "931", "932"]) {
+    const item = split.items.find((row) => row.sku === sku);
+    assert.equal(item?.unitCents, 2500);
+    assert.equal(item?.name, "KNOCK OUT HYBRID/INDICA/SATIVA");
+  }
+  assert.equal(split.items.find((item) => item.sku === "701")?.unitCents, 2000);
+  assert.equal(split.items.find((item) => item.sku === "702")?.unitCents, 2000);
+
+  const existing = [
+    ["SKU", "Unit_Price", "Name", "Source", "Price_Flag", "Note"],
+    ["930", "25.00", "KNOCK OUT", "SETB ITEMS_RAW", "", "keep"],
+    ["720", "", "Lighter", "MANUAL", "", "locked"],
+    ["714", "9.00", "My cigar", "", "MANUAL", "locked"],
+    ["999", "1.00", "Extra", "", "", "keep me"],
+  ];
+  const plan = planItemsPriceRepair(existing, split.items);
+  const skuAt = plan.header.findIndex((header) => header.toLowerCase() === "sku");
+  const noteAt = plan.header.findIndex((header) => header.toLowerCase() === "note");
+  const appended = new Set(plan.append.map((row) => row[skuAt]));
+  const repaired = new Set(plan.updates.map((update) => update.values[skuAt]));
+  assert.equal(appended.has("887") && appended.has("888") && appended.has("889"), true);
+  assert.equal(appended.has("931") && appended.has("932"), true);
+  assert.equal(appended.has("930"), false);
+  assert.equal(appended.has("720"), false);
+  assert.equal(appended.has("714"), false);
+  assert.equal(appended.has("999"), false);
+  assert.equal(repaired.has("930"), false);
+  assert.equal(repaired.has("720"), false);
+  assert.equal(repaired.has("714"), false);
+  assert.equal(repaired.has("999"), false);
+  assert.equal(plan.updates.some((update) => update.values[noteAt] === "locked" || update.values[noteAt] === "keep"), false);
+
+  const priced = itemsFromPriceSheetRows([
+    { SKU: "713", Unit_Price: "1.00", Name: "Staff cones", Category: "ADD ONS", Price_Flag: "MANUAL" },
+    { SKU: "720", Unit_Price: "4.00", Name: "Staff lighter", Category: "ADD ONS", Source: "manual" },
+  ]);
+  assert.equal(priced.get("713")?.price_cents, 100);
+  assert.equal(priced.get("713")?.name, "Staff cones");
+  assert.equal(priced.get("720")?.price_cents, 400);
+  assert.equal(priced.get("720")?.name, "Staff lighter");
 });
 
 test("verify count order, size label, and the staff discrepancy row", () => {
