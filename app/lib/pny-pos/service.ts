@@ -29,7 +29,7 @@ import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
-import { balanceLine, balanceSection, cashGapCents, cashWordText } from "./pny01Balance.ts";
+import { balanceLine, balanceSection, cashGapCents, moneyPhrase, stockNetCents, type BalanceSection } from "./pny01Balance.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
@@ -43,6 +43,9 @@ import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
+import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
+import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
+import { paperLines } from "./paperRefill.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -857,9 +860,8 @@ function expireTickets(state: State, atMs: number, shiftId?: string) {
   return expired;
 }
 
-/** Opening count minus the sheet quantity at verify. Zero unless this is PNY01 and the verify count differs. */
+/** Opening count minus the sheet quantity at verify. Used only to label the summary. */
 function openingGap(state: State, shiftId: string, sku: string) {
-  if (tillCode() !== "PNY01") return 0;
   const row = draftsOf(state).find((draft) => draft.shift_id === shiftId)?.opening_counts?.find((entry) => entry.sku === sku);
   if (!row || row.accepted_as_is || row.expected_qty == null) return 0;
   return row.counted_qty - row.expected_qty;
@@ -912,35 +914,27 @@ function pny01BalanceView(state: State, shift: ShiftRow, raw?: Map<string, numbe
   return { open, refill, close };
 }
 
-function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow, "summary_text">) {
+function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow, "summary_text">, parts?: { open: BalanceSection; refill: BalanceSection; close: BalanceSection } | null) {
   const left = [...closing.closing_lines].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
   const shown = left.slice(0, 15).map((line) => `${line.sku} ${line.name} ${line.left}`).join(" · ");
   const more = left.length > 15 ? " · (top 15, full list in sheet)" : "";
   const tail = [
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
     `Left: ${shown}${more}`,
+    closing.close_label ? `Close: ${closing.close_label}` : "",
     closing.no_count ? "No count taken" : "",
   ].filter(Boolean);
   const title = `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`;
-  if (tillCode() !== "PNY01") {
-    return [
-      title,
-      `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
-      `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
-      ...tail,
-    ].join("\n");
-  }
   const cash = closing.cash_sales_cents ?? closing.sales_total_cents;
-  const openShort = closing.open_shortage_cents ?? 0;
-  const openOver = closing.open_overage_cents ?? 0;
-  const refillShort = closing.refill_shortage_cents ?? 0;
-  const refillOver = closing.refill_overage_cents ?? 0;
-  const closeShort = closing.close_shortage_cents ?? 0;
-  const closeOver = closing.close_overage_cents ?? 0;
+  const openNet = stockNetCents(parts?.open ?? { short_cents: 0, over_cents: 0 });
+  const refillNet = stockNetCents(parts?.refill ?? { short_cents: 0, over_cents: 0 });
+  const closeNet = parts ? stockNetCents(parts.close) : (closing.overage_cents ?? 0) - (closing.shortage_cents ?? 0);
+  const overall = cashGapCents(cash, closing.deposited_cents) + openNet + refillNet + closeNet;
+  const overallWord = moneyPhrase("Cash", overall).replace(/^Cash /, "");
   return [
     title,
-    `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · Cash ${cashWordText(cashGapCents(cash, closing.deposited_cents))} · Deposited: ${formatMoney(closing.deposited_cents)}`,
-    `Cash: ${formatMoney(cash)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Open short ${formatMoney(openShort)} over ${formatMoney(openOver)} · Refill short ${formatMoney(refillShort)} over ${formatMoney(refillOver)} · Closing short ${formatMoney(closeShort)} over ${formatMoney(closeOver)} · Overall ${cashWordText(-(closing.balance_cents ?? 0))}`,
+    `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · Deposited: ${formatMoney(closing.deposited_cents)} · ${moneyPhrase("Cash", cashGapCents(cash, closing.deposited_cents))}`,
+    `Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Open ${moneyPhrase("STOCK", openNet)} · Refill ${moneyPhrase("STOCK", refillNet)} · Closing ${moneyPhrase("STOCK", closeNet)} · Overall ${overallWord}`,
     ...tail,
   ].join("\n");
 }
@@ -949,15 +943,9 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
-  const closeShort = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
-  const closeOver = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
-  const parts = tillCode() === "PNY01" ? pny01BalanceView(state, shift, raw) : null;
-  const openShort = parts?.open.short_cents ?? 0;
-  const openOver = parts?.open.over_cents ?? 0;
-  const refillShort = parts?.refill.short_cents ?? 0;
-  const refillOver = parts?.refill.over_cents ?? 0;
-  const shortage = closeShort + openShort + refillShort;
-  const overage = closeOver + openOver + refillOver;
+  const shortage = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
+  const overage = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+  const parts = pny01BalanceView(state, shift, raw);
   const base = {
     shift_id: shift.id,
     sales_total_cents: totals.sales_total_cents,
@@ -970,12 +958,6 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     final_deposit_cents: finalDepositCents,
     shortage_cents: shortage,
     overage_cents: overage,
-    open_shortage_cents: parts ? openShort : undefined,
-    open_overage_cents: parts ? openOver : undefined,
-    refill_shortage_cents: parts ? refillShort : undefined,
-    refill_overage_cents: parts ? refillOver : undefined,
-    close_shortage_cents: parts ? closeShort : undefined,
-    close_overage_cents: parts ? closeOver : undefined,
     balance_cents: closingBalance({
       cash_sales_cents: totals.cash_sales_cents,
       shortage_cents: shortage,
@@ -990,8 +972,9 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     sccx_attempts: 0,
     no_count: noCount,
     created_at: at,
+    close_label: stampCloseLabel(state, shift, at).close_label,
   };
-  return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base) };
+  return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base, parts) };
 }
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow, raw?: Map<string, number>) {
@@ -1003,8 +986,11 @@ function finishShift(state: State, shift: ShiftRow, reason: string, at: string, 
   shift.pin_hash = null;
   shift.pin_expires_at = at;
   revokeSessions(state, shift.id, at);
-  fresh.summary_text = summaryText(shift, state.staff.find((row) => row.staff_uid === shift.staff_uid)?.pos_id ?? "", fresh);
-  if (!state.closings.some((row) => row.shift_id === shift.id)) state.closings.push(fresh);
+  fresh.summary_text = summaryText(shift, state.staff.find((row) => row.staff_uid === shift.staff_uid)?.pos_id ?? "", fresh, pny01BalanceView(state, shift, raw));
+  if (!state.closings.some((row) => row.shift_id === shift.id)) {
+    state.closings.push(fresh);
+    queueCloseSnapshot(state, shift, fresh, fresh.closing_lines);
+  }
   return fresh;
 }
 
@@ -1337,9 +1323,13 @@ export class PosService {
     this.db = db;
     this.deps = deps;
     db.onCommit = (state) => {
+      if (!this.deps.sheet.configured) return;
       const rows = takeStockHistory(state);
-      if (!rows.length || !this.deps.sheet.configured) return;
-      void this.deps.sheet.appendStockHistory(rows).catch(() => undefined);
+      if (rows.length) void this.deps.sheet.appendStockHistory(rows).catch(() => undefined);
+      const labels = takeNewStockLabels(state);
+      if (labels.length && this.deps.sheet.appendStockLabels) void this.deps.sheet.appendStockLabels(labels).catch(() => undefined);
+      const snapshots = takeCloseSnapshots(state);
+      if (snapshots.length && this.deps.sheet.appendCloseSnapshots) void this.deps.sheet.appendCloseSnapshots(snapshots).catch(() => undefined);
     };
   }
 
@@ -2045,7 +2035,7 @@ export class PosService {
         })(),
         verify: counted.verify,
         stock_check: counted.stock_check,
-        ...(tillCode() === "PNY01" ? { pny01_balance: pny01BalanceView(tx.state, shift, raw) } : {}),
+        balance_sections: pny01BalanceView(tx.state, shift, raw),
         verify_admin: counted.verify_admin,
         final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
         incoming,
@@ -3095,7 +3085,9 @@ export class PosService {
   async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
+    const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
     return this.db.transaction(async (tx) => {
+      adoptStockLabels(tx.state, knownLabels);
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
@@ -3135,11 +3127,11 @@ export class PosService {
         let expected: number;
         if (Number.isFinite(editedAt) && saved) {
           const after = salesAfter(tx.state, shift.id, item.sku, editedAt);
-          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after + openingGap(tx.state, shift.id, item.sku);
+          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after;
           counted = saved.counted_qty - after;
         } else if (!draft?.closing_submitted_at && client) {
           counted = client.counted_qty;
-          expected = item.expected_qty + openingGap(tx.state, shift.id, item.sku);
+          expected = item.expected_qty;
         } else {
           const onHand = qtyOf(tx.state, item.sku);
           counted = onHand;
@@ -3185,7 +3177,7 @@ export class PosService {
       finishShift(tx.state, shift, "POS_END", at, closing, raw);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
-      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, closing: saved };
+      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, closing: saved };
       remember(tx.state, "pos_end", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
@@ -3564,6 +3556,7 @@ export class PosService {
           no_count: closing.no_count,
           money_unit: "cents",
           summary_text: closing.summary_text,
+          close_label: closing.close_label ?? null,
         }];
       });
       return { ok: true as const, store: code, closings };
@@ -3614,6 +3607,7 @@ export class PosService {
           no_count: closing.no_count,
           money_unit: "cents",
           summary_text: closing.summary_text,
+          close_label: closing.close_label ?? null,
         };
       });
       return { ok: true, closings };
@@ -3852,6 +3846,83 @@ export class PosService {
       remember(tx.state, "adjust", input.key, body, result, now, this.deps.secrets.admin);
       return result;
     });
+  }
+
+  /**
+   * Post the approved PNY02 opening once. Refuses to run on PNY01.
+   * A SKU that already has PNY02 on-hand or an opening ledger row is left as it is.
+   */
+  async loadPny2StartingStock(adminToken: string, input: { key: string }) {
+    const body = input as unknown as Json;
+    if (tillCode() !== "PNY02") throw new PosError(409, "STORE", "This load is for PNY02 only.");
+    if (!input.key?.trim()) throw new PosError(400, "KEY", "An idempotency key is required.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "pny2_starting_stock", input.key, body, now, this.deps.secrets.admin);
+      if (seen) return seen;
+      const at = iso(now);
+      this.ensurePny2(tx.state, at);
+      const pny01Before = JSON.stringify(tx.state.balances.filter((row) => !row.store_code || row.store_code === "PNY01"));
+      const loaded: { sku: string; qty: number }[] = [];
+      const skipped: { sku: string; qty: number; reason: string }[] = [];
+      const unmapped: { sku: string; qty: number; reason: string }[] = [];
+      for (const line of pny2StartingLines()) {
+        const already = tx.state.ledger.some((row) => row.sku === line.sku && row.movement_type === "OPENING_BALANCE" && balanceForStore(row));
+        if (already || qtyOf(tx.state, line.sku) > 0) {
+          skipped.push({ sku: line.sku, qty: qtyOf(tx.state, line.sku), reason: already ? "already_posted" : "already_on_hand" });
+          continue;
+        }
+        ensureQuotedProduct(tx.state, line.sku, at);
+        if (line.sku === "187-28g") {
+          let priced = tx.state.products.find((row) => row.sku === line.sku);
+          if (!priced) {
+            priced = {
+              sku: line.sku,
+              sku_sort: skuSortKey(line.sku),
+              name: "CHOCOLATE KUSH 28g",
+              category: "BUDGET",
+              default_price_cents: 5000,
+              image_url: null,
+              setb_active: true,
+              synced_at: at,
+              created_at: at,
+            };
+            tx.state.products.push(priced);
+          } else if (priced.default_price_cents <= 0) {
+            priced.name = "CHOCOLATE KUSH 28g";
+            priced.category = "BUDGET";
+            priced.default_price_cents = 5000;
+            priced.setb_active = true;
+          }
+          if (!tx.state.store_products.some((row) => row.store_code === "PNY02" && row.sku === line.sku)) {
+            tx.state.store_products.push({
+              store_code: "PNY02",
+              sku: line.sku,
+              enabled: true,
+              price_override_cents: null,
+              created_at: at,
+              updated_at: at,
+            });
+          }
+        }
+        const named = tx.state.products.find((row) => row.sku === line.sku);
+        const paper = paperLines().find((row) => row.sku === line.sku);
+        if (named && paper && named.name === line.sku) named.name = paper.name;
+        if (!named || named.default_price_cents <= 0) unmapped.push({ sku: line.sku, qty: line.qty, reason: "no priced catalog row" });
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not post PNY02 starting stock.");
+        ledger(tx.state, line.sku, line.qty, "OPENING_BALANCE", "admin", null, "admin", PNY2_START_NOTE, null, at);
+        loaded.push({ sku: line.sku, qty: next });
+      }
+      const pny01After = JSON.stringify(tx.state.balances.filter((row) => !row.store_code || row.store_code === "PNY01"));
+      if (pny01Before !== pny01After) throw new PosError(500, "PNY01", "PNY02 load touched PNY01 stock.");
+      const resultBody = { ok: true, store: "PNY02", note: PNY2_START_NOTE, loaded, skipped, unmapped };
+      remember(tx.state, "pny2_starting_stock", input.key, body, resultBody, now, this.deps.secrets.admin);
+      return resultBody;
+    });
+    this.bumpMenu();
+    return result;
   }
 
   async openingBalance(adminToken: string, input: { key: string; sku: string; qty: number }) {

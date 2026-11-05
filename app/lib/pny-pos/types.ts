@@ -215,13 +215,6 @@ export type ClosingRow = {
   final_deposit_cents?: number;
   shortage_cents?: number;
   overage_cents?: number;
-  /** PNY01 only. Opening verify, refill, and closing each keep their own dollars. The sums above include all three. */
-  open_shortage_cents?: number;
-  open_overage_cents?: number;
-  refill_shortage_cents?: number;
-  refill_overage_cents?: number;
-  close_shortage_cents?: number;
-  close_overage_cents?: number;
   balance_cents?: number;
   tickets_total: number;
   tickets_cashed_out: number;
@@ -232,6 +225,8 @@ export type ClosingRow = {
   no_count: boolean;
   summary_text: string;
   created_at: string;
+  /** Master plus close date, such as PNY-1104-1105. Missing on closings saved before labels. */
+  close_label?: string;
 };
 
 export type ClosingDraftRow = {
@@ -333,6 +328,13 @@ export type State = {
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;
+  /** One master stock id per store. Missing until the first close after labels shipped. */
+  stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
+  /** Bumped on every saved write. A stale cache must not overwrite a higher revision. */
+  state_revision?: number;
+  state_write_token?: string;
+  revision_pny01?: number;
+  revision_pny02?: number;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

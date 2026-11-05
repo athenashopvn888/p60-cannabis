@@ -58,9 +58,9 @@ export function blindStaffState<T extends Row>(view: T): T {
       opening_lines: offLines(verify.opening_lines),
     };
   }
-  const balance = view.pny01_balance && typeof view.pny01_balance === "object" ? (view.pny01_balance as Row) : null;
+  const balance = view.balance_sections && typeof view.balance_sections === "object" ? (view.balance_sections as Row) : null;
   if (balance) {
-    next.pny01_balance = {
+    next.balance_sections = {
       open: balanceSectionView(balance.open),
       refill: balanceSectionView(balance.refill),
       close: balanceSectionView(balance.close),

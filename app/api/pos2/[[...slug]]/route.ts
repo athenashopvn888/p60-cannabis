@@ -19,6 +19,7 @@ import { GET as summary } from "../../pos/summary/route";
 import { POST as cancelTicket } from "../../pos/tickets/[id]/cancel/route";
 import { POST as openTicket } from "../../pos/tickets/[id]/open/route";
 import { POST as unlock } from "../../pos/till/unlock/route";
+import { POST as startingStock } from "../stock/starting/route";
 import { json } from "@/app/lib/pny-pos/http";
 import { runStore } from "@/app/lib/pny-pos/storeContext";
 import { PNY02_STORE } from "@/app/lib/pny-pos/storeProfile";
@@ -51,6 +52,7 @@ const postRoutes: Record<string, Handler> = {
   "incoming/confirm": confirmIncoming as Handler,
   "incoming/refresh": refreshIncoming as Handler,
   "till/unlock": unlock as Handler,
+  "stock/starting": startingStock as Handler,
 };
 
 function ticketRoute(slug: string): { handler: Handler; id: string } | null {

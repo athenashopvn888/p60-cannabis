@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
-import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, signedMoney, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
@@ -16,6 +16,7 @@ import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { readStateFromStaff } from "../app/lib/pny-pos/stateMerge.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
@@ -30,6 +31,8 @@ import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
 import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
+import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
+import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -2414,8 +2417,9 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(closeUi, /Till balance/);
-  assert.match(closeUi, /signedMoney\(tillBalance\)/);
+  assert.match(closeUi, /moneyPhrase\("Cash"/);
+  assert.match(closeUi, /data-testid="cash-position"/);
+  assert.doesNotMatch(closeUi, /signedMoney\(tillBalance\)/);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
   assert.doesNotMatch(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /larger deposit is blocked/);
 
@@ -2507,8 +2511,8 @@ test("PNY01 closing due starts from the opening count", async () => {
   await h.svc.cashout(h.token, { key: "after-open", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 12 });
   const view = await h.svc.state(h.token);
-  const open = view.pny01_balance?.open.lines.find((line) => line.sku === "1001");
-  const close = view.pny01_balance?.close.lines.find((line) => line.sku === "1001");
+  const open = view.balance_sections?.open.lines.find((line) => line.sku === "1001");
+  const close = view.balance_sections?.close.lines.find((line) => line.sku === "1001");
   assert.equal(open?.sheet_qty, 10);
   assert.equal(open?.counted_qty, 12);
   assert.equal(open?.adj, 2);
@@ -2517,25 +2521,25 @@ test("PNY01 closing due starts from the opening count", async () => {
   assert.equal(close?.counted_qty, 12);
   assert.equal(close?.adj, 1);
   assert.equal(close?.value_cents, 1000);
-  assert.equal(JSON.stringify(view.pny01_balance).includes("expected"), false);
+  assert.equal(JSON.stringify(view.balance_sections).includes("expected"), false);
   const blind = blindStaffState(view);
-  assert.equal(blind.pny01_balance?.close.lines[0]?.sheet_qty, 11);
+  assert.equal(blind.balance_sections?.close.lines[0]?.sheet_qty, 11);
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end-gap",
     lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.sku === "1001" ? 12 : line.expected_qty })),
   });
   const line = ended.closing.closing_lines.find((row) => row.sku === "1001");
-  assert.equal(line?.expected_qty, 11);
-  assert.equal(line?.variance_qty, 1);
-  assert.equal(line?.overage_cents, 1000);
-  assert.equal(ended.closing.open_overage_cents, 2000);
-  assert.equal(ended.closing.close_overage_cents, 1000);
+  assert.equal(line?.expected_qty, 9);
+  assert.equal(line?.variance_qty, 3);
+  assert.equal(line?.overage_cents, 3000);
   assert.equal(ended.closing.overage_cents, 3000);
   assert.equal(ended.closing.balance_cents, 1000 - 3000);
-  assert.match(ended.closing.summary_text, /Open short \$0\.00 over \$20\.00/);
-  assert.match(ended.closing.summary_text, /Closing short \$0\.00 over \$10\.00/);
-  assert.match(ended.closing.summary_text, /Overall OVER \+\$20\.00/);
+  assert.match(ended.closing.summary_text, /Cash SHORT \$10\.00/);
+  assert.match(ended.closing.summary_text, /Open STOCK OVER \$20\.00/);
+  assert.match(ended.closing.summary_text, /Closing STOCK OVER \$10\.00/);
+  assert.match(ended.closing.summary_text, /Overall OVER \$20\.00/);
+  assert.doesNotMatch(ended.closing.summary_text, /-\$/);
 });
 
 test("PNY02 closing text stays on the original cash line", async () => {
@@ -2550,14 +2554,16 @@ test("PNY02 closing text stays on the original cash line", async () => {
   const login = await runStore(PNY02_STORE, () => h.svc.login("2468", "10.2.2.2"));
   await runStore(PNY02_STORE, () => h.svc.openingBalance(h.admin, { key: "p2-stock", sku: "1001", qty: 2 }));
   const view = await runStore(PNY02_STORE, () => h.svc.state(login.token));
-  assert.equal(view.pny01_balance, undefined);
+  assert.ok(view.balance_sections);
   const ended = await runStore(PNY02_STORE, () => h.svc.endShiftFromPos(login.token, {
     key: "p2-end",
     lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.expected_qty })),
   }));
-  assert.match(ended.closing.summary_text, /COH:/);
-  assert.doesNotMatch(ended.closing.summary_text, /Open short/);
-  assert.equal(ended.closing.open_shortage_cents, undefined);
+  assert.match(ended.closing.summary_text, /Cash EVEN \$0\.00/);
+  assert.match(ended.closing.summary_text, /Open STOCK EVEN \$0\.00/);
+  assert.match(ended.closing.summary_text, /Overall EVEN \$0\.00/);
+  assert.doesNotMatch(ended.closing.summary_text, /COH:|-\$/);
+  assert.equal(ended.closing.balance_cents, 0);
 });
 
 test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async () => {
@@ -2666,6 +2672,91 @@ test("stock history uses the quarterly spreadsheet and monthly tab when configur
   }
 });
 
+test("final deposit stamps the stock close label and appends a snapshot", async () => {
+  assert.equal(masterIdFor("PNY01", "2026-11-04"), "PNY-1104");
+  assert.equal(closeLabelFor("PNY-1104", "2026-11-05T15:00:00.000Z"), "PNY-1104-1105");
+  assert.equal(masterIdFor("PNY02", "2026-11-06"), "PNY2-1106");
+  const h = await readyTill({ "1001": 4, "1002": 2 });
+  h.sheet.configured = true;
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.equal(shift?.status, "ACTIVE");
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 3 });
+  await h.svc.submitClosingCount(h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "label-end", final_deposit_cents: 0, lines: [] });
+  assert.equal(ended.close_label, "PNY-1104-1103");
+  assert.match(ended.summary_text ?? "", /Close: PNY-1104-1103/);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.status, "ENDED");
+  assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.master_id, "PNY-1104");
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.start_date, "2026-11-04");
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.store, "PNY01");
+  const flower = h.sheet.tabs.Close_Snapshots?.find((row) => row.sku === "1001");
+  const plain = h.sheet.tabs.Close_Snapshots?.find((row) => row.sku === "1002");
+  assert.equal(flower?.close_label, "PNY-1104-1103");
+  assert.equal(flower?.name, "Flower");
+  assert.equal(flower?.category, "Flower");
+  assert.equal(flower?.qty, "3");
+  assert.equal(flower?.discrepancy, "-1");
+  assert.equal(plain?.qty, "2");
+  assert.equal(plain?.discrepancy, "0");
+  const feed = await h.svc.readClosings();
+  assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.close_label, "PNY-1104-1103");
+  assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.cash_sales, 0);
+  const started = await h.svc.startShift({ key: "label-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-b" });
+  const next = await h.svc.login(String(started.pin), "10.4.0.2");
+  await h.svc.endShiftFromPos(next.token, { key: "label-end-2", final_deposit_cents: 0, lines: [] });
+  assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
+
+  const fresh = emptyState();
+  const first = ensureStockLabel(fresh, "PNY02", "2026-11-06T15:00:00.000Z", "2026-11-06T15:00:00.000Z");
+  const kept = ensureStockLabel(fresh, "PNY02", "2026-12-01T15:00:00.000Z", "2026-12-01T15:00:00.000Z");
+  assert.equal(first.master_id, "PNY2-1106");
+  assert.equal(kept.master_id, first.master_id);
+  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
+});
+
+test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
+  const h = harness();
+  h.sheet.configured = true;
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "pny01-keep", sku: "1001", qty: 4 });
+  const before = JSON.stringify(h.db.state.balances);
+  await rejects(() => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }), "STORE");
+  assert.equal(JSON.stringify(h.db.state.balances), before);
+  const loaded = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }));
+  assert.equal(loaded.unmapped.length, 0);
+  assert.equal(loaded.loaded.length, pny2StartingLines().length);
+  assert.equal(loaded.loaded.find((row) => row.sku === "172-3g")?.qty, 10);
+  assert.equal(loaded.loaded.find((row) => row.sku === "172-28g")?.qty, 1);
+  assert.equal(loaded.loaded.find((row) => row.sku === "187-28g")?.qty, 1);
+  assert.equal(loaded.loaded.find((row) => row.sku === "315-5g")?.qty, 10);
+  assert.equal(loaded.loaded.find((row) => row.sku === "188")?.qty, 60);
+  assert.equal(loaded.loaded.find((row) => row.sku === "1010")?.qty, 15);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "1001" && !row.store_code)?.qty, 4);
+  assert.equal(h.db.state.balances.some((row) => row.sku === "172-3g" && !row.store_code), false);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "172-3g" && row.store_code === "PNY02")?.qty, 10);
+  const replay = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }));
+  assert.equal(replay.loaded.length, loaded.loaded.length);
+  const second = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: "pny2-starting-stock-again" }));
+  assert.equal(second.loaded.length, 0);
+  assert.equal(second.skipped.length, pny2StartingLines().length);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "172-3g" && row.store_code === "PNY02")?.qty, 10);
+  const history = h.sheet.tabs.Stock_History?.find((row) => row.sku === "172-3g");
+  assert.equal(history?.store, "PNY02");
+  assert.equal(history?.event, "added_stock");
+  assert.equal(history?.delta, "10");
+  assert.equal(history?.on_hand_after, "10");
+  assert.equal(history?.note, PNY2_START_NOTE);
+  const menu2 = await runStore(PNY02_STORE, () => h.svc.menu());
+  assert.equal((menu2.items?.find((item) => item.sku === "172-3g")?.price_cents ?? 0) > 0, true);
+  assert.equal(menu2.items?.find((item) => item.sku === "187-28g")?.name, "CHOCOLATE KUSH 28g");
+  assert.equal(menu2.items?.find((item) => item.sku === "187-3g")?.name, "CHOCOLATE KUSH 3g");
+  assert.equal(menu2.items?.find((item) => item.sku === "418-3g")?.name, "STRAWBERRY 3g");
+  assert.equal(menu2.items?.some((item) => item.sku === "1001"), false);
+  const menu1 = await h.svc.menu();
+  assert.equal(menu1.items?.some((item) => item.sku === "172-3g" || item.sku === "188"), false);
+});
+
 test("closing count lets staff keep selling and a later sale keeps the difference", async () => {
   const h = await readyTill({ "1001": 4, "1002": 3 });
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
@@ -2712,4 +2803,54 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Start closing count\?/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Not yet/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
+});
+
+test("a stale STATE chunk is ignored and a PNY02 write cannot erase a PNY01 sale", async () => {
+  const at = "2026-11-05T12:00:00.000Z";
+  const sheet = new LocalSheet();
+  const first = new SheetDb(sheet, 0);
+  await first.transaction(async (tx) => {
+    tx.state.shifts.push(
+      { id: "s1", sccx_shift_id: "pny01-shift", staff_uid: "staff-a", store_code: "PNY01", ticket_letter: "A", ticket_seq: 1, pin_hash: "hash", pin_expires_at: null, pin_failed_attempts: 0, status: "ACTIVE", started_at: at, ended_at: null, end_reason: null, opening_confirmed_at: at, refill_confirmed_at: null, created_at: at },
+      { id: "s2", sccx_shift_id: "pny02-shift", staff_uid: "staff-b", store_code: "PNY02", ticket_letter: "B", ticket_seq: 1, pin_hash: "hash", pin_expires_at: null, pin_failed_attempts: 0, status: "ENDED", started_at: at, ended_at: at, end_reason: "POS_END", opening_confirmed_at: at, refill_confirmed_at: null, created_at: at },
+    );
+    tx.state.balances.push({ sku: "188", qty: 60, store_code: "PNY02", updated_at: at, created_at: at });
+    tx.state.closings.push({ id: "c2", shift_id: "s2", final_deposit_cents: 0 } as never);
+  });
+  const valid = (sheet.tabs.POS_Staff ?? []).filter((row) => row.record_type === "STATE" && row.doc);
+  sheet.tabs.POS_Staff.push({ row_id: "STATE-070", record_type: "STATE", doc: "{\"stale\":true}" });
+  const parsed = readStateFromStaff(sheet.tabs.POS_Staff ?? []);
+  assert.equal(parsed?.recovered, true);
+  assert.equal(parsed?.state.shifts.find((row) => row.id === "s1")?.status, "ACTIVE");
+  assert.equal(parsed?.state.balances.find((row) => row.store_code === "PNY02")?.qty, 60);
+
+  const pny01 = new SheetDb(sheet, 60_000);
+  const pny02 = new SheetDb(sheet, 60_000);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const write01 = pny01.transaction(async (tx) => {
+    await gate;
+    tx.state.sales.push({ id: "sale-01", shift_id: "s1", staff_uid: "staff-a", payment_method: "CASH", status: "COMPLETED", total_cents: 1000, ref_no: "PNY-1", created_at: at } as never);
+  });
+  const write02 = pny02.transaction(async (tx) => {
+    const row = tx.state.balances.find((item) => item.sku === "188" && item.store_code === "PNY02");
+    if (row) row.qty = 59;
+  });
+  release();
+  await Promise.all([write01, write02]);
+
+  const again = readStateFromStaff(sheet.tabs.POS_Staff ?? []);
+  assert.equal(again?.recovered, false);
+  assert.equal(again?.state.sales.some((row) => row.id === "sale-01"), true);
+  assert.equal(again?.state.balances.find((row) => row.sku === "188" && row.store_code === "PNY02")?.qty, 59);
+  assert.equal(again?.state.shifts.find((row) => row.id === "s1")?.status, "ACTIVE");
+  const tail = (sheet.tabs.POS_Staff ?? []).find((row) => row.row_id === "STATE-070");
+  assert.equal(tail?.record_type, "STATE_RETIRED");
+  assert.equal(tail?.doc ?? "", "");
+  assert.equal(valid.length > 0, true);
+  const p1 = (sheet.tabs.POS_Staff ?? []).some((row) => row.record_type === "STATE_P1" && row.doc);
+  const p2 = (sheet.tabs.POS_Staff ?? []).some((row) => row.record_type === "STATE_P2" && row.doc);
+  assert.equal(p1 && p2, true);
 });

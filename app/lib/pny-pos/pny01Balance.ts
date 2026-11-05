@@ -13,12 +13,16 @@ export function cashWord(gapCents: number): CashWord {
   return "EVEN";
 }
 
-/** OVER +$1.00, SHORT −$1.00, or EVEN $0.00. The amount is never a bare negative. */
-export function cashWordText(gapCents: number) {
+/** "Cash OVER $1.00" or "STOCK SHORT $1.00". The amount is the absolute value. */
+export function moneyPhrase(label: "Cash" | "STOCK", gapCents: number) {
   const word = cashWord(gapCents);
-  if (word === "EVEN") return "EVEN $0.00";
   const amount = formatMoney(Math.abs(roundCents(gapCents)));
-  return word === "OVER" ? `OVER +${amount}` : `SHORT −${amount}`;
+  if (word === "EVEN") return `${label} EVEN ${amount}`;
+  return `${label} ${word} ${amount}`;
+}
+
+export function cashWordText(gapCents: number) {
+  return moneyPhrase("Cash", gapCents);
 }
 
 export type BalanceLine = {
