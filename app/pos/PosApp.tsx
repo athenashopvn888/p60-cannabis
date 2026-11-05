@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
+import type { BalanceSection } from "../lib/pny-pos/pny01Balance";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -70,6 +71,7 @@ type View = {
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
     refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
   };
+  pny01_balance?: { open: BalanceSection; refill: BalanceSection; close: BalanceSection };
   error?: string;
   code?: string;
 };
@@ -648,6 +650,8 @@ export default function PosApp({
           stockCheck={view.stock_check}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
           initialStep={view.closing?.submitted ? "deposit" : "count"}
+          cashLabels={label === "PNY01"}
+          sections={label === "PNY01" ? view.pny01_balance : undefined}
         />
       ) : null}
       {sheet === "close-ask" ? (

@@ -19,6 +19,19 @@ function section(value: unknown) {
   return { offCount: Number(row.offCount ?? 0), ready: row.ready !== false, lines: offLines(row.lines) };
 }
 
+function balanceLines(value: unknown) {
+  return rows(value).map((row) => pick(row, ["sku", "text", "sheet_qty", "counted_qty", "adj", "price_cents", "value_cents"]));
+}
+
+function balanceSectionView(value: unknown) {
+  const row = value && typeof value === "object" ? (value as Row) : {};
+  return {
+    short_cents: Number(row.short_cents ?? 0),
+    over_cents: Number(row.over_cents ?? 0),
+    lines: balanceLines(row.lines),
+  };
+}
+
 /** Staff payload. On-hand, expected, and total quantities stay on the server. */
 export function blindStaffState<T extends Row>(view: T): T {
   const next: Row = { ...view };
@@ -43,6 +56,14 @@ export function blindStaffState<T extends Row>(view: T): T {
       ...pick(verify, ["show_banner", "deadline_at", "waiting", "cleared", "total", "reveal", "submitted", "opening_off"]),
       lines: rows(verify.lines).map((row) => pick(row, ["sku", "text", "name", "price_cents", "counted_qty", "locked"])),
       opening_lines: offLines(verify.opening_lines),
+    };
+  }
+  const balance = view.pny01_balance && typeof view.pny01_balance === "object" ? (view.pny01_balance as Row) : null;
+  if (balance) {
+    next.pny01_balance = {
+      open: balanceSectionView(balance.open),
+      refill: balanceSectionView(balance.refill),
+      close: balanceSectionView(balance.close),
     };
   }
   const stock = view.stock_check && typeof view.stock_check === "object" ? (view.stock_check as Row) : null;

@@ -215,6 +215,13 @@ export type ClosingRow = {
   final_deposit_cents?: number;
   shortage_cents?: number;
   overage_cents?: number;
+  /** PNY01 only. Opening verify, refill, and closing each keep their own dollars. The sums above include all three. */
+  open_shortage_cents?: number;
+  open_overage_cents?: number;
+  refill_shortage_cents?: number;
+  refill_overage_cents?: number;
+  close_shortage_cents?: number;
+  close_overage_cents?: number;
   balance_cents?: number;
   tickets_total: number;
   tickets_cashed_out: number;
