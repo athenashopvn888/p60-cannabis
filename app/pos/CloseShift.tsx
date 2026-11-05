@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatMoney } from "../lib/pny-pos/money";
+import { formatMoney, signedMoney } from "../lib/pny-pos/money";
 import CountCard from "./CountCard";
 import DepositSlip from "./DepositSlip";
 import SkuOffList, { type OffLine } from "./SkuOffList";
@@ -59,7 +59,9 @@ export default function CloseShift({
 
   const verifyOpen = useVerifyOpen(deadline);
   const depositCents = Math.round(Number(deposit || 0) * 100);
-  const deposited = totals.deposited_cents + (Number.isFinite(depositCents) ? depositCents : 0);
+  const drop = Number.isFinite(depositCents) ? depositCents : 0;
+  const deposited = totals.deposited_cents + drop;
+  const tillBalance = totals.cash_on_hand_cents - drop;
 
   return (
     <section className={styles.close} data-testid="pos-close">
@@ -120,9 +122,9 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Debit sales</span><strong>{formatMoney(totals.debit_sales_cents)}</strong></div>
             <div className={styles.summaryRow}><span>Total sales</span><strong>{formatMoney(totals.sales_cents)}</strong></div>
             <div className={styles.summaryRow}><span>Earlier deposits</span><strong>{formatMoney(totals.deposited_cents)}</strong></div>
-            <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(depositCents)}</strong></div>
+            <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(drop)}</strong></div>
             <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
-            <div className={styles.summaryRow}><span>Cash left</span><strong>{formatMoney(Math.max(0, totals.cash_on_hand_cents - depositCents))}</strong></div>
+            <div className={styles.summaryRow} data-testid="till-balance"><span>Till balance</span><strong>{signedMoney(tillBalance)}</strong></div>
             <section className={styles.stockBlue} data-testid="opening-stock-check">
               <h3>Opening verify count</h3>
               <p>{stockCheck?.opening.ready === false ? "Count still open" : openingOff.length === 1 ? "1 SKU off" : `${openingOff.length} SKUs off`}</p>

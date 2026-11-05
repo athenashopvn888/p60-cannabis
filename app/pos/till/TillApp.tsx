@@ -210,7 +210,7 @@ export default function TillApp() {
         {viewOnly ? null : open ? (
           <div className={styles.tillCard}>
             <span>+Deposit</span>
-            <p>Cash on hand is {formatMoney(view.totals?.cash_on_hand_cents ?? 0)}. A larger deposit is blocked.</p>
+            <p>Cash on hand is {formatMoney(view.totals?.cash_on_hand_cents ?? 0)}.</p>
             <input className={styles.field} inputMode="decimal" placeholder="0.00" value={deposit} onChange={(event) => setDeposit(event.target.value)} aria-label="Deposit amount" />
             {error ? <p className={styles.error}>{error}</p> : null}
             <div className={styles.actions}>

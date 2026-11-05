@@ -2071,8 +2071,6 @@ export class PosService {
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
-      const totals = shiftTotals(tx.state, shift.id);
-      if (depositAboveCash(amount, totals.cash_on_hand_cents)) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
       const at = iso(now);
       const deposit_code = issueDepositCode(tx.state);
       tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: amount, note: input.note?.trim() || null, deposit_code, created_at: at });
@@ -2810,7 +2808,6 @@ export class PosService {
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
       const totals = shiftTotals(tx.state, shift.id);
-      if (depositAboveCash(amount, totals.cash_on_hand_cents)) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
       const drafts = draftsOf(tx.state);
       let draft = drafts.find((row) => row.shift_id === shift.id);
       if (!draft) {
@@ -2847,8 +2844,6 @@ export class PosService {
       if (!Number.isFinite(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
       const at = iso(now);
       if (finalDeposit > 0) {
-        const totals = shiftTotals(tx.state, shift.id);
-        if (depositAboveCash(finalDeposit, totals.cash_on_hand_cents)) throw new PosError(409, "OVER_COH", "Deposit is above cash on hand.");
         const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
         const deposit_code = reserved || issueDepositCode(tx.state);
         const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", deposit_code, created_at: at };
