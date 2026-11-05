@@ -43,6 +43,7 @@ import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
+import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -3777,6 +3778,81 @@ export class PosService {
       remember(tx.state, "adjust", input.key, body, result, now, this.deps.secrets.admin);
       return result;
     });
+  }
+
+  /**
+   * Post the approved PNY02 opening once. Refuses to run on PNY01.
+   * A SKU that already has PNY02 on-hand or an opening ledger row is left as it is.
+   */
+  async loadPny2StartingStock(adminToken: string, input: { key: string }) {
+    const body = input as unknown as Json;
+    if (tillCode() !== "PNY02") throw new PosError(409, "STORE", "This load is for PNY02 only.");
+    if (!input.key?.trim()) throw new PosError(400, "KEY", "An idempotency key is required.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "pny2_starting_stock", input.key, body, now, this.deps.secrets.admin);
+      if (seen) return seen;
+      const at = iso(now);
+      this.ensurePny2(tx.state, at);
+      const pny01Before = JSON.stringify(tx.state.balances.filter((row) => !row.store_code || row.store_code === "PNY01"));
+      const loaded: { sku: string; qty: number }[] = [];
+      const skipped: { sku: string; qty: number; reason: string }[] = [];
+      const unmapped: { sku: string; qty: number; reason: string }[] = [];
+      for (const line of pny2StartingLines()) {
+        const already = tx.state.ledger.some((row) => row.sku === line.sku && row.movement_type === "OPENING_BALANCE" && balanceForStore(row));
+        if (already || qtyOf(tx.state, line.sku) > 0) {
+          skipped.push({ sku: line.sku, qty: qtyOf(tx.state, line.sku), reason: already ? "already_posted" : "already_on_hand" });
+          continue;
+        }
+        ensureQuotedProduct(tx.state, line.sku, at);
+        if (line.sku === "187-28g") {
+          let priced = tx.state.products.find((row) => row.sku === line.sku);
+          if (!priced) {
+            priced = {
+              sku: line.sku,
+              sku_sort: skuSortKey(line.sku),
+              name: "CHOCOLATE KUSH 28g",
+              category: "BUDGET",
+              default_price_cents: 5000,
+              image_url: null,
+              setb_active: true,
+              synced_at: at,
+              created_at: at,
+            };
+            tx.state.products.push(priced);
+          } else if (priced.default_price_cents <= 0) {
+            priced.name = "CHOCOLATE KUSH 28g";
+            priced.category = "BUDGET";
+            priced.default_price_cents = 5000;
+            priced.setb_active = true;
+          }
+          if (!tx.state.store_products.some((row) => row.store_code === "PNY02" && row.sku === line.sku)) {
+            tx.state.store_products.push({
+              store_code: "PNY02",
+              sku: line.sku,
+              enabled: true,
+              price_override_cents: null,
+              created_at: at,
+              updated_at: at,
+            });
+          }
+        }
+        const product = tx.state.products.find((row) => row.sku === line.sku);
+        if (!product || product.default_price_cents <= 0) unmapped.push({ sku: line.sku, qty: line.qty, reason: "no priced catalog row" });
+        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
+        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not post PNY02 starting stock.");
+        ledger(tx.state, line.sku, line.qty, "OPENING_BALANCE", "admin", null, "admin", PNY2_START_NOTE, null, at);
+        loaded.push({ sku: line.sku, qty: next });
+      }
+      const pny01After = JSON.stringify(tx.state.balances.filter((row) => !row.store_code || row.store_code === "PNY01"));
+      if (pny01Before !== pny01After) throw new PosError(500, "PNY01", "PNY02 load touched PNY01 stock.");
+      const resultBody = { ok: true, store: "PNY02", note: PNY2_START_NOTE, loaded, skipped, unmapped };
+      remember(tx.state, "pny2_starting_stock", input.key, body, resultBody, now, this.deps.secrets.admin);
+      return resultBody;
+    });
+    this.bumpMenu();
+    return result;
   }
 
   async openingBalance(adminToken: string, input: { key: string; sku: string; qty: number }) {
