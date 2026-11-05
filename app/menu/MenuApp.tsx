@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
-import { defaultCategory, formatMoney, sortCategories } from "../lib/pny-pos/money";
+import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChips, sortCategories } from "../lib/pny-pos/money";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
@@ -15,6 +15,12 @@ type Menu = {
   items?: Item[];
 };
 type Layout = "grid" | "list";
+
+function rowsOf<T>(items: T[], size: number) {
+  const rows: T[][] = [];
+  for (let index = 0; index < items.length; index += size) rows.push(items.slice(index, index + size));
+  return rows;
+}
 
 const LAYOUT_KEY = "pny-menu-layout";
 const layoutListeners = new Set<() => void>();
@@ -67,6 +73,12 @@ export default function MenuApp() {
     [menu?.items],
   );
   const activeCategory = categories.includes(category) ? category : defaultCategory(categories);
+  const categoryRows = useMemo(() => {
+    const layout = layoutMenuCategoryChips(categories);
+    const wide = defaultCategory(categories);
+    const flow = layout.filter((name) => name !== wide);
+    return wide ? [...rowsOf(flow, 4), [wide]] : rowsOf(layout, 4);
+  }, [categories]);
   const visible = items.filter((item) => item.category === activeCategory);
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
   const total = items.reduce((sum, item) => sum + (cart[item.sku] ?? 0) * item.price_cents, 0);
@@ -140,12 +152,16 @@ export default function MenuApp() {
         </div>
         <p>Only available items are listed.</p>
       </header>
-      {categories.length > 0 ? (
-        <div className={styles.chips} role="tablist" aria-label="Categories" data-testid="menu-categories">
-          {categories.map((name) => (
-            <button key={name} type="button" role="tab" aria-selected={activeCategory === name} data-category={name} className={activeCategory === name ? styles.chipOn : styles.chip} onClick={() => setCategory(name)}>
-              {name}
-            </button>
+      {categoryRows.length > 0 ? (
+        <div className={styles.chipRows} role="tablist" aria-label="Categories" data-testid="menu-categories">
+          {categoryRows.map((row) => (
+            <div key={row.join("|")} className={styles.chipRow}>
+              {row.map((name) => (
+                <button key={name} type="button" role="tab" aria-selected={activeCategory === name} data-category={name} className={activeCategory === name ? styles.chipOn : styles.chip} onClick={() => setCategory(name)}>
+                  {categoryChipLabel(name)}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       ) : null}
