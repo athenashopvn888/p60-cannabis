@@ -31,6 +31,7 @@ import { runStore } from "../app/lib/pny-pos/storeContext.ts";
 import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
+import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -2648,6 +2649,46 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   assert.equal(first.master_id, "PNY2-1106");
   assert.equal(kept.master_id, first.master_id);
   assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
+});
+
+test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
+  const h = harness();
+  h.sheet.configured = true;
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "pny01-keep", sku: "1001", qty: 4 });
+  const before = JSON.stringify(h.db.state.balances);
+  await rejects(() => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }), "STORE");
+  assert.equal(JSON.stringify(h.db.state.balances), before);
+  const loaded = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }));
+  assert.equal(loaded.unmapped.length, 0);
+  assert.equal(loaded.loaded.length, pny2StartingLines().length);
+  assert.equal(loaded.loaded.find((row) => row.sku === "172-3g")?.qty, 10);
+  assert.equal(loaded.loaded.find((row) => row.sku === "172-28g")?.qty, 1);
+  assert.equal(loaded.loaded.find((row) => row.sku === "187-28g")?.qty, 1);
+  assert.equal(loaded.loaded.find((row) => row.sku === "315-5g")?.qty, 10);
+  assert.equal(loaded.loaded.find((row) => row.sku === "188")?.qty, 60);
+  assert.equal(loaded.loaded.find((row) => row.sku === "1010")?.qty, 15);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "1001" && !row.store_code)?.qty, 4);
+  assert.equal(h.db.state.balances.some((row) => row.sku === "172-3g" && !row.store_code), false);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "172-3g" && row.store_code === "PNY02")?.qty, 10);
+  const replay = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: PNY2_START_KEY }));
+  assert.equal(replay.loaded.length, loaded.loaded.length);
+  const second = await runStore(PNY02_STORE, () => h.svc.loadPny2StartingStock(admin.token, { key: "pny2-starting-stock-again" }));
+  assert.equal(second.loaded.length, 0);
+  assert.equal(second.skipped.length, pny2StartingLines().length);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "172-3g" && row.store_code === "PNY02")?.qty, 10);
+  const history = h.sheet.tabs.Stock_History?.find((row) => row.sku === "172-3g");
+  assert.equal(history?.store, "PNY02");
+  assert.equal(history?.event, "added_stock");
+  assert.equal(history?.delta, "10");
+  assert.equal(history?.on_hand_after, "10");
+  assert.equal(history?.note, PNY2_START_NOTE);
+  const menu2 = await runStore(PNY02_STORE, () => h.svc.menu());
+  assert.equal((menu2.items?.find((item) => item.sku === "172-3g")?.price_cents ?? 0) > 0, true);
+  assert.equal(menu2.items?.find((item) => item.sku === "187-28g")?.name, "CHOCOLATE KUSH 28g");
+  assert.equal(menu2.items?.some((item) => item.sku === "1001"), false);
+  const menu1 = await h.svc.menu();
+  assert.equal(menu1.items?.some((item) => item.sku === "172-3g" || item.sku === "188"), false);
 });
 
 test("closing count lets staff keep selling and a later sale keeps the difference", async () => {
