@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChips, sortCategories } from "../lib/pny-pos/money";
+import { menuPriceText } from "./menuPrice";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
 
@@ -186,7 +187,7 @@ export default function MenuApp({
                     return (
                       <div key={item.sku} className={styles.sizePick}>
                         <button type="button" className={qty > 0 ? styles.sizeOn : styles.sizeBtn} data-add={item.sku} data-size={size} aria-label={`${block.name} ${size}`} disabled={!menu?.ordering || qty >= 20} onClick={() => setCart({ ...cart, [item.sku]: qty + 1 })}>
-                          {size} {formatMoney(item.price_cents)}{qty > 0 ? ` ×${qty}` : ""}
+                          {size} {menuPriceText(item)}{qty > 0 ? ` ×${qty}` : ""}
                         </button>
                         {qty > 0 ? <button type="button" className={styles.sizeMinus} aria-label={`Decrease ${item.name}`} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button> : null}
                       </div>
@@ -198,12 +199,14 @@ export default function MenuApp({
           }
           const item = block.item;
           const qty = cart[item.sku] ?? 0;
+          const priceText = menuPriceText(item);
+          const unit = priceText === "2 for $5" || !item.unit_label ? "" : ` ${item.unit_label}`;
           if (layout === "list") {
             return (
               <article key={item.sku} className={styles.listRow}>
                 <div className={styles.listCopy}>
                   <div className={styles.name}>{item.name}</div>
-                  <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+                  <div className={styles.price}>{priceText}{unit}</div>
                   {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
                 </div>
                 <div className={styles.compact}>
@@ -218,7 +221,7 @@ export default function MenuApp({
             <article key={item.sku} className={styles.card}>
               <ProductPhoto src={item.image_url} alt={item.name} className={styles.hero} placeholderClassName={styles.heroPh} />
               <div className={styles.name}>{item.name}</div>
-              <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+              <div className={styles.price}>{priceText}{unit}</div>
               {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
               <span className={styles.available}>{item.availability}</span>
               <div className={styles.stepper}>
