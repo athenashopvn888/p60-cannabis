@@ -8,32 +8,65 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const BACKUP_TAB = "POS_State_Backup";
-const KEEP = Array.from({ length: 70 }, (_, index) => `STATE-${String(index).padStart(3, "0")}`);
 
-function chunks(rows: SheetRow[]) {
+type Shift = {
+  id?: string;
+  store_code?: string;
+  status?: string;
+  end_reason?: string | null;
+  pin_failed_attempts?: number;
+  started_at?: string;
+  ended_at?: string | null;
+};
+type Draft = {
+  shift_id?: string;
+  closing_started_at?: string | null;
+  closing_submitted_at?: string | null;
+  counts?: unknown[];
+  final_deposit_cents?: number | null;
+};
+type Closing = { shift_id?: string; final_deposit_cents?: number | null };
+type Parsed = { shifts?: Shift[]; closing_drafts?: Draft[]; closings?: Closing[]; balances?: { sku?: string; qty?: number; store_code?: string }[] };
+
+function activeChunks(rows: SheetRow[]) {
   return rows
     .filter((row) => row.record_type === "STATE" && row.row_id?.startsWith("STATE-") && row.doc)
-    .sort((a, b) => a.row_id.localeCompare(b.row_id));
+    .sort((a, b) => (a.row_id ?? "").localeCompare(b.row_id ?? ""));
 }
 
-function digest(rows: SheetRow[]) {
-  return rows.map((row) => `${row.row_id}:${createHash("sha256").update(row.doc).digest("hex")}:${row.doc.length}`).join("\n");
+function tryState(raw: string): Parsed | null {
+  try {
+    const value = JSON.parse(raw) as Parsed;
+    if (!value || typeof value !== "object" || !Array.isArray(value.shifts)) return null;
+    return value;
+  } catch {
+    return null;
+  }
 }
 
-function shiftSummary(raw: string) {
-  const parsed = JSON.parse(raw) as {
-    shifts?: { id?: string; store_code?: string; status?: string; pin_failed_attempts?: number }[];
-    closing_drafts?: { shift_id?: string; closing_started_at?: string | null; closing_submitted_at?: string | null; counts?: unknown[] }[];
+function summarize(parsed: Parsed) {
+  const shifts = parsed.shifts ?? [];
+  const describe = (store: string) => {
+    const rows = shifts.filter((shift) => (shift.store_code ?? "PNY01") === store);
+    const open = rows.find((shift) => shift.status !== "ENDED");
+    const latest = [...rows].sort((a, b) => (b.ended_at || b.started_at || "").localeCompare(a.ended_at || a.started_at || ""))[0];
+    const focus = open ?? latest;
+    const draft = focus ? (parsed.closing_drafts ?? []).find((row) => row.shift_id === focus.id) : undefined;
+    const closing = focus ? (parsed.closings ?? []).find((row) => row.shift_id === focus.id) : undefined;
+    return {
+      open: Boolean(open),
+      status: focus?.status ?? null,
+      end_reason: focus?.end_reason ?? null,
+      pin_failed_attempts: focus?.pin_failed_attempts ?? null,
+      closing_started: Boolean(draft?.closing_started_at),
+      closing_submitted: Boolean(draft?.closing_submitted_at),
+      counted_lines: Array.isArray(draft?.counts) ? draft.counts.length : 0,
+      final_deposit_cents: closing?.final_deposit_cents ?? draft?.final_deposit_cents ?? null,
+      shift_count: rows.length,
+    };
   };
-  const open = (parsed.shifts ?? []).find((shift) => shift.store_code === "PNY01" && shift.status !== "ENDED");
-  const draft = open ? (parsed.closing_drafts ?? []).find((row) => row.shift_id === open.id) : undefined;
-  return {
-    open_status: open?.status ?? null,
-    pin_failed_attempts: open?.pin_failed_attempts ?? null,
-    closing_started: Boolean(draft?.closing_started_at),
-    closing_submitted: Boolean(draft?.closing_submitted_at),
-    counted_lines: Array.isArray(draft?.counts) ? draft.counts.length : 0,
-  };
+  const pny02Qty = (parsed.balances ?? []).filter((row) => row.store_code === "PNY02" && (row.qty ?? 0) > 0).length;
+  return { pny01: describe("PNY01"), pny02: describe("PNY02"), pny02_stocked_skus: pny02Qty };
 }
 
 export async function POST(request: Request) {
@@ -43,8 +76,7 @@ export async function POST(request: Request) {
   if (!secret || !token || !safeEqual(token, secret)) return json({ ok: false, error: "unauthorized" }, 401);
   let confirm = "";
   try {
-    const body = (await request.json()) as { confirm?: string };
-    confirm = body.confirm ?? "";
+    confirm = ((await request.json()) as { confirm?: string }).confirm ?? "";
   } catch {
     confirm = "";
   }
@@ -53,45 +85,43 @@ export async function POST(request: Request) {
   const sheet = sheetFromEnv();
   if (!sheet.configured) return json({ ok: false, error: "sheet is not configured" }, 500);
   const before = await sheet.readRows("POS_Staff");
-  const active = chunks(before);
-  const keep = active.filter((row) => row.row_id !== "STATE-070");
-  const stale = active.filter((row) => row.row_id === "STATE-070");
-  if (keep.map((row) => row.row_id).join() !== KEEP.join()) {
-    return json({ ok: false, error: "chunks 000-069 are not intact", count: keep.length }, 409);
+  const chunks = activeChunks(before);
+  const lengths = chunks.map((row) => ({ id: row.row_id, length: row.doc.length }));
+  let keepCount = 0;
+  let parsed: Parsed | null = null;
+  for (let count = chunks.length; count >= 1; count -= 1) {
+    const candidate = tryState(chunks.slice(0, count).map((row) => row.doc).join(""));
+    const open = candidate?.shifts?.find((shift) => (shift.store_code ?? "PNY01") === "PNY01" && shift.status !== "ENDED");
+    if (candidate && open) {
+      parsed = candidate;
+      keepCount = count;
+      break;
+    }
   }
-  const joined = keep.map((row) => row.doc).join("");
-  let summary;
-  try {
-    summary = shiftSummary(joined);
-  } catch {
-    return json({ ok: false, error: "chunks 000-069 did not parse; STATE-070 was left in place" }, 409);
-  }
-  if (!summary.open_status) {
-    return json({ ok: false, error: "no open PNY01 shift in chunks 000-069; STATE-070 was left in place" }, 409);
-  }
-  if (stale.length === 0) {
-    return json({ ok: true, already: true, pny01: summary });
-  }
-  if (stale.length !== 1) return json({ ok: false, error: "more than one STATE-070 row", found: stale.length }, 409);
+  if (!parsed) return json({ ok: false, error: "no prefix kept an open PNY01 shift", chunks: lengths }, 409);
+  const stale = chunks.slice(keepCount);
+  const summary = summarize(parsed);
+  if (stale.length === 0) return json({ ok: true, already: true, chunks: lengths.length, ...summary });
 
-  const backupDoc = stale[0].doc;
-  const sha256 = createHash("sha256").update(backupDoc).digest("hex");
   await sheet.ensureTabs([{
     title: BACKUP_TAB,
     headers: ["backed_up_at", "row_id", "record_type", "doc_length", "sha256", "doc"],
   }]);
-  await sheet.appendRows(BACKUP_TAB, [{
-    backed_up_at: new Date().toISOString(),
-    row_id: "STATE-070",
-    record_type: stale[0].record_type ?? "STATE",
-    doc_length: String(backupDoc.length),
-    sha256,
-    doc: backupDoc,
-  }], "sha256");
-
-  const beforeDigest = digest(keep);
-  await sheet.upsert("POS_Staff", [{
-    row_id: "STATE-070",
+  const backedUp = stale.map((row) => {
+    const sha256 = createHash("sha256").update(row.doc).digest("hex");
+    return {
+      backed_up_at: new Date().toISOString(),
+      row_id: row.row_id ?? "",
+      record_type: row.record_type ?? "STATE",
+      doc_length: String(row.doc.length),
+      sha256,
+      doc: row.doc,
+    };
+  });
+  await sheet.appendRows(BACKUP_TAB, backedUp, "sha256");
+  const beforeDigest = createHash("sha256").update(chunks.slice(0, keepCount).map((row) => row.doc).join("")).digest("hex");
+  await sheet.upsert("POS_Staff", stale.map((row) => ({
+    row_id: row.row_id ?? "",
     record_type: "STATE_RETIRED",
     staff_uid: "",
     sccx_id: "",
@@ -101,26 +131,17 @@ export async function POST(request: Request) {
     updated_at: "",
     created_at: "",
     doc: "",
-  }]);
+  })));
 
-  const after = await sheet.readRows("POS_Staff");
-  const afterActive = chunks(after);
-  const afterKeep = afterActive.filter((row) => row.row_id !== "STATE-070");
-  const retired = after.find((row) => row.row_id === "STATE-070");
-  const unchanged = digest(afterKeep) === beforeDigest;
-  let parses = false;
-  try {
-    JSON.parse(afterKeep.map((row) => row.doc).join(""));
-    parses = true;
-  } catch {
-    parses = false;
-  }
+  const after = activeChunks(await sheet.readRows("POS_Staff"));
+  const afterDigest = createHash("sha256").update(after.map((row) => row.doc).join("")).digest("hex");
+  const afterParsed = tryState(after.map((row) => row.doc).join(""));
   return json({
-    ok: unchanged && parses && retired?.record_type === "STATE_RETIRED" && !retired.doc,
-    backup: { tab: BACKUP_TAB, length: backupDoc.length, sha256 },
-    chunks_unchanged: unchanged,
-    parses,
-    retired: { record_type: retired?.record_type ?? "", doc_length: retired?.doc?.length ?? -1 },
-    pny01: summary,
+    ok: Boolean(afterParsed) && afterDigest === beforeDigest && after.length === keepCount,
+    retired: backedUp.map((row) => ({ id: row.row_id, length: Number(row.doc_length), sha256: row.sha256 })),
+    kept_chunks: keepCount,
+    chunks_unchanged: afterDigest === beforeDigest,
+    parses: Boolean(afterParsed),
+    ...(afterParsed ? summarize(afterParsed) : summary),
   });
 }
