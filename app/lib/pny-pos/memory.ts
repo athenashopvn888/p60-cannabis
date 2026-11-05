@@ -44,10 +44,13 @@ export type Tx = { state: State };
 
 export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+  /** Best-effort hook after a commit. Must not throw into the sale. */
+  onCommit?: (state: State) => void;
 }
 
 export class MemoryDb implements PosDb {
   state: State;
+  onCommit?: (state: State) => void;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state?: State) {
@@ -59,6 +62,11 @@ export class MemoryDb implements PosDb {
       const snapshot = structuredClone(this.state) as State;
       const result = await fn({ state: snapshot });
       this.state = snapshot;
+      try {
+        this.onCommit?.(snapshot);
+      } catch {
+        // Stock history must not undo a committed sale.
+      }
       return result;
     });
     this.tail = run.then(

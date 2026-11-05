@@ -41,6 +41,7 @@ import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex,
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
+import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -145,6 +146,7 @@ function ledger(state: State, sku: string, delta: number, movement: MovementType
     ...(tillCode() === "PNY01" ? {} : { store_code: tillCode() }),
   };
   state.ledger.push(row);
+  if (delta !== 0) queueStockHistory(state, row.id);
   return row;
 }
 
@@ -1241,6 +1243,11 @@ export class PosService {
   constructor(db: PosDb, deps: PosDeps) {
     this.db = db;
     this.deps = deps;
+    db.onCommit = (state) => {
+      const rows = takeStockHistory(state);
+      if (!rows.length || !this.deps.sheet.configured) return;
+      void this.deps.sheet.appendStockHistory(rows).catch(() => undefined);
+    };
   }
 
   private now() {

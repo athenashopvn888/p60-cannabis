@@ -1,5 +1,6 @@
 import { createSign } from "node:crypto";
 import { SheetUnavailable } from "./errors.ts";
+import { STOCK_HISTORY_HEADERS, STOCK_HISTORY_TAB } from "./stockHistory.ts";
 import type { SheetRow } from "./types.ts";
 
 export type SheetTabSpec = { title: string; headers: string[] };
@@ -23,6 +24,7 @@ export type SheetClient = {
   writeExactGrid?(tab: string, grid: string[][]): Promise<void>;
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
+  appendStockHistory(rows: Record<string, string>[]): Promise<void>;
   deleteRows(tab: string, rowIds: string[]): Promise<void>;
   ensureTabs(specs: SheetTabSpec[]): Promise<void>;
 };
@@ -50,6 +52,13 @@ export class LocalSheet implements SheetClient {
 
   async ensureTabs(specs: SheetTabSpec[]) {
     for (const spec of specs) if (!this.tabs[spec.title]) this.tabs[spec.title] = [];
+  }
+
+  async appendStockHistory(rows: Record<string, string>[]) {
+    if (!this.reachable || rows.length === 0) return;
+    const list = this.tabs[STOCK_HISTORY_TAB] ?? [];
+    for (const row of rows) list.push({ ...row });
+    this.tabs[STOCK_HISTORY_TAB] = list;
   }
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
@@ -288,6 +297,22 @@ export class GoogleSheet implements SheetClient {
         })),
       }),
     });
+  }
+
+  async appendStockHistory(rows: Record<string, string>[]) {
+    if (!this.configured || rows.length === 0) return;
+    const values = rows.map((row) => STOCK_HISTORY_HEADERS.map((header) => row[header] ?? ""));
+    const append = () => this.sheetsFetch(`/values/${encodeURIComponent(`${STOCK_HISTORY_TAB}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    try {
+      await append();
+    } catch (error) {
+      if (!(error instanceof SheetUnavailable) || error.httpStatus !== 400) throw error;
+      await this.ensureTabs([{ title: STOCK_HISTORY_TAB, headers: [...STOCK_HISTORY_HEADERS] }]);
+      await append();
+    }
   }
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
