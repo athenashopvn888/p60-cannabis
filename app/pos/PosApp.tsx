@@ -44,6 +44,7 @@ type View = {
   shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   close_lines?: CloseLine[];
+  closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
   opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
   categories?: string[];
@@ -112,7 +113,7 @@ export default function PosApp({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [tab, setTab] = useState<"sell" | "tickets">("sell");
-  const [sheet, setSheet] = useState<"cash" | "close" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | null>(null);
+  const [sheet, setSheet] = useState<"cash" | "close" | "close-ask" | "done" | "deposit-pin" | "deposit-amount" | "summary-pin" | null>(null);
   const [depositPin, setDepositPin] = useState("");
   const [depositAmount, setDepositAmount] = useState("");
   const [qrOpen, setQrOpen] = useState(false);
@@ -213,8 +214,28 @@ export default function PosApp({
   }
 
   function openEnd() {
+    if (view?.master) return;
     setError("");
-    setSheet("close");
+    if (view?.closing?.submitted) {
+      setSheet("close");
+      return;
+    }
+    if (view?.closing?.started) return;
+    setSheet("close-ask");
+  }
+
+  async function startClosing() {
+    setError("");
+    setBusy(true);
+    try {
+      await post(`${apiBase}/shift/close-start`, {});
+      setSheet(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start the count");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openDeposit() {
@@ -579,6 +600,19 @@ export default function PosApp({
           {showVerify ? (
             <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} onSubmit={submitVerify} />
           ) : null}
+          {view.closing?.started && !view.closing.submitted ? (
+            <section className={styles.closingDock} data-testid="closing-count">
+              <h3>Closing count</h3>
+              <CountCard
+                compact
+                purpose="closing"
+                lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
+                busy={busy || Boolean(view.master)}
+                onSave={saveCloseCount}
+                onSubmit={submitCloseCount}
+              />
+            </section>
+          ) : null}
           {view.verify?.reveal && showGaps ? (
             <div className={styles.countDock} data-testid="verify-off">
               <p className={styles.countProgress}>{(view.stock_check?.opening.lines.length ?? 0) === 1 ? "1 SKU off" : `${view.stock_check?.opening.lines.length ?? 0} SKUs off`}</p>
@@ -613,7 +647,20 @@ export default function PosApp({
           onClose={() => { setSheet(null); void load().catch(() => undefined); }}
           stockCheck={view.stock_check}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
+          initialStep={view.closing?.submitted ? "deposit" : "count"}
         />
+      ) : null}
+      {sheet === "close-ask" ? (
+        <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="close-ask-title" data-testid="close-ask">
+          <div className={styles.ruleSheet}>
+            <h2 id="close-ask-title">Start closing count?</h2>
+            <p>You can keep selling while you count. Nothing locks until the final deposit.</p>
+            <div className={styles.askActions}>
+              <button className={styles.primary} type="button" data-testid="close-yes" disabled={busy} onClick={() => void startClosing()}>Yes</button>
+              <button className={styles.secondary} type="button" data-testid="close-not-yet" disabled={busy} onClick={() => setSheet(null)}>Not yet</button>
+            </div>
+          </div>
+        </div>
       ) : null}
       {summaryText ? (
         <div className={styles.summaryPage} data-testid="shift-summary">

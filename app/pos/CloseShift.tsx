@@ -31,6 +31,7 @@ export default function CloseShift({
   onClose,
   stockCheck,
   deadline,
+  initialStep,
 }: {
   lines: CloseLine[];
   totals: Totals;
@@ -48,8 +49,9 @@ export default function CloseShift({
     refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
   };
   deadline?: string | null;
+  initialStep?: "count" | "deposit";
 }) {
-  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(lines.length === 0 ? "deposit" : "count");
+  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(initialStep ?? (lines.length === 0 ? "deposit" : "count"));
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
   const [localError, setLocalError] = useState("");

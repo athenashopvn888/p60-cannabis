@@ -593,6 +593,12 @@ function sortCountSkus(state: State, skus: Iterable<string>) {
   return [...skus].sort((a, b) => compareCount(countMeta(state, a), countMeta(state, b)));
 }
 
+function salesAfter(state: State, shiftId: string, sku: string, afterMs: number) {
+  const sales = state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED" && Date.parse(sale.created_at) > afterMs);
+  const ids = new Set(sales.map((sale) => sale.id));
+  return state.sale_lines.filter((line) => line.sku === sku && ids.has(line.sale_id)).reduce((sum, line) => sum + line.qty, 0);
+}
+
 function salesUntil(state: State, shiftId: string, sku: string, untilMs: number) {
   const sales = state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED" && Date.parse(sale.created_at) <= untilMs);
   const ids = new Set(sales.map((sale) => sale.id));
@@ -1921,13 +1927,33 @@ export class PosService {
             .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)))
             .map((line) => {
               const meta = countMeta(tx.state, line.sku);
+              const saved = draft?.counts.find((row) => row.sku === line.sku);
               return {
                 ...line,
                 text: staffSkuText(line.sku, meta.bag),
                 system_qty: qtyOf(tx.state, line.sku),
-                counted_qty: draft?.counts.find((row) => row.sku === line.sku)?.counted_qty ?? null,
+                counted_qty: saved && !saved.accepted_as_is ? saved.counted_qty : null,
               };
             });
+        })(),
+        closing: (() => {
+          const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+          const lines = [...shiftClosePlan(tx.state, shift.id, raw)]
+            .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)))
+            .map((line) => {
+              const meta = countMeta(tx.state, line.sku);
+              const saved = draft?.counts.find((row) => row.sku === line.sku);
+              return {
+                sku: line.sku,
+                text: staffSkuText(line.sku, meta.bag),
+                counted_qty: saved && !saved.accepted_as_is ? saved.counted_qty : null,
+              };
+            });
+          return {
+            started: Boolean(draft?.closing_started_at),
+            submitted: Boolean(draft?.closing_submitted_at),
+            lines,
+          };
         })(),
         verify: counted.verify,
         stock_check: counted.stock_check,
@@ -2442,6 +2468,23 @@ export class PosService {
     });
   }
 
+  /** Show the closing count. The shift stays open and selling continues. */
+  async startClosingCount(token: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      const status = shift.status;
+      const pin = shift.pin_hash;
+      const draft = ensureDraft(tx.state, shift.id, now);
+      if (!draft.closing_started_at) draft.closing_started_at = iso(now);
+      draft.updated_at = iso(now);
+      if (shift.status !== status || shift.pin_hash !== pin) throw new PosError(409, "SHIFT_UNCHANGED", "Starting the count must not change the open shift.");
+      return { ok: true, status: shift.status, closing_started_at: draft.closing_started_at };
+    });
+  }
+
   async saveOpeningCount(token: string, input: { sku: string; counted_qty: number; variance_reason?: string }) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
@@ -2851,6 +2894,8 @@ export class PosService {
         if (existing) {
           existing.counts = draft.counts ?? [];
           existing.opening_counts = draft.opening_counts ?? [];
+          existing.closing_started_at = draft.closing_started_at ?? null;
+          existing.closing_submitted_at = draft.closing_submitted_at ?? null;
           existing.final_deposit_cents = draft.final_deposit_cents ?? null;
           existing.final_deposit_code = draft.final_deposit_code ?? null;
           existing.updated_at = draft.updated_at || existing.updated_at;
@@ -2859,6 +2904,8 @@ export class PosService {
             shift_id: draft.shift_id,
             counts: draft.counts ?? [],
             opening_counts: draft.opening_counts ?? [],
+            closing_started_at: draft.closing_started_at ?? null,
+            closing_submitted_at: draft.closing_submitted_at ?? null,
             final_deposit_cents: draft.final_deposit_cents ?? null,
             final_deposit_code: draft.final_deposit_code ?? null,
             updated_at: draft.updated_at || iso(this.now()),
@@ -2874,6 +2921,8 @@ export class PosService {
       shift_id: row.shift_id,
       counts: row.counts ?? [],
       opening_counts: row.opening_counts ?? [],
+      closing_started_at: row.closing_started_at ?? null,
+      closing_submitted_at: row.closing_submitted_at ?? null,
       final_deposit_cents: row.final_deposit_cents,
       final_deposit_code: row.final_deposit_code ?? null,
       updated_at: row.updated_at,
@@ -2920,11 +2969,7 @@ export class PosService {
       const draft = ensureDraft(tx.state, shift.id, now);
       if (draft.closing_submitted_at) return { ok: true, closing_submitted_at: draft.closing_submitted_at };
       const at = iso(now);
-      for (const line of shiftClosePlan(tx.state, shift.id)) {
-        if (draft.counts.some((row) => row.sku === line.sku)) continue;
-        const expected = expectedAtSubmit(tx.state, shift, line.sku, now.getTime());
-        draft.counts.push({ sku: line.sku, counted_qty: expected, expected_qty: expected, edited_at: at, accepted_as_is: true });
-      }
+      if (!draft.closing_started_at) draft.closing_started_at = at;
       draft.closing_submitted_at = at;
       draft.updated_at = at;
       return { ok: true, closing_submitted_at: at };
@@ -2970,7 +3015,7 @@ export class PosService {
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id, raw);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
-      if (plan.some((line) => !bySku.has(line.sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that had stock this shift.");
+      const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
       const finalDeposit = roundCents(input.final_deposit_cents ?? 0);
       if (!Number.isFinite(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
       const at = iso(now);
@@ -2994,19 +3039,35 @@ export class PosService {
       const countId = randomUUID();
       const closingLines: ClosingLine[] = [];
       for (const item of plan) {
-        const line = bySku.get(item.sku)!;
-        if (!Number.isInteger(line.counted_qty) || line.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
-        const variance = lineVariance({ expected_qty: item.expected_qty, counted_qty: line.counted_qty, price_cents: item.price_cents });
+        const saved = draft?.counts.find((row) => row.sku === item.sku);
+        const editedAt = saved && !saved.accepted_as_is && saved.edited_at ? Date.parse(saved.edited_at) : NaN;
+        const client = bySku.get(item.sku);
+        let counted: number;
+        let expected: number;
+        if (Number.isFinite(editedAt) && saved) {
+          const after = salesAfter(tx.state, shift.id, item.sku, editedAt);
+          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after;
+          counted = saved.counted_qty - after;
+        } else if (!draft?.closing_submitted_at && client) {
+          counted = client.counted_qty;
+          expected = item.expected_qty;
+        } else {
+          const onHand = qtyOf(tx.state, item.sku);
+          counted = onHand;
+          expected = onHand;
+        }
+        if (!Number.isInteger(counted) || counted < 0 || !Number.isInteger(expected)) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
+        const variance = lineVariance({ expected_qty: expected, counted_qty: counted, price_cents: item.price_cents });
         closingLines.push({
           sku: item.sku,
           name: item.name,
-          left: line.counted_qty,
+          left: counted,
           system_qty: qtyOf(tx.state, item.sku),
           price_cents: item.price_cents,
           opening_qty: item.opening_qty,
           received_qty: item.received_qty,
           sold_qty: item.sold_qty,
-          expected_qty: item.expected_qty,
+          expected_qty: expected,
           variance_qty: variance.variance_qty,
           shortage_cents: variance.shortage_cents,
           overage_cents: variance.overage_cents,
