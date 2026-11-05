@@ -195,11 +195,15 @@ export class GoogleSheet implements SheetClient {
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(init?.headers ?? {}) },
       });
     let response = await send();
-    if (response.status === 429) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+    for (let attempt = 0; attempt < 3 && (response.status === 429 || response.status === 503); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
       response = await send();
     }
-    if (!response.ok) throw new SheetUnavailable(`Sheets ${path} failed (${response.status}).`, response.status);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      const brief = text.replace(/\s+/g, " ").slice(0, 160);
+      throw new SheetUnavailable(`Sheets ${path} failed (${response.status}) ${brief}`, response.status);
+    }
     return response.json() as Promise<Record<string, unknown>>;
   }
 

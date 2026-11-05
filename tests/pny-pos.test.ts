@@ -16,6 +16,7 @@ import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { readStateFromStaff } from "../app/lib/pny-pos/stateMerge.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
@@ -2739,4 +2740,54 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Start closing count\?/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Not yet/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
+});
+
+test("a stale STATE chunk is ignored and a PNY02 write cannot erase a PNY01 sale", async () => {
+  const at = "2026-11-05T12:00:00.000Z";
+  const sheet = new LocalSheet();
+  const first = new SheetDb(sheet, 0);
+  await first.transaction(async (tx) => {
+    tx.state.shifts.push(
+      { id: "s1", sccx_shift_id: "pny01-shift", staff_uid: "staff-a", store_code: "PNY01", ticket_letter: "A", ticket_seq: 1, pin_hash: "hash", pin_expires_at: null, pin_failed_attempts: 0, status: "ACTIVE", started_at: at, ended_at: null, end_reason: null, opening_confirmed_at: at, refill_confirmed_at: null, created_at: at },
+      { id: "s2", sccx_shift_id: "pny02-shift", staff_uid: "staff-b", store_code: "PNY02", ticket_letter: "B", ticket_seq: 1, pin_hash: "hash", pin_expires_at: null, pin_failed_attempts: 0, status: "ENDED", started_at: at, ended_at: at, end_reason: "POS_END", opening_confirmed_at: at, refill_confirmed_at: null, created_at: at },
+    );
+    tx.state.balances.push({ sku: "188", qty: 60, store_code: "PNY02", updated_at: at, created_at: at });
+    tx.state.closings.push({ id: "c2", shift_id: "s2", final_deposit_cents: 0 } as never);
+  });
+  const valid = (sheet.tabs.POS_Staff ?? []).filter((row) => row.record_type === "STATE" && row.doc);
+  sheet.tabs.POS_Staff.push({ row_id: "STATE-070", record_type: "STATE", doc: "{\"stale\":true}" });
+  const parsed = readStateFromStaff(sheet.tabs.POS_Staff ?? []);
+  assert.equal(parsed?.recovered, true);
+  assert.equal(parsed?.state.shifts.find((row) => row.id === "s1")?.status, "ACTIVE");
+  assert.equal(parsed?.state.balances.find((row) => row.store_code === "PNY02")?.qty, 60);
+
+  const pny01 = new SheetDb(sheet, 60_000);
+  const pny02 = new SheetDb(sheet, 60_000);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const write01 = pny01.transaction(async (tx) => {
+    await gate;
+    tx.state.sales.push({ id: "sale-01", shift_id: "s1", staff_uid: "staff-a", payment_method: "CASH", status: "COMPLETED", total_cents: 1000, ref_no: "PNY-1", created_at: at } as never);
+  });
+  const write02 = pny02.transaction(async (tx) => {
+    const row = tx.state.balances.find((item) => item.sku === "188" && item.store_code === "PNY02");
+    if (row) row.qty = 59;
+  });
+  release();
+  await Promise.all([write01, write02]);
+
+  const again = readStateFromStaff(sheet.tabs.POS_Staff ?? []);
+  assert.equal(again?.recovered, false);
+  assert.equal(again?.state.sales.some((row) => row.id === "sale-01"), true);
+  assert.equal(again?.state.balances.find((row) => row.sku === "188" && row.store_code === "PNY02")?.qty, 59);
+  assert.equal(again?.state.shifts.find((row) => row.id === "s1")?.status, "ACTIVE");
+  const tail = (sheet.tabs.POS_Staff ?? []).find((row) => row.row_id === "STATE-070");
+  assert.equal(tail?.record_type, "STATE_RETIRED");
+  assert.equal(tail?.doc ?? "", "");
+  assert.equal(valid.length > 0, true);
+  const p1 = (sheet.tabs.POS_Staff ?? []).some((row) => row.record_type === "STATE_P1" && row.doc);
+  const p2 = (sheet.tabs.POS_Staff ?? []).some((row) => row.record_type === "STATE_P2" && row.doc);
+  assert.equal(p1 && p2, true);
 });

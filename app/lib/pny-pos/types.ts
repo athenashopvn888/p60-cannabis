@@ -330,6 +330,11 @@ export type State = {
   deposit_seq_pny02?: number;
   /** One master stock id per store. Missing until the first close after labels shipped. */
   stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
+  /** Bumped on every saved write. A stale cache must not overwrite a higher revision. */
+  state_revision?: number;
+  state_write_token?: string;
+  revision_pny01?: number;
+  revision_pny02?: number;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */
