@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, signedMoney, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -325,10 +325,9 @@ test("8. the total is the sum of server prices with tax included and client pric
   assert.equal(h.db.state.sale_lines.every((line) => line.unit_price_cents !== 1 && line.unit_price_cents !== 5), true);
 });
 
-test("9. a deposit above cash on hand is rejected and header totals follow sale, deposit and void", async () => {
+test("9. header totals follow sale, deposit and void", async () => {
   const h = await readyTill();
   await h.svc.cashout(h.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
-  await rejects(() => h.svc.deposit(h.token, { key: "too-much", amount_cents: 1001 }), "OVER_COH");
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 400, note: "safe" });
   const mid = await h.svc.state(h.token);
   assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400 });
@@ -1438,7 +1437,6 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(dropped.debit_sales_cents, 1000);
   assert.equal(dropped.deposited_cents, 500);
   assert.equal(dropped.cash_on_hand_cents, 1500);
-  await rejects(() => svc.deposit(login.token, { key: "test01-over", amount_cents: 1600 }), "OVER_COH");
 
   const till = await svc.state(login.token);
   assert.equal(till.totals.sales_cents, 3000);
@@ -2265,12 +2263,59 @@ test("a deposit equal to cash on hand is allowed", async () => {
   assert.equal(rounded.cash_on_hand_cents, 0);
   const over = await readyTill();
   await over.svc.cashout(over.token, { key: "over-sale", lines: [{ sku: "1001", qty: 1 }] });
-  await rejects(() => over.svc.deposit(over.token, { key: "over", amount_cents: 1000.6 }), "OVER_COH");
+  const overDrop = await over.svc.deposit(over.token, { key: "over", amount_cents: 1000.6 });
+  assert.equal(overDrop.deposited_cents, 1001);
+  assert.equal(overDrop.cash_on_hand_cents, -1);
   const close = await readyTill();
   await close.svc.cashout(close.token, { key: "final-sale", lines: [{ sku: "1001", qty: 1 }] });
   const finalDeposit = await close.svc.saveFinalDeposit(close.token, { amount_cents: 1000 });
   assert.equal(finalDeposit.final_deposit_cents, 1000);
   assert.equal(finalDeposit.cash_on_hand_cents, 1000);
+});
+
+test("a deposit above recorded cash is kept and the shift can end over or short", async () => {
+  assert.equal(signedMoney(250), "+$2.50");
+  assert.equal(signedMoney(-250), "-$2.50");
+  assert.equal(signedMoney(0), "$0.00");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.doesNotMatch(service, /OVER_COH/);
+  assert.match(service, /DEPOSIT_ABOVE/);
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  assert.match(closeUi, /Till balance/);
+  assert.match(closeUi, /signedMoney\(tillBalance\)/);
+  assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
+  assert.doesNotMatch(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /larger deposit is blocked/);
+
+  const over = await readyTill();
+  await over.svc.cashout(over.token, { key: "over-sale", lines: [{ sku: "1001", qty: 1 }] });
+  await rejects(() => over.svc.deposit(over.token, { key: "zero", amount_cents: 0 }), "BAD_AMOUNT");
+  await rejects(() => over.svc.deposit(over.token, { key: "neg", amount_cents: -100 }), "BAD_AMOUNT");
+  await rejects(() => over.svc.saveFinalDeposit(over.token, { amount_cents: -1 }), "BAD_AMOUNT");
+  const dropped = await over.svc.deposit(over.token, { key: "over-drop", amount_cents: 1500 });
+  assert.equal(dropped.deposited_cents, 1500);
+  assert.equal(dropped.cash_on_hand_cents, -500);
+  const saved = await over.svc.saveFinalDeposit(over.token, { amount_cents: 200 });
+  assert.equal(saved.final_deposit_cents, 200);
+  const view = await over.svc.state(over.token);
+  const ended = await over.svc.endShiftFromPos(over.token, {
+    key: "end-over",
+    final_deposit_cents: 200,
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.expected_qty })),
+  });
+  assert.equal(ended.closing.deposited_cents, 1700);
+  assert.equal(ended.closing.cash_on_hand_cents, -700);
+  assert.equal(ended.closing.balance_cents, -700);
+
+  const short = await readyTill();
+  await short.svc.cashout(short.token, { key: "short-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const shortView = await short.svc.state(short.token);
+  const shortEnd = await short.svc.endShiftFromPos(short.token, {
+    key: "end-short",
+    final_deposit_cents: 400,
+    lines: (shortView.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.expected_qty })),
+  });
+  assert.equal(shortEnd.closing.balance_cents, 600);
+  assert.equal(shortEnd.closing.cash_on_hand_cents, 600);
 });
 
 test("each new deposit gets a unique slip number and a past deposit stays n/a", async () => {

@@ -11,6 +11,13 @@ export function roundCents(amountCents: number) {
   return Math.round(Number(amountCents));
 }
 
+/** Till balance with an explicit sign. Zero stays $0.00. */
+export function signedMoney(cents: number) {
+  const rounded = roundCents(cents);
+  if (rounded > 0) return `+${formatMoney(rounded)}`;
+  return formatMoney(rounded);
+}
+
 /** True only when the deposit is strictly above cash on hand, after both amounts are rounded to cents. */
 export function depositAboveCash(amountCents: number, cashOnHandCents: number) {
   return roundCents(amountCents) > roundCents(cashOnHandCents);
