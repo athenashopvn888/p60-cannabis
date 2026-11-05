@@ -297,8 +297,22 @@
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.footerActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.total {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .order {
@@ -313,6 +327,21 @@
 
 .order:disabled {
   background: #94a3b8;
+}
+
+.clear {
+  min-height: 48px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #fff;
+  color: #475569;
+  font-weight: 600;
+  padding: 0 14px;
+}
+
+.clear:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
 }
 
 .ticket {
