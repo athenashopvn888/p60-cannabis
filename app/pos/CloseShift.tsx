@@ -41,7 +41,7 @@ export default function CloseShift({
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: () => Promise<void>;
   onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number) => Promise<void>;
+  onConfirm: (depositCents: number) => Promise<void | string>;
   onClose: () => void;
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
@@ -56,6 +56,7 @@ export default function CloseShift({
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
   const [localError, setLocalError] = useState("");
   const [locking, setLocking] = useState(false);
+  const [closeLabel, setCloseLabel] = useState("");
   const openingOff = (stockCheck?.opening.lines ?? []).filter((line) => line.off !== 0);
   const closingOff = (stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0);
 
@@ -95,7 +96,8 @@ export default function CloseShift({
             if (locking) return;
             setLocking(true);
             void onSaveDeposit(depositCents).then(async (saved) => {
-              await onConfirm(depositCents);
+              const label = await onConfirm(depositCents);
+              if (typeof label === "string") setCloseLabel(label);
               const code = saved && typeof saved === "object" ? saved.deposit_code : null;
               if (code) {
                 setSlipCode(code);
@@ -127,6 +129,7 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(drop)}</strong></div>
             <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
             <div className={styles.summaryRow} data-testid="till-balance"><span>Till balance</span><strong>{signedMoney(tillBalance)}</strong></div>
+            {closeLabel ? <div className={styles.summaryRow} data-testid="close-label"><span>Close label</span><strong>{closeLabel}</strong></div> : null}
             <section className={styles.stockBlue} data-testid="opening-stock-check">
               <h3>Opening verify count</h3>
               <p>{stockCheck?.opening.ready === false ? "Count still open" : openingOff.length === 1 ? "1 SKU off" : `${openingOff.length} SKUs off`}</p>
