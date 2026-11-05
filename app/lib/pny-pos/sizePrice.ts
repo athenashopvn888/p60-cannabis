@@ -155,7 +155,7 @@ function cigarettePackQuote(sku: string, catalog: ReturnType<typeof catalogFromF
 }
 
 export function rawPriceRows() {
-  const rows: { SKU: string; Unit_Price: string; Unit: string; Source: string }[] = [];
+  const rows: { SKU: string; Name: string; Category: string; Unit_Price: string; Unit: string; Source: string; Price_Flag: string }[] = [];
   const seen = new Set<string>();
   for (const line of paperLines()) {
     if (seen.has(line.sku)) continue;
