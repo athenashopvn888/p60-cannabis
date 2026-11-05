@@ -62,7 +62,7 @@ export default function TillSummary({
     close_cents: closeCents,
   });
   const final = balancePhrase(raw);
-  const tone = (cents: number) => (cents > 0 ? styles.offShort : cents < 0 ? styles.offOver : styles.offEven);
+  const tone = (cents: number) => (cents < 0 ? styles.offShort : cents > 0 ? styles.offOver : styles.offEven);
   const finalClass = final.tone === "over" ? styles.finalOver : final.tone === "short" ? styles.finalShort : styles.offEven;
 
   return (
