@@ -724,6 +724,17 @@ function staffOffLine(state: State, sku: string, off: number) {
   return { sku, text: staffSkuText(sku, size), off };
 }
 
+function shelfCents(state: State, sku: string, raw?: Map<string, number>) {
+  const priced = sellingPriceCents(state, sku, raw);
+  if (priced > 0) return priced;
+  return quoteForSku(sku)?.cents ?? 0;
+}
+
+function pricedOff(state: State, sku: string, off: number, raw?: Map<string, number>) {
+  const price = shelfCents(state, sku, raw);
+  return { ...staffOffLine(state, sku, off), cents: off * price };
+}
+
 function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
   if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
@@ -739,14 +750,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   const opening = skus.flatMap((sku) => {
     const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
-    return [staffOffLine(state, sku, row.counted_qty - row.expected_qty)];
+    return [pricedOff(state, sku, row.counted_qty - row.expected_qty, raw)];
   });
   const openingLines = arrangeOff(opening, skus).filter((line) => line.off !== 0);
   const closePlan = [...shiftClosePlan(state, shift.id, raw)].sort((a, b) => compareCount(countMeta(state, a.sku), countMeta(state, b.sku)));
   const closing = closePlan.flatMap((line) => {
     const counted = draft?.counts.find((row) => row.sku === line.sku)?.counted_qty;
     if (counted == null) return [];
-    return [staffOffLine(state, line.sku, counted - line.expected_qty)];
+    return [pricedOff(state, line.sku, counted - line.expected_qty, raw)];
   });
   const closingUsesEdit = Boolean(draft?.counts.some((row) => row.edited_at || row.accepted_as_is));
   const closingSubmitted = Boolean(draft?.closing_submitted_at);
@@ -754,14 +765,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     const row = draft?.counts.find((entry) => entry.sku === line.sku);
     if (!row || row.accepted_as_is) return [];
     const expected = row.edited_at ? (row.expected_qty ?? line.expected_qty) : line.expected_qty;
-    return [staffOffLine(state, line.sku, row.counted_qty - expected)];
+    return [pricedOff(state, line.sku, row.counted_qty - expected, raw)];
   });
   const closingSource = closingUsesEdit ? closingCompared : closing;
   const closingAll = arrangeOff(closingSource, closePlan.map((line) => line.sku));
   const closingReady = closingSubmitted || (!closingUsesEdit && closePlan.length > 0 && closing.length === closePlan.length);
   const closingLines = closingReady ? closingAll.filter((line) => line.off !== 0) : [];
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
-  const refills = refillIssues(state, shift.id);
+  const refills = refillIssues(state, shift.id, raw);
   return {
     verify: {
       show_banner: showBanner,
@@ -811,7 +822,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   };
 }
 
-function refillIssues(state: State, shiftId: string) {
+function refillIssues(state: State, shiftId: string, raw?: Map<string, number>) {
   const grouped = new Map<string, { sent: number; received: number }>();
   for (const row of state.incoming) {
     if (row.confirmed_shift_id !== shiftId) continue;
@@ -826,9 +837,30 @@ function refillIssues(state: State, shiftId: string) {
     if (!totals || totals.received === totals.sent) return [];
     const product = state.products.find((row) => row.sku === sku);
     const size = sizeLabel(sku, product?.category, product?.name);
-    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff: totals.received - totals.sent }];
+    const diff = totals.received - totals.sent;
+    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff, cents: diff * shelfCents(state, sku, raw) }];
   });
   return { count: lines.length, lines };
+}
+
+function previousClosing(state: State, shift: ShiftRow) {
+  const previous = state.shifts
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
+  if (!previous) return null;
+  return state.closings.find((row) => row.shift_id === previous.id) ?? null;
+}
+
+function floatCheck(state: State, shift: ShiftRow) {
+  const previous = previousClosing(state, shift);
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
+  if (!previous) return { required: false, done: true, expected_cents: 0, found_cents: null as number | null };
+  return {
+    required: true,
+    done: draft?.float_found_cents != null,
+    expected_cents: previous.float_cents ?? 0,
+    found_cents: draft?.float_found_cents ?? null,
+  };
 }
 
 function countSkus(state: State) {
@@ -874,7 +906,7 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   ].filter(Boolean).join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, floatCents = 0): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
@@ -890,6 +922,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     cash_on_hand_cents: totals.cash_on_hand_cents,
     deposited_cents: totals.deposited_cents,
     final_deposit_cents: finalDepositCents,
+    float_cents: floatCents,
     shortage_cents: shortage,
     overage_cents: overage,
     balance_cents: closingBalance({
@@ -913,7 +946,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, closing.float_cents ?? 0);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
@@ -1971,6 +2004,8 @@ export class PosService {
         stock_check: counted.stock_check,
         verify_admin: counted.verify_admin,
         final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
+        float_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.float_cents ?? 0,
+        float_check: floatCheck(tx.state, shift),
         incoming,
         tickets,
         pending_count: pendingCount,
@@ -2988,7 +3023,25 @@ export class PosService {
     });
   }
 
-  async saveFinalDeposit(token: string, input: { amount_cents: number }) {
+  async saveOpeningFloat(token: string, input: { found_cents: number }) {
+    return this.db.transaction(async (tx) => {
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot check the float.");
+      const found = roundCents(input.found_cents);
+      if (!Number.isFinite(found) || found < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the cash left in the till.");
+      const previous = previousClosing(tx.state, shift);
+      if (!previous) throw new PosError(409, "NO_FLOAT", "There is no previous close to check.");
+      const expected = previous.float_cents ?? 0;
+      const draft = ensureDraft(tx.state, shift.id, this.now());
+      draft.float_found_cents = found;
+      draft.float_expected_cents = expected;
+      draft.updated_at = iso(this.now());
+      return { ok: true, expected_cents: expected, found_cents: found, gap_cents: found - expected };
+    });
+  }
+
+  async saveFinalDeposit(token: string, input: { amount_cents: number; float_cents?: number }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
@@ -3003,6 +3056,11 @@ export class PosService {
         drafts.push(draft);
       }
       draft.final_deposit_cents = amount;
+      if (input.float_cents != null) {
+        const floatCents = roundCents(input.float_cents);
+        if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
+        draft.float_cents = floatCents;
+      }
       if (amount > 0) {
         draft.final_deposit_code = draft.final_deposit_code || issueDepositCode(tx.state);
       } else if (draft.final_deposit_code) {
@@ -3011,11 +3069,11 @@ export class PosService {
         releaseTailDepositCode(tx.state, issued);
       }
       draft.updated_at = iso(this.now());
-      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
+      return { ok: true, final_deposit_cents: amount, float_cents: draft.float_cents ?? 0, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
     });
   }
 
-  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
+  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number; float_cents?: number }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
     const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
@@ -3032,6 +3090,8 @@ export class PosService {
       const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
       const finalDeposit = roundCents(input.final_deposit_cents ?? 0);
       if (!Number.isFinite(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
+      const floatCents = roundCents(input.float_cents ?? draft?.float_cents ?? 0);
+      if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
       const at = iso(now);
       if (finalDeposit > 0) {
         const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
@@ -3106,7 +3166,7 @@ export class PosService {
         }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
-      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit);
+      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit, floatCents);
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);

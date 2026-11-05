@@ -1473,6 +1473,54 @@
   color: #1c1917;
 }
 
+.finalOver {
+  color: #16a34a;
+  font-size: 22px;
+}
+
+.finalShort {
+  color: #dc2626;
+  font-size: 22px;
+}
+
+.adjGrid {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.adjHead,
+.adjLine {
+  display: grid;
+  grid-template-columns: 1.5fr 0.7fr 0.9fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.adjHead {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #44403c;
+}
+
+.adjLine {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.12);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.adjEmpty {
+  margin: 8px 0 0;
+}
+
+.fieldLabel {
+  display: block;
+  margin: 12px 0 4px;
+  font-weight: 700;
+}
+
 .gapPanel {
   position: fixed;
   inset: 0;
