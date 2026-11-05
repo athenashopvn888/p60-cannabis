@@ -22,6 +22,7 @@ import { POST as openTicket } from "../../pos/tickets/[id]/open/route";
 import { POST as unlock } from "../../pos/till/unlock/route";
 import { POST as startingStock } from "../stock/starting/route";
 import { json } from "@/app/lib/pny-pos/http";
+import { singleStoreSite } from "@/app/lib/pny-pos/singleStore";
 import { runStore } from "@/app/lib/pny-pos/storeContext";
 import { PNY02_STORE } from "@/app/lib/pny-pos/storeProfile";
 
@@ -64,6 +65,7 @@ function ticketRoute(slug: string): { handler: Handler; id: string } | null {
 }
 
 async function dispatch(method: "GET" | "POST", request: Request, slug: string) {
+  if (singleStoreSite()) return json({ ok: false, error: "This site runs one store." }, 404);
   const ticket = method === "POST" ? ticketRoute(slug) : null;
   const handler = ticket?.handler ?? (method === "GET" ? getRoutes[slug] : postRoutes[slug]);
   if (!handler) return json({ ok: false, error: "Not found." }, 404);

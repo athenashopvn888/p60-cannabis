@@ -778,6 +778,8 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
     DATABASE_URL: process.env.DATABASE_URL,
     PNY_POS_DEMO: process.env.PNY_POS_DEMO,
     VERCEL_ENV: process.env.VERCEL_ENV,
+    STORE_CODE: process.env.STORE_CODE,
+    POS_STATE_BACKEND: process.env.POS_STATE_BACKEND,
     GSHEET_ID: process.env.GSHEET_ID,
     GOOGLE_SA_PNY_CLIENT_EMAIL: process.env.GOOGLE_SA_PNY_CLIENT_EMAIL,
     GOOGLE_SA_PNY_PRIVATE_KEY: process.env.GOOGLE_SA_PNY_PRIVATE_KEY,
@@ -794,6 +796,8 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   try {
     delete process.env.DATABASE_URL;
     delete process.env.PNY_POS_DEMO;
+    delete process.env.STORE_CODE;
+    delete process.env.POS_STATE_BACKEND;
     delete process.env.GSHEET_ID;
     delete process.env.GOOGLE_SA_PNY_CLIENT_EMAIL;
     delete process.env.GOOGLE_SA_PNY_PRIVATE_KEY;

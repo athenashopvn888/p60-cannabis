@@ -402,6 +402,7 @@ export class SheetDb implements PosDb {
   }
 
   private async save(state: State, previousPny2 = "") {
+    if (process.env.PNY_SHEET_READ_ONLY === "1") return;
     await this.ensure();
     for (const group of this.project(state)) {
       if (group.rows.length) await this.sheet.upsert(group.tab, group.rows);

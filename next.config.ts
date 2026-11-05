@@ -54,6 +54,7 @@ const cigaretteRedirects = SHOW_CIGARETTES ? [] : [
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pg"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "p60cannabis.com" },
