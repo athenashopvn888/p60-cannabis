@@ -42,6 +42,7 @@ import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
+import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -866,6 +867,7 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
     `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
     `Left: ${shown}${more}`,
+    closing.close_label ? `Close: ${closing.close_label}` : "",
     closing.no_count ? "No count taken" : "",
   ].filter(Boolean).join("\n");
 }
@@ -902,6 +904,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     sccx_attempts: 0,
     no_count: noCount,
     created_at: at,
+    close_label: stampCloseLabel(state, shift, at).close_label,
   };
   return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base) };
 }
@@ -916,7 +919,10 @@ function finishShift(state: State, shift: ShiftRow, reason: string, at: string, 
   shift.pin_expires_at = at;
   revokeSessions(state, shift.id, at);
   fresh.summary_text = summaryText(shift, state.staff.find((row) => row.staff_uid === shift.staff_uid)?.pos_id ?? "", fresh);
-  if (!state.closings.some((row) => row.shift_id === shift.id)) state.closings.push(fresh);
+  if (!state.closings.some((row) => row.shift_id === shift.id)) {
+    state.closings.push(fresh);
+    queueCloseSnapshot(state, shift, fresh, fresh.closing_lines);
+  }
   return fresh;
 }
 
@@ -1249,9 +1255,13 @@ export class PosService {
     this.db = db;
     this.deps = deps;
     db.onCommit = (state) => {
+      if (!this.deps.sheet.configured) return;
       const rows = takeStockHistory(state);
-      if (!rows.length || !this.deps.sheet.configured) return;
-      void this.deps.sheet.appendStockHistory(rows).catch(() => undefined);
+      if (rows.length) void this.deps.sheet.appendStockHistory(rows).catch(() => undefined);
+      const labels = takeNewStockLabels(state);
+      if (labels.length && this.deps.sheet.appendStockLabels) void this.deps.sheet.appendStockLabels(labels).catch(() => undefined);
+      const snapshots = takeCloseSnapshots(state);
+      if (snapshots.length && this.deps.sheet.appendCloseSnapshots) void this.deps.sheet.appendCloseSnapshots(snapshots).catch(() => undefined);
     };
   }
 
@@ -3006,7 +3016,9 @@ export class PosService {
   async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
+    const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
     return this.db.transaction(async (tx) => {
+      adoptStockLabels(tx.state, knownLabels);
       const now = this.now();
       const seen = replay(tx.state, "pos_end", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
@@ -3096,7 +3108,7 @@ export class PosService {
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
-      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, closing: saved };
+      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, closing: saved };
       remember(tx.state, "pos_end", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
@@ -3475,6 +3487,7 @@ export class PosService {
           no_count: closing.no_count,
           money_unit: "cents",
           summary_text: closing.summary_text,
+          close_label: closing.close_label ?? null,
         }];
       });
       return { ok: true as const, store: code, closings };
@@ -3525,6 +3538,7 @@ export class PosService {
           no_count: closing.no_count,
           money_unit: "cents",
           summary_text: closing.summary_text,
+          close_label: closing.close_label ?? null,
         };
       });
       return { ok: true, closings };

@@ -225,6 +225,8 @@ export type ClosingRow = {
   no_count: boolean;
   summary_text: string;
   created_at: string;
+  /** Master plus close date, such as PNY-1104-1105. Missing on closings saved before labels. */
+  close_label?: string;
 };
 
 export type ClosingDraftRow = {
@@ -326,6 +328,8 @@ export type State = {
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;
+  /** One master stock id per store. Missing until the first close after labels shipped. */
+  stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

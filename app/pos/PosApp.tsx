@@ -331,8 +331,12 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
+      const saved = await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
       setCart({});
+      const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
+        ? (saved.closing as { close_label: string }).close_label
+        : typeof saved.close_label === "string" ? saved.close_label : "";
+      return label;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
     } finally {

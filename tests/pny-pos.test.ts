@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
-import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, signedMoney, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
@@ -30,6 +30,7 @@ import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
 import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
+import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -2604,6 +2605,49 @@ test("stock history uses the quarterly spreadsheet and monthly tab when configur
     if (saved == null) delete process.env.PNY_HISTORY_SHEETS;
     else process.env.PNY_HISTORY_SHEETS = saved;
   }
+});
+
+test("final deposit stamps the stock close label and appends a snapshot", async () => {
+  assert.equal(masterIdFor("PNY01", "2026-11-04"), "PNY-1104");
+  assert.equal(closeLabelFor("PNY-1104", "2026-11-05T15:00:00.000Z"), "PNY-1104-1105");
+  assert.equal(masterIdFor("PNY02", "2026-11-06"), "PNY2-1106");
+  const h = await readyTill({ "1001": 4, "1002": 2 });
+  h.sheet.configured = true;
+  const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
+  assert.equal(shift?.status, "ACTIVE");
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 3 });
+  await h.svc.submitClosingCount(h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "label-end", final_deposit_cents: 0, lines: [] });
+  assert.equal(ended.close_label, "PNY-1104-1103");
+  assert.match(ended.summary_text ?? "", /Close: PNY-1104-1103/);
+  assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.status, "ENDED");
+  assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.master_id, "PNY-1104");
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.start_date, "2026-11-04");
+  assert.equal(h.sheet.tabs.Stock_Labels?.[0]?.store, "PNY01");
+  const flower = h.sheet.tabs.Close_Snapshots?.find((row) => row.sku === "1001");
+  const plain = h.sheet.tabs.Close_Snapshots?.find((row) => row.sku === "1002");
+  assert.equal(flower?.close_label, "PNY-1104-1103");
+  assert.equal(flower?.name, "Flower");
+  assert.equal(flower?.category, "Flower");
+  assert.equal(flower?.qty, "3");
+  assert.equal(flower?.discrepancy, "-1");
+  assert.equal(plain?.qty, "2");
+  assert.equal(plain?.discrepancy, "0");
+  const feed = await h.svc.readClosings();
+  assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.close_label, "PNY-1104-1103");
+  assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.cash_sales, 0);
+  const started = await h.svc.startShift({ key: "label-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-b" });
+  const next = await h.svc.login(String(started.pin), "10.4.0.2");
+  await h.svc.endShiftFromPos(next.token, { key: "label-end-2", final_deposit_cents: 0, lines: [] });
+  assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
+
+  const fresh = emptyState();
+  const first = ensureStockLabel(fresh, "PNY02", "2026-11-06T15:00:00.000Z", "2026-11-06T15:00:00.000Z");
+  const kept = ensureStockLabel(fresh, "PNY02", "2026-12-01T15:00:00.000Z", "2026-12-01T15:00:00.000Z");
+  assert.equal(first.master_id, "PNY2-1106");
+  assert.equal(kept.master_id, first.master_id);
+  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
 });
 
 test("closing count lets staff keep selling and a later sale keeps the difference", async () => {
