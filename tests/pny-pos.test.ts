@@ -2409,3 +2409,42 @@ test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async ()
   assert.equal(PNY02_STORE.stockTab, "PNY2");
   assert.doesNotMatch(readFileSync("app/lib/pny-pos/sheetStore.ts", "utf8"), /upsert\("PNY01"/);
 });
+
+test("stock history appends one row per changed SKU and a sheet failure still sells", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 2 });
+  h.sheet.configured = true;
+  const sold = await h.svc.cashout(h.token, { key: "hist-sale", lines: [{ sku: "1001", qty: 1 }, { sku: "1002", qty: 2 }] });
+  const rows = h.sheet.tabs.Stock_History ?? [];
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]?.event, "sale");
+  assert.equal(rows[0]?.store, "PNY01");
+  assert.equal(rows[0]?.source, "pos");
+  assert.equal(rows[0]?.note, sold.ref_no);
+  assert.equal(rows[0]?.sku, "1001");
+  assert.equal(rows[0]?.delta, "-1");
+  assert.equal(rows[0]?.on_hand_after, "3");
+  assert.equal(rows[0]?.staff, "Anom");
+  assert.equal(rows[0]?.shift_id, "sccx-a");
+  assert.equal(rows[1]?.sku, "1002");
+  assert.equal(rows[1]?.delta, "-2");
+  assert.equal(rows[1]?.on_hand_after, "0");
+  const again = await h.svc.cashout(h.token, { key: "hist-sale-2", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(h.sheet.tabs.Stock_History?.length, 3);
+  assert.equal(h.sheet.tabs.Stock_History?.[0]?.note, sold.ref_no);
+  assert.equal(h.sheet.tabs.Stock_History?.[2]?.note, again.ref_no);
+  const saleId = h.db.state.sales[0]?.id ?? "";
+  await h.svc.voidSale(h.admin, { key: "hist-void", sale_id: saleId, reason: "mis-ring" });
+  const voided = (h.sheet.tabs.Stock_History ?? []).filter((row) => row.event === "void");
+  assert.equal(voided.length, 2);
+  assert.equal(voided.every((row) => row.note === sold.ref_no), true);
+  assert.equal(h.sheet.tabs.Stock_History?.[0]?.note, sold.ref_no);
+
+  const broken = await readyTill({ "1001": 2, "1002": 1 });
+  broken.sheet.configured = true;
+  broken.sheet.appendStockHistory = async () => {
+    throw new Error("sheet down");
+  };
+  const still = await broken.svc.cashout(broken.token, { key: "hist-down", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(still.ref_no.startsWith("PNY01-"), true);
+  assert.equal(qty(broken.db, "1001"), 1);
+});

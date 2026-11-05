@@ -169,6 +169,7 @@ function packState(state: State, previousParts: number): Record<string, string>[
  * Reads are cached. Unchanged reads do not write. SETB tabs are never written.
  */
 export class SheetDb implements PosDb {
+  onCommit?: (state: State) => void;
   private tail: Promise<void> = Promise.resolve();
   private cache: { state: State; at: number } | null = null;
   private ready: Promise<void> | null = null;
@@ -425,6 +426,11 @@ export class SheetDb implements PosDb {
       if (JSON.stringify(snapshot) !== JSON.stringify(loaded) || this.needsSave) {
         await this.save(snapshot, previousPny2);
         this.needsSave = false;
+      }
+      try {
+        this.onCommit?.(snapshot);
+      } catch {
+        // Stock history must not undo a committed sale.
       }
       return result;
     });
