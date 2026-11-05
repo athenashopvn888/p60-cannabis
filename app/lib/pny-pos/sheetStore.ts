@@ -41,16 +41,41 @@ function normalize(parsed: State): State {
   return base;
 }
 
-function stateFromStaffRows(rows: SheetRow[]): State | null {
+function tryState(raw: string): State | null {
+  try {
+    const value = JSON.parse(raw) as State;
+    if (!value || typeof value !== "object" || !Array.isArray(value.shifts)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the packed till state. A leftover chunk after a short write is dropped so sign-in can proceed. */
+function stateFromStaffRows(rows: SheetRow[]): { state: State; repaired: boolean } | null {
   const parts = rows
     .filter((row) => row.record_type === "STATE" && row.row_id?.startsWith("STATE-") && row.doc)
     .sort((a, b) => a.row_id.localeCompare(b.row_id));
   if (parts.length === 0) return null;
-  try {
-    return normalize(JSON.parse(parts.map((row) => row.doc).join("")) as State);
-  } catch {
-    throw new SheetUnavailable("POS sheet state could not be read.");
+  const docs = parts.map((row) => row.doc);
+  const joined = docs.join("");
+  const direct = tryState(joined);
+  if (direct) return { state: direct, repaired: false };
+  for (let count = docs.length - 1; count >= 1; count -= 1) {
+    const parsed = tryState(docs.slice(0, count).join(""));
+    if (parsed) return { state: parsed, repaired: true };
   }
+  const head = docs.slice(0, -1).join("");
+  const tail = docs[docs.length - 1] ?? "";
+  let attempts = 0;
+  for (let at = tail.length - 1; at >= 0 && attempts < 200; at -= 1) {
+    if (tail[at] !== "}") continue;
+    attempts += 1;
+    const parsed = tryState(head + tail.slice(0, at + 1));
+    if (parsed) return { state: parsed, repaired: true };
+  }
+  console.error("state_unreadable", docs.map((doc) => doc.length).join(","));
+  throw new SheetUnavailable("POS sheet state could not be read.");
 }
 
 /** Add missing catalog SKUs. Does not create on-hand. */
@@ -239,7 +264,14 @@ export class SheetDb implements PosDb {
       const id = text(row, "row_id") || text(row, "kitchen_row_id");
       if (id) this.refillRaw.set(id, { ...row });
     }
-    const state = stateFromStaffRows(staffRows) ?? emptyState();
+    const packed = stateFromStaffRows(staffRows);
+    const state = packed ? normalize(packed.state) : emptyState();
+    if (packed?.repaired) {
+      const open = state.shifts.find((shift) => shift.store_code === "PNY01" && shift.status !== "ENDED");
+      const draft = open ? state.closing_drafts.find((row) => row.shift_id === open.id) : undefined;
+      console.error("state_recovered", open?.status ?? "none", draft?.closing_started_at ? "count-open" : "no-count");
+      this.needsSave = true;
+    }
     if (mergeCatalog(state)) this.needsSave = true;
     mergeKitchenRefills(state, refillRows);
     this.cache = { state, at: Date.now() };
