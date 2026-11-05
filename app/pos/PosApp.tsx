@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
-import { categoryChipLabel, defaultCategory, formatMoney, layoutCategoryChips, sortCategories } from "../lib/pny-pos/money";
+import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -138,7 +138,7 @@ export default function PosApp() {
   const products = view?.products ?? [];
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
   const categoryLayout = useMemo(() => layoutCategoryChips(categories), [categories]);
-  const activeCategory = categories.includes(category) ? category : defaultCategory(categories);
+  const activeCategory = categories.includes(category) ? category : posDefaultCategory(categories);
   const visible = useMemo(() => {
     const rows = view?.products ?? [];
     const q = query.trim().toLowerCase();
