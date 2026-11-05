@@ -21,7 +21,7 @@ test("STORE_CODE unset keeps the shared site on PNY01 and the sheet", () => {
   }
 });
 
-test("STORE_CODE=PNY02 locks the site to that store and can use supabase without the sheet", () => {
+test("STORE_CODE=PNY02 locks the site to that store and does not use the demo till", () => {
   const previousStore = process.env.STORE_CODE;
   const previousBackend = process.env.POS_STATE_BACKEND;
   const previousDemo = process.env.PNY_POS_DEMO;
@@ -34,7 +34,7 @@ test("STORE_CODE=PNY02 locks the site to that store and can use supabase without
     assert.equal(lockedStore()?.code, "PNY02");
     assert.equal(currentStore().code, "PNY02");
     assert.equal(currentStore().label, "PNY2");
-    assert.equal(demoMode(), true);
+    assert.equal(demoMode(), false);
   } finally {
     if (previousStore == null) delete process.env.STORE_CODE;
     else process.env.STORE_CODE = previousStore;

@@ -38,6 +38,7 @@ type View = {
   demo?: boolean;
   demo_label?: string | null;
   demo_pin?: string | null;
+  waiting_for_opening?: boolean;
   phase?: string;
   master?: boolean;
   can_sell?: boolean;
@@ -433,9 +434,10 @@ export default function PosApp({
     return (
       <main className={styles.shell} data-testid="pos-login">
         {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
+        {view.waiting_for_opening ? <div className={styles.banner} data-testid="waiting-opening">waiting for opening stock</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>{storeLabel} staff till</h1>
-          <p>Enter the 4-digit shift PIN. Five wrong tries lock the shift.</p>
+          <p>{view.waiting_for_opening ? "Opening stock has not been copied in yet." : "Enter the 4-digit shift PIN. Five wrong tries lock the shift."}</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           <div className={styles.keys}>

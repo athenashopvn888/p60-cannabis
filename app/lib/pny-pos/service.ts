@@ -1521,9 +1521,18 @@ export class PosService {
       ok: true,
       store: tillCode(),
       demo: Boolean(this.deps.demo),
-      demo_label: this.deps.demo?.label ?? null,
+      demo_label: this.deps.demo ? DEMO_LABEL : null,
       demo_pin: this.deps.demo?.pin ?? null,
     };
+  }
+
+  /** Read-only. A one-store till with no approved opening stock is waiting, never a demo. */
+  async publicStatus() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    if (!peek) return { waiting_for_opening: false };
+    const state = await peek();
+    const open = state.shifts.some((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
+    return { waiting_for_opening: !state.opening_stock_at && !open };
   }
 
   async startShift(input: { key: string; store?: string; staff_ref?: string; pos_id?: string; shift_id?: string }) {

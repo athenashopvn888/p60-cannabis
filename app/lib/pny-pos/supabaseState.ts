@@ -58,7 +58,16 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
     ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? undefined : { rejectUnauthorized: false },
   });
   let tail: Promise<void> = Promise.resolve();
-  const db: PosDb = {
+  const db: PosDb & { peek(): Promise<State> } = {
+    async peek() {
+      const client = await pool.connect();
+      try {
+        const loaded = await client.query(`select doc from pny_pos.live_state where store_code = $1`, [store]);
+        return asState(loaded.rows[0]?.doc);
+      } finally {
+        client.release();
+      }
+    },
     transaction(fn) {
       const run = tail.then(() => runOnce(fn));
       tail = run.then(() => undefined, () => undefined);

@@ -38,6 +38,7 @@ export function stateBackend(): "sheet" | "supabase" {
 }
 
 export function demoMode() {
+  if (lockedStore()) return false;
   if (process.env.PNY_POS_DEMO === "0") return false;
   if (stateBackend() === "supabase") return !sheetConfigured();
   if (sheetConfigured()) return false;

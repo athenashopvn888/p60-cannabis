@@ -10,7 +10,7 @@ export async function GET() {
     const service = await getService();
     const token = await staffToken();
     const journal = service.bootstrap().demo ? await loadDemoJournal() : undefined;
-    if (!token) return json({ ...service.bootstrap(), authenticated: false }, 401);
+    if (!token) return json({ ...service.bootstrap(), ...(await service.publicStatus()), authenticated: false }, 401);
     await beginDemoRequest(service);
     try {
       const view = { ...(await service.state(token, journal)), authenticated: true } as Record<string, unknown>;
