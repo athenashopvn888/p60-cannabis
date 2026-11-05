@@ -40,12 +40,14 @@ type Closing = {
 };
 type Staff = { staff_uid?: string; pos_id?: string; display_name?: string };
 type Balance = { sku?: string; qty?: number; store_code?: string };
+type Deposit = { shift_id?: string; amount_cents?: number; note?: string | null; deposit_code?: string | null; created_at?: string };
 export type ParsedState = {
   shifts?: Shift[];
   closing_drafts?: Draft[];
   closings?: Closing[];
   staff?: Staff[];
   balances?: Balance[];
+  deposits?: Deposit[];
   sessions?: { shift_id?: string; revoked_at?: string | null }[];
 };
 
@@ -132,5 +134,13 @@ export function reportStore(parsed: ParsedState, store: string) {
     counted,
     accepted,
     stocked_skus: stocked,
+    deposits: (parsed.deposits ?? [])
+      .filter((row) => row.shift_id === focus?.id)
+      .map((row) => ({
+        amount_cents: row.amount_cents ?? 0,
+        note: row.note ?? "",
+        deposit_code: row.deposit_code ?? null,
+        created_at: row.created_at ?? null,
+      })),
   };
 }
