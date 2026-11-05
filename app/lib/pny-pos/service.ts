@@ -44,6 +44,7 @@ import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
+import { paperLines } from "./paperRefill.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -3838,8 +3839,10 @@ export class PosService {
             });
           }
         }
-        const product = tx.state.products.find((row) => row.sku === line.sku);
-        if (!product || product.default_price_cents <= 0) unmapped.push({ sku: line.sku, qty: line.qty, reason: "no priced catalog row" });
+        const named = tx.state.products.find((row) => row.sku === line.sku);
+        const paper = paperLines().find((row) => row.sku === line.sku);
+        if (named && paper && named.name === line.sku) named.name = paper.name;
+        if (!named || named.default_price_cents <= 0) unmapped.push({ sku: line.sku, qty: line.qty, reason: "no priced catalog row" });
         const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
         if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not post PNY02 starting stock.");
         ledger(tx.state, line.sku, line.qty, "OPENING_BALANCE", "admin", null, "admin", PNY2_START_NOTE, null, at);

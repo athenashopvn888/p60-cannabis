@@ -2686,6 +2686,8 @@ test("PNY02 starting stock is added once and leaves PNY01 untouched", async () =
   const menu2 = await runStore(PNY02_STORE, () => h.svc.menu());
   assert.equal((menu2.items?.find((item) => item.sku === "172-3g")?.price_cents ?? 0) > 0, true);
   assert.equal(menu2.items?.find((item) => item.sku === "187-28g")?.name, "CHOCOLATE KUSH 28g");
+  assert.equal(menu2.items?.find((item) => item.sku === "187-3g")?.name, "CHOCOLATE KUSH 3g");
+  assert.equal(menu2.items?.find((item) => item.sku === "418-3g")?.name, "STRAWBERRY 3g");
   assert.equal(menu2.items?.some((item) => item.sku === "1001"), false);
   const menu1 = await h.svc.menu();
   assert.equal(menu1.items?.some((item) => item.sku === "172-3g" || item.sku === "188"), false);
