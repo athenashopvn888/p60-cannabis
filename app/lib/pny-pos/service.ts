@@ -1459,7 +1459,8 @@ export class PosService {
         state.balances.push({ ...row, store_code: "PNY02" });
       }
     }
-    let shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
+    let shift = state.shifts.find((row) => row.store_code === "PNY02" && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      ?? state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
     const staff = state.staff.find((row) => row.staff_uid === "staff-demo-tri") ?? state.staff[0];
     if (!shift && staff) {
       const store = state.stores.find((row) => row.code === "PNY02");
