@@ -38,6 +38,7 @@ import type { DemoDraft } from "./demoDraft.ts";
 import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } from "./verifyCount.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
+import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
@@ -52,6 +53,7 @@ import type {
   ClosingRow,
   IncomingRow,
   MovementType,
+  ProductRow,
   Secrets,
   ShiftRow,
   State,
@@ -401,24 +403,70 @@ function presentCatalogItem<T extends { sku: string; name: string; category: str
   };
 }
 
+let catalogImages: Map<string, string> | null = null;
+
+function hostedImage(sku: string) {
+  if (!catalogImages) {
+    catalogImages = new Map();
+    for (const row of catalogFromFeed(readCommittedPnyCatalog())) {
+      if (row.image_url) catalogImages.set(row.sku, row.image_url);
+    }
+  }
+  return catalogImages.get(sku) ?? null;
+}
+
+type MasterProduct = { product: ProductRow; enabled: boolean; override: number | null };
+
 function stockedCatalogRows(state: State, items: ItemIndex | null) {
   if (!items || items.size === 0) return [];
-  const rows: { sku: string; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
   for (const balance of state.balances) {
-    if (balance.qty <= 0 || parseFlowerSku(balance.sku)) continue;
+    if (balance.qty <= 0 || !balanceForStore(balance) || parseFlowerSku(balance.sku)) continue;
     const record = lookupItem(items, balance.sku);
     if (!record) continue;
     const cents = pricedItem(balance.sku, record);
     if (cents <= 0) continue;
-    rows.push({ sku: balance.sku, name: record.name, category: record.category, price_cents: cents, image_url: record.image, qty: balance.qty });
+    rows.push({ sku: balance.sku, sku_sort: skuSortKey(balance.sku), name: record.name, category: record.category, price_cents: cents, image_url: record.image || hostedImage(balance.sku), qty: balance.qty });
   }
   return rows;
 }
 
-function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null) {
+/** On-hand rows that are not already in this till's product list. Prices and photos come from the sheet catalog the old till uses. */
+function stockedMasterRows(state: State, masters: Map<string, MasterProduct>, flowers: FlowerIndex | null, items: ItemIndex | null) {
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number; flower_type: string; thc: string; price_source: "RAW_UNIT" }[] = [];
+  for (const balance of state.balances) {
+    if (balance.qty <= 0 || !balanceForStore(balance)) continue;
+    if (state.products.some((product) => product.sku === balance.sku)) continue;
+    const hit = masters.get(balance.sku);
+    if (!hit?.product.setb_active || !hit.enabled) continue;
+    const shown = presentCatalogItem({
+      sku: hit.product.sku,
+      sku_sort: hit.product.sku_sort,
+      name: hit.product.name,
+      category: hit.product.category,
+      price_cents: hit.override ?? hit.product.default_price_cents,
+      image_url: hit.product.image_url || hostedImage(balance.sku),
+      qty: balance.qty,
+      flower_type: "",
+      thc: "",
+    }, flowers, items);
+    if (shown.price_cents <= 0) continue;
+    rows.push({ ...shown, qty: balance.qty, price_source: "RAW_UNIT" });
+  }
+  return rows;
+}
+
+function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null, masters?: Map<string, MasterProduct>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === sku);
   const record = lookupItem(items, sku);
+  const master = !product ? masters?.get(sku) : undefined;
+  if (master?.product.setb_active && master.enabled) {
+    const fromFlower = flowerPriceCents(flowers, sku);
+    const pack = cigarettePackCents(sku, master.product.category, master.product.name);
+    const cents = fromFlower ?? pack ?? raw?.get(sku) ?? master.override ?? master.product.default_price_cents;
+    if (cents > 0) return { cents, source: fromFlower != null || pack != null || raw?.get(sku) != null ? "RAW_UNIT" as const : "SETB_DEFAULT" as const, product: master.product };
+  }
   if (!product?.setb_active || !storeProduct?.enabled) {
     if (!record) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
     const cents = pricedItem(sku, record);
@@ -1284,6 +1332,7 @@ export class PosService {
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
   private flowerFlight: Promise<FlowerIndex> | null = null;
+  private masterCache: { at: number; map: Map<string, MasterProduct> } | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -1393,6 +1442,32 @@ export class PosService {
     }
     this.flowerCache = { at: now, index };
     return index;
+  }
+
+  /** Product names, photos, and tier prices from the sheet catalog. Read only. On-hand stays in this till. */
+  private async sheetMasters() {
+    const now = this.now().getTime();
+    if (this.masterCache && now - this.masterCache.at < RAW_PRICE_TTL_MS) return this.masterCache.map;
+    const map = new Map<string, MasterProduct>();
+    if (!this.deps.sheet.configured) return map;
+    try {
+      const rows = await this.deps.sheet.readRows("POS_Staff");
+      const parts = rows
+        .filter((row) => row.record_type === "STATE" && String(row.row_id ?? "").startsWith("STATE-") && row.doc)
+        .sort((a, b) => String(a.row_id).localeCompare(String(b.row_id)));
+      if (parts.length === 0) return map;
+      const parsed = JSON.parse(parts.map((row) => row.doc).join("")) as State;
+      const code = tillCode();
+      for (const product of parsed.products ?? []) {
+        const store = (parsed.store_products ?? []).find((item) => item.sku === product.sku && (code === "PNY01" ? !item.store_code || item.store_code === "PNY01" : item.store_code === code));
+        if (store && !store.enabled) continue;
+        map.set(product.sku, { product, enabled: true, override: store?.price_override_cents ?? null });
+      }
+    } catch {
+      return this.masterCache?.map ?? map;
+    }
+    this.masterCache = { at: now, map };
+    return map;
   }
 
   /** Non-flower names, prices, and pictures from Items_raw_price. An empty sheet keeps the current catalog. */
@@ -1880,7 +1955,7 @@ export class PosService {
   }
 
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
@@ -1906,9 +1981,10 @@ export class PosService {
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const seen = new Set(products.map((product) => product.sku));
-      for (const extra of stockedCatalogRows(tx.state, items)) {
+      for (const extra of [...stockedCatalogRows(tx.state, items), ...stockedMasterRows(tx.state, masters, flowers, items)]) {
         if (seen.has(extra.sku)) continue;
-        products.push({ ...extra, sku_sort: skuSortKey(extra.sku), price_source: "RAW_UNIT" });
+        seen.add(extra.sku);
+        products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
@@ -2184,7 +2260,7 @@ export class PosService {
 
   async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -2211,7 +2287,7 @@ export class PosService {
       }
       const lines = mergeLines(input.lines);
       const priced = lines.map((line) => {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
       let stockout = false;
@@ -3370,7 +3446,7 @@ export class PosService {
   async menu() {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.store === tillCode() && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
-    const [raw, flowers, itemCatalog] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, itemCatalog, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const notes = await this.rawCartonNotes();
     const body = await this.db.transaction(async (tx) => {
       const now = iso(this.now());
@@ -3408,8 +3484,9 @@ export class PosService {
         })
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
       const seen = new Set(items.map((item) => item.sku));
-      for (const extra of stockedCatalogRows(tx.state, itemCatalog)) {
+      for (const extra of [...stockedCatalogRows(tx.state, itemCatalog), ...stockedMasterRows(tx.state, masters, flowers, itemCatalog)]) {
         if (seen.has(extra.sku) || extra.qty <= 0) continue;
+        seen.add(extra.sku);
         const carton = notes.get(extra.sku);
         items.push({
           sku: extra.sku,
@@ -3418,6 +3495,8 @@ export class PosService {
           price_cents: extra.price_cents,
           image_url: extra.image_url,
           availability: "Available" as const,
+          ...("flower_type" in extra && extra.flower_type ? { flower_type: extra.flower_type } : {}),
+          ...("thc" in extra && extra.thc ? { thc: extra.thc } : {}),
           ...(carton ? { carton_note: carton } : {}),
         });
       }
@@ -3438,7 +3517,7 @@ export class PosService {
   async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -3451,7 +3530,7 @@ export class PosService {
       const lines = mergeLines(input.lines);
       for (const line of lines) {
         try {
-          priceOf(tx.state, line.sku, raw, flowers, items);
+          priceOf(tx.state, line.sku, raw, flowers, items, masters);
         } catch {
           throw new PosError(400, "ITEM_UNAVAILABLE", "An item in that order is unavailable.");
         }
@@ -3476,7 +3555,7 @@ export class PosService {
       });
       let total = 0;
       for (const line of lines) {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }

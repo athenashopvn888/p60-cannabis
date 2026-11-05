@@ -12,7 +12,7 @@ function Grid({ lines, testId }: { lines: AdjustLine[]; testId: string }) {
         <span>Units</span>
         <span>$</span>
       </div>
-      {lines.length === 0 ? <p className={styles.adjEmpty}>None off</p> : null}
+      {lines.length === 0 ? <p className={styles.adjEmpty}>All matched</p> : null}
       {lines.map((line) => {
         const tone = line.units < 0 ? styles.offShort : line.units > 0 ? styles.offOver : styles.offEven;
         const units = line.units > 0 ? `+${line.units}` : String(line.units);
@@ -80,18 +80,18 @@ export default function TillSummary({
       </div>
 
       <section className={styles.stockBlue} data-testid="opening-stock-check">
-        <h3>Open count</h3>
+        <h3>Opening Verify</h3>
         {floatLabel ? (
           <p data-testid="float-variance">Float {floatLabel.word} {formatMoney(floatLabel.cents)}</p>
         ) : null}
         <Grid lines={openLines} testId="opening-sku-list" />
       </section>
       <section className={styles.stockRose} data-testid="refill-issues">
-        <h3>Refill count</h3>
+        <h3>Refill Issues</h3>
         <Grid lines={refillLines} testId="refill-sku-list" />
       </section>
       <section className={styles.stockAmber} data-testid="closing-stock-check">
-        <h3>Closing count</h3>
+        <h3>Closing Count</h3>
         <Grid lines={closeLines} testId="closing-sku-list" />
       </section>
     </div>
