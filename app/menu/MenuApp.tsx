@@ -40,7 +40,13 @@ function chooseLayout(next: Layout) {
   layoutListeners.forEach((listener) => listener());
 }
 
-export default function MenuApp() {
+export default function MenuApp({
+  menuApi = "/api/menu",
+  label = "PNY01",
+}: {
+  menuApi?: string;
+  label?: string;
+} = {}) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
@@ -53,7 +59,7 @@ export default function MenuApp() {
   useEffect(() => {
     let stop = false;
     const load = () => {
-      void fetch("/api/menu", { cache: "no-store" })
+      void fetch(menuApi, { cache: "no-store" })
         .then((response) => response.json())
         .then((data: Menu) => {
           if (!stop) setMenu(data);
@@ -65,7 +71,7 @@ export default function MenuApp() {
       stop = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [menuApi]);
 
   const items = menu?.items ?? [];
   const categories = useMemo(
@@ -88,7 +94,7 @@ export default function MenuApp() {
     if (!ticket) return;
     let stop = false;
     const loadStatus = () => {
-      void fetch(`/api/menu/tickets/${encodeURIComponent(ticket.code)}`, { cache: "no-store" })
+      void fetch(`${menuApi}/tickets/${encodeURIComponent(ticket.code)}`, { cache: "no-store" })
         .then((response) => response.json())
         .then((data: { status?: string; paid?: boolean }) => {
           if (!stop && (data.paid || data.status === "PAID")) setPaid(true);
@@ -101,13 +107,13 @@ export default function MenuApp() {
       stop = true;
       window.clearInterval(timer);
     };
-  }, [ticket]);
+  }, [ticket, menuApi]);
 
   async function place() {
     setError("");
     setBusy(true);
     try {
-      const response = await fetch("/api/menu/orders", {
+      const response = await fetch(`${menuApi}/orders`, {
         method: "POST",
         headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
         body: JSON.stringify({ lines: lines.map(([sku, qty]) => ({ sku, qty })) }),
@@ -144,7 +150,7 @@ export default function MenuApp() {
       {menu?.demo ? <div className={styles.demo}>{menu.demo_label}</div> : null}
       <header className={styles.header}>
         <div className={styles.headerRow}>
-          <h1>PNY01 order</h1>
+          <h1>{label} order</h1>
           <div className={styles.toggle} role="group" aria-label="Menu layout">
             <button type="button" aria-pressed={layout === "grid"} className={layout === "grid" ? styles.toggleOn : styles.toggleOff} onClick={() => chooseLayout("grid")}>Grid</button>
             <button type="button" aria-pressed={layout === "list"} className={layout === "list" ? styles.toggleOn : styles.toggleOff} onClick={() => chooseLayout("list")}>List</button>

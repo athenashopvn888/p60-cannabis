@@ -35,7 +35,13 @@ async function post(url: string, body: unknown, key?: string) {
   return data;
 }
 
-export default function TillApp() {
+export default function TillApp({
+  apiBase = "/api/pos",
+  homeHref = "/pos",
+}: {
+  apiBase?: string;
+  homeHref?: string;
+} = {}) {
   const [view, setView] = useState<View | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -47,11 +53,11 @@ export default function TillApp() {
   const [viewOnly, setViewOnly] = useState(false);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
     const data = (await response.json()) as View;
     setView(data);
     if (!data.authenticated && data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
-  }, []);
+  }, [apiBase]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -60,9 +66,9 @@ export default function TillApp() {
     setError("");
     setBusy(true);
     try {
-      await post("/api/pos/login", { pin });
+      await post(`${apiBase}/login`, { pin });
       setPin("");
-      const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
       const data = (await response.json()) as View;
       setView(data);
       setViewOnly(Boolean(data.master));
@@ -79,7 +85,7 @@ export default function TillApp() {
     setError("");
     setBusy(true);
     try {
-      const result = await post("/api/pos/till/unlock", { pin });
+      const result = await post(`${apiBase}/till/unlock`, { pin });
       setPin("");
       setViewOnly(Boolean(result.view_only));
       setUnlocked(true);
@@ -96,7 +102,7 @@ export default function TillApp() {
     const cents = Math.round(Number(deposit) * 100);
     setBusy(true);
     try {
-      const saved = await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post(`${apiBase}/deposits`, { amount_cents: cents }, crypto.randomUUID());
       setDeposit("");
       setOpen(false);
       if (typeof saved.deposit_code === "string") setSlipCode(saved.deposit_code);
@@ -160,7 +166,7 @@ export default function TillApp() {
           <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length !== 4 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
-          <Link className={styles.backLink} href="/pos" style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
+          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
@@ -170,11 +176,11 @@ export default function TillApp() {
     <main className={styles.shell} data-testid="pos-till">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       {verifyOpen && view.verify?.deadline_at ? (
-        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = "/pos"; }} />
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = homeHref; }} />
       ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
-          <Link className={styles.backLink} href="/pos">Back</Link>
+          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref}>Back</Link>
           <div className={styles.brand}>Till · {view.shift?.staff_name}{viewOnly ? " · Master view" : ""}</div>
         </div>
       </header>

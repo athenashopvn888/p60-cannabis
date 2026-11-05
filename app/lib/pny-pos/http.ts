@@ -4,6 +4,7 @@ import { chunkToken, readDemoDrafts, signDemoDrafts, type DemoDraft } from "./de
 import { readDemoJournal, signDemoJournal, upsertDemoOrder, type DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import { getService, loadSecrets } from "./runtime.ts";
+import { currentStore } from "./storeContext.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
 export const KITCHEN_COOKIE = "pny_kitchen_session";
@@ -110,7 +111,7 @@ export function clientIp(request: Request) {
 }
 
 export async function staffToken() {
-  return (await cookies()).get(SESSION_COOKIE)?.value ?? "";
+  return (await cookies()).get(currentStore().sessionCookie)?.value ?? "";
 }
 
 export async function kitchenToken() {
@@ -129,25 +130,34 @@ export async function clearSession(name: string) {
   (await cookies()).set(name, "", { ...cookieBase, maxAge: 0 });
 }
 
+function demoJournalCookie() {
+  return currentStore().code === "PNY01" ? DEMO_JOURNAL_COOKIE : "pny2_pos_demo";
+}
+
+function demoDraftCookie() {
+  return currentStore().code === "PNY01" ? DEMO_DRAFT_COOKIE : "pny2_pos_draft";
+}
+
 export async function loadDemoJournal(): Promise<DemoJournalOrder[]> {
-  const raw = (await cookies()).get(DEMO_JOURNAL_COOKIE)?.value ?? "";
+  const raw = (await cookies()).get(demoJournalCookie())?.value ?? "";
   return readDemoJournal(raw, loadSecrets().session);
 }
 
 export async function saveDemoJournal(orders: DemoJournalOrder[]) {
   if (!loadSecrets().session) return;
   const value = signDemoJournal(orders, loadSecrets().session);
-  (await cookies()).set(DEMO_JOURNAL_COOKIE, value, { ...cookieBase, maxAge: 60 * 60 * 14 });
+  (await cookies()).set(demoJournalCookie(), value, { ...cookieBase, maxAge: 60 * 60 * 14 });
 }
 
 const DRAFT_PARTS = 8;
 
 export async function loadDemoDrafts(): Promise<DemoDraft[]> {
   const jar = await cookies();
-  const count = Number(jar.get(DEMO_DRAFT_COOKIE)?.value ?? "0");
+  const name = demoDraftCookie();
+  const count = Number(jar.get(name)?.value ?? "0");
   if (!Number.isInteger(count) || count <= 0) return [];
   let token = "";
-  for (let index = 0; index < count && index < DRAFT_PARTS; index += 1) token += jar.get(`${DEMO_DRAFT_COOKIE}_${index}`)?.value ?? "";
+  for (let index = 0; index < count && index < DRAFT_PARTS; index += 1) token += jar.get(`${name}_${index}`)?.value ?? "";
   return readDemoDrafts(token, loadSecrets().session);
 }
 
@@ -156,9 +166,10 @@ export async function saveDemoDrafts(drafts: DemoDraft[]) {
   if (!secret) return;
   const parts = chunkToken(signDemoDrafts(drafts, secret));
   const jar = await cookies();
-  jar.set(DEMO_DRAFT_COOKIE, String(parts.length), { ...cookieBase, maxAge: 60 * 60 * 14 });
+  const draftCookie = demoDraftCookie();
+  jar.set(draftCookie, String(parts.length), { ...cookieBase, maxAge: 60 * 60 * 14 });
   for (let index = 0; index < DRAFT_PARTS; index += 1) {
-    const name = `${DEMO_DRAFT_COOKIE}_${index}`;
+    const name = `${draftCookie}_${index}`;
     if (index < parts.length) jar.set(name, parts[index] ?? "", { ...cookieBase, maxAge: 60 * 60 * 14 });
     else jar.set(name, "", { ...cookieBase, maxAge: 0 });
   }

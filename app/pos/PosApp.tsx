@@ -15,6 +15,7 @@ import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
+import { CUSTOMER_MENU_URL } from "./menuQr";
 import { ProductPhoto } from "./ProductPhoto";
 import styles from "./till.module.css";
 
@@ -93,7 +94,17 @@ function failureText(error: unknown) {
   return "Could not sign in.";
 }
 
-export default function PosApp() {
+export default function PosApp({
+  apiBase = "/api/pos",
+  tillHref = "/pos/till",
+  label = "PNY01",
+  menuUrl = CUSTOMER_MENU_URL,
+}: {
+  apiBase?: string;
+  tillHref?: string;
+  label?: string;
+  menuUrl?: string;
+} = {}) {
   const [view, setView] = useState<View | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -116,7 +127,7 @@ export default function PosApp() {
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/pos/state", { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
     const data = (await response.json()) as View;
     setView(data);
     if (!data.authenticated) setActiveTicket(null);
@@ -125,7 +136,7 @@ export default function PosApp() {
       setCart({});
       if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
     }
-  }, []);
+  }, [apiBase]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -173,7 +184,7 @@ export default function PosApp() {
     setError("");
     setBusy(true);
     try {
-      await post("/api/pos/login", { pin });
+      await post(`${apiBase}/login`, { pin });
       setPin("");
       await load();
     } catch (err) {
@@ -188,7 +199,7 @@ export default function PosApp() {
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const result = await post("/api/pos/cashout", { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
+      const result = await post(`${apiBase}/cashout`, { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
@@ -217,9 +228,9 @@ export default function PosApp() {
     setError("");
     setBusy(true);
     try {
-      await post("/api/pos/deposits/confirm-pin", { pin: summaryPin });
+      await post(`${apiBase}/deposits/confirm-pin`, { pin: summaryPin });
       setSummaryPin("");
-      const data = await fetch("/api/pos/summary", { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
+      const data = await fetch(`${apiBase}/summary`, { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
       if (!data.ok) throw new Error(data.error || "Summary was not loaded");
       setSummaryDeposits(Array.isArray(data.deposits) ? data.deposits : []);
       setSummaryText(String(data.text ?? ""));
@@ -242,7 +253,7 @@ export default function PosApp() {
     setError("");
     setBusy(true);
     try {
-      await post("/api/pos/deposits/confirm-pin", { pin: depositPin });
+      await post(`${apiBase}/deposits/confirm-pin`, { pin: depositPin });
       setDepositPin("");
       setSheet("deposit-amount");
     } catch (err) {
@@ -262,7 +273,7 @@ export default function PosApp() {
     }
     setBusy(true);
     try {
-      const saved = await post("/api/pos/deposits", { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post(`${apiBase}/deposits`, { amount_cents: cents }, crypto.randomUUID());
       setDepositAmount("");
       setSheet(null);
       if (typeof saved.deposit_code === "string") setDepositCode(saved.deposit_code);
@@ -277,19 +288,19 @@ export default function PosApp() {
   async function submitCloseCount() {
     if (view?.master) return;
     setError("");
-    await post("/api/pos/shift/count-submit", {});
+    await post(`${apiBase}/shift/count-submit`, {});
     await load();
   }
 
   async function saveCloseCount(sku: string, countedQty: number) {
     setError("");
-    await post("/api/pos/shift/count", { sku, counted_qty: countedQty });
+    await post(`${apiBase}/shift/count`, { sku, counted_qty: countedQty });
     await load();
   }
 
   async function saveCloseDeposit(cents: number) {
     setError("");
-    const saved = await post("/api/pos/shift/final-deposit", { amount_cents: cents });
+    const saved = await post(`${apiBase}/shift/final-deposit`, { amount_cents: cents });
     await load();
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
@@ -299,7 +310,7 @@ export default function PosApp() {
     setBusy(true);
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      await post("/api/pos/shift/end", { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
+      await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
       setCart({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
@@ -311,27 +322,27 @@ export default function PosApp() {
   async function saveVerifyLine(sku: string, countedQty: number) {
     if (view?.master) return;
     setError("");
-    await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty });
+    await post(`${apiBase}/counts/opening-line`, { sku, counted_qty: countedQty });
     await load();
   }
 
   async function submitVerify() {
     if (view?.master) return;
     setError("");
-    await post("/api/pos/counts/opening-submit", {});
+    await post(`${apiBase}/counts/opening-submit`, {});
     await load();
   }
 
   async function jumpVerify(sku: string) {
     if (view?.master) return;
     setError("");
-    await post("/api/pos/counts/opening-jump", { sku });
+    await post(`${apiBase}/counts/opening-jump`, { sku });
     await load();
   }
 
   async function saveOpeningLine(sku: string, countedQty: number, varianceReason?: string) {
     setError("");
-    await post("/api/pos/counts/opening-line", { sku, counted_qty: countedQty, variance_reason: varianceReason });
+    await post(`${apiBase}/counts/opening-line`, { sku, counted_qty: countedQty, variance_reason: varianceReason });
     await load();
   }
 
@@ -344,7 +355,7 @@ export default function PosApp() {
         counted_qty: line.counted_qty ?? 0,
         variance_reason: line.variance_reason || undefined,
       }));
-      await post("/api/pos/counts/opening", { lines }, crypto.randomUUID());
+      await post(`${apiBase}/counts/opening`, { lines }, crypto.randomUUID());
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Count was not saved");
@@ -357,7 +368,7 @@ export default function PosApp() {
     setError("");
     setBusy(true);
     try {
-      await post("/api/pos/incoming/confirm", { lines }, crypto.randomUUID());
+      await post(`${apiBase}/incoming/confirm`, { lines }, crypto.randomUUID());
       setRefillOpen(false);
       await load();
     } catch (err) {
@@ -375,7 +386,7 @@ export default function PosApp() {
       <main className={styles.shell} data-testid="pos-login">
         {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
         <section className={styles.pin}>
-          <h1 className={styles.brand}>PNY01 staff till</h1>
+          <h1 className={styles.brand}>{label} staff till</h1>
           <p>Enter the 4-digit shift PIN. Five wrong tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
@@ -407,7 +418,7 @@ export default function PosApp() {
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
-          <div className={styles.brand}>PNY01 · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
+          <div className={styles.brand}>{label} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
           {view.phase === "sell" ? (
             <div className={styles.namePills}>
               <button className={`${styles.cornerBtn} ${styles.namePill} ${tab === "tickets" ? styles.namePillOn : ""}`} type="button" data-testid="tickets-tab" onClick={() => setTab("tickets")}>Ticket {view.pending_count ?? 0}</button>
@@ -425,7 +436,7 @@ export default function PosApp() {
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
           ) : null}
-          <Link className={styles.tillLink} href="/pos/till" data-testid="open-till">Till</Link>
+          <Link className={styles.tillLink} href={tillHref === "/pos/till" ? "/pos/till" : tillHref} data-testid="open-till">Till</Link>
           <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
@@ -550,9 +561,9 @@ export default function PosApp() {
                   setCart(next);
                   setActiveTicket({ id: ticket.id, code: ticket.code });
                   setTab("sell");
-                  void post(`/api/pos/tickets/${ticket.id}/open`, {}).then(() => load());
+                  void post(`${apiBase}/tickets/${ticket.id}/open`, {}).then(() => load());
                 }}>Open</button>
-                <button className={styles.secondary} type="button" onClick={() => void post(`/api/pos/tickets/${ticket.id}/cancel`, {}).then(() => load())}>Cancel</button>
+                <button className={styles.secondary} type="button" onClick={() => void post(`${apiBase}/tickets/${ticket.id}/cancel`, {}).then(() => load())}>Cancel</button>
               </div>
             </article>
           ))}
@@ -623,7 +634,7 @@ export default function PosApp() {
           {copied ? <p className={styles.copied} data-testid="copied-toast">Copied</p> : null}
         </div>
       ) : null}
-      {qrOpen ? <CustomerQr onClose={() => setQrOpen(false)} /> : null}
+      {qrOpen ? <CustomerQr url={menuUrl} onClose={() => setQrOpen(false)} /> : null}
       {depositCode ? <DepositSlip code={depositCode} onDone={() => setDepositCode(null)} /> : null}
       {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">
