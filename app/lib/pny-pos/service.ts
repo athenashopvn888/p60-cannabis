@@ -28,6 +28,7 @@ import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSessio
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
+import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
@@ -3695,6 +3696,15 @@ export class PosService {
       });
       return { ok: true, closings };
     });
+  }
+
+  /** Read-only. Does not count an SCCx poll and does not change the till. */
+  async closingSummary(sccxShiftId: string) {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const view = closingSummaryView(state, sccxShiftId, tillCode());
+    if (!view) throw new PosError(404, "CLOSING", "Closing was not found.");
+    return view;
   }
 
   async ackClosedShift(sccxShiftId: string, input: { key: string }) {
