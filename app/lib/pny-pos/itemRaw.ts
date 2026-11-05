@@ -104,11 +104,12 @@ function skuColumn(headers: string[]) {
   return 0;
 }
 
-/** Split a SKU cell on commas and on short ranges such as 680-683. */
+/** Split a SKU cell on commas, slashes, and short ranges such as 680-683 or 930-932. */
 export function expandSkuCell(raw: string) {
   const skus: string[] = [];
-  for (const token of raw.split(",")) {
+  for (const token of raw.split(/[,/]/)) {
     const text = token.trim();
+    if (!text) continue;
     const range = /^(\d+)\s*-\s*(\d+)$/.exec(text);
     if (range) {
       const start = Number(range[1]);
@@ -198,7 +199,7 @@ export function expandSetbItems(grid: string[][]) {
     if (skus.length === 0) continue;
     const unique = [...new Set(skus)];
     const sourceRow = index + 1;
-    if (unique.length > 1 || /[,-]/.test(rawSku)) {
+    if (unique.length > 1 || /[,/-]/.test(rawSku)) {
       combined.push({
         sourceRow,
         raw: rawSku.trim(),
@@ -349,9 +350,10 @@ function priceUsable(headers: string[], line: string[]) {
   return saleCents(lineCell(headers, line, "Unit_Price")) != null;
 }
 
-function nameUsable(headers: string[], line: string[], sku: string) {
-  const name = lineCell(headers, line, "Name").replace(/\s+/g, " ").trim();
-  return name.length > 0 && name !== sku;
+/** A staff lock. The mirror must not change this row. */
+function rowLocked(headers: string[], line: string[]) {
+  return /^manual$/i.test(lineCell(headers, line, "Source").trim())
+    || /^manual$/i.test(lineCell(headers, line, "Price_Flag").trim());
 }
 
 /** Keep every existing column and any SKU that SETB does not list. One row per SKU. */
@@ -423,12 +425,18 @@ function rowCell(row: Record<string, string>, name: string) {
   return "";
 }
 
-/** Sellable rows from Items_raw_price. Ambiguous prices are left out. */
+function manualRow(row: Record<string, string>) {
+  return /^manual$/i.test(rowCell(row, "Source").trim()) || /^manual$/i.test(rowCell(row, "Price_Flag").trim());
+}
+
+/** Sellable rows from Items_raw_price. Ambiguous prices are left out. A MANUAL row keeps its own price. */
 export function itemsFromPriceSheetRows(rows: Record<string, string>[]): ItemIndex {
   const index: ItemIndex = new Map();
+  const locked = new Set<string>();
   for (const row of rows) {
-    if (/^(ambiguous|missing|unparsed)/i.test(rowCell(row, "Price_Flag"))) continue;
     const sku = normalizeItemSku(rowCell(row, "SKU"));
+    if (manualRow(row) && /^\d+$/.test(sku)) locked.add(sku);
+    if (/^(ambiguous|missing|unparsed)/i.test(rowCell(row, "Price_Flag"))) continue;
     if (!/^\d+$/.test(sku) || index.has(sku)) continue;
     const cents = saleCents(rowCell(row, "Unit_Price"));
     if (cents == null) continue;
@@ -441,13 +449,14 @@ export function itemsFromPriceSheetRows(rows: Record<string, string>[]): ItemInd
       image: /^https?:\/\//i.test(image) ? image : null,
     });
   }
-  overlayPosPrices(index);
+  overlayPosPrices(index, locked);
   return index;
 }
 
-/** Store prices Tri set by hand. A usable sheet row wins. A missing or flagged row uses these. */
-function overlayPosPrices(index: ItemIndex) {
+/** Store prices Tri set by hand. A usable sheet row wins. A missing or flagged row uses these. MANUAL rows stay put. */
+function overlayPosPrices(index: ItemIndex, locked: ReadonlySet<string>) {
   for (const [sku, price] of Object.entries(POS_UNIT_PRICES)) {
+    if (locked.has(sku)) continue;
     const current = index.get(sku);
     if (current && current.price_cents > 0 && current.name.trim() && current.name.trim() !== sku) continue;
     index.set(sku, {
@@ -479,8 +488,8 @@ export type ItemsPriceRepair = {
 };
 
 /**
- * Rows to add or fill on Items_raw_price. An existing SKU with a usable price and name
- * is left as it is. Nothing is removed.
+ * Rows to add, or to fill when the price cell is unusable.
+ * A usable price is left alone. Source or Price_Flag MANUAL is never changed. Nothing is removed.
  */
 export function planItemsPriceRepair(existing: string[][], items: ExpandedItem[]): ItemsPriceRepair {
   const base = existing.length > 0 ? existing : [["SKU", "Unit_Price", "Unit", "Source"]];
@@ -509,10 +518,11 @@ export function planItemsPriceRepair(existing: string[][], items: ExpandedItem[]
       append.push(row);
       continue;
     }
-    const fixPrice = !priceUsable(oldHeaders, prior.line) && saleCents(lineCell(headers, row, "Unit_Price")) != null;
+    if (rowLocked(oldHeaders, prior.line) || priceUsable(oldHeaders, prior.line)) continue;
+    const fixPrice = saleCents(lineCell(headers, row, "Unit_Price")) != null;
     const desiredName = lineCell(headers, row, "Name").replace(/\s+/g, " ").trim();
-    const fixName = !nameUsable(oldHeaders, prior.line, sku) && desiredName.length > 0 && desiredName !== sku;
-    if (!fixPrice && !fixName) continue;
+    const fixName = desiredName.length > 0 && desiredName !== sku;
+    if (!fixPrice) continue;
     const next = headers.map(() => "");
     oldHeaders.forEach((header, index) => {
       const at = headers.findIndex((name) => headerKey(name) === headerKey(header));
