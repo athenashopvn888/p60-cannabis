@@ -87,6 +87,7 @@ const TONIGHT_NAME_MARK = "PNY01-TONIGHT";
 
 /** Rename the staff member on the open PNY01 shift once. Does not touch the PIN. */
 function nameLiveShift(state: State, at: string) {
+  if (process.env.STORE_CODE?.trim()) return;
   if (tillCode() !== "PNY01") return;
   if (state.audit.some((row) => row.action === "DISPLAY_NAME" && row.ref_id === TONIGHT_NAME_MARK)) return;
   const shift = state.shifts.find((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"));
