@@ -27,6 +27,8 @@ import { expandSetbItems, itemsFromGrid, mergeItemsPriceGrid } from "../app/lib/
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
+import { runStore } from "../app/lib/pny-pos/storeContext.ts";
+import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
@@ -653,7 +655,7 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(poll, /POS_STATE_POLL_MS = 25_000/);
   assert.match(poll, /document\.hidden/);
   assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /usePosPoll/);
-  assert.match(posApp, /href="\/pos\/till"/);
+  assert.match(posApp, /"\/pos\/till"/);
   assert.match(posApp, /End Shift/);
   assert.doesNotMatch(posApp, /data-testid="total-sales"/);
   assert.match(posApp, /data-testid="clear-cart"/);
@@ -853,7 +855,8 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   await rejects(() => h.svc.deposit(master.token, { key: "master-till", amount_cents: 100 }), "MASTER_VIEW");
   assert.equal(shift.pin_hash, hash);
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
-  assert.match(tillApp, /\/api\/pos\/till\/unlock/);
+  assert.match(tillApp, /apiBase = "\/api\/pos"/);
+  assert.match(tillApp, /\$\{apiBase\}\/till\/unlock/);
   assert.match(tillApp, /data-testid="pos-till-gate"/);
   assert.match(tillApp, /data-testid="till-unlock"/);
 });
@@ -2365,4 +2368,44 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
   assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /deposit_code/);
   assert.match(summary.text, /PNY-D0001/);
+});
+
+test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 0 });
+  const before = qty(h.db, "1001");
+  await h.svc.cashout(h.token, { key: "pny01-sale", lines: [{ sku: "1001", qty: 1 }] });
+  assert.equal(h.db.state.sales.at(-1)?.ref_no, "PNY01-00001");
+  assert.equal(qty(h.db, "1001"), before - 1);
+  const opened = await runStore(PNY02_STORE, () => h.svc.openShiftWithPin({
+    staff_uid: "staff-a",
+    display_name: "Ada",
+    pos_id: "A1",
+    shift_id: "pny02-shift",
+    pin: "4321",
+  }));
+  assert.equal(opened.ok, true);
+  const login = await runStore(PNY02_STORE, () => h.svc.login("4321", "10.2.0.1"));
+  const pny2OnHand = await runStore(PNY02_STORE, async () => (await h.svc.state(login.token)).products?.find((row) => row.sku === "1001")?.qty ?? 0);
+  assert.equal(pny2OnHand, 0);
+  await runStore(PNY02_STORE, () => h.svc.openingBalance(h.admin, { key: "pny2-open", sku: "1001", qty: 3 }));
+  const sold = await runStore(PNY02_STORE, () => h.svc.cashout(login.token, { key: "pny2-sale", lines: [{ sku: "1001", qty: 1 }] }));
+  assert.equal(sold.ref_no, "PNY02-00001");
+  const drop = await runStore(PNY02_STORE, () => h.svc.deposit(login.token, { key: "pny2-drop", amount_cents: 2500 }));
+  assert.equal(drop.deposit_code, "PNY2-D0001");
+  assert.equal(drop.cash_on_hand_cents, -1500);
+  assert.equal(qty(h.db, "1001"), before - 1);
+  assert.equal(h.db.state.balances.find((row) => row.sku === "1001" && row.store_code === "PNY02")?.qty, 2);
+  const pny1 = await h.svc.state(h.token);
+  assert.equal(pny1.totals?.sales_cents, 1000);
+  assert.equal(pny1.totals?.deposited_cents, 0);
+  const feed = await h.svc.salesFeed(null);
+  assert.equal(feed.store, "PNY01");
+  const pny2Feed = await runStore(PNY02_STORE, () => h.svc.salesFeed("0"));
+  assert.equal(pny2Feed.store, "PNY02");
+  assert.equal(pny2Feed.sales?.length, 1);
+  assert.equal(pny2Feed.sales?.[0]?.order_no, "PNY02-00001");
+  assert.equal(pny2Feed.sales?.[0]?.shift_order_number, 1);
+  assert.deepEqual(PNY2_STOCK_HEADERS, ["sku", "name", "category", "price_cents", "on_hand", "updated_at"]);
+  assert.equal(PNY02_STORE.stockTab, "PNY2");
+  assert.doesNotMatch(readFileSync("app/lib/pny-pos/sheetStore.ts", "utf8"), /upsert\("PNY01"/);
 });

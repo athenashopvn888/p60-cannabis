@@ -4,8 +4,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 export const SALES_FEED_HEADER = "x-sales-feed-token";
 
 /** True only when the header matches SALES_FEED_TOKEN. An empty token never matches. */
-export function salesFeedTokenOk(header: string | null) {
-  const expected = process.env["SALES_FEED_TOKEN"]?.trim() ?? "";
+export function salesFeedTokenOk(header: string | null, envName = "SALES_FEED_TOKEN") {
+  const expected = process.env[envName]?.trim() ?? "";
   const got = header?.trim() ?? "";
   if (!expected || !got) return false;
   const a = createHash("sha256").update(expected).digest();

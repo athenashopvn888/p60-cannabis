@@ -1,10 +1,11 @@
 "use client";
 
+import { encode } from "uqr";
 import styles from "./till.module.css";
 import { CUSTOMER_MENU_URL, customerMenuQr } from "./menuQr";
 
-export default function CustomerQr({ onClose }: { onClose: () => void }) {
-  const qr = customerMenuQr();
+export default function CustomerQr({ onClose, url = CUSTOMER_MENU_URL }: { onClose: () => void; url?: string }) {
+  const qr = url === CUSTOMER_MENU_URL ? customerMenuQr() : encode(url, { ecc: "M", border: 4 });
   return (
     <div className={styles.qrOverlay} data-testid="customer-qr-overlay" role="dialog" aria-modal="true" aria-label="Customer menu QR" onClick={onClose}>
       <button type="button" className={styles.qrClose} aria-label="Close" onClick={onClose}>×</button>

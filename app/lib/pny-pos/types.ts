@@ -46,6 +46,7 @@ export type LedgerRow = {
   reason: string | null;
   shift_id: string | null;
   created_at: string;
+  store_code?: string;
 };
 
 export type BalanceRow = {
@@ -53,6 +54,7 @@ export type BalanceRow = {
   qty: number;
   updated_at: string;
   created_at: string;
+  store_code?: string;
 };
 
 export type StaffRow = {
@@ -321,6 +323,7 @@ export type State = {
   admin_sessions: AdminSessionRow[];
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
+  deposit_seq_pny02?: number;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

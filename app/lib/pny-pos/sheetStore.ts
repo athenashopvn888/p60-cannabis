@@ -1,4 +1,5 @@
 import { STORE_CODE } from "./constants.ts";
+import { PNY2_STOCK_HEADERS } from "./storeProfile.ts";
 import { SheetUnavailable } from "./errors.ts";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import { skuSortKey } from "./flowerSku.ts";
@@ -36,6 +37,7 @@ function normalize(parsed: State): State {
   if (base.stores.length === 0) base.stores = emptyState().stores;
   if (!base.closing_drafts) base.closing_drafts = [];
   if (typeof parsed.deposit_seq === "number" && Number.isInteger(parsed.deposit_seq)) base.deposit_seq = parsed.deposit_seq;
+  if (typeof parsed.deposit_seq_pny02 === "number" && Number.isInteger(parsed.deposit_seq_pny02)) base.deposit_seq_pny02 = parsed.deposit_seq_pny02;
   return base;
 }
 
@@ -345,11 +347,63 @@ export class SheetDb implements PosDb {
     ];
   }
 
-  private async save(state: State) {
+  private pny2StockKey(state: State) {
+    return JSON.stringify(state.balances.filter((row) => row.store_code === "PNY02").map((row) => [row.sku, row.qty]));
+  }
+
+  /** PNY2 on-hand lives on the PNY2 tab. A missing tab is ignored and never writes PNY01. */
+  async pullPny2Stock(state: State) {
+    await this.readPny2Stock(state);
+  }
+
+  private async readPny2Stock(state: State) {
+    if (!this.sheet.configured) return;
+    let rows: SheetRow[] = [];
+    try {
+      rows = await this.sheet.readRows("PNY2");
+    } catch {
+      return;
+    }
+    if (rows.length === 0) return;
+    const at = new Date().toISOString();
+    for (const row of rows) {
+      const sku = text(row, "sku");
+      if (!sku || sku === "sku") continue;
+      const qty = Number(text(row, "on_hand"));
+      if (!Number.isInteger(qty) || qty < 0) continue;
+      const existing = state.balances.find((item) => item.sku === sku && item.store_code === "PNY02");
+      if (existing) existing.qty = qty;
+      else state.balances.push({ sku, qty, store_code: "PNY02", updated_at: text(row, "updated_at") || at, created_at: at });
+    }
+  }
+
+  private async writePny2Stock(state: State) {
+    if (!this.sheet.configured) return;
+    const rows = state.balances.filter((row) => row.store_code === "PNY02").map((row) => {
+      const product = state.products.find((item) => item.sku === row.sku);
+      return {
+        sku: row.sku,
+        name: product?.name ?? "",
+        category: product?.category ?? "",
+        price_cents: String(product?.default_price_cents ?? ""),
+        on_hand: String(row.qty),
+        updated_at: row.updated_at,
+      };
+    });
+    try {
+      await this.sheet.ensureTabs([{ title: "PNY2", headers: [...PNY2_STOCK_HEADERS] }]);
+      if (rows.length) await this.sheet.upsert("PNY2", rows);
+    } catch {
+      // The tab may not exist yet. Stock stays in the POS state until Tri adds the PNY2 tab.
+    }
+  }
+
+  private async save(state: State, previousPny2 = "") {
     await this.ensure();
     for (const group of this.project(state)) {
       if (group.rows.length) await this.sheet.upsert(group.tab, group.rows);
     }
+    if (this.pny2StockKey(state) !== previousPny2) await this.writePny2Stock(state);
     this.stateParts = packState(state, 0).filter((row) => row.record_type === "STATE").length;
     for (const row of state.incoming) {
       this.refillRaw.set(row.kitchen_row_id, {
@@ -366,9 +420,10 @@ export class SheetDb implements PosDb {
     const run = this.tail.then(async () => {
       const loaded = await this.load();
       const snapshot = structuredClone(loaded) as State;
+      const previousPny2 = this.pny2StockKey(loaded);
       const result = await fn({ state: snapshot });
       if (JSON.stringify(snapshot) !== JSON.stringify(loaded) || this.needsSave) {
-        await this.save(snapshot);
+        await this.save(snapshot, previousPny2);
         this.needsSave = false;
       }
       return result;
