@@ -1,6 +1,7 @@
 import { createSign } from "node:crypto";
 import { SheetUnavailable } from "./errors.ts";
 import { HISTORY_CONFIG_TAB, historySheetConfig, planHistoryWrites, STOCK_HISTORY_HEADERS, STOCK_HISTORY_TAB, type StockHistoryRow } from "./stockHistory.ts";
+import { CLOSE_SNAPSHOT_HEADERS, CLOSE_SNAPSHOTS_TAB, STOCK_LABEL_HEADERS, STOCK_LABELS_TAB, type CloseSnapshotRow, type StockLabelRow } from "./stockLabel.ts";
 import type { SheetRow } from "./types.ts";
 
 export type SheetTabSpec = { title: string; headers: string[] };
@@ -26,6 +27,9 @@ export type SheetClient = {
   upsert(tab: string, rows: Record<string, string>[]): Promise<void>;
   appendRows(tab: string, rows: Record<string, string>[], idHeader: string): Promise<void>;
   appendStockHistory(rows: Record<string, string>[]): Promise<void>;
+  readStockLabels?(): Promise<StockLabelRow[]>;
+  appendStockLabels?(rows: StockLabelRow[]): Promise<void>;
+  appendCloseSnapshots?(rows: CloseSnapshotRow[]): Promise<void>;
   deleteRows(tab: string, rowIds: string[]): Promise<void>;
   ensureTabs(specs: SheetTabSpec[]): Promise<void>;
 };
@@ -55,6 +59,34 @@ export class LocalSheet implements SheetClient {
 
   async ensureTabs(specs: SheetTabSpec[]) {
     for (const spec of specs) if (!this.tabs[spec.title]) this.tabs[spec.title] = [];
+  }
+
+  async readStockLabels(): Promise<StockLabelRow[]> {
+    return (this.tabs[STOCK_LABELS_TAB] ?? []).map((row) => ({
+      store: row.store ?? "",
+      master_id: row.master_id ?? "",
+      start_date: row.start_date ?? "",
+      created_at: row.created_at ?? "",
+    })).filter((row) => row.store && row.master_id);
+  }
+
+  async appendStockLabels(rows: StockLabelRow[]) {
+    if (!this.reachable || rows.length === 0) return;
+    const list = this.tabs[STOCK_LABELS_TAB] ?? [];
+    const have = new Set(list.map((row) => row.store).filter(Boolean));
+    for (const row of rows) {
+      if (!row.store || have.has(row.store)) continue;
+      list.push({ store: row.store, master_id: row.master_id, start_date: row.start_date, created_at: row.created_at });
+      have.add(row.store);
+    }
+    this.tabs[STOCK_LABELS_TAB] = list;
+  }
+
+  async appendCloseSnapshots(rows: CloseSnapshotRow[]) {
+    if (!this.reachable || rows.length === 0) return;
+    const list = this.tabs[CLOSE_SNAPSHOTS_TAB] ?? [];
+    for (const row of rows) list.push({ ...row });
+    this.tabs[CLOSE_SNAPSHOTS_TAB] = list;
   }
 
   async appendStockHistory(rows: StockHistoryRow[]) {
@@ -399,6 +431,49 @@ export class GoogleSheet implements SheetClient {
     } catch (error) {
       if (!(error instanceof SheetUnavailable) || error.httpStatus !== 400) throw error;
       await this.ensureTabOn(sheetId, tab, STOCK_HISTORY_HEADERS);
+      await append();
+    }
+  }
+
+  async readStockLabels(): Promise<StockLabelRow[]> {
+    try {
+      const rows = await this.readRows(STOCK_LABELS_TAB);
+      return rows.map((row) => ({
+        store: row.store ?? "",
+        master_id: row.master_id ?? "",
+        start_date: row.start_date ?? "",
+        created_at: row.created_at ?? "",
+      })).filter((row) => row.store && row.master_id);
+    } catch (error) {
+      if (error instanceof SheetUnavailable && (error.httpStatus === 400 || error.httpStatus === 404)) return [];
+      throw error;
+    }
+  }
+
+  async appendStockLabels(rows: StockLabelRow[]) {
+    if (!this.configured || rows.length === 0) return;
+    const existing = await this.readStockLabels();
+    const have = new Set(existing.map((row) => row.store));
+    const append = rows.filter((row) => row.store && !have.has(row.store));
+    if (append.length === 0) return;
+    await this.appendLabeledRows(STOCK_LABELS_TAB, STOCK_LABEL_HEADERS, append.map((row) => STOCK_LABEL_HEADERS.map((header) => row[header] ?? "")));
+  }
+
+  async appendCloseSnapshots(rows: CloseSnapshotRow[]) {
+    if (!this.configured || rows.length === 0) return;
+    await this.appendLabeledRows(CLOSE_SNAPSHOTS_TAB, CLOSE_SNAPSHOT_HEADERS, rows.map((row) => CLOSE_SNAPSHOT_HEADERS.map((header) => row[header] ?? "")));
+  }
+
+  private async appendLabeledRows(tab: string, headers: readonly string[], values: string[][]) {
+    const append = () => this.sheetsFetch(`/values/${encodeURIComponent(`${tab}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    try {
+      await append();
+    } catch (error) {
+      if (!(error instanceof SheetUnavailable) || error.httpStatus !== 400) throw error;
+      await this.ensureTabOn(this.sheetId, tab, headers);
       await append();
     }
   }

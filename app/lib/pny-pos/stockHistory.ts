@@ -114,10 +114,11 @@ export function takeStockHistory(state: State): StockHistoryRow[] {
     const shift = entry.shift_id ? state.shifts.find((row) => row.id === entry.shift_id) : undefined;
     const staff = entry.actor ? state.staff.find((row) => row.staff_uid === entry.actor) : undefined;
     const sale = entry.ref_id ? state.sales.find((row) => row.id === entry.ref_id) : undefined;
-    const onHand = state.balances.find((row) => row.sku === entry.sku && (shift ? (shift.store_code === "PNY01" ? !row.store_code || row.store_code === "PNY01" : row.store_code === shift.store_code) : !row.store_code || row.store_code === "PNY01"))?.qty;
+    const store = shift?.store_code || entry.store_code || "PNY01";
+    const onHand = state.balances.find((row) => row.sku === entry.sku && (store === "PNY01" ? !row.store_code || row.store_code === "PNY01" : row.store_code === store))?.qty;
     rows.push({
       timestamp_iso: entry.created_at,
-      store: shift?.store_code || entry.store_code || "PNY01",
+      store,
       sku: entry.sku,
       name: product?.name ?? "",
       category: product?.category ?? "",

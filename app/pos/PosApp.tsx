@@ -71,7 +71,7 @@ type View = {
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
     refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
   };
-  pny01_balance?: { open: BalanceSection; refill: BalanceSection; close: BalanceSection };
+  balance_sections?: { open: BalanceSection; refill: BalanceSection; close: BalanceSection };
   error?: string;
   code?: string;
 };
@@ -333,8 +333,12 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
+      const saved = await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
       setCart({});
+      const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
+        ? (saved.closing as { close_label: string }).close_label
+        : typeof saved.close_label === "string" ? saved.close_label : "";
+      return label;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
     } finally {
@@ -650,8 +654,7 @@ export default function PosApp({
           stockCheck={view.stock_check}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
           initialStep={view.closing?.submitted ? "deposit" : "count"}
-          cashLabels={label === "PNY01"}
-          sections={label === "PNY01" ? view.pny01_balance : undefined}
+          sections={view.balance_sections}
         />
       ) : null}
       {sheet === "close-ask" ? (

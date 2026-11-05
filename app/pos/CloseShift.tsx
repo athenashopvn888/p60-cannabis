@@ -1,13 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { cashGapCents, cashWordText, stockNetCents, type BalanceSection } from "../lib/pny-pos/pny01Balance";
-import { formatMoney, signedMoney } from "../lib/pny-pos/money";
+import { cashGapCents, cashWord, moneyPhrase, stockNetCents, type BalanceSection } from "../lib/pny-pos/pny01Balance";
+import { formatMoney } from "../lib/pny-pos/money";
 import CountCard from "./CountCard";
 import DepositSlip from "./DepositSlip";
 import SkuOffList, { type OffLine } from "./SkuOffList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import styles from "./till.module.css";
+
+function Tone({ cents, text }: { cents: number; text: string }) {
+  const word = cashWord(cents);
+  const tone = word === "OVER" ? styles.offOver : word === "SHORT" ? styles.offShort : undefined;
+  return <strong className={tone}>{text}</strong>;
+}
 
 function BalanceBlock({ title, className, testId, heads, section }: {
   title: string;
@@ -27,10 +33,10 @@ function BalanceBlock({ title, className, testId, heads, section }: {
           <span>{line.sheet_qty}</span>
           <span>{line.counted_qty}</span>
           <span className={line.adj < 0 ? styles.offShort : styles.offOver}>{line.adj > 0 ? `+${line.adj}` : String(line.adj)}</span>
-          <span className={line.value_cents < 0 ? styles.offShort : styles.offOver}>{line.value_cents < 0 ? `−${formatMoney(-line.value_cents)}` : `+${formatMoney(line.value_cents)}`}</span>
+          <span className={line.value_cents < 0 ? styles.offShort : line.value_cents > 0 ? styles.offOver : undefined}>{moneyPhrase("STOCK", line.value_cents).replace("STOCK ", "")}</span>
         </div>
       ))}
-      <p>Short {formatMoney(section.short_cents)} · Over {formatMoney(section.over_cents)}</p>
+      <p><span className={styles.offShort}>STOCK SHORT {formatMoney(section.short_cents)}</span> · <span className={styles.offOver}>STOCK OVER {formatMoney(section.over_cents)}</span></p>
     </section>
   );
 }
@@ -59,7 +65,6 @@ export default function CloseShift({
   stockCheck,
   deadline,
   initialStep,
-  cashLabels,
   sections,
 }: {
   lines: CloseLine[];
@@ -70,7 +75,7 @@ export default function CloseShift({
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: () => Promise<void>;
   onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number) => Promise<void>;
+  onConfirm: (depositCents: number) => Promise<void | string>;
   onClose: () => void;
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
@@ -79,9 +84,7 @@ export default function CloseShift({
   };
   deadline?: string | null;
   initialStep?: "count" | "deposit";
-  /** PNY01 labels extra cash as OVER and a missing deposit as SHORT. */
-  cashLabels?: boolean;
-  /** PNY01 open, refill, and closing adjustments. Omitted on PNY02. */
+  /** Open, refill, and closing adjustments for the summary. Display only. */
   sections?: { open: BalanceSection; refill: BalanceSection; close: BalanceSection };
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(initialStep ?? (lines.length === 0 ? "deposit" : "count"));
@@ -89,6 +92,7 @@ export default function CloseShift({
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
   const [localError, setLocalError] = useState("");
   const [locking, setLocking] = useState(false);
+  const [closeLabel, setCloseLabel] = useState("");
   const openingOff = (stockCheck?.opening.lines ?? []).filter((line) => line.off !== 0);
   const closingOff = (stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0);
 
@@ -96,7 +100,6 @@ export default function CloseShift({
   const depositCents = Math.round(Number(deposit || 0) * 100);
   const drop = Number.isFinite(depositCents) ? depositCents : 0;
   const deposited = totals.deposited_cents + drop;
-  const tillBalance = totals.cash_on_hand_cents - drop;
   const cashGap = cashGapCents(totals.cash_sales_cents, deposited);
   const openNet = stockNetCents(sections?.open ?? { short_cents: 0, over_cents: 0 });
   const refillNet = stockNetCents(sections?.refill ?? { short_cents: 0, over_cents: 0 });
@@ -132,7 +135,8 @@ export default function CloseShift({
             if (locking) return;
             setLocking(true);
             void onSaveDeposit(depositCents).then(async (saved) => {
-              await onConfirm(depositCents);
+              const label = await onConfirm(depositCents);
+              if (typeof label === "string") setCloseLabel(label);
               const code = saved && typeof saved === "object" ? saved.deposit_code : null;
               if (code) {
                 setSlipCode(code);
@@ -144,7 +148,7 @@ export default function CloseShift({
             });
           }}>
             <h2>Final deposit</h2>
-            <p>{cashLabels ? `Cash before this drop is ${cashWordText(cashGapCents(totals.cash_sales_cents, totals.deposited_cents))}.` : `Cash on hand before this drop is ${formatMoney(totals.cash_on_hand_cents)}.`}</p>
+            <p>Before this drop: {moneyPhrase("Cash", cashGapCents(totals.cash_sales_cents, totals.deposited_cents))}.</p>
             <input className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
             <button className={styles.primary} type="submit" disabled={busy || locking}>Save deposit</button>
           </form>
@@ -163,20 +167,17 @@ export default function CloseShift({
             <div className={styles.summaryRow}><span>Earlier deposits</span><strong>{formatMoney(totals.deposited_cents)}</strong></div>
             <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(drop)}</strong></div>
             <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
-            {cashLabels ? (
-              <div className={styles.summaryRow} data-testid="cash-position"><span>Cash</span><strong>{cashWordText(cashGap)}</strong></div>
-            ) : (
-              <div className={styles.summaryRow} data-testid="till-balance"><span>Till balance</span><strong>{signedMoney(tillBalance)}</strong></div>
-            )}
+            <div className={styles.summaryRow} data-testid="cash-position"><span>Cash</span><Tone cents={cashGap} text={moneyPhrase("Cash", cashGap)} /></div>
+            {closeLabel ? <div className={styles.summaryRow} data-testid="close-label"><span>Close label</span><strong>{closeLabel}</strong></div> : null}
             {sections ? (
               <>
                 <BalanceBlock title="Open count" className={styles.stockBlue} testId="opening-stock-check" heads={["Sheet", "Count"]} section={sections.open} />
                 <BalanceBlock title="Refill count" className={styles.stockRose} testId="refill-issues" heads={["Sent", "Recv"]} section={sections.refill} />
                 <BalanceBlock title="Closing count" className={styles.stockAmber} testId="closing-stock-check" heads={["Due", "Count"]} section={sections.close} />
-                <div className={styles.summaryRow}><span>Open stock</span><strong>{cashWordText(openNet)}</strong></div>
-                <div className={styles.summaryRow}><span>Refill stock</span><strong>{cashWordText(refillNet)}</strong></div>
-                <div className={styles.summaryRow}><span>Closing stock</span><strong>{cashWordText(closeNet)}</strong></div>
-                <div className={styles.summaryRow} data-testid="overall-result"><span>Overall</span><strong>{cashWordText(cashGap + openNet + refillNet + closeNet)}</strong></div>
+                <div className={styles.summaryRow}><span>Open stock</span><Tone cents={openNet} text={moneyPhrase("STOCK", openNet)} /></div>
+                <div className={styles.summaryRow}><span>Refill stock</span><Tone cents={refillNet} text={moneyPhrase("STOCK", refillNet)} /></div>
+                <div className={styles.summaryRow}><span>Closing stock</span><Tone cents={closeNet} text={moneyPhrase("STOCK", closeNet)} /></div>
+                <div className={styles.summaryRow} data-testid="overall-result"><span>Overall</span><Tone cents={cashGap + openNet + refillNet + closeNet} text={moneyPhrase("Cash", cashGap + openNet + refillNet + closeNet).replace(/^Cash /, "")} /></div>
               </>
             ) : (
               <>
