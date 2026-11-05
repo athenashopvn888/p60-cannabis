@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function TillPage() {
-  return <TillApp />;
+  return <TillApp cashLabels />;
 }

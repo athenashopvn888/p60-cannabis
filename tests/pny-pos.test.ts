@@ -589,7 +589,7 @@ test("20. closed shifts are polled once and ack is safe to repeat", async () => 
   assert.equal(row?.deposited, 200);
   assert.equal(row?.cash_on_hand, 800);
   assert.match(row?.summary_text ?? "", /Sales:/);
-  assert.match(row?.summary_text ?? "", /COH:/);
+  assert.match(row?.summary_text ?? "", /Cash SHORT/);
   assert.match(row?.summary_text ?? "", /Deposited:/);
   assert.match(row?.summary_text ?? "", /Tickets:/);
   await h.svc.ackClosedShift("sccx-a", { key: "ack-1" });
@@ -2498,6 +2498,66 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
   assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /deposit_code/);
   assert.match(summary.text, /PNY-D0001/);
+});
+
+test("PNY01 closing due starts from the opening count", async () => {
+  const h = await readyTill({ "1001": 10, "1002": 1 });
+  await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 12 });
+  await h.svc.submitVerifyCount(h.token);
+  await h.svc.cashout(h.token, { key: "after-open", lines: [{ sku: "1001", qty: 1 }] });
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 12 });
+  const view = await h.svc.state(h.token);
+  const open = view.pny01_balance?.open.lines.find((line) => line.sku === "1001");
+  const close = view.pny01_balance?.close.lines.find((line) => line.sku === "1001");
+  assert.equal(open?.sheet_qty, 10);
+  assert.equal(open?.counted_qty, 12);
+  assert.equal(open?.adj, 2);
+  assert.equal(open?.value_cents, 2000);
+  assert.equal(close?.sheet_qty, 11);
+  assert.equal(close?.counted_qty, 12);
+  assert.equal(close?.adj, 1);
+  assert.equal(close?.value_cents, 1000);
+  assert.equal(JSON.stringify(view.pny01_balance).includes("expected"), false);
+  const blind = blindStaffState(view);
+  assert.equal(blind.pny01_balance?.close.lines[0]?.sheet_qty, 11);
+  assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
+  const ended = await h.svc.endShiftFromPos(h.token, {
+    key: "end-gap",
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.sku === "1001" ? 12 : line.expected_qty })),
+  });
+  const line = ended.closing.closing_lines.find((row) => row.sku === "1001");
+  assert.equal(line?.expected_qty, 11);
+  assert.equal(line?.variance_qty, 1);
+  assert.equal(line?.overage_cents, 1000);
+  assert.equal(ended.closing.open_overage_cents, 2000);
+  assert.equal(ended.closing.close_overage_cents, 1000);
+  assert.equal(ended.closing.overage_cents, 3000);
+  assert.equal(ended.closing.balance_cents, 1000 - 3000);
+  assert.match(ended.closing.summary_text, /Open short \$0\.00 over \$20\.00/);
+  assert.match(ended.closing.summary_text, /Closing short \$0\.00 over \$10\.00/);
+  assert.match(ended.closing.summary_text, /Overall OVER \+\$20\.00/);
+});
+
+test("PNY02 closing text stays on the original cash line", async () => {
+  const h = await readyTill({ "1001": 2 });
+  await runStore(PNY02_STORE, () => h.svc.openShiftWithPin({
+    staff_uid: "staff-p2",
+    display_name: "Bea",
+    pos_id: "B2",
+    shift_id: "pny02-summary",
+    pin: "2468",
+  }));
+  const login = await runStore(PNY02_STORE, () => h.svc.login("2468", "10.2.2.2"));
+  await runStore(PNY02_STORE, () => h.svc.openingBalance(h.admin, { key: "p2-stock", sku: "1001", qty: 2 }));
+  const view = await runStore(PNY02_STORE, () => h.svc.state(login.token));
+  assert.equal(view.pny01_balance, undefined);
+  const ended = await runStore(PNY02_STORE, () => h.svc.endShiftFromPos(login.token, {
+    key: "p2-end",
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.expected_qty })),
+  }));
+  assert.match(ended.closing.summary_text, /COH:/);
+  assert.doesNotMatch(ended.closing.summary_text, /Open short/);
+  assert.equal(ended.closing.open_shortage_cents, undefined);
 });
 
 test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async () => {

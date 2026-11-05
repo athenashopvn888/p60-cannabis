@@ -1421,6 +1421,29 @@
   background: #fce7f3;
 }
 
+.adjHead,
+.adjRow {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(4, minmax(2.4rem, 0.7fr));
+  gap: 4px;
+  align-items: baseline;
+}
+
+.adjHead {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 750;
+  color: #44403c;
+}
+
+.adjRow {
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.1);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .stockBlue h3,
 .stockAmber h3,
 .stockRose h3,

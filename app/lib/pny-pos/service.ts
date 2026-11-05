@@ -29,6 +29,7 @@ import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
+import { balanceLine, balanceSection, cashGapCents, cashWordText } from "./pny01Balance.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
@@ -856,26 +857,107 @@ function expireTickets(state: State, atMs: number, shiftId?: string) {
   return expired;
 }
 
+/** Opening count minus the sheet quantity at verify. Zero unless this is PNY01 and the verify count differs. */
+function openingGap(state: State, shiftId: string, sku: string) {
+  if (tillCode() !== "PNY01") return 0;
+  const row = draftsOf(state).find((draft) => draft.shift_id === shiftId)?.opening_counts?.find((entry) => entry.sku === sku);
+  if (!row || row.accepted_as_is || row.expected_qty == null) return 0;
+  return row.counted_qty - row.expected_qty;
+}
+
+/** PNY01 sections. Closing starts from the opening count, so an opening gap is not counted again. */
+function pny01BalanceView(state: State, shift: ShiftRow, raw?: Map<string, number>) {
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
+  const open = balanceSection((draft?.opening_counts ?? []).flatMap((row) => {
+    if (row.accepted_as_is || row.expected_qty == null || row.counted_qty === row.expected_qty) return [];
+    const product = state.products.find((item) => item.sku === row.sku);
+    const size = sizeLabel(row.sku, product?.category, product?.name);
+    const line = balanceLine({
+      sku: row.sku,
+      text: staffSkuText(row.sku, size),
+      sheet_qty: row.expected_qty,
+      counted_qty: row.counted_qty,
+      price_cents: sellingPriceCents(state, row.sku, raw),
+    });
+    return line ? [line] : [];
+  }));
+  const refill = balanceSection(refillIssues(state, shift.id).lines.flatMap((row) => {
+    const line = balanceLine({
+      sku: row.sku,
+      text: row.text,
+      sheet_qty: row.sent,
+      counted_qty: row.received,
+      price_cents: sellingPriceCents(state, row.sku, raw),
+    });
+    return line ? [line] : [];
+  }));
+  const close = balanceSection(shiftClosePlan(state, shift.id, raw).flatMap((item) => {
+    const saved = draft?.counts.find((row) => row.sku === item.sku);
+    if (!saved || saved.accepted_as_is || !saved.edited_at) return [];
+    const editedAt = Date.parse(saved.edited_at);
+    if (!Number.isFinite(editedAt)) return [];
+    const after = salesAfter(state, shift.id, item.sku, editedAt);
+    const sheet = (saved.expected_qty ?? expectedAtSubmit(state, shift, item.sku, editedAt)) - after + openingGap(state, shift.id, item.sku);
+    const counted = saved.counted_qty - after;
+    const product = state.products.find((row) => row.sku === item.sku);
+    const line = balanceLine({
+      sku: item.sku,
+      text: staffSkuText(item.sku, sizeLabel(item.sku, product?.category, item.name)),
+      sheet_qty: sheet,
+      counted_qty: counted,
+      price_cents: item.price_cents,
+    });
+    return line ? [line] : [];
+  }));
+  return { open, refill, close };
+}
+
 function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow, "summary_text">) {
   const left = [...closing.closing_lines].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
   const shown = left.slice(0, 15).map((line) => `${line.sku} ${line.name} ${line.left}`).join(" · ");
   const more = left.length > 15 ? " · (top 15, full list in sheet)" : "";
-  return [
-    `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`,
-    `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
-    `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+  const tail = [
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
     `Left: ${shown}${more}`,
     closing.no_count ? "No count taken" : "",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean);
+  const title = `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`;
+  if (tillCode() !== "PNY01") {
+    return [
+      title,
+      `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
+      `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+      ...tail,
+    ].join("\n");
+  }
+  const cash = closing.cash_sales_cents ?? closing.sales_total_cents;
+  const openShort = closing.open_shortage_cents ?? 0;
+  const openOver = closing.open_overage_cents ?? 0;
+  const refillShort = closing.refill_shortage_cents ?? 0;
+  const refillOver = closing.refill_overage_cents ?? 0;
+  const closeShort = closing.close_shortage_cents ?? 0;
+  const closeOver = closing.close_overage_cents ?? 0;
+  return [
+    title,
+    `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · Cash ${cashWordText(cashGapCents(cash, closing.deposited_cents))} · Deposited: ${formatMoney(closing.deposited_cents)}`,
+    `Cash: ${formatMoney(cash)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Open short ${formatMoney(openShort)} over ${formatMoney(openOver)} · Refill short ${formatMoney(refillShort)} over ${formatMoney(refillOver)} · Closing short ${formatMoney(closeShort)} over ${formatMoney(closeOver)} · Overall ${cashWordText(-(closing.balance_cents ?? 0))}`,
+    ...tail,
+  ].join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, raw?: Map<string, number>): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
-  const shortage = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
-  const overage = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+  const closeShort = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
+  const closeOver = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+  const parts = tillCode() === "PNY01" ? pny01BalanceView(state, shift, raw) : null;
+  const openShort = parts?.open.short_cents ?? 0;
+  const openOver = parts?.open.over_cents ?? 0;
+  const refillShort = parts?.refill.short_cents ?? 0;
+  const refillOver = parts?.refill.over_cents ?? 0;
+  const shortage = closeShort + openShort + refillShort;
+  const overage = closeOver + openOver + refillOver;
   const base = {
     shift_id: shift.id,
     sales_total_cents: totals.sales_total_cents,
@@ -888,6 +970,12 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     final_deposit_cents: finalDepositCents,
     shortage_cents: shortage,
     overage_cents: overage,
+    open_shortage_cents: parts ? openShort : undefined,
+    open_overage_cents: parts ? openOver : undefined,
+    refill_shortage_cents: parts ? refillShort : undefined,
+    refill_overage_cents: parts ? refillOver : undefined,
+    close_shortage_cents: parts ? closeShort : undefined,
+    close_overage_cents: parts ? closeOver : undefined,
     balance_cents: closingBalance({
       cash_sales_cents: totals.cash_sales_cents,
       shortage_cents: shortage,
@@ -906,9 +994,9 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
   return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base) };
 }
 
-function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
+function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow, raw?: Map<string, number>) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, raw);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
@@ -1957,6 +2045,7 @@ export class PosService {
         })(),
         verify: counted.verify,
         stock_check: counted.stock_check,
+        ...(tillCode() === "PNY01" ? { pny01_balance: pny01BalanceView(tx.state, shift, raw) } : {}),
         verify_admin: counted.verify_admin,
         final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
         incoming,
@@ -3046,11 +3135,11 @@ export class PosService {
         let expected: number;
         if (Number.isFinite(editedAt) && saved) {
           const after = salesAfter(tx.state, shift.id, item.sku, editedAt);
-          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after;
+          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after + openingGap(tx.state, shift.id, item.sku);
           counted = saved.counted_qty - after;
         } else if (!draft?.closing_submitted_at && client) {
           counted = client.counted_qty;
-          expected = item.expected_qty;
+          expected = item.expected_qty + openingGap(tx.state, shift.id, item.sku);
         } else {
           const onHand = qtyOf(tx.state, item.sku);
           counted = onHand;
@@ -3092,8 +3181,8 @@ export class PosService {
         }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
-      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit);
-      finishShift(tx.state, shift, "POS_END", at, closing);
+      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit, raw);
+      finishShift(tx.state, shift, "POS_END", at, closing, raw);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
       const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, closing: saved };

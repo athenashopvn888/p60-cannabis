@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
+import { cashGapCents, cashWordText } from "../../lib/pny-pos/pny01Balance";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
 import { usePosPoll } from "../usePosPoll";
@@ -38,9 +39,12 @@ async function post(url: string, body: unknown, key?: string) {
 export default function TillApp({
   apiBase = "/api/pos",
   homeHref = "/pos",
+  cashLabels = false,
 }: {
   apiBase?: string;
   homeHref?: string;
+  /** PNY01 names extra cash OVER and a short deposit SHORT. PNY02 leaves this off. */
+  cashLabels?: boolean;
 } = {}) {
   const [view, setView] = useState<View | null>(null);
   const [pin, setPin] = useState("");
@@ -198,8 +202,8 @@ export default function TillApp({
           <strong>{formatMoney(view.totals?.sales_cents ?? 0)}</strong>
         </article>
         <article className={styles.tillCard} data-testid="cash-on-hand">
-          <span>Cash on Hand</span>
-          <strong>{formatMoney(view.totals?.cash_on_hand_cents ?? 0)}</strong>
+          <span>{cashLabels ? "Cash" : "Cash on Hand"}</span>
+          <strong>{cashLabels ? cashWordText(cashGapCents(view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0, view.totals?.deposited_cents ?? 0)) : formatMoney(view.totals?.cash_on_hand_cents ?? 0)}</strong>
         </article>
         <article className={styles.tillCard} data-testid="total-deposited">
           <span>Total Deposited</span>
@@ -216,7 +220,7 @@ export default function TillApp({
         {viewOnly ? null : open ? (
           <div className={styles.tillCard}>
             <span>+Deposit</span>
-            <p>Cash on hand is {formatMoney(view.totals?.cash_on_hand_cents ?? 0)}.</p>
+            <p>{cashLabels ? `Cash is ${cashWordText(cashGapCents(view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0, view.totals?.deposited_cents ?? 0))}.` : `Cash on hand is ${formatMoney(view.totals?.cash_on_hand_cents ?? 0)}.`}</p>
             <input className={styles.field} inputMode="decimal" placeholder="0.00" value={deposit} onChange={(event) => setDeposit(event.target.value)} aria-label="Deposit amount" />
             {error ? <p className={styles.error}>{error}</p> : null}
             <div className={styles.actions}>
