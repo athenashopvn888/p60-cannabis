@@ -5,7 +5,7 @@ import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
-import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, posDefaultCategory, sortCategories } from "../app/lib/pny-pos/money.ts";
+import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
@@ -410,8 +410,18 @@ test("11. the public menu hides out of stock, disabled and inactive items and ha
   assert.deepEqual(chips.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS" && name !== "CIGARETTES"), source.filter((name) => name !== "ADD ONS" && name !== "VAPE PENS" && name !== "CIGARETTES"));
   assert.equal(defaultCategory(["Exotic", "Premium"]), "Exotic");
   assert.equal(posDefaultCategory(["ADD ONS", "CIGARETTES", "EDIBLES"]), "CIGARETTES");
-  assert.match(readFileSync("app/menu/MenuApp.tsx", "utf8"), /defaultCategory\(categories\)/);
+  const menuChips = layoutMenuCategoryChips(source);
+  assert.equal(menuChips[5], "VAPE PENS");
+  assert.equal(menuChips[6], "CIGARETTES");
+  assert.equal(menuChips[menuChips.length - 1], "ADD ONS");
+  assert.equal(menuChips.includes("CIGARETTES"), true);
+  const menuAppSource = readFileSync("app/menu/MenuApp.tsx", "utf8");
+  assert.match(menuAppSource, /defaultCategory\(categories\)/);
+  assert.match(menuAppSource, /layoutMenuCategoryChips\(categories\)/);
+  assert.match(menuAppSource, /categoryChipLabel\(name\)/);
+  assert.doesNotMatch(menuAppSource, /SHOW_CIGARETTES|filterCigarette/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /posDefaultCategory\(categories\)/);
+  assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /layoutMenuCategoryChips/);
 });
 
 test("12. a kitchen allocation is incoming and not sellable until it is confirmed", async () => {
@@ -700,14 +710,16 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(menuApp, /aria-label="Categories"/);
   assert.match(menuApp, /defaultCategory/);
   assert.doesNotMatch(menuApp, /\["All"/);
-  assert.match(posApp, /defaultCategory/);
+  assert.match(posApp, /posDefaultCategory/);
   assert.doesNotMatch(posApp, /\["All"/);
   assert.doesNotMatch(menuApp, /Prices include tax/);
   assert.doesNotMatch(menuApp, /on_hand|item\.qty|product\.qty/);
   const menuCss = readFileSync("app/menu/menu.module.css", "utf8");
   const posCss = readFileSync("app/pos/till.module.css", "utf8");
   assert.match(menuCss, /grid-template-columns:\s*1fr 1fr/);
-  assert.match(menuCss, /\.chips\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(menuCss, /\.chipRows\s*\{[^}]*overflow-x:\s*hidden/s);
+  assert.match(menuCss, /\.chipRow\s*\{[^}]*display:\s*flex/s);
+  assert.match(menuApp, /categoryChipLabel/);
   assert.match(posCss, /\.chips\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.doesNotMatch(menuCss, /\.chips\s*\{[^}]*overflow-x:\s*auto/s);
   assert.doesNotMatch(posCss, /\.chips\s*\{[^}]*overflow-x:\s*auto/s);

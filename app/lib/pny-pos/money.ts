@@ -105,6 +105,17 @@ export function layoutCategoryChips(names: string[]) {
   return ordered;
 }
 
+/** Customer menu grid. Nic Vape stays in Add Ons' sort cell, and Add Ons is the wide last chip. Cigs stays visible in the small cell. */
+export function layoutMenuCategoryChips(names: string[]) {
+  const ordered = [...names];
+  swapAt(ordered, ordered.findIndex(isAddOnCategory), ordered.findIndex(isNicVapeCategory));
+  const addOn = ordered.findIndex(isAddOnCategory);
+  if (addOn >= 0 && addOn !== ordered.length - 1) {
+    ordered.push(ordered.splice(addOn, 1)[0]);
+  }
+  return ordered;
+}
+
 /** Add Ons is selected when the customer menu opens. */
 export function defaultCategory(names: string[]) {
   return names.find((name) => categoryKey(name) === "add ons") ?? names[0] ?? "";
