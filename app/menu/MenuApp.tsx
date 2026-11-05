@@ -52,6 +52,7 @@ export default function MenuApp({
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [paid, setPaid] = useState(false);
   const [category, setCategory] = useState("");
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
@@ -89,6 +90,11 @@ export default function MenuApp({
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
   const total = items.reduce((sum, item) => sum + (cart[item.sku] ?? 0) * item.price_cents, 0);
   const lines = Object.entries(cart).filter(([, qty]) => qty > 0);
+  const lineKey = lines.map(([sku, qty]) => `${sku}:${qty}`).join("|");
+
+  useEffect(() => {
+    setConfirmClear(false);
+  }, [lineKey]);
 
   useEffect(() => {
     if (!ticket) return;
@@ -108,6 +114,15 @@ export default function MenuApp({
       window.clearInterval(timer);
     };
   }, [ticket, menuApi]);
+
+  function clearCart() {
+    if (lines.length === 0 || busy) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setCart({});
+  }
 
   async function place() {
     setError("");
@@ -231,14 +246,17 @@ export default function MenuApp({
         })}
       </section>
       <footer className={styles.footer}>
-        <div>
-          <strong>{formatMoney(total)}</strong>
-          {error ? <div className={styles.note}>{error}</div> : null}
-          {!menu?.ordering ? <div className={styles.note}>Ordering is unavailable right now.</div> : null}
+        {error ? <div className={styles.note}>{error}</div> : null}
+        {!menu?.ordering ? <div className={styles.note}>Ordering is unavailable right now.</div> : null}
+        <div className={styles.footerActions}>
+          <strong className={styles.total} data-testid="menu-total">{formatMoney(total)}</strong>
+          <button className={styles.order} type="button" disabled={!menu?.ordering || lines.length === 0 || busy} onClick={() => void place()}>
+            Place order
+          </button>
+          <button className={styles.clear} type="button" data-testid="menu-clear" disabled={lines.length === 0 || busy} onClick={clearCart}>
+            {confirmClear ? "Confirm" : "Clear"}
+          </button>
         </div>
-        <button className={styles.order} type="button" disabled={!menu?.ordering || lines.length === 0 || busy} onClick={() => void place()}>
-          Place order
-        </button>
       </footer>
     </main>
   );
