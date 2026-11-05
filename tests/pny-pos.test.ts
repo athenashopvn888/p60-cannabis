@@ -1937,7 +1937,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected |Confirm & End Shift/);
-  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /1 SKU off/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Open count/);
   assert.equal(blind.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -2416,8 +2416,9 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(closeUi, /Till balance/);
-  assert.match(closeUi, /signedMoney\(tillBalance\)/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /FINAL TILL BALANCE/);
+  assert.match(closeUi, /Float left in the till/);
+  assert.doesNotMatch(closeUi, /both stores/i);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
   assert.doesNotMatch(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /larger deposit is blocked/);
 
@@ -2739,4 +2740,31 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Start closing count\?/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Not yet/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
+});
+
+test("the float is stored on the close and does not change the deposit", async () => {
+  const h = await readyTill({ "1001": 2 });
+  await h.svc.cashout(h.token, { key: "float-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const saved = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200, float_cents: 500 });
+  assert.equal(saved.final_deposit_cents, 200);
+  assert.equal(saved.float_cents, 500);
+  const before = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "float-end", final_deposit_cents: 200, float_cents: 500, lines: [] });
+  assert.equal(ended.closing.float_cents, 500);
+  assert.equal(ended.closing.final_deposit_cents, 200);
+  const after = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
+  assert.equal(after - before, 200);
+  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents);
+  const started = await h.svc.startShift({ key: "float-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-float" });
+  const next = await h.svc.login(String(started.pin), "10.9.0.1");
+  const open = await h.svc.state(next.token);
+  assert.equal(open.float_check.required, true);
+  assert.equal(open.float_check.expected_cents, 500);
+  assert.equal(open.float_check.done, false);
+  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400 });
+  assert.equal(checked.gap_cents, -100);
+  const verified = await h.svc.state(next.token);
+  assert.equal(verified.float_check.done, true);
+  assert.equal(verified.float_check.found_cents, 400);
+  assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
 });

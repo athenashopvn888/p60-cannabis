@@ -14,6 +14,7 @@ import { POST as count } from "../../pos/shift/count/route";
 import { POST as countSubmit } from "../../pos/shift/count-submit/route";
 import { POST as endShift } from "../../pos/shift/end/route";
 import { POST as finalDeposit } from "../../pos/shift/final-deposit/route";
+import { POST as openingFloat } from "../../pos/shift/float/route";
 import { GET as state } from "../../pos/state/route";
 import { GET as summary } from "../../pos/summary/route";
 import { POST as cancelTicket } from "../../pos/tickets/[id]/cancel/route";
@@ -45,6 +46,7 @@ const postRoutes: Record<string, Handler> = {
   "shift/count-submit": countSubmit as Handler,
   "shift/end": endShift as Handler,
   "shift/final-deposit": finalDeposit as Handler,
+  "shift/float": openingFloat as Handler,
   "counts/opening": opening as Handler,
   "counts/opening-line": openingLine as Handler,
   "counts/opening-submit": openingSubmit as Handler,

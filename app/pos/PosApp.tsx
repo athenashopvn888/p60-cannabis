@@ -5,6 +5,7 @@ import Link from "next/link";
 import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import { floatPhrase } from "../lib/pny-pos/tillLedger";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -47,6 +48,8 @@ type View = {
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
   opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
+  float_cents?: number | null;
+  float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null };
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
@@ -68,7 +71,7 @@ type View = {
   stock_check?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
-    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
+    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] };
   };
   error?: string;
   code?: string;
@@ -125,6 +128,7 @@ export default function PosApp({
   const [refillOpen, setRefillOpen] = useState(false);
   const [refNo, setRefNo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -319,19 +323,35 @@ export default function PosApp({
     await load();
   }
 
-  async function saveCloseDeposit(cents: number) {
+  async function saveFloat() {
+    if (view?.master) return;
     setError("");
-    const saved = await post(`${apiBase}/shift/final-deposit`, { amount_cents: cents });
+    setBusy(true);
+    try {
+      const found = Math.round(Number(floatFound || 0) * 100);
+      await post(`${apiBase}/shift/float`, { found_cents: Number.isFinite(found) ? found : 0 });
+      setFloatFound("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the float");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCloseDeposit(cents: number, floatCents: number) {
+    setError("");
+    const saved = await post(`${apiBase}/shift/final-deposit`, { amount_cents: cents, float_cents: floatCents });
     await load();
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
 
-  async function confirmEnd(depositCents: number) {
+  async function confirmEnd(depositCents: number, floatCents: number) {
     setError("");
     setBusy(true);
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      const saved = await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
+      const saved = await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents, float_cents: floatCents }, crypto.randomUUID());
       setCart({});
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
@@ -468,10 +488,24 @@ export default function PosApp({
           ) : null}
         </div>
       </header>
+      {view.float_check?.required && view.float_check.found_cents == null && !view.master ? (
+        <div className={styles.ruleScrim} role="dialog" aria-modal="true" data-testid="float-verify">
+          <form className={styles.ruleSheet} onSubmit={(event) => { event.preventDefault(); void saveFloat(); }}>
+            <h2>Float in the till</h2>
+            <p>The last close left {formatMoney(view.float_check.expected_cents)}. Count the cash still in the drawer.</p>
+            <input className={styles.field} inputMode="decimal" aria-label="Float found" data-testid="float-found-input" value={floatFound} onChange={(event) => setFloatFound(event.target.value)} placeholder="0.00" />
+            {error ? <p className={styles.error}>{error}</p> : null}
+            <button className={styles.primary} type="submit" disabled={busy}>Save float</button>
+          </form>
+        </div>
+      ) : null}
       {showGaps && view?.verify ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <div className={styles.gapScroll}>
             <h2>Previous shift</h2>
+            {view.float_check?.found_cents != null ? (
+              <p data-testid="float-variance">Float {floatPhrase(view.float_check.found_cents - view.float_check.expected_cents).word} {formatMoney(floatPhrase(view.float_check.found_cents - view.float_check.expected_cents).cents)}</p>
+            ) : null}
             <p data-testid="staff-gap-count">{(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length === 1 ? "1 SKU off" : `${(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length} SKUs off`}</p>
             <SkuOffList lines={(view.verify.opening_lines ?? []).filter((line) => line.off !== 0)} testId="staff-gap-list" />
           </div>
@@ -650,6 +684,8 @@ export default function PosApp({
           onConfirm={confirmEnd}
           onClose={() => { setSheet(null); void load().catch(() => undefined); }}
           stockCheck={view.stock_check}
+          floatExpectedCents={view.float_check?.found_cents == null ? null : view.float_check.expected_cents}
+          floatFoundCents={view.float_check?.found_cents ?? null}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
           initialStep={view.closing?.submitted ? "deposit" : "count"}
         />

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { formatMoney, signedMoney } from "../lib/pny-pos/money";
+import { formatMoney } from "../lib/pny-pos/money";
+import type { AdjustLine } from "../lib/pny-pos/tillLedger";
 import CountCard from "./CountCard";
 import DepositSlip from "./DepositSlip";
-import SkuOffList, { type OffLine } from "./SkuOffList";
+import TillSummary from "./TillSummary";
+import type { OffLine } from "./SkuOffList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import styles from "./till.module.css";
 
@@ -30,6 +32,8 @@ export default function CloseShift({
   onConfirm,
   onClose,
   stockCheck,
+  floatExpectedCents,
+  floatFoundCents,
   deadline,
   initialStep,
 }: {
@@ -40,31 +44,44 @@ export default function CloseShift({
   error: string;
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: () => Promise<void>;
-  onSaveDeposit: (cents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number) => Promise<void | string>;
+  onSaveDeposit: (cents: number, floatCents: number) => Promise<{ deposit_code?: string | null } | void>;
+  onConfirm: (depositCents: number, floatCents: number) => Promise<void | string>;
   onClose: () => void;
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
-    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
+    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] };
   };
+  floatExpectedCents?: number | null;
+  floatFoundCents?: number | null;
   deadline?: string | null;
   initialStep?: "count" | "deposit";
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(initialStep ?? (lines.length === 0 ? "deposit" : "count"));
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [deposit, setDeposit] = useState(savedDeposit == null ? "" : (savedDeposit / 100).toFixed(2));
+  const [floatLeft, setFloatLeft] = useState("0.00");
   const [localError, setLocalError] = useState("");
   const [locking, setLocking] = useState(false);
   const [closeLabel, setCloseLabel] = useState("");
-  const openingOff = (stockCheck?.opening.lines ?? []).filter((line) => line.off !== 0);
-  const closingOff = (stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0);
-
   const verifyOpen = useVerifyOpen(deadline);
   const depositCents = Math.round(Number(deposit || 0) * 100);
   const drop = Number.isFinite(depositCents) ? depositCents : 0;
+  const parsedFloat = Math.round(Number(floatLeft || 0) * 100);
+  const floatCents = Number.isFinite(parsedFloat) && parsedFloat > 0 ? parsedFloat : 0;
   const deposited = totals.deposited_cents + drop;
-  const tillBalance = totals.cash_on_hand_cents - drop;
+  const adjust = (lines: OffLine[]): AdjustLine[] => lines.filter((line) => line.off !== 0).map((line) => ({
+    sku: line.sku,
+    text: line.text,
+    units: line.off,
+    cents: line.cents ?? 0,
+  }));
+  const refills: AdjustLine[] = (stockCheck?.refills?.lines ?? []).filter((line) => line.diff !== 0).map((line) => ({
+    sku: line.sku,
+    text: line.text,
+    units: line.diff,
+    cents: line.cents ?? 0,
+  }));
 
   return (
     <section className={styles.close} data-testid="pos-close">
@@ -95,8 +112,8 @@ export default function CloseShift({
             event.preventDefault();
             if (locking) return;
             setLocking(true);
-            void onSaveDeposit(depositCents).then(async (saved) => {
-              const label = await onConfirm(depositCents);
+            void onSaveDeposit(depositCents, floatCents).then(async (saved) => {
+              const label = await onConfirm(depositCents, floatCents);
               if (typeof label === "string") setCloseLabel(label);
               const code = saved && typeof saved === "object" ? saved.deposit_code : null;
               if (code) {
@@ -110,7 +127,11 @@ export default function CloseShift({
           }}>
             <h2>Final deposit</h2>
             <p>Cash on hand before this drop is {formatMoney(totals.cash_on_hand_cents)}.</p>
-            <input className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
+            <label className={styles.fieldLabel} htmlFor="final-deposit">Deposit</label>
+            <input id="final-deposit" className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
+            <label className={styles.fieldLabel} htmlFor="float-left">Float left in the till</label>
+            <input id="float-left" className={styles.qtyInput} inputMode="decimal" aria-label="Float left in the till" data-testid="float-left-input" value={floatLeft} onChange={(event) => setFloatLeft(event.target.value)} />
+            <p>Leave this at 0.00 when the drawer is emptied.</p>
             <button className={styles.primary} type="submit" disabled={busy || locking}>Save deposit</button>
           </form>
         ) : null}
@@ -121,38 +142,17 @@ export default function CloseShift({
 
         {step === "summary" ? (
           <div data-testid="close-summary">
-            <h2>Closing summary</h2>
-            <div className={styles.summaryRow}><span>Cash sales</span><strong>{formatMoney(totals.cash_sales_cents)}</strong></div>
-            <div className={styles.summaryRow}><span>Debit sales</span><strong>{formatMoney(totals.debit_sales_cents)}</strong></div>
-            <div className={styles.summaryRow}><span>Total sales</span><strong>{formatMoney(totals.sales_cents)}</strong></div>
-            <div className={styles.summaryRow}><span>Earlier deposits</span><strong>{formatMoney(totals.deposited_cents)}</strong></div>
-            <div className={styles.summaryRow}><span>Final deposit</span><strong>{formatMoney(drop)}</strong></div>
-            <div className={styles.summaryRow}><span>Total deposited</span><strong>{formatMoney(deposited)}</strong></div>
-            <div className={styles.summaryRow} data-testid="till-balance"><span>Till balance</span><strong>{signedMoney(tillBalance)}</strong></div>
+            <TillSummary
+              cashSalesCents={totals.cash_sales_cents}
+              depositedCents={deposited}
+              floatCents={floatCents}
+              openLines={adjust(stockCheck?.opening.lines ?? [])}
+              refillLines={refills}
+              closeLines={adjust(stockCheck?.closing.lines ?? [])}
+              floatExpectedCents={floatExpectedCents}
+              floatFoundCents={floatFoundCents}
+            />
             {closeLabel ? <div className={styles.summaryRow} data-testid="close-label"><span>Close label</span><strong>{closeLabel}</strong></div> : null}
-            <section className={styles.stockBlue} data-testid="opening-stock-check">
-              <h3>Opening verify count</h3>
-              <p>{stockCheck?.opening.ready === false ? "Count still open" : openingOff.length === 1 ? "1 SKU off" : `${openingOff.length} SKUs off`}</p>
-              <SkuOffList lines={openingOff} testId="opening-sku-list" />
-            </section>
-            <section className={styles.stockAmber} data-testid="closing-stock-check">
-              <h3>Closing count</h3>
-              <p>{stockCheck?.closing.ready === false ? "Count still open" : closingOff.length === 1 ? "1 SKU off" : `${closingOff.length} SKUs off`}</p>
-              <SkuOffList lines={closingOff} testId="closing-sku-list" />
-            </section>
-            <section className={styles.stockRose} data-testid="refill-issues">
-              <h3>Refill issues</h3>
-              <p>{(stockCheck?.refills?.count ?? 0) === 1 ? "1 refill issue" : `${stockCheck?.refills?.count ?? 0} refill issues`}</p>
-              {(stockCheck?.refills?.lines ?? []).map((line) => (
-                <div key={line.sku} className={styles.refillIssue} data-testid="refill-issue-row">
-                  <div className={styles.offRow}>
-                    <strong>{line.text}</strong>
-                    <strong className={line.diff < 0 ? styles.offShort : line.diff > 0 ? styles.offOver : styles.offEven}>{line.diff > 0 ? `+${line.diff}` : String(line.diff)}</strong>
-                  </div>
-                  <p className={styles.refillMeta}>sent {line.sent} · received {line.received}</p>
-                </div>
-              ))}
-            </section>
             <p data-testid="shift-locked">Shift closed</p>
           </div>
         ) : null}
