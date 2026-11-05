@@ -21,7 +21,8 @@ type OpeningCount = { sku?: string; counted_qty?: number; expected_qty?: number;
 type Draft = { shift_id?: string; verify_submitted_at?: string | null; closing_submitted_at?: string | null; counts?: DraftCount[]; opening_counts?: OpeningCount[] };
 type ClosingLine = { sku?: string; name?: string; left?: number; expected_qty?: number; variance_qty?: number; price_cents?: number; opening_qty?: number; received_qty?: number; sold_qty?: number; shortage_cents?: number; overage_cents?: number };
 type Closing = { shift_id?: string; closing_lines?: ClosingLine[]; shortage_cents?: number; overage_cents?: number; balance_cents?: number; cash_on_hand_cents?: number; deposited_cents?: number; cash_sales_cents?: number; debit_sales_cents?: number; final_deposit_cents?: number; sales_total_cents?: number };
-type Shift = { id?: string; store_code?: string; status?: string; started_at?: string; ended_at?: string | null };
+type Shift = { id?: string; sccx_shift_id?: string; store_code?: string; status?: string; started_at?: string; ended_at?: string | null };
+type Product = { sku?: string; name?: string };
 type State = {
   shifts?: Shift[];
   sales?: Sale[];
@@ -34,6 +35,7 @@ type State = {
   closing_drafts?: Draft[];
   closings?: Closing[];
   balances?: { sku?: string; qty?: number; store_code?: string }[];
+  products?: Product[];
 };
 
 function authorized(request: Request) {
@@ -180,9 +182,30 @@ export async function GET(request: Request) {
     opening: {
       verified: Boolean(draft?.verify_submitted_at),
       submitted_at: draft?.verify_submitted_at ?? null,
-      off: openingOff,
+      off: (draft?.opening_counts ?? []).flatMap((row) => {
+        if (row.accepted_as_is || row.expected_qty == null || row.counted_qty === row.expected_qty) return [];
+        const name = (parsed.products ?? []).find((item) => item.sku === row.sku)?.name ?? row.sku;
+        return [{ sku: row.sku, name, counted: row.counted_qty, expected: row.expected_qty, off: (row.counted_qty ?? 0) - row.expected_qty }];
+      }),
+      system_off: openingOff,
       line_count: openingLines.length,
     },
+    refills: (() => {
+      const grouped = new Map<string, { sent: number; received: number }>();
+      for (const row of parsed.incoming ?? []) {
+        if (row.confirmed_shift_id !== shiftId) continue;
+        if (row.status !== "CONFIRMED" && row.status !== "PARTIAL" && row.status !== "REJECTED") continue;
+        const current = grouped.get(row.sku ?? "") ?? { sent: 0, received: 0 };
+        current.sent += row.qty_sent ?? 0;
+        current.received += row.qty_received ?? 0;
+        if (row.sku) grouped.set(row.sku, current);
+      }
+      return [...grouped.entries()].flatMap(([sku, totals]) => {
+        if (totals.received === totals.sent) return [];
+        const name = (parsed.products ?? []).find((item) => item.sku === sku)?.name ?? sku;
+        return [{ sku, name, sent: totals.sent, received: totals.received, diff: totals.received - totals.sent }];
+      });
+    })(),
     focus: [...FOCUS, ...KIN].map(trace),
     closing_count_id: closingCount?.id ?? null,
   });
