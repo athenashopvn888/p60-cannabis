@@ -9,6 +9,7 @@ import { POST as confirmIncoming } from "../../pos/incoming/confirm/route";
 import { POST as refreshIncoming } from "../../pos/incoming/refresh/route";
 import { POST as login } from "../../pos/login/route";
 import { POST as logout } from "../../pos/logout/route";
+import { POST as closeStart } from "../../pos/shift/close-start/route";
 import { POST as count } from "../../pos/shift/count/route";
 import { POST as countSubmit } from "../../pos/shift/count-submit/route";
 import { POST as endShift } from "../../pos/shift/end/route";
@@ -38,6 +39,7 @@ const postRoutes: Record<string, Handler> = {
   cashout: cashout as Handler,
   "deposits": deposit as Handler,
   "deposits/confirm-pin": confirmPin as Handler,
+  "shift/close-start": closeStart as Handler,
   "shift/count": count as Handler,
   "shift/count-submit": countSubmit as Handler,
   "shift/end": endShift as Handler,

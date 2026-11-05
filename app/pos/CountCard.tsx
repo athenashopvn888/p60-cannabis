@@ -15,6 +15,7 @@ export default function CountCard({
   busy,
   allowExtra,
   compact,
+  purpose = "verify",
   onSave,
   onJump,
   onSubmit,
@@ -23,6 +24,7 @@ export default function CountCard({
   busy: boolean;
   allowExtra?: boolean;
   compact?: boolean;
+  purpose?: "verify" | "closing";
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
   onSubmit?: () => Promise<void>;
@@ -156,11 +158,21 @@ export default function CountCard({
     <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="count-rule-title" data-testid="count-rule-modal">
       <div className={styles.ruleSheet}>
         <h2 id="count-rule-title">Stock Count Rule</h2>
-        <p>Count every SKU by bag size. You can go back and fix any SKU before you tap Submit.</p>
-        <p>Selling during the count is fine. The system accounts for those sales.</p>
-        <p>Tap Submit once when you are done. Any SKU you leave blank is accepted as-is, and you take responsibility for it.</p>
-        <p>You have 2 hours. After that the count closes and blank SKUs are accepted.</p>
-        <p>After Submit you only see SKUs that are off. + means over. − means short.</p>
+        {purpose === "closing" ? (
+          <>
+            <p>Count every SKU. You can change a number until you tap Submit. The count does not show what the system expects.</p>
+            <p>Keep selling. Each SKU uses sales up to the last time you edited it. A sale after that edit is taken off the expected amount, so the difference stays the same.</p>
+            <p>Blank SKUs stay blank until the final deposit. Then they are accepted as-is. The shift locks only after that deposit.</p>
+          </>
+        ) : (
+          <>
+            <p>Count every SKU by bag size. You can go back and fix any SKU before you tap Submit.</p>
+            <p>Selling during the count is fine. The system accounts for those sales.</p>
+            <p>Tap Submit once when you are done. Any SKU you leave blank is accepted as-is, and you take responsibility for it.</p>
+            <p>You have 2 hours. After that the count closes and blank SKUs are accepted.</p>
+            <p>After Submit you only see SKUs that are off. + means over. − means short.</p>
+          </>
+        )}
         <section className={styles.ruleNotice} data-testid="count-rule-notice">
           <h3>Final report</h3>
           <p>If any quantity you enter is different from what the system expects, it will show in the final report.</p>

@@ -1116,6 +1116,29 @@
   background: #fff;
 }
 
+.closingDock {
+  background: #fef3c7;
+  border-top: 2px solid #d97706;
+  padding-top: 4px;
+}
+
+.closingDock h3 {
+  margin: 0;
+  padding: 4px 10px 0;
+  font-size: 14px;
+  color: #92400e;
+}
+
+.askActions {
+  display: flex;
+  gap: 8px;
+}
+
+.askActions .primary,
+.askActions .secondary {
+  flex: 1;
+}
+
 .countRuleRow {
   display: flex;
   justify-content: flex-end;

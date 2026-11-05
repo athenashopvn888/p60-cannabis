@@ -242,6 +242,8 @@ export type ClosingDraftRow = {
   }[];
   /** Set when staff tap Submit, or when the 2-hour window closes the count for them. */
   verify_submitted_at?: string | null;
+  /** Set when staff choose Yes on End Shift. Missing means the closing count has not started. */
+  closing_started_at?: string | null;
   closing_submitted_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
