@@ -47,14 +47,18 @@ export function pny2CloseReport(state: State) {
   const closingLines = (closing?.closing_lines ?? []).map((line) => ({
     sku: line.sku,
     name: line.name,
-    qty: line.left,
+    counted_qty: line.left,
+    expected_qty: line.expected_qty ?? null,
+    system_qty: line.system_qty,
+    opening_qty: line.opening_qty ?? null,
     price_cents: line.price_cents ?? 0,
     variance_qty: line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty),
     shortage_cents: line.shortage_cents ?? 0,
     overage_cents: line.overage_cents ?? 0,
     sold_qty: line.sold_qty ?? 0,
   }));
-  const units = closingLines.reduce((sum, line) => sum + line.qty, 0);
+  const balances = state.balances.filter((row) => row.store_code === "PNY02");
+  const stocked = balances.filter((row) => row.qty > 0);
   const cash = closing?.cash_sales_cents ?? closing?.sales_total_cents ?? 0;
   const deposited = closing?.deposited_cents ?? deposits.reduce((sum, row) => sum + row.amount_cents, 0);
   return {
@@ -79,9 +83,15 @@ export function pny2CloseReport(state: State) {
     coh_matches_sales_minus_deposits: cash - deposited === (closing?.cash_on_hand_cents ?? 0),
     deposits: deposits.map((row) => ({ code: row.deposit_code ?? "", amount_cents: row.amount_cents, at: row.created_at })),
     opening: open,
+    opening_rows: draft?.opening_counts?.length ?? 0,
     refills,
+    refill_rows: state.incoming.filter((row) => latest && row.confirmed_shift_id === latest.id).length,
     closing_lines: closingLines,
     closing_sku_count: closingLines.length,
-    closing_units: units,
+    closing_units: closingLines.reduce((sum, line) => sum + line.counted_qty, 0),
+    balance_rows: balances.length,
+    stocked_skus: stocked.length,
+    stocked_units: stocked.reduce((sum, row) => sum + row.qty, 0),
+    stocked: stocked.map((row) => ({ sku: row.sku, qty: row.qty })),
   };
 }
