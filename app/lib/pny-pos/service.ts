@@ -31,6 +31,7 @@ import type { PosDb } from "./memory.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
+import { ownerMoneyLayout, ownerShiftTimes } from "./ownerRecords.ts";
 import { isCigaretteCategory } from "../siteConfig.ts";
 import { parseFlowerSku, skuSortKey } from "./flowerSku.ts";
 import { formatDepositCode, nextDepositSeq } from "./depositCode.ts";
@@ -4096,6 +4097,141 @@ export class PosService {
             lines: lines.map((line) => ({ sku: line.sku, name: productName(tx.state, line.sku), qty: line.qty })),
           };
         }),
+      };
+    });
+  }
+
+
+
+
+  /** Read-only owner shift list for PNY01. Never writes. */
+  async ownerListShifts() {
+    return this.db.transaction(async (tx) => {
+      const code = tillCode();
+      const shifts = tx.state.shifts
+        .filter((shift) => shift.store_code === code)
+        .sort((a, b) => b.started_at.localeCompare(a.started_at))
+        .map((shift) => {
+          const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+          const times = ownerShiftTimes(shift.started_at, shift.ended_at);
+          const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+          return {
+            id: shift.id,
+            sccx_shift_id: shift.sccx_shift_id,
+            status: shift.status,
+            staff_name: staff?.display_name ?? staff?.pos_id ?? shift.staff_uid,
+            staff_pos_id: staff?.pos_id ?? "",
+            started_at: shift.started_at,
+            ended_at: shift.ended_at,
+            date_toronto: times.date_toronto,
+            open_toronto: times.open_toronto,
+            close_toronto: times.close_toronto,
+            has_closing: Boolean(closing),
+            close_label: closing?.close_label ?? null,
+          };
+        });
+      return { ok: true as const, store: code, shifts };
+    });
+  }
+
+  /** Read-only owner shift detail for PNY01. Never writes. */
+  async ownerShiftDetail(shiftId: string) {
+    return this.db.transaction(async (tx) => {
+      const code = tillCode();
+      const shift = tx.state.shifts.find((row) => row.id === shiftId && row.store_code === code);
+      if (!shift) throw new PosError(404, "SHIFT", "Shift was not found.");
+      const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
+      const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+      const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      const totals = shiftTotals(tx.state, shift.id);
+      const deposits = tx.state.deposits
+        .filter((row) => row.shift_id === shift.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((row) => ({
+          id: row.id,
+          deposit_code: row.deposit_code ?? null,
+          amount_cents: row.amount_cents,
+          created_at: row.created_at,
+          created_toronto: formatStoreTime(row.created_at),
+        }));
+      const sales = tx.state.sales
+        .filter((sale) => sale.shift_id === shift.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((sale) => ({
+          id: sale.id,
+          ref_no: sale.ref_no,
+          status: sale.status,
+          payment: sale.payment_method,
+          total_cents: sale.total_cents,
+          created_at: sale.created_at,
+          created_toronto: formatStoreTime(sale.created_at),
+          lines: tx.state.sale_lines
+            .filter((line) => line.sale_id === sale.id)
+            .map((line) => ({
+              sku: line.sku,
+              name: productName(tx.state, line.sku),
+              qty: line.qty,
+              line_total_cents: line.line_total_cents,
+            })),
+        }));
+
+      const opening = (draft?.opening_counts ?? []).flatMap((row) => {
+        if (row.accepted_as_is || row.expected_qty == null) return [];
+        const off = row.counted_qty - row.expected_qty;
+        if (off === 0) return [];
+        return [staffOffLine(tx.state, row.sku, off)];
+      });
+      const closingOff = (closing?.closing_lines ?? []).flatMap((line) => {
+        const off = line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty);
+        if (!off) return [];
+        return [staffOffLine(tx.state, line.sku, off)];
+      });
+      const refills = refillIssues(tx.state, shift.id);
+      const money = ownerMoneyLayout({
+        cash_sales_cents: closing?.cash_sales_cents ?? totals.cash_sales_cents,
+        deposited_cents: closing?.deposited_cents ?? totals.deposited_cents,
+        cash_on_hand_cents: closing?.cash_on_hand_cents ?? totals.cash_on_hand_cents,
+        balance_cents: closing?.balance_cents ?? closingBalance({
+          cash_sales_cents: totals.cash_sales_cents,
+          shortage_cents: closing?.shortage_cents ?? 0,
+          overage_cents: closing?.overage_cents ?? 0,
+          deposited_cents: totals.deposited_cents,
+        }),
+        deposits,
+      });
+      const times = ownerShiftTimes(shift.started_at, shift.ended_at);
+      return {
+        ok: true as const,
+        store: code,
+        shift: {
+          id: shift.id,
+          sccx_shift_id: shift.sccx_shift_id,
+          status: shift.status,
+          staff_name: staff?.display_name ?? staff?.pos_id ?? shift.staff_uid,
+          staff_pos_id: staff?.pos_id ?? "",
+          started_at: shift.started_at,
+          ended_at: shift.ended_at,
+          end_reason: shift.end_reason,
+          date_toronto: times.date_toronto,
+          open_toronto: times.open_toronto,
+          close_toronto: times.close_toronto,
+          close_label: closing?.close_label ?? null,
+          no_count: closing?.no_count ?? false,
+        },
+        sales,
+        money,
+        variances: {
+          opening_verify: { count: opening.length, lines: opening },
+          closing_count: { count: closingOff.length, lines: closingOff },
+          refill_issues: refills,
+        },
+        totals: {
+          sales_cents: closing?.sales_total_cents ?? totals.sales_total_cents,
+          cash_sales_cents: closing?.cash_sales_cents ?? totals.cash_sales_cents,
+          debit_sales_cents: closing?.debit_sales_cents ?? totals.debit_sales_cents,
+          sale_count: closing?.sale_count ?? totals.sale_count,
+          void_count: closing?.void_count ?? totals.void_count,
+        },
       };
     });
   }
