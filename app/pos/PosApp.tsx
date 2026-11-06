@@ -2,9 +2,13 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { bagLabel, groupByStrain, isFlowerCategory } from "../lib/pny-pos/flowerSku";
+import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import { floatPhrase } from "../lib/pny-pos/tillLedger";
+import { filterSellProducts } from "./posSearch";
+import { pos2RouteFromLocation } from "./posPath";
+import { readTillState } from "./softState";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -27,9 +31,6 @@ function rowsOf<T>(items: T[], size: number) {
 
 type Product = { sku: string; name: string; category: string; price_cents: number; price_source?: string; image_url?: string | null; flower_type?: string; thc?: string };
 
-function compareSku(a: string, b: string) {
-  return a.localeCompare(b, "en", { numeric: true });
-}
 type Ticket = { id: string; code: string; status: string; expires_at: string; lines: { sku: string; name: string; qty: number }[] };
 type CountLine = { sku: string; name: string };
 type View = {
@@ -37,6 +38,7 @@ type View = {
   demo?: boolean;
   demo_label?: string | null;
   demo_pin?: string | null;
+  waiting_for_opening?: boolean;
   phase?: string;
   master?: boolean;
   can_sell?: boolean;
@@ -47,6 +49,8 @@ type View = {
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
   opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
+  float_cents?: number | null;
+  float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null };
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
@@ -68,7 +72,7 @@ type View = {
   stock_check?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
-    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number }[] };
+    refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] };
   };
   error?: string;
   code?: string;
@@ -125,11 +129,22 @@ export default function PosApp({
   const [refillOpen, setRefillOpen] = useState(false);
   const [refNo, setRefNo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
+  const forced = pos2RouteFromLocation();
+  const storeApi = forced?.apiBase ?? apiBase;
+  const storeLabel = forced?.label ?? label;
+  const storeTill = forced?.tillHref ?? tillHref;
+  const storeMenu = forced?.menuUrl ?? menuUrl;
 
   const load = useCallback(async () => {
-    const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
-    const data = (await response.json()) as View;
+    const result = await readTillState(storeApi);
+    if (result.keep) {
+      setError(result.message);
+      setView((current) => current ?? { authenticated: false });
+      return;
+    }
+    const data = result.data as View;
     setView(data);
     if (!data.authenticated) setActiveTicket(null);
     else setActiveTicket((current) => (current && data.tickets?.some((ticket) => ticket.id === current.id) ? current : null));
@@ -137,7 +152,7 @@ export default function PosApp({
       setCart({});
       if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
     }
-  }, [apiBase]);
+  }, [storeApi]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -151,17 +166,10 @@ export default function PosApp({
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
   const categoryLayout = useMemo(() => layoutCategoryChips(categories), [categories]);
   const activeCategory = categories.includes(category) ? category : posDefaultCategory(categories);
-  const visible = useMemo(() => {
-    const rows = view?.products ?? [];
-    const q = query.trim().toLowerCase();
-    const filtered = rows.filter((product) => {
-      if (product.category !== activeCategory) return false;
-      if (!q) return true;
-      return product.sku.includes(q) || product.name.toLowerCase().includes(q);
-    });
-    if (!isFlowerCategory(activeCategory)) return filtered;
-    return [...filtered].sort((a, b) => compareSku(a.sku, b.sku));
-  }, [view?.products, query, activeCategory]);
+  const visible = useMemo(
+    () => filterSellProducts(view?.products ?? [], query, activeCategory),
+    [view?.products, query, activeCategory],
+  );
   const blocks = useMemo(() => groupByStrain(visible), [visible]);
 
   const total = products.reduce((sum, product) => sum + (cart[product.sku] ?? 0) * product.price_cents, 0);
@@ -185,7 +193,7 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/login`, { pin });
+      await post(`${storeApi}/login`, { pin });
       setPin("");
       await load();
     } catch (err) {
@@ -200,7 +208,7 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const result = await post(`${apiBase}/cashout`, { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
+      const result = await post(`${storeApi}/cashout`, { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
@@ -228,7 +236,7 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/shift/close-start`, {});
+      await post(`${storeApi}/shift/close-start`, {});
       setSheet(null);
       await load();
     } catch (err) {
@@ -249,9 +257,9 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/deposits/confirm-pin`, { pin: summaryPin });
+      await post(`${storeApi}/deposits/confirm-pin`, { pin: summaryPin });
       setSummaryPin("");
-      const data = await fetch(`${apiBase}/summary`, { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
+      const data = await fetch(`${storeApi}/summary`, { cache: "no-store", credentials: "same-origin" }).then((response) => response.json());
       if (!data.ok) throw new Error(data.error || "Summary was not loaded");
       setSummaryDeposits(Array.isArray(data.deposits) ? data.deposits : []);
       setSummaryText(String(data.text ?? ""));
@@ -274,7 +282,7 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/deposits/confirm-pin`, { pin: depositPin });
+      await post(`${storeApi}/deposits/confirm-pin`, { pin: depositPin });
       setDepositPin("");
       setSheet("deposit-amount");
     } catch (err) {
@@ -294,7 +302,7 @@ export default function PosApp({
     }
     setBusy(true);
     try {
-      const saved = await post(`${apiBase}/deposits`, { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post(`${storeApi}/deposits`, { amount_cents: cents }, crypto.randomUUID());
       setDepositAmount("");
       setSheet(null);
       if (typeof saved.deposit_code === "string") setDepositCode(saved.deposit_code);
@@ -309,29 +317,45 @@ export default function PosApp({
   async function submitCloseCount() {
     if (view?.master) return;
     setError("");
-    await post(`${apiBase}/shift/count-submit`, {});
+    await post(`${storeApi}/shift/count-submit`, {});
     await load();
   }
 
   async function saveCloseCount(sku: string, countedQty: number) {
     setError("");
-    await post(`${apiBase}/shift/count`, { sku, counted_qty: countedQty });
+    await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty });
     await load();
   }
 
-  async function saveCloseDeposit(cents: number) {
+  async function saveFloat() {
+    if (view?.master) return;
     setError("");
-    const saved = await post(`${apiBase}/shift/final-deposit`, { amount_cents: cents });
+    setBusy(true);
+    try {
+      const found = Math.round(Number(floatFound || 0) * 100);
+      await post(`${storeApi}/shift/float`, { found_cents: Number.isFinite(found) ? found : 0 });
+      setFloatFound("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the float");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCloseDeposit(cents: number, floatCents: number) {
+    setError("");
+    const saved = await post(`${storeApi}/shift/final-deposit`, { amount_cents: cents, float_cents: floatCents });
     await load();
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
 
-  async function confirmEnd(depositCents: number) {
+  async function confirmEnd(depositCents: number, floatCents: number) {
     setError("");
     setBusy(true);
     try {
       const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      const saved = await post(`${apiBase}/shift/end`, { lines, final_deposit_cents: depositCents }, crypto.randomUUID());
+      const saved = await post(`${storeApi}/shift/end`, { lines, final_deposit_cents: depositCents, float_cents: floatCents }, crypto.randomUUID());
       setCart({});
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
@@ -347,27 +371,27 @@ export default function PosApp({
   async function saveVerifyLine(sku: string, countedQty: number) {
     if (view?.master) return;
     setError("");
-    await post(`${apiBase}/counts/opening-line`, { sku, counted_qty: countedQty });
+    await post(`${storeApi}/counts/opening-line`, { sku, counted_qty: countedQty });
     await load();
   }
 
   async function submitVerify() {
     if (view?.master) return;
     setError("");
-    await post(`${apiBase}/counts/opening-submit`, {});
+    await post(`${storeApi}/counts/opening-submit`, {});
     await load();
   }
 
   async function jumpVerify(sku: string) {
     if (view?.master) return;
     setError("");
-    await post(`${apiBase}/counts/opening-jump`, { sku });
+    await post(`${storeApi}/counts/opening-jump`, { sku });
     await load();
   }
 
   async function saveOpeningLine(sku: string, countedQty: number, varianceReason?: string) {
     setError("");
-    await post(`${apiBase}/counts/opening-line`, { sku, counted_qty: countedQty, variance_reason: varianceReason });
+    await post(`${storeApi}/counts/opening-line`, { sku, counted_qty: countedQty, variance_reason: varianceReason });
     await load();
   }
 
@@ -380,7 +404,7 @@ export default function PosApp({
         counted_qty: line.counted_qty ?? 0,
         variance_reason: line.variance_reason || undefined,
       }));
-      await post(`${apiBase}/counts/opening`, { lines }, crypto.randomUUID());
+      await post(`${storeApi}/counts/opening`, { lines }, crypto.randomUUID());
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Count was not saved");
@@ -393,7 +417,7 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/incoming/confirm`, { lines }, crypto.randomUUID());
+      await post(`${storeApi}/incoming/confirm`, { lines }, crypto.randomUUID());
       setRefillOpen(false);
       await load();
     } catch (err) {
@@ -410,9 +434,10 @@ export default function PosApp({
     return (
       <main className={styles.shell} data-testid="pos-login">
         {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
+        {view.waiting_for_opening ? <div className={styles.banner} data-testid="waiting-opening">waiting for opening stock</div> : null}
         <section className={styles.pin}>
-          <h1 className={styles.brand}>{label} staff till</h1>
-          <p>Enter the 4-digit shift PIN. Five wrong tries lock the shift.</p>
+          <h1 className={styles.brand}>{storeLabel} staff till</h1>
+          <p>{view.waiting_for_opening ? "Opening stock has not been copied in yet." : "Enter the 4-digit shift PIN. Five wrong tries lock the shift."}</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           <div className={styles.keys}>
@@ -443,7 +468,7 @@ export default function PosApp({
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
-          <div className={styles.brand}>{label} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
+          <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
           {view.phase === "sell" ? (
             <div className={styles.namePills}>
               <button className={`${styles.cornerBtn} ${styles.namePill} ${tab === "tickets" ? styles.namePillOn : ""}`} type="button" data-testid="tickets-tab" onClick={() => setTab("tickets")}>Ticket {view.pending_count ?? 0}</button>
@@ -461,17 +486,31 @@ export default function PosApp({
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
           ) : null}
-          <Link className={styles.tillLink} href={tillHref === "/pos/till" ? "/pos/till" : tillHref} data-testid="open-till">Till</Link>
+          <Link className={styles.tillLink} href={storeTill} data-testid="open-till">Till</Link>
           <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
           ) : null}
         </div>
       </header>
+      {view.float_check?.required && view.float_check.found_cents == null && !view.master ? (
+        <div className={styles.ruleScrim} role="dialog" aria-modal="true" data-testid="float-verify">
+          <form className={styles.ruleSheet} onSubmit={(event) => { event.preventDefault(); void saveFloat(); }}>
+            <h2>Float in the till</h2>
+            <p>The last close left {formatMoney(view.float_check.expected_cents)}. Count the cash still in the drawer.</p>
+            <input className={styles.field} inputMode="decimal" aria-label="Float found" data-testid="float-found-input" value={floatFound} onChange={(event) => setFloatFound(event.target.value)} placeholder="0.00" />
+            {error ? <p className={styles.error}>{error}</p> : null}
+            <button className={styles.primary} type="submit" disabled={busy}>Save float</button>
+          </form>
+        </div>
+      ) : null}
       {showGaps && view?.verify ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <div className={styles.gapScroll}>
             <h2>Previous shift</h2>
+            {view.float_check?.found_cents != null ? (
+              <p data-testid="float-variance">Float {floatPhrase(view.float_check.found_cents - view.float_check.expected_cents).word} {formatMoney(floatPhrase(view.float_check.found_cents - view.float_check.expected_cents).cents)}</p>
+            ) : null}
             <p data-testid="staff-gap-count">{(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length === 1 ? "1 SKU off" : `${(view.verify.opening_lines ?? []).filter((line) => line.off !== 0).length} SKUs off`}</p>
             <SkuOffList lines={(view.verify.opening_lines ?? []).filter((line) => line.off !== 0)} testId="staff-gap-list" />
           </div>
@@ -586,9 +625,9 @@ export default function PosApp({
                   setCart(next);
                   setActiveTicket({ id: ticket.id, code: ticket.code });
                   setTab("sell");
-                  void post(`${apiBase}/tickets/${ticket.id}/open`, {}).then(() => load());
+                  void post(`${storeApi}/tickets/${ticket.id}/open`, {}).then(() => load());
                 }}>Open</button>
-                <button className={styles.secondary} type="button" onClick={() => void post(`${apiBase}/tickets/${ticket.id}/cancel`, {}).then(() => load())}>Cancel</button>
+                <button className={styles.secondary} type="button" onClick={() => void post(`${storeApi}/tickets/${ticket.id}/cancel`, {}).then(() => load())}>Cancel</button>
               </div>
             </article>
           ))}
@@ -650,6 +689,8 @@ export default function PosApp({
           onConfirm={confirmEnd}
           onClose={() => { setSheet(null); void load().catch(() => undefined); }}
           stockCheck={view.stock_check}
+          floatExpectedCents={view.float_check?.found_cents == null ? null : view.float_check.expected_cents}
+          floatFoundCents={view.float_check?.found_cents ?? null}
           deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
           initialStep={view.closing?.submitted ? "deposit" : "count"}
         />
@@ -685,7 +726,7 @@ export default function PosApp({
           {copied ? <p className={styles.copied} data-testid="copied-toast">Copied</p> : null}
         </div>
       ) : null}
-      {qrOpen ? <CustomerQr url={menuUrl} onClose={() => setQrOpen(false)} /> : null}
+      {qrOpen ? <CustomerQr url={storeMenu} onClose={() => setQrOpen(false)} /> : null}
       {depositCode ? <DepositSlip code={depositCode} onDone={() => setDepositCode(null)} /> : null}
       {sheet && sheet !== "close" ? (
         <div className={styles.sheet} role="dialog" aria-modal="true">

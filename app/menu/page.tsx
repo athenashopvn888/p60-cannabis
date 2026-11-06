@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { lockedStore } from "../lib/pny-pos/singleStore";
 import MenuApp from "./MenuApp";
 
 export const dynamic = "force-dynamic";
@@ -9,5 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default function MenuPage() {
-  return <MenuApp />;
+  const store = lockedStore();
+  if (!store || store.code === "PNY01") return <MenuApp />;
+  return <MenuApp menuApi="/api/menu" label={store.label} />;
 }

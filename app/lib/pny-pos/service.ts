@@ -28,6 +28,7 @@ import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSessio
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
+import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
@@ -38,6 +39,7 @@ import type { DemoDraft } from "./demoDraft.ts";
 import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } from "./verifyCount.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
+import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
@@ -52,6 +54,7 @@ import type {
   ClosingRow,
   IncomingRow,
   MovementType,
+  ProductRow,
   Secrets,
   ShiftRow,
   State,
@@ -87,6 +90,7 @@ const TONIGHT_NAME_MARK = "PNY01-TONIGHT";
 
 /** Rename the staff member on the open PNY01 shift once. Does not touch the PIN. */
 function nameLiveShift(state: State, at: string) {
+  if (process.env.STORE_CODE?.trim()) return;
   if (tillCode() !== "PNY01") return;
   if (state.audit.some((row) => row.action === "DISPLAY_NAME" && row.ref_id === TONIGHT_NAME_MARK)) return;
   const shift = state.shifts.find((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"));
@@ -400,24 +404,70 @@ function presentCatalogItem<T extends { sku: string; name: string; category: str
   };
 }
 
+let catalogImages: Map<string, string> | null = null;
+
+function hostedImage(sku: string) {
+  if (!catalogImages) {
+    catalogImages = new Map();
+    for (const row of catalogFromFeed(readCommittedPnyCatalog())) {
+      if (row.image_url) catalogImages.set(row.sku, row.image_url);
+    }
+  }
+  return catalogImages.get(sku) ?? null;
+}
+
+type MasterProduct = { product: ProductRow; enabled: boolean; override: number | null };
+
 function stockedCatalogRows(state: State, items: ItemIndex | null) {
   if (!items || items.size === 0) return [];
-  const rows: { sku: string; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
   for (const balance of state.balances) {
-    if (balance.qty <= 0 || parseFlowerSku(balance.sku)) continue;
+    if (balance.qty <= 0 || !balanceForStore(balance) || parseFlowerSku(balance.sku)) continue;
     const record = lookupItem(items, balance.sku);
     if (!record) continue;
     const cents = pricedItem(balance.sku, record);
     if (cents <= 0) continue;
-    rows.push({ sku: balance.sku, name: record.name, category: record.category, price_cents: cents, image_url: record.image, qty: balance.qty });
+    rows.push({ sku: balance.sku, sku_sort: skuSortKey(balance.sku), name: record.name, category: record.category, price_cents: cents, image_url: record.image || hostedImage(balance.sku), qty: balance.qty });
   }
   return rows;
 }
 
-function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null) {
+/** On-hand rows that are not already in this till's product list. Prices and photos come from the sheet catalog the old till uses. */
+function stockedMasterRows(state: State, masters: Map<string, MasterProduct>, flowers: FlowerIndex | null, items: ItemIndex | null) {
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number; flower_type: string; thc: string; price_source: "RAW_UNIT" }[] = [];
+  for (const balance of state.balances) {
+    if (balance.qty <= 0 || !balanceForStore(balance)) continue;
+    if (state.products.some((product) => product.sku === balance.sku)) continue;
+    const hit = masters.get(balance.sku);
+    if (!hit?.product.setb_active || !hit.enabled) continue;
+    const shown = presentCatalogItem({
+      sku: hit.product.sku,
+      sku_sort: hit.product.sku_sort,
+      name: hit.product.name,
+      category: hit.product.category,
+      price_cents: hit.override ?? hit.product.default_price_cents,
+      image_url: hit.product.image_url || hostedImage(balance.sku),
+      qty: balance.qty,
+      flower_type: "",
+      thc: "",
+    }, flowers, items);
+    if (shown.price_cents <= 0) continue;
+    rows.push({ ...shown, qty: balance.qty, price_source: "RAW_UNIT" });
+  }
+  return rows;
+}
+
+function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null, masters?: Map<string, MasterProduct>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === sku);
   const record = lookupItem(items, sku);
+  const master = !product ? masters?.get(sku) : undefined;
+  if (master?.product.setb_active && master.enabled) {
+    const fromFlower = flowerPriceCents(flowers, sku);
+    const pack = cigarettePackCents(sku, master.product.category, master.product.name);
+    const cents = fromFlower ?? pack ?? raw?.get(sku) ?? master.override ?? master.product.default_price_cents;
+    if (cents > 0) return { cents, source: fromFlower != null || pack != null || raw?.get(sku) != null ? "RAW_UNIT" as const : "SETB_DEFAULT" as const, product: master.product };
+  }
   if (!product?.setb_active || !storeProduct?.enabled) {
     if (!record) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
     const cents = pricedItem(sku, record);
@@ -724,6 +774,17 @@ function staffOffLine(state: State, sku: string, off: number) {
   return { sku, text: staffSkuText(sku, size), off };
 }
 
+function shelfCents(state: State, sku: string, raw?: Map<string, number>) {
+  const priced = sellingPriceCents(state, sku, raw);
+  if (priced > 0) return priced;
+  return quoteForSku(sku)?.cents ?? 0;
+}
+
+function pricedOff(state: State, sku: string, off: number, raw?: Map<string, number>) {
+  const price = shelfCents(state, sku, raw);
+  return { ...staffOffLine(state, sku, off), cents: off * price };
+}
+
 function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
   if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
@@ -739,14 +800,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   const opening = skus.flatMap((sku) => {
     const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
-    return [staffOffLine(state, sku, row.counted_qty - row.expected_qty)];
+    return [pricedOff(state, sku, row.counted_qty - row.expected_qty, raw)];
   });
   const openingLines = arrangeOff(opening, skus).filter((line) => line.off !== 0);
   const closePlan = [...shiftClosePlan(state, shift.id, raw)].sort((a, b) => compareCount(countMeta(state, a.sku), countMeta(state, b.sku)));
   const closing = closePlan.flatMap((line) => {
     const counted = draft?.counts.find((row) => row.sku === line.sku)?.counted_qty;
     if (counted == null) return [];
-    return [staffOffLine(state, line.sku, counted - line.expected_qty)];
+    return [pricedOff(state, line.sku, counted - line.expected_qty, raw)];
   });
   const closingUsesEdit = Boolean(draft?.counts.some((row) => row.edited_at || row.accepted_as_is));
   const closingSubmitted = Boolean(draft?.closing_submitted_at);
@@ -754,14 +815,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     const row = draft?.counts.find((entry) => entry.sku === line.sku);
     if (!row || row.accepted_as_is) return [];
     const expected = row.edited_at ? (row.expected_qty ?? line.expected_qty) : line.expected_qty;
-    return [staffOffLine(state, line.sku, row.counted_qty - expected)];
+    return [pricedOff(state, line.sku, row.counted_qty - expected, raw)];
   });
   const closingSource = closingUsesEdit ? closingCompared : closing;
   const closingAll = arrangeOff(closingSource, closePlan.map((line) => line.sku));
   const closingReady = closingSubmitted || (!closingUsesEdit && closePlan.length > 0 && closing.length === closePlan.length);
   const closingLines = closingReady ? closingAll.filter((line) => line.off !== 0) : [];
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
-  const refills = refillIssues(state, shift.id);
+  const refills = refillIssues(state, shift.id, raw);
   return {
     verify: {
       show_banner: showBanner,
@@ -811,7 +872,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   };
 }
 
-function refillIssues(state: State, shiftId: string) {
+function refillIssues(state: State, shiftId: string, raw?: Map<string, number>) {
   const grouped = new Map<string, { sent: number; received: number }>();
   for (const row of state.incoming) {
     if (row.confirmed_shift_id !== shiftId) continue;
@@ -826,9 +887,30 @@ function refillIssues(state: State, shiftId: string) {
     if (!totals || totals.received === totals.sent) return [];
     const product = state.products.find((row) => row.sku === sku);
     const size = sizeLabel(sku, product?.category, product?.name);
-    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff: totals.received - totals.sent }];
+    const diff = totals.received - totals.sent;
+    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff, cents: diff * shelfCents(state, sku, raw) }];
   });
   return { count: lines.length, lines };
+}
+
+function previousClosing(state: State, shift: ShiftRow) {
+  const previous = state.shifts
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
+  if (!previous) return null;
+  return state.closings.find((row) => row.shift_id === previous.id) ?? null;
+}
+
+function floatCheck(state: State, shift: ShiftRow) {
+  const previous = previousClosing(state, shift);
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
+  if (!previous) return { required: false, done: true, expected_cents: 0, found_cents: null as number | null };
+  return {
+    required: true,
+    done: draft?.float_found_cents != null,
+    expected_cents: previous.float_cents ?? 0,
+    found_cents: draft?.float_found_cents ?? null,
+  };
 }
 
 function countSkus(state: State) {
@@ -874,7 +956,7 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   ].filter(Boolean).join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, floatCents = 0): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
@@ -890,6 +972,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     cash_on_hand_cents: totals.cash_on_hand_cents,
     deposited_cents: totals.deposited_cents,
     final_deposit_cents: finalDepositCents,
+    float_cents: floatCents,
     shortage_cents: shortage,
     overage_cents: overage,
     balance_cents: closingBalance({
@@ -913,7 +996,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, closing.float_cents ?? 0);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
@@ -1250,6 +1333,7 @@ export class PosService {
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
   private flowerFlight: Promise<FlowerIndex> | null = null;
+  private masterCache: { at: number; map: Map<string, MasterProduct> } | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -1361,6 +1445,32 @@ export class PosService {
     return index;
   }
 
+  /** Product names, photos, and tier prices from the sheet catalog. Read only. On-hand stays in this till. */
+  private async sheetMasters() {
+    const now = this.now().getTime();
+    if (this.masterCache && now - this.masterCache.at < RAW_PRICE_TTL_MS) return this.masterCache.map;
+    const map = new Map<string, MasterProduct>();
+    if (!this.deps.sheet.configured) return map;
+    try {
+      const rows = await this.deps.sheet.readRows("POS_Staff");
+      const parts = rows
+        .filter((row) => row.record_type === "STATE" && String(row.row_id ?? "").startsWith("STATE-") && row.doc)
+        .sort((a, b) => String(a.row_id).localeCompare(String(b.row_id)));
+      if (parts.length === 0) return map;
+      const parsed = JSON.parse(parts.map((row) => row.doc).join("")) as State;
+      const code = tillCode();
+      for (const product of parsed.products ?? []) {
+        const store = (parsed.store_products ?? []).find((item) => item.sku === product.sku && (code === "PNY01" ? !item.store_code || item.store_code === "PNY01" : item.store_code === code));
+        if (store && !store.enabled) continue;
+        map.set(product.sku, { product, enabled: true, override: store?.price_override_cents ?? null });
+      }
+    } catch {
+      return this.masterCache?.map ?? map;
+    }
+    this.masterCache = { at: now, map };
+    return map;
+  }
+
   /** Non-flower names, prices, and pictures from Items_raw_price. An empty sheet keeps the current catalog. */
   private async itemIndex() {
     await this.rawUnitPrices();
@@ -1426,7 +1536,8 @@ export class PosService {
         state.balances.push({ ...row, store_code: "PNY02" });
       }
     }
-    let shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
+    let shift = state.shifts.find((row) => row.store_code === "PNY02" && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      ?? state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
     const staff = state.staff.find((row) => row.staff_uid === "staff-demo-tri") ?? state.staff[0];
     if (!shift && staff) {
       const store = state.stores.find((row) => row.code === "PNY02");
@@ -1487,9 +1598,18 @@ export class PosService {
       ok: true,
       store: tillCode(),
       demo: Boolean(this.deps.demo),
-      demo_label: this.deps.demo?.label ?? null,
+      demo_label: this.deps.demo ? DEMO_LABEL : null,
       demo_pin: this.deps.demo?.pin ?? null,
     };
+  }
+
+  /** Read-only. A one-store till with no approved opening stock is waiting, never a demo. */
+  async publicStatus() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    if (!peek) return { waiting_for_opening: false };
+    const state = await peek();
+    const open = state.shifts.some((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
+    return { waiting_for_opening: !state.opening_stock_at && !open };
   }
 
   async startShift(input: { key: string; store?: string; staff_ref?: string; pos_id?: string; shift_id?: string }) {
@@ -1836,7 +1956,7 @@ export class PosService {
   }
 
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
@@ -1862,9 +1982,10 @@ export class PosService {
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const seen = new Set(products.map((product) => product.sku));
-      for (const extra of stockedCatalogRows(tx.state, items)) {
+      for (const extra of [...stockedCatalogRows(tx.state, items), ...stockedMasterRows(tx.state, masters, flowers, items)]) {
         if (seen.has(extra.sku)) continue;
-        products.push({ ...extra, sku_sort: skuSortKey(extra.sku), price_source: "RAW_UNIT" });
+        seen.add(extra.sku);
+        products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
@@ -1971,6 +2092,8 @@ export class PosService {
         stock_check: counted.stock_check,
         verify_admin: counted.verify_admin,
         final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
+        float_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.float_cents ?? 0,
+        float_check: floatCheck(tx.state, shift),
         incoming,
         tickets,
         pending_count: pendingCount,
@@ -2138,7 +2261,7 @@ export class PosService {
 
   async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -2165,7 +2288,7 @@ export class PosService {
       }
       const lines = mergeLines(input.lines);
       const priced = lines.map((line) => {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
       let stockout = false;
@@ -2988,7 +3111,25 @@ export class PosService {
     });
   }
 
-  async saveFinalDeposit(token: string, input: { amount_cents: number }) {
+  async saveOpeningFloat(token: string, input: { found_cents: number }) {
+    return this.db.transaction(async (tx) => {
+      const { shift, session } = this.session(tx.state, token, this.now());
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot check the float.");
+      const found = roundCents(input.found_cents);
+      if (!Number.isFinite(found) || found < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the cash left in the till.");
+      const previous = previousClosing(tx.state, shift);
+      if (!previous) throw new PosError(409, "NO_FLOAT", "There is no previous close to check.");
+      const expected = previous.float_cents ?? 0;
+      const draft = ensureDraft(tx.state, shift.id, this.now());
+      draft.float_found_cents = found;
+      draft.float_expected_cents = expected;
+      draft.updated_at = iso(this.now());
+      return { ok: true, expected_cents: expected, found_cents: found, gap_cents: found - expected };
+    });
+  }
+
+  async saveFinalDeposit(token: string, input: { amount_cents: number; float_cents?: number }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
@@ -3003,6 +3144,11 @@ export class PosService {
         drafts.push(draft);
       }
       draft.final_deposit_cents = amount;
+      if (input.float_cents != null) {
+        const floatCents = roundCents(input.float_cents);
+        if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
+        draft.float_cents = floatCents;
+      }
       if (amount > 0) {
         draft.final_deposit_code = draft.final_deposit_code || issueDepositCode(tx.state);
       } else if (draft.final_deposit_code) {
@@ -3011,11 +3157,11 @@ export class PosService {
         releaseTailDepositCode(tx.state, issued);
       }
       draft.updated_at = iso(this.now());
-      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
+      return { ok: true, final_deposit_cents: amount, float_cents: draft.float_cents ?? 0, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
     });
   }
 
-  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
+  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number; float_cents?: number }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
     const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
@@ -3032,6 +3178,8 @@ export class PosService {
       const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
       const finalDeposit = roundCents(input.final_deposit_cents ?? 0);
       if (!Number.isFinite(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
+      const floatCents = roundCents(input.float_cents ?? draft?.float_cents ?? 0);
+      if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
       const at = iso(now);
       if (finalDeposit > 0) {
         const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
@@ -3106,7 +3254,7 @@ export class PosService {
         }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
-      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit);
+      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit, floatCents);
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
@@ -3299,7 +3447,7 @@ export class PosService {
   async menu() {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.store === tillCode() && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
-    const [raw, flowers, itemCatalog] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, itemCatalog, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const notes = await this.rawCartonNotes();
     const body = await this.db.transaction(async (tx) => {
       const now = iso(this.now());
@@ -3337,8 +3485,9 @@ export class PosService {
         })
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
       const seen = new Set(items.map((item) => item.sku));
-      for (const extra of stockedCatalogRows(tx.state, itemCatalog)) {
+      for (const extra of [...stockedCatalogRows(tx.state, itemCatalog), ...stockedMasterRows(tx.state, masters, flowers, itemCatalog)]) {
         if (seen.has(extra.sku) || extra.qty <= 0) continue;
+        seen.add(extra.sku);
         const carton = notes.get(extra.sku);
         items.push({
           sku: extra.sku,
@@ -3347,6 +3496,8 @@ export class PosService {
           price_cents: extra.price_cents,
           image_url: extra.image_url,
           availability: "Available" as const,
+          ...("flower_type" in extra && extra.flower_type ? { flower_type: extra.flower_type } : {}),
+          ...("thc" in extra && extra.thc ? { thc: extra.thc } : {}),
           ...(carton ? { carton_note: carton } : {}),
         });
       }
@@ -3367,7 +3518,7 @@ export class PosService {
   async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -3380,7 +3531,7 @@ export class PosService {
       const lines = mergeLines(input.lines);
       for (const line of lines) {
         try {
-          priceOf(tx.state, line.sku, raw, flowers, items);
+          priceOf(tx.state, line.sku, raw, flowers, items, masters);
         } catch {
           throw new PosError(400, "ITEM_UNAVAILABLE", "An item in that order is unavailable.");
         }
@@ -3405,7 +3556,7 @@ export class PosService {
       });
       let total = 0;
       for (const line of lines) {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
@@ -3545,6 +3696,15 @@ export class PosService {
       });
       return { ok: true, closings };
     });
+  }
+
+  /** Read-only. Does not count an SCCx poll and does not change the till. */
+  async closingSummary(sccxShiftId: string) {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const view = closingSummaryView(state, sccxShiftId, tillCode());
+    if (!view) throw new PosError(404, "CLOSING", "Closing was not found.");
+    return view;
   }
 
   async ackClosedShift(sccxShiftId: string, input: { key: string }) {
