@@ -4103,6 +4103,7 @@ export class PosService {
 
 
 
+
   /** Read-only owner shift list for PNY01. Never writes. */
   async ownerListShifts() {
     return this.db.transaction(async (tx) => {
@@ -4119,7 +4120,7 @@ export class PosService {
             sccx_shift_id: shift.sccx_shift_id,
             status: shift.status,
             staff_name: staff?.display_name ?? staff?.pos_id ?? shift.staff_uid,
-            staff_pos_id: staff?.pos_id ?? ",
+            staff_pos_id: staff?.pos_id ?? "",
             started_at: shift.started_at,
             ended_at: shift.ended_at,
             date_toronto: times.date_toronto,
@@ -4207,7 +4208,7 @@ export class PosService {
           sccx_shift_id: shift.sccx_shift_id,
           status: shift.status,
           staff_name: staff?.display_name ?? staff?.pos_id ?? shift.staff_uid,
-          staff_pos_id: staff?.pos_id ?? ",
+          staff_pos_id: staff?.pos_id ?? "",
           started_at: shift.started_at,
           ended_at: shift.ended_at,
           end_reason: shift.end_reason,
