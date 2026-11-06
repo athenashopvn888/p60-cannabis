@@ -25,7 +25,8 @@ export function pny2CloseReport(state: State) {
     display_name: row.display_name,
     active: row.active,
   }));
-  const open = (draft?.opening_counts ?? []).flatMap((row) => {
+  const openingRows = draft?.opening_counts ?? [];
+  const open = openingRows.flatMap((row) => {
     if (row.accepted_as_is || row.expected_qty == null) return [];
     const units = row.counted_qty - row.expected_qty;
     if (units === 0) return [];
@@ -83,7 +84,9 @@ export function pny2CloseReport(state: State) {
     coh_matches_sales_minus_deposits: cash - deposited === (closing?.cash_on_hand_cents ?? 0),
     deposits: deposits.map((row) => ({ code: row.deposit_code ?? "", amount_cents: row.amount_cents, at: row.created_at })),
     opening: open,
-    opening_rows: draft?.opening_counts?.length ?? 0,
+    opening_rows: openingRows.length,
+    opening_accepted: openingRows.filter((row) => row.accepted_as_is).length,
+    opening_matched: openingRows.filter((row) => !row.accepted_as_is && row.expected_qty != null && row.counted_qty === row.expected_qty).length,
     refills,
     refill_rows: state.incoming.filter((row) => latest && row.confirmed_shift_id === latest.id).length,
     closing_lines: closingLines,

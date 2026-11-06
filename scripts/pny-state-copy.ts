@@ -63,6 +63,33 @@ async function fromSheet(): Promise<{ lines: Line[]; float_cents: number; source
   return { lines, float_cents: closing.float_cents ?? latest.float_cents ?? 0, source: "sheet POS_Staff read" };
 }
 
+if (store === "PNY02") {
+  const { pny2CloseReport, readSheetState } = await import("../app/lib/pny-pos/pny2CloseRead.ts");
+  const pull = process.env.PNY_CLOSE_PULL?.trim();
+  const report = pull
+    ? (JSON.parse(readFileSync(pull, "utf8")) as ReturnType<typeof pny2CloseReport>)
+    : pny2CloseReport(await readSheetState());
+  const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const lines = [
+    "PNY02 closing dry-run. No database write.",
+    `Source: ${pull ? "read-only close pull" : "sheet POS_Staff read"}.`,
+    `Closing stock: ${report.stocked_skus} SKUs with quantity, ${report.stocked_units} units. Balance rows ${report.balance_rows}. Counted units on the close ${report.closing_units} across ${report.closing_sku_count} SKUs.`,
+    "Staff roster (no PINs):",
+    ...report.staff.map((row) => `${row.pos_id}\t${row.display_name}\t${row.staff_uid}\t${row.active ? "active" : "inactive"}`),
+    report.shift
+      ? `Closed shift ${report.shift.id} (${report.shift.sccx_shift_id}) staff ${report.shift.staff_uid} ${report.shift.status} ${report.shift.started_at} to ${report.shift.ended_at}.`
+      : "No closed PNY02 shift.",
+    `Open shifts: ${report.open_shifts.length ? report.open_shifts.join(", ") : "none"}.`,
+    `Cash sales ${money(report.cash_sales_cents)}. Debit ${money(report.debit_sales_cents)}. Deposited ${money(report.deposited_cents)}. Cash on hand ${money(report.cash_on_hand_cents)}. Float ${money(report.float_cents)}.`,
+    `Cash on hand matches sales minus deposits: ${report.coh_matches_sales_minus_deposits ? "yes" : "no"}. Float found: ${report.float_found_cents == null ? "not entered" : money(report.float_found_cents)}.`,
+    "Deposits:",
+    ...(report.deposits.length ? report.deposits.map((row) => `${row.code}\t${money(row.amount_cents)}\t${row.at}`) : ["none"]),
+  ];
+  console.log(lines.join("\n"));
+  if (apply) console.log("\nRefused. PNY02 apply is not part of this dry run.");
+  process.exit(0);
+}
+
 const loaded = snapshot ? fromSnapshot(snapshot) : await fromSheet();
 const lines = loaded.lines.sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
 const units = lines.reduce((sum, row) => sum + row.qty, 0);
