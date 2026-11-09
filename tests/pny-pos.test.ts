@@ -2657,6 +2657,21 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
 });
 
+test("closing summary stays until Done after session revoke", () => {
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(closeUi, /data-testid="close-summary-banner"/);
+  assert.match(closeUi, /Screenshot this and send it to the group before tapping Done/);
+  assert.match(closeUi, /data-testid="close-summary-done"/);
+  assert.match(closeUi, /resumeSummary/);
+  assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
+  assert.match(pos, /closeHold/);
+  assert.match(pos, /pos-close-hold/);
+  assert.match(pos, /finishCloseSummary/);
+  assert.match(pos, /!view\.authenticated && !\(sheet === "close" && closeHold && closeSnap\)/);
+  assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
   const h = harness();
   h.sheet.configured = true;
