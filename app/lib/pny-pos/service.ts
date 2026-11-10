@@ -2121,6 +2121,7 @@ export class PosService {
         shift: {
           id: shift.id,
           sccx_shift_id: shift.sccx_shift_id,
+          started_at: shift.started_at,
           staff_name: staff.display_name,
           pos_id: staff.pos_id,
           ticket_letter: shift.ticket_letter,
@@ -3783,10 +3784,11 @@ export class PosService {
 
   async closedShifts() {
     return this.db.transaction(async (tx) => {
+      const code = tillCode();
       const rows = tx.state.closings.filter((closing) => {
         if (closing.sccx_ack_at) return false;
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
-        return !shift || shift.store_code === "PNY01";
+        return !shift || shift.store_code === code;
       });
       for (const closing of rows) closing.sccx_attempts += 1;
       const closings = rows.map((closing) => {

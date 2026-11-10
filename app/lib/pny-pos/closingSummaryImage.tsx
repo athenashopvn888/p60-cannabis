@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
-import { formatMoney } from "./money.ts";
-import { adjustMoney, balancePhrase, floatGapCents, floatPhrase, shortSideCents, tillBalanceRaw } from "./tillLedger.ts";
+import { formatMoney, formatStoreDate, formatStoreTime } from "./money.ts";
+import { adjustMoney, balancePhrase, floatGapCents, floatPhrase } from "./tillLedger.ts";
 import type { ClosingSummaryView, SummarySku } from "./closingSummary.ts";
 
 function tone(cents: number) {
@@ -37,39 +37,45 @@ function Section({ title, background, lines, floatNote }: { title: string; backg
 
 export function summaryImageHeight(view: ClosingSummaryView) {
   const rows = view.openLines.length + view.refillLines.length + view.closeLines.length;
-  return 560 + rows * 28 + (view.floatFoundCents == null ? 0 : 22);
+  return 820 + view.deposits.length * 30 + rows * 28 + (view.floatFoundCents == null ? 0 : 22);
 }
 
 export function closingSummaryImage(view: ClosingSummaryView) {
-  const openCents = shortSideCents(view.openLines);
-  const refillCents = shortSideCents(view.refillLines);
-  const closeCents = shortSideCents(view.closeLines);
+  const differences = [...view.openLines, ...view.refillLines, ...view.closeLines];
+  const stockShortsCents = differences.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
+  const stockExtraCents = differences.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
+  const totalCashCollectedCents = view.depositedCents + view.expenseCents + view.floatCents;
+  const overShortCents = totalCashCollectedCents - view.cashSalesCents - stockShortsCents + stockExtraCents;
   const floatKnown = view.floatExpectedCents != null && view.floatFoundCents != null;
   const gap = floatKnown ? floatGapCents(view.floatExpectedCents ?? 0, view.floatFoundCents ?? 0) : 0;
-  const openWithFloat = openCents + (floatKnown ? -gap : 0);
-  const raw = tillBalanceRaw({
-    cash_sales_cents: view.cashSalesCents,
-    deposited_cents: view.depositedCents,
-    float_cents: view.floatCents,
-    open_cents: openWithFloat,
-    refill_cents: refillCents,
-    close_cents: closeCents,
-  });
-  const final = balancePhrase(raw);
+  const final = balancePhrase(-overShortCents);
   const floatNote = floatKnown ? `Float ${floatPhrase(gap).word} ${formatMoney(floatPhrase(gap).cents)}` : null;
   return new ImageResponse(
     (
       <div style={{ display: "flex", flexDirection: "column", width: 390, padding: 16, background: "#fafaf9", color: "#1c1917", fontSize: 16 }}>
-        <div style={{ display: "flex", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Closing summary</div>
+        <div style={{ display: "flex", border: "4px solid #7f1d1d", borderRadius: 12, background: "#fef2f2", color: "#991b1b", padding: 12, textAlign: "center", fontSize: 23, lineHeight: 1.08, fontWeight: 900 }}>
+          TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", borderRadius: 12, background: "#1c1917", color: "#fff", padding: 12, marginTop: 12 }}>
+          <div style={{ display: "flex", fontSize: 22, fontWeight: 800 }}>{view.storeLabel}</div>
+          <div style={{ display: "flex", marginTop: 3 }}>{view.staffName}</div>
+          <div style={{ display: "flex", marginTop: 3 }}>{formatStoreDate(view.endedAt)} · {formatStoreTime(view.startedAt)}–{formatStoreTime(view.endedAt)} Toronto</div>
+        </div>
+        <div style={{ display: "flex", fontSize: 22, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>Closing summary</div>
         {view.weedInStore != null ? <Row label="WEED in store this shift" value={view.weedInStore ? "WEED" : "NO WEED"} /> : null}
-        <Row label="Cash sales" value={formatMoney(view.cashSalesCents)} />
-        <Row label="− Deposits" value={formatMoney(view.depositedCents)} />
-        <Row label="− Cash on hand (float)" value={formatMoney(view.floatCents)} />
-        <Row label="Open count" value={adjustMoney(openWithFloat)} color={tone(openWithFloat)} />
-        <Row label="Refill count" value={adjustMoney(refillCents)} color={tone(refillCents)} />
-        <Row label="Closing count" value={adjustMoney(closeCents)} color={tone(closeCents)} />
+        <div style={{ display: "flex", fontSize: 18, fontWeight: 700, marginTop: 6 }}>Deposits</div>
+        {view.deposits.length === 0 ? <Row label="No deposit bags" value={formatMoney(0)} /> : view.deposits.map((deposit, index) => (
+          <Row key={`${deposit.code ?? "na"}-${index}`} label={`Bag ${deposit.code || "n/a"}`} value={formatMoney(deposit.amountCents)} />
+        ))}
+        <Row label="Total deposits" value={formatMoney(view.depositedCents)} />
+        <Row label="Expense paid from store cash" value={formatMoney(view.expenseCents)} />
+        <Row label="Float left" value={formatMoney(view.floatCents)} />
+        <Row label="TOTAL CASH COLLECTED" value={formatMoney(totalCashCollectedCents)} strong />
+        <Row label="− Stock sold value" value={formatMoney(view.cashSalesCents)} />
+        <Row label="− Stock shorts" value={formatMoney(stockShortsCents)} color="#dc2626" />
+        <Row label="+ Stock extra" value={formatMoney(stockExtraCents)} color="#16a34a" />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontWeight: 800 }}>
-          <div style={{ display: "flex" }}>FINAL TILL BALANCE</div>
+          <div style={{ display: "flex" }}>Total</div>
           <div style={{ display: "flex", color: final.tone === "short" ? "#dc2626" : "#16a34a", fontSize: 20 }}>{final.word} {formatMoney(final.cents)}</div>
         </div>
         <Section title="Opening Verify" background="#dbeafe" lines={view.openLines} floatNote={floatNote} />
@@ -81,9 +87,9 @@ export function closingSummaryImage(view: ClosingSummaryView) {
   );
 }
 
-function Row({ label, value, color }: { label: string; value: string; color?: string }) {
+function Row({ label, value, color, strong = false }: { label: string; value: string; color?: string; strong?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #e7e5e4", paddingTop: 6, marginTop: 6 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", borderTop: strong ? "3px solid #1c1917" : "1px solid #e7e5e4", borderBottom: strong ? "3px solid #1c1917" : undefined, paddingTop: 6, paddingBottom: strong ? 6 : 0, marginTop: 6, fontWeight: strong ? 800 : 400 }}>
       <div style={{ display: "flex" }}>{label}</div>
       <div style={{ display: "flex", fontWeight: 700, color: color ?? "#1c1917" }}>{value}</div>
     </div>

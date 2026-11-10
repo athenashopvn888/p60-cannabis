@@ -6,6 +6,12 @@ export type SummarySku = { text: string; units: number; cents: number };
 
 export type ClosingSummaryView = {
   weedInStore: boolean | null;
+  storeLabel: string;
+  staffName: string;
+  startedAt: string;
+  endedAt: string;
+  deposits: { code: string | null; amountCents: number }[];
+  expenseCents: number;
   cashSalesCents: number;
   depositedCents: number;
   floatCents: number;
@@ -74,6 +80,16 @@ export function closingSummaryView(state: State, sccxShiftId: string, storeCode:
   const expected = draft?.float_expected_cents ?? previousFloat;
   return {
     weedInStore: shift.weed_in_store ?? null,
+    storeLabel: storeCode,
+    staffName: state.staff.find((row) => row.staff_uid === shift.staff_uid)?.display_name ?? "Staff",
+    startedAt: shift.started_at,
+    endedAt: shift.ended_at ?? closing.created_at,
+    deposits: state.deposits
+      .filter((row) => row.shift_id === shift.id)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
+    // The current till has no expense-entry source. Keep the accounting row explicit without inventing a value.
+    expenseCents: 0,
     cashSalesCents: closing.cash_sales_cents ?? closing.sales_total_cents,
     depositedCents: closing.deposited_cents,
     floatCents: closing.float_cents ?? 0,

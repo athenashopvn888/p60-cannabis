@@ -86,10 +86,16 @@ function endedState(): State {
   return state;
 }
 
-test("the closing summary lists off SKUs only and keeps the cash math", () => {
+test("the closing summary lists off SKUs only and exposes frozen close metadata", () => {
   const view = closingSummaryView(endedState(), "pny01-test-close", "PNY01");
   assert.ok(view);
   assert.equal(view?.weedInStore, false);
+  assert.equal(view?.storeLabel, "PNY01");
+  assert.equal(view?.staffName, "Staff");
+  assert.equal(view?.startedAt, "2026-11-05T12:00:00.000Z");
+  assert.equal(view?.endedAt, "2026-11-05T18:00:00.000Z");
+  assert.deepEqual(view?.deposits, []);
+  assert.equal(view?.expenseCents, 0);
   assert.equal(view?.cashSalesCents, 8000);
   assert.equal(view?.depositedCents, 5000);
   assert.equal(view?.floatCents, 2000);
