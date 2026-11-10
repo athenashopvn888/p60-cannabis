@@ -1187,6 +1187,27 @@
   line-height: 1.35;
 }
 
+.blankSkuList {
+  max-height: 38vh;
+  margin: 0 0 14px;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid #d6d3d1;
+  border-radius: 10px;
+}
+
+.blankSkuList li {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e7e5e4;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.blankSkuList li:last-child {
+  border-bottom: 0;
+}
+
 .ruleNotice {
   margin: 4px 0 14px;
   padding: 12px;

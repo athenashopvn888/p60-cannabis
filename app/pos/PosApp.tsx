@@ -131,6 +131,19 @@ export default function PosApp({
   const [busy, setBusy] = useState(false);
   const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
+  /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
+  const [closeHold, setCloseHold] = useState(false);
+  const [closeSnap, setCloseSnap] = useState<{
+    lines: CloseLine[];
+    totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+    savedDeposit: number | null;
+    stockCheck: View["stock_check"];
+    floatExpectedCents: number | null;
+    floatFoundCents: number | null;
+    deadline: string | null;
+    initialStep: "count" | "deposit";
+    resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+  } | null>(null);
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeLabel = forced?.label ?? label;
@@ -221,10 +234,36 @@ export default function PosApp({
     }
   }
 
+  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string }) {
+    if (!view) return;
+    setCloseSnap({
+      lines: view.close_lines ?? [],
+      totals: {
+        sales_cents: view.totals?.sales_cents ?? 0,
+        cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,
+        debit_sales_cents: view.totals?.debit_sales_cents ?? 0,
+        cash_on_hand_cents: view.totals?.cash_on_hand_cents ?? 0,
+        deposited_cents: view.totals?.deposited_cents ?? 0,
+      },
+      savedDeposit: view.final_deposit_cents ?? null,
+      stockCheck: view.stock_check,
+      floatExpectedCents: view.float_check?.found_cents == null ? null : view.float_check.expected_cents,
+      floatFoundCents: view.float_check?.found_cents ?? null,
+      deadline: view.verify?.deadline_at ?? null,
+      initialStep: view.closing?.submitted ? "deposit" : "count",
+      resumeSummary:
+        extra && extra.depositCents != null && extra.floatCents != null
+          ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel }
+          : null,
+    });
+  }
+
   function openEnd() {
     if (view?.master) return;
     setError("");
     if (view?.closing?.submitted) {
+      snapshotClose();
+      setCloseHold(false);
       setSheet("close");
       return;
     }
@@ -314,11 +353,16 @@ export default function PosApp({
     }
   }
 
-  async function submitCloseCount() {
+  async function submitCloseCount(confirmBlanksZero = false) {
     if (view?.master) return;
     setError("");
-    await post(`${storeApi}/shift/count-submit`, {});
-    await load();
+    setBusy(true);
+    try {
+      await post(`${storeApi}/shift/count-submit`, { confirm_blanks_zero: confirmBlanksZero });
+      await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveCloseCount(sku: string, countedQty: number) {
@@ -354,18 +398,28 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      const lines = (view?.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
+      const lines = (view?.close_lines ?? closeSnap?.lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
       const saved = await post(`${storeApi}/shift/end`, { lines, final_deposit_cents: depositCents, float_cents: floatCents }, crypto.randomUUID());
       setCart({});
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
         : typeof saved.close_label === "string" ? saved.close_label : "";
+      snapshotClose({ depositCents, floatCents, closeLabel: label });
+      setCloseHold(true);
       return label;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
     } finally {
       setBusy(false);
     }
+  }
+
+  function finishCloseSummary() {
+    setSheet(null);
+    setCloseHold(false);
+    setCloseSnap(null);
+    setError("");
+    void load().catch(() => undefined);
   }
 
   async function saveVerifyLine(sku: string, countedQty: number) {
@@ -429,7 +483,7 @@ export default function PosApp({
 
   if (!view) return <main className={styles.shell}>Loading till…</main>;
 
-  if (!view.authenticated) {
+  if (!view.authenticated && !(sheet === "close" && closeHold && closeSnap)) {
     const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"];
     return (
       <main className={styles.shell} data-testid="pos-login">
@@ -459,6 +513,32 @@ export default function PosApp({
             Sign in
           </button>
         </section>
+      </main>
+    );
+  }
+
+  if (!view.authenticated && sheet === "close" && closeHold && closeSnap) {
+    return (
+      <main className={styles.shell} data-testid="pos-close-hold">
+        <CloseShift
+          lines={closeSnap.lines}
+          totals={closeSnap.totals}
+          savedDeposit={closeSnap.savedDeposit}
+          busy={false}
+          error={error}
+          onSaveCount={async () => undefined}
+          onSubmitCount={async () => undefined}
+          onSaveDeposit={async () => undefined}
+          onConfirm={async () => ""}
+          onClose={() => undefined}
+          onDone={finishCloseSummary}
+          stockCheck={closeSnap.stockCheck}
+          floatExpectedCents={closeSnap.floatExpectedCents}
+          floatFoundCents={closeSnap.floatFoundCents}
+          deadline={null}
+          initialStep="deposit"
+          resumeSummary={closeSnap.resumeSummary ?? { depositCents: 0, floatCents: 0 }}
+        />
       </main>
     );
   }
@@ -672,27 +752,33 @@ export default function PosApp({
 
       {sheet === "close" ? (
         <CloseShift
-          lines={view.close_lines ?? []}
-          totals={{
+          lines={closeSnap?.lines ?? view.close_lines ?? []}
+          totals={closeSnap?.totals ?? {
             sales_cents: view.totals?.sales_cents ?? 0,
             cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,
             debit_sales_cents: view.totals?.debit_sales_cents ?? 0,
             cash_on_hand_cents: view.totals?.cash_on_hand_cents ?? 0,
             deposited_cents: view.totals?.deposited_cents ?? 0,
           }}
-          savedDeposit={view.final_deposit_cents ?? null}
+          savedDeposit={closeSnap?.savedDeposit ?? view.final_deposit_cents ?? null}
           busy={busy}
           error={error}
           onSaveCount={saveCloseCount}
           onSubmitCount={submitCloseCount}
           onSaveDeposit={saveCloseDeposit}
           onConfirm={confirmEnd}
-          onClose={() => { setSheet(null); void load().catch(() => undefined); }}
-          stockCheck={view.stock_check}
-          floatExpectedCents={view.float_check?.found_cents == null ? null : view.float_check.expected_cents}
-          floatFoundCents={view.float_check?.found_cents ?? null}
-          deadline={verifyOpen ? view.verify?.deadline_at ?? null : null}
-          initialStep={view.closing?.submitted ? "deposit" : "count"}
+          onClose={() => {
+            if (closeHold) return;
+            setSheet(null);
+            setCloseSnap(null);
+            void load().catch(() => undefined);
+          }}
+          onDone={finishCloseSummary}
+          stockCheck={closeSnap?.stockCheck ?? view.stock_check}
+          floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
+          floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
+          deadline={verifyOpen ? (closeSnap?.deadline ?? view.verify?.deadline_at ?? null) : null}
+          initialStep={closeSnap?.initialStep ?? (view.closing?.submitted ? "deposit" : "count")}
         />
       ) : null}
       {sheet === "close-ask" ? (
@@ -710,7 +796,7 @@ export default function PosApp({
       {summaryText ? (
         <div className={styles.summaryPage} data-testid="shift-summary">
           <button className={styles.qrClose} type="button" aria-label="Close" onClick={() => setSummaryText("")}>×</button>
-          <h2>Today's Summary</h2>
+          <h2>Today&apos;s Summary</h2>
           {summaryDeposits.length > 0 ? (
             <div className={styles.depositList} data-testid="summary-deposits">
               {summaryDeposits.map((row) => (
