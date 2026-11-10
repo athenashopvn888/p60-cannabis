@@ -1958,7 +1958,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected |Confirm & End Shift/);
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Open count/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening Verify/);
   assert.equal(blind.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -2437,7 +2437,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /FINAL TILL BALANCE/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /TOTAL CASH COLLECTED/);
   assert.match(closeUi, /Float left in the till/);
   assert.doesNotMatch(closeUi, /both stores/i);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
@@ -2678,16 +2678,24 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
 
 test("closing summary stays until Done after session revoke", () => {
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const summaryUi = readFileSync("app/pos/TillSummary.tsx", "utf8");
   const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
   assert.match(closeUi, /data-testid="close-summary-banner"/);
-  assert.match(closeUi, /Screenshot this and send it to the group before tapping Done/);
+  assert.match(closeUi, /TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT/);
   assert.match(closeUi, /data-testid="close-summary-done"/);
+  assert.match(closeUi, /Done, I posted it/);
   assert.match(closeUi, /resumeSummary/);
   assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
   assert.match(pos, /closeHold/);
   assert.match(pos, /pos-close-hold/);
   assert.match(pos, /finishCloseSummary/);
   assert.match(pos, /!view\.authenticated && !\(sheet === "close" && closeHold && closeSnap\)/);
+  assert.match(summaryUi, /closing-identity/);
+  assert.match(summaryUi, /TOTAL CASH COLLECTED/);
+  assert.match(summaryUi, /Expense paid from store cash/);
+  assert.match(summaryUi, /− Stock sold value/);
+  assert.match(summaryUi, /− Stock shorts/);
+  assert.match(summaryUi, /\+ Stock extra/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
 });
 

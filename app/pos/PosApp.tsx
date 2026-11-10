@@ -43,8 +43,9 @@ type View = {
   master?: boolean;
   can_sell?: boolean;
   block?: string | null;
-  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
+  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; started_at: string };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
+  deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
   close_lines?: CloseLine[];
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
   opening_lines?: OpeningLine[];
@@ -142,6 +143,14 @@ export default function PosApp({
     floatFoundCents: number | null;
     deadline: string | null;
     initialStep: "count" | "deposit";
+    summaryMeta: {
+      storeLabel: string;
+      staffName: string;
+      startedAt: string;
+      endedAt: string | null;
+      deposits: { code: string | null; amountCents: number }[];
+      finalDepositCode?: string | null;
+    };
     resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
   } | null>(null);
   const forced = pos2RouteFromLocation();
@@ -234,7 +243,7 @@ export default function PosApp({
     }
   }
 
-  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string }) {
+  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; endedAt?: string; finalDepositCode?: string | null }) {
     if (!view) return;
     setCloseSnap({
       lines: view.close_lines ?? [],
@@ -251,6 +260,14 @@ export default function PosApp({
       floatFoundCents: view.float_check?.found_cents ?? null,
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
+      summaryMeta: {
+        storeLabel,
+        staffName: view.shift?.staff_name ?? "Staff",
+        startedAt: view.shift?.started_at ?? new Date().toISOString(),
+        endedAt: extra?.endedAt ?? null,
+        deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
+        finalDepositCode: extra?.finalDepositCode ?? null,
+      },
       resumeSummary:
         extra && extra.depositCents != null && extra.floatCents != null
           ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel }
@@ -394,7 +411,7 @@ export default function PosApp({
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
 
-  async function confirmEnd(depositCents: number, floatCents: number) {
+  async function confirmEnd(depositCents: number, floatCents: number, finalDepositCode?: string | null) {
     setError("");
     setBusy(true);
     try {
@@ -404,7 +421,10 @@ export default function PosApp({
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
         : typeof saved.close_label === "string" ? saved.close_label : "";
-      snapshotClose({ depositCents, floatCents, closeLabel: label });
+      const endedAt = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { created_at?: unknown }).created_at === "string"
+        ? (saved.closing as { created_at: string }).created_at
+        : new Date().toISOString();
+      snapshotClose({ depositCents, floatCents, closeLabel: label, endedAt, finalDepositCode });
       setCloseHold(true);
       return label;
     } catch (err) {
@@ -532,6 +552,7 @@ export default function PosApp({
           onConfirm={async () => ""}
           onClose={() => undefined}
           onDone={finishCloseSummary}
+          summaryMeta={closeSnap.summaryMeta}
           stockCheck={closeSnap.stockCheck}
           floatExpectedCents={closeSnap.floatExpectedCents}
           floatFoundCents={closeSnap.floatFoundCents}
@@ -774,6 +795,13 @@ export default function PosApp({
             void load().catch(() => undefined);
           }}
           onDone={finishCloseSummary}
+          summaryMeta={closeSnap?.summaryMeta ?? {
+            storeLabel,
+            staffName: view.shift?.staff_name ?? "Staff",
+            startedAt: view.shift?.started_at ?? new Date().toISOString(),
+            endedAt: null,
+            deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
+          }}
           stockCheck={closeSnap?.stockCheck ?? view.stock_check}
           floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}

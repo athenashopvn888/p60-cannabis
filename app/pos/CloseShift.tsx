@@ -32,6 +32,7 @@ export default function CloseShift({
   onConfirm,
   onClose,
   onDone,
+  summaryMeta,
   stockCheck,
   floatExpectedCents,
   floatFoundCents,
@@ -47,9 +48,17 @@ export default function CloseShift({
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: (confirmBlanksZero?: boolean) => Promise<void>;
   onSaveDeposit: (cents: number, floatCents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number, floatCents: number) => Promise<void | string>;
+  onConfirm: (depositCents: number, floatCents: number, finalDepositCode?: string | null) => Promise<void | string>;
   onClose: () => void;
   onDone?: () => void;
+  summaryMeta: {
+    storeLabel: string;
+    staffName: string;
+    startedAt: string;
+    endedAt: string | null;
+    deposits: { code: string | null; amountCents: number }[];
+    finalDepositCode?: string | null;
+  };
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
@@ -97,6 +106,13 @@ export default function CloseShift({
     units: line.diff,
     cents: line.cents ?? 0,
   }));
+  const finalDepositCode = summaryMeta.finalDepositCode ?? slipCode;
+  const summaryDeposits = [
+    ...summaryMeta.deposits,
+    ...(drop > 0 && !(finalDepositCode && summaryMeta.deposits.some((row) => row.code === finalDepositCode))
+      ? [{ code: finalDepositCode, amountCents: drop }]
+      : []),
+  ];
 
   return (
     <section className={styles.close} data-testid="pos-close">
@@ -132,9 +148,9 @@ export default function CloseShift({
             if (locking) return;
             setLocking(true);
             void onSaveDeposit(depositCents, floatCents).then(async (saved) => {
-              const label = await onConfirm(depositCents, floatCents);
-              if (typeof label === "string") setCloseLabel(label);
               const code = saved && typeof saved === "object" ? saved.deposit_code : null;
+              const label = await onConfirm(depositCents, floatCents, code);
+              if (typeof label === "string") setCloseLabel(label);
               if (code) {
                 setSlipCode(code);
                 setStep("slip");
@@ -161,10 +177,15 @@ export default function CloseShift({
 
         {step === "summary" ? (
           <div data-testid="close-summary">
-            <div className={styles.banner} data-testid="close-summary-banner" role="status">
-              Screenshot this and send it to the group before tapping Done.
+            <div className={styles.accountantBanner} data-testid="close-summary-banner" role="status">
+              TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT
             </div>
             <TillSummary
+              storeLabel={summaryMeta.storeLabel}
+              staffName={summaryMeta.staffName}
+              startedAt={summaryMeta.startedAt}
+              endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt}
+              deposits={summaryDeposits}
               cashSalesCents={totals.cash_sales_cents}
               depositedCents={deposited}
               floatCents={floatCents}
@@ -182,7 +203,7 @@ export default function CloseShift({
               data-testid="close-summary-done"
               onClick={() => (onDone ? onDone() : onClose())}
             >
-              Done
+              Done, I posted it
             </button>
           </div>
         ) : null}
