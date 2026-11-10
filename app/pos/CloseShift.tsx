@@ -45,7 +45,7 @@ export default function CloseShift({
   busy: boolean;
   error: string;
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
-  onSubmitCount?: () => Promise<void>;
+  onSubmitCount?: (confirmBlanksZero?: boolean) => Promise<void>;
   onSaveDeposit: (cents: number, floatCents: number) => Promise<{ deposit_code?: string | null } | void>;
   onConfirm: (depositCents: number, floatCents: number) => Promise<void | string>;
   onClose: () => void;

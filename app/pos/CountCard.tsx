@@ -27,7 +27,7 @@ export default function CountCard({
   purpose?: "verify" | "closing";
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
-  onSubmit?: () => Promise<void>;
+  onSubmit?: (confirmBlanksZero?: boolean) => Promise<void>;
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -43,6 +43,7 @@ export default function CountCard({
   const [extraQty, setExtraQty] = useState("");
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
+  const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
 
   if (!current) return null;
   if (current.sku !== seen) {
@@ -72,19 +73,55 @@ export default function CountCard({
     setExpanded(true);
   }
 
-  async function submitAll() {
+  async function saveTypedCounts() {
     setLocalError("");
+    const typed = new Map<string, number>();
     for (const line of lines) {
       if (line.locked) continue;
-      const value = drafts[line.sku] ?? "";
+      const draft = line.sku === current.sku ? qty : drafts[line.sku];
+      const value = /^\d+$/.test(draft ?? "") ? draft : line.counted_qty == null ? "" : String(line.counted_qty);
       if (!/^\d+$/.test(value)) continue;
-      if (line.counted_qty === Number(value)) continue;
+      const counted = Number(value);
+      typed.set(line.sku, counted);
+      if (line.counted_qty === counted) continue;
       try {
-        await onSave(line.sku, Number(value));
+        await onSave(line.sku, counted);
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : "Count was not saved");
+        throw err;
+      }
+    }
+    return lines.filter((line) => !line.locked && !typed.has(line.sku));
+  }
+
+  async function submitAll() {
+    try {
+      await saveTypedCounts();
+    } catch {
+      return;
+    }
+  }
+
+  async function requestSubmit() {
+    try {
+      const blanks = await saveTypedCounts();
+      if (purpose === "closing" && blanks.length) {
+        setBlankLines(blanks);
         return;
       }
+      await onSubmit?.(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not submitted");
+    }
+  }
+
+  async function confirmBlanksAsZero() {
+    setLocalError("");
+    try {
+      await onSubmit?.(true);
+      setBlankLines(null);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not submitted");
     }
   }
 
@@ -162,7 +199,7 @@ export default function CountCard({
           <>
             <p>Count every SKU. You can change a number until you tap Submit. The count does not show what the system expects.</p>
             <p>Keep selling. Each SKU uses sales up to the last time you edited it. A sale after that edit is taken off the expected amount, so the difference stays the same.</p>
-            <p>Blank SKUs stay blank until the final deposit. Then they are accepted as-is. The shift locks only after that deposit.</p>
+            <p>Every SKU needs a typed number. Zero is allowed. The shift cannot end until the closing count is submitted.</p>
           </>
         ) : (
           <>
@@ -181,6 +218,21 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const blankModal = blankLines ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="blank-count-title" data-testid="blank-count-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="blank-count-title">Closing count incomplete</h2>
+        <p>{blankLines.length} items were not counted. They will be recorded as 0 (missing). Go back and count, or confirm as 0?</p>
+        <ul className={styles.blankSkuList} data-testid="blank-sku-list">
+          {blankLines.map((line) => <li key={line.sku}><strong>{line.sku}</strong>{line.text !== `#${line.sku}` ? ` · ${line.text}` : ""}</li>)}
+        </ul>
+        <div className={styles.askActions}>
+          <button className={styles.primary} type="button" autoFocus data-testid="blank-go-back" onClick={() => setBlankLines(null)}>Go back and count</button>
+          <button className={styles.secondary} type="button" disabled={busy} data-testid="blank-confirm-zero" onClick={() => void confirmBlanksAsZero()}>Confirm as 0</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
@@ -189,6 +241,7 @@ export default function CountCard({
         {list}
         {error}
         {ruleModal}
+        {blankModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -198,7 +251,7 @@ export default function CountCard({
             <small data-testid="count-progress">{index + 1} of {lines.length}</small>
           </button>
         </form>
-        {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
+        {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       </div>
     );
   }
@@ -221,10 +274,11 @@ export default function CountCard({
           </button>
         </div>
       </div>
-      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
+      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       {list}
       {error}
       {ruleModal}
+      {blankModal}
     </div>
   );
 }

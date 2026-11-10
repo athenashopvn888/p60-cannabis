@@ -353,11 +353,16 @@ export default function PosApp({
     }
   }
 
-  async function submitCloseCount() {
+  async function submitCloseCount(confirmBlanksZero = false) {
     if (view?.master) return;
     setError("");
-    await post(`${storeApi}/shift/count-submit`, {});
-    await load();
+    setBusy(true);
+    try {
+      await post(`${storeApi}/shift/count-submit`, { confirm_blanks_zero: confirmBlanksZero });
+      await load();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveCloseCount(sku: string, countedQty: number) {
@@ -791,7 +796,7 @@ export default function PosApp({
       {summaryText ? (
         <div className={styles.summaryPage} data-testid="shift-summary">
           <button className={styles.qrClose} type="button" aria-label="Close" onClick={() => setSummaryText("")}>×</button>
-          <h2>Today's Summary</h2>
+          <h2>Today&apos;s Summary</h2>
           {summaryDeposits.length > 0 ? (
             <div className={styles.depositList} data-testid="summary-deposits">
               {summaryDeposits.map((row) => (

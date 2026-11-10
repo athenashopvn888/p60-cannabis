@@ -109,6 +109,17 @@ async function readyTill(stock = { "1001": 2, "1002": 5 }) {
   return { ...h, admin: admin.token, token: login.token, pin: String(started.pin), shiftId: String(started.shift_id) };
 }
 
+async function submitClosingValues(svc: PosService, token: string, values: Record<string, number> = {}) {
+  const view = await svc.state(token);
+  for (const line of view.close_lines ?? []) {
+    await svc.saveClosingCount(token, {
+      sku: line.sku,
+      counted_qty: values[line.sku] ?? line.system_qty,
+    });
+  }
+  await svc.submitClosingCount(token);
+}
+
 function qty(db: MemoryDb, sku: string) {
   return db.state.balances.find((row) => row.sku === sku)?.qty ?? 0;
 }
@@ -554,6 +565,7 @@ test("18. an emergency adjustment and a late kitchen row are linked without doub
 test("19. POS end shift kills the PIN and queues closing counts, summary and stock", async () => {
   const h = await readyTill();
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token, { "1001": 0 });
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end",
     lines: view.count_lines.map((line) => line.sku === "1001"
@@ -581,6 +593,7 @@ test("20. closed shifts are polled once and ack is safe to repeat", async () => 
   await h.svc.cashout(h.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 200 });
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   await h.svc.endShiftFromPos(h.token, { key: "end", lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
   const first = await h.svc.closedShifts();
   assert.equal(first.closings.length, 1);
@@ -762,6 +775,7 @@ test("25. an admin void restores stock and is final; staff cannot void", async (
 test("27. end shift says the summary posts within 5 min and admin flags a missed SCCx ack after 15 min", async () => {
   const h = await readyTill();
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   const ended = await h.svc.endShiftFromPos(h.token, { key: "end", lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
   assert.equal(ended.message, "Summary will post to BOT HUB within 5 min.");
   h.clock.t = new Date(h.clock.t.getTime() + 10 * 60 * 1000);
@@ -864,7 +878,7 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   assert.equal(shift.pin_hash, hash);
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
   assert.match(tillApp, /apiBase = "\/api\/pos"/);
-  assert.match(tillApp, /\$\{apiBase\}\/till\/unlock/);
+  assert.match(tillApp, /\$\{storeApi\}\/till\/unlock/);
   assert.match(tillApp, /data-testid="pos-till-gate"/);
   assert.match(tillApp, /data-testid="till-unlock"/);
 });
@@ -1303,6 +1317,7 @@ test("cash stays in the drawer and debit does not, and the close balance uses sh
   const saved = await h.svc.state(h.token);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1001")?.counted_qty, 1);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1002")?.counted_qty, null);
+  await submitClosingValues(h.svc, h.token, { "1001": 1, "1002": 3 });
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end-balance",
     final_deposit_cents: 400,
@@ -1354,7 +1369,7 @@ test("SKU 1000 rings the raw pack price with no tax and ignores the client price
     if (tab === "Items_raw_price") reads += 1;
     return readRows(tab);
   };
-  let writes: string[] = [];
+  const writes: string[] = [];
   const upsert = h.sheet.upsert.bind(h.sheet);
   h.sheet.upsert = async (tab: string, rows: Record<string, string>[]) => {
     writes.push(tab);
@@ -1467,6 +1482,7 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
   assert.equal(draft.final_deposit_cents, 1000);
   assert.equal(draft.totals.cash_on_hand_cents, 1500);
+  await resumed.submitClosingCount(login.token);
 
   const ended = await resumed.endShiftFromPos(login.token, {
     key: "test01-end",
@@ -2438,6 +2454,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   const saved = await over.svc.saveFinalDeposit(over.token, { amount_cents: 200 });
   assert.equal(saved.final_deposit_cents, 200);
   const view = await over.svc.state(over.token);
+  await submitClosingValues(over.svc, over.token);
   const ended = await over.svc.endShiftFromPos(over.token, {
     key: "end-over",
     final_deposit_cents: 200,
@@ -2450,6 +2467,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   const short = await readyTill();
   await short.svc.cashout(short.token, { key: "short-sale", lines: [{ sku: "1001", qty: 1 }] });
   const shortView = await short.svc.state(short.token);
+  await submitClosingValues(short.svc, short.token);
   const shortEnd = await short.svc.endShiftFromPos(short.token, {
     key: "end-short",
     final_deposit_cents: 400,
@@ -2490,6 +2508,7 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.equal(finalDeposit.deposit_code, "PNY-D0003");
   assert.equal(repeated.deposit_code, "PNY-D0003");
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "slip-end",
     final_deposit_cents: 150,
@@ -2622,8 +2641,7 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   h.sheet.configured = true;
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.equal(shift?.status, "ACTIVE");
-  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 3 });
-  await h.svc.submitClosingCount(h.token);
+  await submitClosingValues(h.svc, h.token, { "1001": 3, "1002": 2 });
   const ended = await h.svc.endShiftFromPos(h.token, { key: "label-end", final_deposit_cents: 0, lines: [] });
   assert.equal(ended.close_label, "PNY-1104-1103");
   assert.match(ended.summary_text ?? "", /Close: PNY-1104-1103/);
@@ -2646,6 +2664,7 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.cash_sales, 0);
   const started = await h.svc.startShift({ key: "label-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-b" });
   const next = await h.svc.login(String(started.pin), "10.4.0.2");
+  await submitClosingValues(h.svc, next.token);
   await h.svc.endShiftFromPos(next.token, { key: "label-end-2", final_deposit_cents: 0, lines: [] });
   assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
 
@@ -2762,6 +2781,50 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
 });
 
+test("closing count requires every SKU and explicit confirmation records blanks as zero", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 3 });
+  await h.svc.startClosingCount(h.token);
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 4 });
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_INCOMPLETE");
+      assert.deepEqual(error.details.blank_skus, ["1002"]);
+      return true;
+    },
+  );
+  await rejects(
+    () => h.svc.endShiftFromPos(h.token, { key: "cannot-skip", final_deposit_cents: 0, lines: [] }),
+    "COUNT_REQUIRED",
+  );
+
+  const submitted = await h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true });
+  assert.deepEqual(submitted.recorded_as_zero, ["1002"]);
+  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  const zero = draft?.counts.find((row) => row.sku === "1002");
+  assert.equal(zero?.counted_qty, 0);
+  assert.equal(zero?.accepted_as_is, false);
+  assert.ok(draft?.closing_submitted_at);
+
+  const blind = await h.svc.state(h.token);
+  assert.equal(JSON.stringify(blind.closing).includes("expected"), false);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "confirmed-zero", final_deposit_cents: 0, lines: [] });
+  const missing = ended.closing.closing_lines.find((row) => row.sku === "1002");
+  assert.equal(missing?.left, 0);
+  assert.equal(missing?.variance_qty, -3);
+  assert.equal(qty(h.db, "1002"), 0);
+  assert.ok(h.db.state.ledger.some((row) => row.sku === "1002" && row.movement_type === "COUNT_VARIANCE" && row.qty_delta === -3));
+
+  const countUi = readFileSync("app/pos/CountCard.tsx", "utf8");
+  assert.match(countUi, /items were not counted\. They will be recorded as 0 \(missing\)\. Go back and count, or confirm as 0\?/);
+  assert.match(countUi, /data-testid="blank-sku-list"/);
+  assert.match(countUi, /data-testid="blank-go-back"/);
+  assert.match(countUi, /autoFocus/);
+  assert.match(countUi, /data-testid="blank-confirm-zero"/);
+  assert.match(countUi, /Every SKU needs a typed number\. Zero is allowed\./);
+});
+
 test("the float is stored on the close and does not change the deposit", async () => {
   const h = await readyTill({ "1001": 2 });
   await h.svc.cashout(h.token, { key: "float-sale", lines: [{ sku: "1001", qty: 1 }] });
@@ -2769,6 +2832,7 @@ test("the float is stored on the close and does not change the deposit", async (
   assert.equal(saved.final_deposit_cents, 200);
   assert.equal(saved.float_cents, 500);
   const before = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
+  await submitClosingValues(h.svc, h.token);
   const ended = await h.svc.endShiftFromPos(h.token, { key: "float-end", final_deposit_cents: 200, float_cents: 500, lines: [] });
   assert.equal(ended.closing.float_cents, 500);
   assert.equal(ended.closing.final_deposit_cents, 200);
