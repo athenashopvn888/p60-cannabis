@@ -104,11 +104,13 @@ export default function PosApp({
   apiBase = "/api/pos",
   tillHref = "/pos/till",
   label = "PNY01",
+  storeCode = "PNY01",
   menuUrl = CUSTOMER_MENU_URL,
 }: {
   apiBase?: string;
   tillHref?: string;
   label?: string;
+  storeCode?: string;
   menuUrl?: string;
 } = {}) {
   const [view, setView] = useState<View | null>(null);
@@ -261,7 +263,7 @@ export default function PosApp({
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
       summaryMeta: {
-        storeLabel,
+        storeLabel: storeCode,
         staffName: view.shift?.staff_name ?? "Staff",
         startedAt: view.shift?.started_at ?? new Date().toISOString(),
         endedAt: extra?.endedAt ?? null,
@@ -796,7 +798,7 @@ export default function PosApp({
           }}
           onDone={finishCloseSummary}
           summaryMeta={closeSnap?.summaryMeta ?? {
-            storeLabel,
+            storeLabel: storeCode,
             staffName: view.shift?.staff_name ?? "Staff",
             startedAt: view.shift?.started_at ?? new Date().toISOString(),
             endedAt: null,
