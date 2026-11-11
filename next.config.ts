@@ -64,6 +64,13 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "athena-cannabis-images.vercel.app", pathname: "/products/delivery/v1/**" },
     ],
   },
+  async rewrites() {
+    return [
+      { source: "/store-delivery", destination: "https://sd2-pos.vercel.app/store-delivery" },
+      { source: "/store-delivery-assets/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-assets/:path*" },
+      { source: "/store-delivery-data/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-data/:path*" },
+    ];
+  },
   async redirects() {
     return [
       { source: "/kitchen", destination: "https://mobile-kitchen-two.vercel.app/", permanent: false },
