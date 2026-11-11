@@ -2205,7 +2205,7 @@ test("restarting the verify deadline changes only the clock", async () => {
   assert.equal(JSON.stringify(h.db.state.closing_drafts ?? []), counts);
 });
 
-test("a count on zero stock is flagged and does not invent quantity", async () => {
+test("found unlisted stock is added once only when the opening count is completed", async () => {
   const h = await readyTill({ "1001": 2, "1002": 0 });
   const savedQty = qty(h.db, "1002");
   await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 3 });
@@ -2214,6 +2214,20 @@ test("a count on zero stock is flagged and does not invent quantity", async () =
   assert.equal(row?.added_stock, true);
   assert.equal(row?.counted_qty, 3);
   assert.equal(row?.expected_qty, 0);
+  await h.svc.submitVerifyCount(h.token);
+  assert.equal(qty(h.db, "1002"), 3);
+  const found = h.db.state.ledger.filter((entry) => entry.sku === "1002" && entry.movement_type === "COUNT_VARIANCE");
+  assert.equal(found.length, 1);
+  assert.equal(found[0]?.qty_delta, 3);
+  assert.equal(found[0]?.reason, "FOUND_NOT_LISTED_AT_OPEN");
+  assert.equal(h.db.state.count_lines.some((line) => line.sku === "1002" && line.system_qty === 0 && line.counted_qty === 3), true);
+  await h.svc.submitVerifyCount(h.token);
+  assert.equal(qty(h.db, "1002"), 3);
+  assert.equal(h.db.state.ledger.filter((entry) => entry.sku === "1002" && entry.movement_type === "COUNT_VARIANCE").length, 1);
+  const countCard = readFileSync("app/pos/CountCard.tsx", "utf8");
+  assert.match(countCard, /Are there any SKUs with stock that are not listed\?/);
+  assert.match(countCard, /Yes, add SKU/);
+  assert.match(countCard, /No, complete open count/);
 });
 
 test("after two hours the verify card closes and uncounted SKUs are accepted with no discrepancy", async () => {
