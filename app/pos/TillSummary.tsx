@@ -29,6 +29,7 @@ function Grid({ lines, testId }: { lines: AdjustLine[]; testId: string }) {
 }
 
 export default function TillSummary({
+  weedInStore,
   cashSalesCents,
   depositedCents,
   floatCents,
@@ -38,6 +39,7 @@ export default function TillSummary({
   floatExpectedCents,
   floatFoundCents,
 }: {
+  weedInStore?: boolean | null;
   cashSalesCents: number;
   depositedCents: number;
   floatCents: number;
@@ -68,6 +70,7 @@ export default function TillSummary({
   return (
     <div data-testid="till-summary">
       <h2>Closing summary</h2>
+      {weedInStore != null ? <div className={styles.summaryRow} data-testid="weed-shift-answer"><span>WEED in store this shift</span><strong>{weedInStore ? "WEED" : "NO WEED"}</strong></div> : null}
       <div className={styles.summaryRow}><span>Cash sales</span><strong>{formatMoney(cashSalesCents)}</strong></div>
       <div className={styles.summaryRow}><span>− Deposits</span><strong>{formatMoney(depositedCents)}</strong></div>
       <div className={styles.summaryRow} data-testid="float-left"><span>− Cash on hand (float)</span><strong>{formatMoney(floatCents)}</strong></div>

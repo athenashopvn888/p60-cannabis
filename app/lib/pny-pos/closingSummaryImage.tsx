@@ -61,6 +61,7 @@ export function closingSummaryImage(view: ClosingSummaryView) {
     (
       <div style={{ display: "flex", flexDirection: "column", width: 390, padding: 16, background: "#fafaf9", color: "#1c1917", fontSize: 16 }}>
         <div style={{ display: "flex", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Closing summary</div>
+        {view.weedInStore != null ? <Row label="WEED in store this shift" value={view.weedInStore ? "WEED" : "NO WEED"} /> : null}
         <Row label="Cash sales" value={formatMoney(view.cashSalesCents)} />
         <Row label="− Deposits" value={formatMoney(view.depositedCents)} />
         <Row label="− Cash on hand (float)" value={formatMoney(view.floatCents)} />

@@ -47,6 +47,7 @@ import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
+import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -533,12 +534,34 @@ function draftsOf(state: State) {
 }
 
 /** Opening count: on-hand stock, plus a kitchen row that is still waiting to be received. */
-function openingPlan(state: State, raw?: Map<string, number>) {
+function weedAnswerRequired(shift: ShiftRow) {
+  return shift.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store == null;
+}
+
+function noWeedShift(shift: ShiftRow | undefined) {
+  return shift?.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store === false;
+}
+
+function thcForState(state: State, sku: string) {
+  const product = state.products.find((row) => row.sku === sku);
+  return product ? isThcCatalogProduct(product) : isThcSku(sku);
+}
+
+function visibleForShift(state: State, shift: ShiftRow | undefined, sku: string) {
+  return !noWeedShift(shift) || !thcForState(state, sku);
+}
+
+function requireWeedAnswer(shift: ShiftRow) {
+  if (weedAnswerRequired(shift)) throw new PosError(409, "WEED_ANSWER_REQUIRED", "Answer WEED in store this shift? YES / NO first.");
+}
+
+function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) {
   const incoming = state.incoming.filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0 && (!row.store_code || row.store_code === tillCode()));
   const skus = new Set<string>();
   for (const balance of state.balances) if (balance.qty > 0 && balanceForStore(balance)) skus.add(balance.sku);
   for (const row of incoming) if (!row.store_code || row.store_code === tillCode()) skus.add(row.sku);
   return [...skus]
+    .filter((sku) => visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => ({
       sku,
@@ -551,6 +574,7 @@ function openingPlan(state: State, raw?: Map<string, number>) {
 
 /** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
 function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>) {
+  const shift = state.shifts.find((row) => row.id === shiftId);
   const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
   const openingLines = opening ? state.count_lines.filter((row) => row.count_id === opening.id) : [];
   const saleIds = new Set(state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED").map((sale) => sale.id));
@@ -567,6 +591,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...state.incoming.filter((row) => row.confirmed_shift_id === shiftId).map((row) => row.sku),
   ]);
   return [...skus]
+    .filter((sku) => visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => {
       const received = receivedQty(sku);
@@ -692,9 +717,10 @@ function expectedAtSubmit(state: State, shift: ShiftRow, sku: string, untilMs: n
 }
 
 function verifySkuList(state: State, shiftId: string) {
-  const skus = new Set(openingPlan(state).map((line) => line.sku));
+  const shift = state.shifts.find((row) => row.id === shiftId);
+  const skus = new Set(openingPlan(state, undefined, shift).map((line) => line.sku));
   const draft = draftsOf(state).find((row) => row.shift_id === shiftId);
-  for (const row of draft?.opening_counts ?? []) skus.add(row.sku);
+  for (const row of draft?.opening_counts ?? []) if (visibleForShift(state, shift, row.sku)) skus.add(row.sku);
   return sortCountSkus(state, skus);
 }
 
@@ -913,14 +939,14 @@ function floatCheck(state: State, shift: ShiftRow) {
   };
 }
 
-function countSkus(state: State) {
+function countSkus(state: State, shift?: ShiftRow) {
   const skus = new Set<string>();
   for (const balance of state.balances) skus.add(balance.sku);
   for (const product of state.products) {
     const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
     if (product.setb_active && storeProduct?.enabled) skus.add(product.sku);
   }
-  return [...skus].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...skus].filter((sku) => visibleForShift(state, shift, sku)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
 function revokeSessions(state: State, shiftId: string, at: string) {
@@ -947,6 +973,7 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   const more = left.length > 15 ? " · (top 15, full list in sheet)" : "";
   return [
     `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`,
+    shift.weed_in_store == null ? "" : `WEED in store this shift: ${shift.weed_in_store ? "WEED" : "NO WEED"}`,
     `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
     `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
@@ -1011,8 +1038,8 @@ function finishShift(state: State, shift: ShiftRow, reason: string, at: string, 
   return fresh;
 }
 
-function noCountLines(state: State): ClosingLine[] {
-  return countSkus(state).map((sku) => ({ sku, name: productName(state, sku), left: qtyOf(state, sku), system_qty: qtyOf(state, sku) }));
+function noCountLines(state: State, shift: ShiftRow): ClosingLine[] {
+  return countSkus(state, shift).map((sku) => ({ sku, name: productName(state, sku), left: qtyOf(state, sku), system_qty: qtyOf(state, sku) }));
 }
 
 function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
@@ -1172,6 +1199,7 @@ function requireAdmin(state: State, token: string, now: Date) {
 
 function sellingBlocked(_state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
+  if (weedAnswerRequired(shift)) return "WEED_ANSWER_REQUIRED";
   return null;
 }
 
@@ -1629,7 +1657,7 @@ export class PosService {
       }
       const at = iso(now);
       for (const previous of openShifts(tx.state)) {
-        const closing = buildClosing(tx.state, previous, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, previous, noCountLines(tx.state, previous), true, at);
         finishShift(tx.state, previous, "REPLACED", at, closing);
         queueClosingSheets(tx.state, previous, tx.state.closings.find((row) => row.shift_id === previous.id) ?? closing, at);
       }
@@ -1654,6 +1682,12 @@ export class PosService {
         end_reason: null,
         opening_confirmed_at: null,
         refill_confirmed_at: null,
+        ...(tillCode() === "PNY01" ? {
+          weed_gate_required: true,
+          weed_in_store: null,
+          weed_answered_at: null,
+          weed_answered_by: null,
+        } : {}),
         created_at: at,
       };
       tx.state.shifts.push(shift);
@@ -1761,6 +1795,12 @@ export class PosService {
         end_reason: null,
         opening_confirmed_at: null,
         refill_confirmed_at: null,
+        ...(tillCode() === "PNY01" ? {
+          weed_gate_required: true,
+          weed_in_store: null,
+          weed_answered_at: null,
+          weed_answered_by: null,
+        } : {}),
         created_at: at,
       };
       tx.state.shifts.push(shift);
@@ -1793,7 +1833,7 @@ export class PosService {
       if (shift.status !== "ENDED") {
         const reason = input.reason === "SCCX_AUTOCLOSE" ? "SCCX_AUTOCLOSE" : "SCCX_OFF";
         expireTickets(tx.state, now.getTime(), shift.id);
-        const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
         finishShift(tx.state, shift, reason, at, closing);
         const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
         queueClosingSheets(tx.state, shift, saved, at);
@@ -1825,7 +1865,7 @@ export class PosService {
           demo: true,
           gate: "pos",
         }, this.deps.secrets.session);
-        startStaffVerify(shift, at);
+        if (!weedAnswerRequired(shift)) startStaffVerify(shift, at);
         tx.state.sessions.push({
           id: randomUUID(),
           shift_id: shift.id,
@@ -1839,7 +1879,7 @@ export class PosService {
       }
       for (const shift of openShifts(tx.state)) {
         if (shift.pin_expires_at && Date.parse(shift.pin_expires_at) <= now.getTime()) {
-          const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+          const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
@@ -1885,7 +1925,7 @@ export class PosService {
         };
       }
       shift.pin_failed_attempts = 0;
-      if (!master) startStaffVerify(shift, at);
+      if (!master && !weedAnswerRequired(shift)) startStaffVerify(shift, at);
       const token = newToken();
       tx.state.sessions.push({
         id: randomUUID(),
@@ -1955,6 +1995,44 @@ export class PosService {
     return { ok: true };
   }
 
+  /** Save the required PNY01 shift answer without changing stock, sales, counts, refills, or the PIN. */
+  async answerWeedInStore(token: string, weedInStore: boolean) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (tillCode() !== "PNY01" || shift.store_code !== "PNY01" || shift.weed_gate_required !== true) {
+        throw new PosError(404, "WEED_GATE", "This question is only used by new PNY01 shifts.");
+      }
+      if (shift.weed_in_store != null) {
+        if (shift.weed_in_store !== weedInStore) throw new PosError(409, "WEED_ANSWER_FINAL", "The WEED / NO WEED answer is already saved for this shift.");
+        return { ok: true as const, weed_in_store: shift.weed_in_store, answered_at: shift.weed_answered_at, shift_id: shift.sccx_shift_id };
+      }
+      const stockBefore = JSON.stringify(tx.state.balances);
+      const salesBefore = JSON.stringify(tx.state.sales);
+      const countsBefore = JSON.stringify(tx.state.counts);
+      const pinBefore = shift.pin_hash;
+      shift.weed_in_store = weedInStore;
+      shift.weed_answered_at = at;
+      shift.weed_answered_by = staff.staff_uid;
+      startStaffVerify(shift, at);
+      openTillWithoutCount(shift, at);
+      audit(tx.state, "WEED_SHIFT_ANSWER", "shift", shift.id, staff.staff_uid, {
+        shift_id: shift.sccx_shift_id,
+        answer: weedInStore ? "WEED" : "NO WEED",
+        answered_at: at,
+      }, at);
+      if (
+        JSON.stringify(tx.state.balances) !== stockBefore
+        || JSON.stringify(tx.state.sales) !== salesBefore
+        || JSON.stringify(tx.state.counts) !== countsBefore
+        || shift.pin_hash !== pinBefore
+      ) throw new PosError(409, "WEED_GATE_WRITE", "Saving the answer must not change till data.");
+      return { ok: true as const, weed_in_store: weedInStore, answered_at: at, shift_id: shift.sccx_shift_id };
+    });
+  }
+
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
     const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
@@ -1964,12 +2042,12 @@ export class PosService {
       expireTickets(tx.state, now.getTime());
       const { shift, staff, session } = this.session(tx.state, token, now, gate);
       const master = Boolean(session.master);
-      if (!master) {
+      if (!master && !weedAnswerRequired(shift)) {
         nameLiveShift(tx.state, iso(now));
         openTillWithoutCount(shift, iso(now));
       }
       const totals = shiftTotals(tx.state, shift.id);
-      const products = tx.state.products
+      let products = tx.state.products
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
@@ -1987,6 +2065,7 @@ export class PosService {
         seen.add(extra.sku);
         products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
+      products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
         .map((row) => {
@@ -1997,6 +2076,7 @@ export class PosService {
         .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
         .filter((ticket) => ticket.shift_id === shift.id && (ticket.status === "PENDING" || ticket.status === "OPEN"))
+        .filter((ticket) => tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id).every((line) => visibleForShift(tx.state, shift, line.sku)))
         .map((ticket) => ({
           id: ticket.id,
           code: ticket.code,
@@ -2009,8 +2089,8 @@ export class PosService {
           })),
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
-      const openingLines = [...openingPlan(tx.state, raw)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
-      const phase = shift.status === "CLOSING" ? "end" : "sell";
+      const openingLines = [...openingPlan(tx.state, raw, shift)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
+      const phase = weedAnswerRequired(shift) ? "weed" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status === "queued")
@@ -2034,6 +2114,12 @@ export class PosService {
           status: shift.status,
           opening_confirmed: Boolean(shift.opening_confirmed_at),
           pin_expires_at: shift.pin_expires_at,
+          weed_in_store: shift.weed_in_store ?? null,
+        },
+        weed_gate: {
+          required: weedAnswerRequired(shift),
+          answer: shift.weed_in_store ?? null,
+          answered_at: shift.weed_answered_at ?? null,
         },
         totals: {
           sales_cents: totals.sales_total_cents,
@@ -2122,9 +2208,10 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
-      const expected = openingPlan(tx.state).map((line) => line.sku);
+      const expected = openingPlan(tx.state, undefined, shift).map((line) => line.sku);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
       if (expected.some((sku) => !bySku.has(sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that has stock or an incoming refill.");
       const at = iso(now);
@@ -2173,6 +2260,7 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
       const at = iso(now);
@@ -2287,6 +2375,9 @@ export class PosService {
         if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket is not open.");
       }
       const lines = mergeLines(input.lines);
+      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+        throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable on a NO WEED shift.");
+      }
       const priced = lines.map((line) => {
         const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
@@ -2360,6 +2451,7 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
@@ -2597,6 +2689,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status === "ACTIVE") shift.status = "CLOSING";
       if (shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       return { ok: true, status: shift.status, message: END_SHIFT_MESSAGE };
@@ -2609,6 +2702,7 @@ export class PosService {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const status = shift.status;
       const pin = shift.pin_hash;
@@ -2625,6 +2719,7 @@ export class PosService {
       const now = this.now();
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       lockUnverified(tx.state, shift, staff.staff_uid, now);
       if (verifyAnchorMs(shift) == null || now.getTime() >= (verifyAnchorMs(shift) as number) + VERIFY_WINDOW_MS) {
@@ -2666,6 +2761,7 @@ export class PosService {
       const now = this.now();
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       const anchor = verifyAnchorMs(shift);
       if (anchor == null || now.getTime() >= anchor + VERIFY_WINDOW_MS) {
@@ -2682,6 +2778,7 @@ export class PosService {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       lockUnverified(tx.state, shift, "staff", now);
       const anchor = verifyAnchorMs(shift);
@@ -3068,6 +3165,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id);
       if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this close.");
@@ -3100,6 +3198,7 @@ export class PosService {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const draft = ensureDraft(tx.state, shift.id, now);
       if (draft.closing_submitted_at) return { ok: true, closing_submitted_at: draft.closing_submitted_at };
@@ -3199,6 +3298,7 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id, raw);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
@@ -3626,7 +3726,7 @@ export class PosService {
       const expired = expireTickets(tx.state, now.getTime());
       for (const shift of openShifts(tx.state)) {
         if (shift.pin_expires_at && Date.parse(shift.pin_expires_at) <= now.getTime()) {
-          const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+          const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
@@ -3781,7 +3881,7 @@ export class PosService {
         }
         if (!staff.active) {
           for (const shift of tx.state.shifts.filter((row) => row.staff_uid === staff!.staff_uid && row.status !== "ENDED")) {
-            const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+            const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
             finishShift(tx.state, shift, "UNLINKED", at, closing);
           }
         }
@@ -3809,12 +3909,13 @@ export class PosService {
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, thc_flag: defaultThcCatalogFlag({ sku, name, category }), sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: tillCode(), sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
           product.name = name;
           product.category = category;
+          product.thc_flag = defaultThcCatalogFlag({ sku, name, category });
           product.setb_active = active;
           if (price != null) product.default_price_cents = price;
           if (image != null) product.image_url = image;
@@ -4096,7 +4197,7 @@ export class PosService {
       if (!shift) throw new PosError(404, "SHIFT", "Shift was not found.");
       const at = iso(now);
       if (shift.status !== "ENDED") {
-        const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
         finishShift(tx.state, shift, "ADMIN", at, closing);
       }
       const result = { ok: true, status: shift.status };

@@ -32,6 +32,7 @@ export default function CloseShift({
   onConfirm,
   onClose,
   onDone,
+  weedInStore,
   stockCheck,
   floatExpectedCents,
   floatFoundCents,
@@ -50,6 +51,7 @@ export default function CloseShift({
   onConfirm: (depositCents: number, floatCents: number) => Promise<void | string>;
   onClose: () => void;
   onDone?: () => void;
+  weedInStore?: boolean | null;
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
@@ -165,6 +167,7 @@ export default function CloseShift({
               Screenshot this and send it to the group before tapping Done.
             </div>
             <TillSummary
+              weedInStore={weedInStore}
               cashSalesCents={totals.cash_sales_cents}
               depositedCents={deposited}
               floatCents={floatCents}

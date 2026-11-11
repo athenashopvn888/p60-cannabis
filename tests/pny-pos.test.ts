@@ -15,7 +15,7 @@ import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.t
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
-import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
@@ -35,6 +35,7 @@ import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/p
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
+import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -105,6 +106,7 @@ async function readyTill(stock = { "1001": 2, "1002": 5 }) {
   });
   const started = await h.svc.startShift({ key: "start-a", store: "PNY01", staff_ref: "staff-a", pos_id: "A1", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.8");
+  await h.svc.answerWeedInStore(login.token, true);
   await h.svc.state(login.token);
   return { ...h, admin: admin.token, token: login.token, pin: String(started.pin), shiftId: String(started.shift_id) };
 }
@@ -210,6 +212,7 @@ test("5. a pending refill is starting stock and 105-28g of 2 needs no reason", a
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.1");
+  await h.svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   h.db.state.incoming.push({
     kitchen_row_id: refillId,
@@ -257,6 +260,7 @@ test("a sized refill is listed on the menu and tobacco stays off", async () => {
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-menu" });
   const login = await h.svc.login(String(started.pin), "10.0.0.41");
+  await h.svc.answerWeedInStore(login.token, true);
   for (const sku of ["313-5g", "240"]) {
     h.db.state.incoming.push({
       kitchen_row_id: crypto.randomUUID(),
@@ -527,8 +531,10 @@ test("17. sales, deposits and counts succeed while the sheet is down and the out
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.4");
+  await h.svc.answerWeedInStore(login.token, true);
   h.sheet.reachable = false;
-  await h.svc.openingCount(login.token, { key: "count", lines: [{ sku: "1001", counted_qty: 4 }] });
+  await h.svc.saveOpeningCount(login.token, { sku: "1001", counted_qty: 4 });
+  await h.svc.submitVerifyCount(login.token);
   await h.svc.cashout(login.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(login.token, { key: "drop", amount_cents: 500 });
   const delayed = await h.svc.drainOutbox();
@@ -1032,6 +1038,7 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   assert.equal(opened.ok, true);
   assert.equal("pin" in opened, false);
   const login = await svc.login(pin, "10.0.0.8");
+  await svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   sheet.tabs.POS_Refills.push({
     row_id: refillId,
@@ -1404,6 +1411,7 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.2.0.1");
+  await h.svc.answerWeedInStore(login.token, true);
   const waiting = await h.svc.state(login.token);
   assert.equal(waiting.phase, "sell");
   assert.equal(waiting.block, null);
@@ -1440,6 +1448,7 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   });
   assert.equal(opened.sccx_shift_id, "TEST01-close");
   const login = await svc.login(pin, "10.9.0.1");
+  await svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   sheet.tabs.POS_Refills.push({
     row_id: refillId,
@@ -1591,6 +1600,7 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "flower-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-flower" });
   const login = await h.svc.login(String(started.pin), "10.0.0.77");
+  await h.svc.answerWeedInStore(login.token, true);
   for (const sku of ["502-3g", "1000"]) {
     h.db.state.incoming.push({
       kitchen_row_id: crypto.randomUUID(),
@@ -1678,6 +1688,7 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "items-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-items" });
   const login = await h.svc.login(String(started.pin), "10.0.0.88");
+  await h.svc.answerWeedInStore(login.token, true);
   const at = "2026-11-04T02:00:00.000Z";
   h.db.state.balances.push(
     { sku: "709", qty: 5, updated_at: at, created_at: at },
@@ -2350,6 +2361,7 @@ test("master login does not start the verify window and cannot change the shift"
   await rejects(() => h.svc.saveOpeningCount(master.token, { sku: "1001", counted_qty: 1 }), "MASTER_VIEW");
   assert.equal(qty(h.db, "1001"), before);
   const staff = await h.svc.login(String(started.pin), "10.8.0.2");
+  await h.svc.answerWeedInStore(staff.token, true);
   const live = await h.svc.state(staff.token);
   const after = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
   assert.equal(live.master, false);
@@ -2664,6 +2676,7 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.cash_sales, 0);
   const started = await h.svc.startShift({ key: "label-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-b" });
   const next = await h.svc.login(String(started.pin), "10.4.0.2");
+  await h.svc.answerWeedInStore(next.token, true);
   await submitClosingValues(h.svc, next.token);
   await h.svc.endShiftFromPos(next.token, { key: "label-end-2", final_deposit_cents: 0, lines: [] });
   assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
@@ -2851,4 +2864,136 @@ test("the float is stored on the close and does not change the deposit", async (
   assert.equal(verified.float_check.done, true);
   assert.equal(verified.float_check.found_cents, 400);
   assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
+});
+
+test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {
+  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
+  assert.equal(added.length, 102);
+  assert.equal(THC_SKUS.length, 248);
+  assert.equal(new Set(THC_SKUS).size, 248);
+  assert.equal(added.every(isThcSku), true);
+  assert.equal(isThcSku("188"), true);
+  assert.equal(isThcSku("710"), false);
+  assert.equal(["240", "668", "669", "710", "1006", "1080"].some(isThcSku), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "777-3g", name: "New flower", category: "Flower" }), true);
+  assert.equal(defaultThcCatalogFlag({ sku: "1090", name: "New cigarette", category: "Cigarettes" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "711", name: "New rolling paper", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "712", name: "New lighter", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
+
+  const h = harness();
+  await h.svc.syncSetb([
+    { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
+    { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
+    { sku: "777-3g", name: "New catalog flower", category: "Flower", price_cents: 2500, active: true },
+  ]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "weed-stock", sku: "188", qty: 4 });
+  await h.svc.openingBalance(admin.token, { key: "paper-stock", sku: "710", qty: 3 });
+  await h.svc.openingBalance(admin.token, { key: "new-flower-stock", sku: "777-3g", qty: 2 });
+  await h.svc.importRoster({
+    key: "weed-roster",
+    staff: [
+      { staff_uid: "staff-a", sccx_id: "a", pos_id: "A1", display_name: "Ada", active: true },
+      { staff_uid: "staff-b", sccx_id: "b", pos_id: "B1", display_name: "Bea", active: true },
+    ],
+  });
+
+  const first = await h.svc.startShift({ key: "weed-start", store: "PNY01", staff_ref: "staff-a", shift_id: "weed-shift" });
+  const login = await h.svc.login(String(first.pin), "10.0.0.8");
+  const gated = await h.svc.state(login.token);
+  assert.equal(gated.phase, "weed");
+  assert.equal(gated.weed_gate.required, true);
+  assert.equal(gated.can_sell, false);
+  assert.equal(gated.shift.opening_confirmed, false);
+  await rejects(() => h.svc.cashout(login.token, { key: "skip-gate", lines: [{ sku: "710", qty: 1 }] }), "WEED_ANSWER_REQUIRED");
+
+  const saved = await h.svc.answerWeedInStore(login.token, false);
+  assert.equal(saved.weed_in_store, false);
+  const shift = h.db.state.shifts.find((row) => row.id === first.shift_id)!;
+  assert.equal(shift.weed_answered_by, "staff-a");
+  assert.equal(shift.weed_answered_at, h.clock.t.toISOString());
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_ANSWER" && row.ref_id === first.shift_id), true);
+
+  const noWeed = await h.svc.state(login.token);
+  assert.equal(noWeed.weed_gate.answer, false);
+  assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "777-3g"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
+  assert.equal(noWeed.verify.lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.verify.lines.some((row) => row.sku === "777-3g"), false);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "777-3g"), false);
+  assert.equal(qty(h.db, "188"), 4);
+  await rejects(() => h.svc.cashout(login.token, { key: "hidden-thc", lines: [{ sku: "188", qty: 1 }] }), "THC_HIDDEN");
+
+  h.db.state.incoming.push(
+    { kitchen_row_id: "weed-refill", batch_id: "batch", store_code: "PNY01", sku: "188", qty_sent: 2, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
+    { kitchen_row_id: "paper-refill", batch_id: "batch", store_code: "PNY01", sku: "710", qty_sent: 5, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
+  );
+  await h.svc.confirmIncoming(login.token, { key: "receive-both", lines: [
+    { kitchen_row_id: "weed-refill", qty_received: 2 },
+    { kitchen_row_id: "paper-refill", qty_received: 5 },
+  ] });
+  assert.equal(qty(h.db, "188"), 6);
+  assert.equal(qty(h.db, "710"), 8);
+  const afterRefill = await h.svc.state(login.token);
+  assert.equal(afterRefill.products.some((row) => row.sku === "188"), false);
+  assert.equal(afterRefill.close_lines.some((row) => row.sku === "188"), false);
+  assert.equal(afterRefill.products.find((row) => row.sku === "710")?.qty, 8);
+
+  await h.svc.endShiftFromSccx({ key: "weed-off", store: "PNY01", shift_id: "weed-shift", reason: "SCCX_OFF" });
+  const firstClosing = h.db.state.closings.find((row) => row.shift_id === first.shift_id)!;
+  assert.match(firstClosing.summary_text, /WEED in store this shift: NO WEED/);
+  assert.equal(firstClosing.closing_lines.some((row) => row.sku === "188"), false);
+  assert.equal(qty(h.db, "188"), 6);
+
+  const next = await h.svc.startShift({ key: "next-weed-start", store: "PNY01", staff_ref: "staff-b", shift_id: "next-weed-shift" });
+  const nextLogin = await h.svc.login(String(next.pin), "10.0.0.9");
+  await h.svc.answerWeedInStore(nextLogin.token, true);
+  const weed = await h.svc.state(nextLogin.token);
+  assert.equal(weed.products.find((row) => row.sku === "188")?.qty, 6);
+  assert.equal(weed.verify.lines.some((row) => row.sku === "188"), true);
+  await h.svc.saveOpeningCount(nextLogin.token, { sku: "188", counted_qty: 5 });
+  const opening = h.db.state.closing_drafts.find((row) => row.shift_id === next.shift_id)?.opening_counts?.find((row) => row.sku === "188");
+  assert.equal(opening?.expected_qty, 6);
+  assert.equal((opening?.counted_qty ?? 0) - (opening?.expected_qty ?? 0), -1);
+});
+
+test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "legacy-weed-stock", sku: "188", qty: 2 });
+  await h.svc.importRoster({ key: "legacy-weed-roster", staff: [{ staff_uid: "legacy-staff", pos_id: "L1", display_name: "Legacy", active: true }] });
+  const opened = await h.svc.startShift({ key: "legacy-weed-start", store: "PNY01", staff_ref: "legacy-staff", shift_id: "legacy-weed-shift" });
+  const shift = h.db.state.shifts.find((row) => row.id === opened.shift_id)!;
+  delete shift.weed_gate_required;
+  delete shift.weed_in_store;
+  delete shift.weed_answered_at;
+  delete shift.weed_answered_by;
+  const login = await h.svc.login(String(opened.pin), "10.0.0.10");
+  const view = await h.svc.state(login.token);
+  assert.equal(view.weed_gate.required, false);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.products.find((row) => row.sku === "188")?.qty, 2);
+  assert.equal(view.verify.lines.some((row) => row.sku === "188"), true);
+});
+
+test("POS_Shifts keeps every legacy column in place and appends the WEED fields", () => {
+  const legacy = ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"];
+  const headers = POS_TAB_SPECS.find((spec) => spec.title === "POS_Shifts")?.headers ?? [];
+  assert.deepEqual(headers.slice(0, legacy.length), legacy);
+  assert.deepEqual(headers.slice(legacy.length), ["weed_in_store", "weed_answered_at", "weed_answered_by"]);
+});
+
+test("PNY02 does not receive the PNY01 WEED gate", async () => {
+  const h = harness();
+  const opened = await runStore(PNY02_STORE, () => h.svc.openShiftWithPin({ staff_uid: "pny2-staff", display_name: "PNY2 Staff", pin: "2468" }));
+  const login = await runStore(PNY02_STORE, () => h.svc.login("2468", "10.0.0.2"));
+  const view = await runStore(PNY02_STORE, () => h.svc.state(login.token));
+  const shift = h.db.state.shifts.find((row) => row.id === opened.shift_id);
+  assert.equal(shift?.weed_gate_required, undefined);
+  assert.equal(view.weed_gate.required, false);
+  assert.equal(view.phase, "sell");
 });

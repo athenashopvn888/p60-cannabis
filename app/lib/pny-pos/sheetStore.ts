@@ -6,6 +6,7 @@ import { skuSortKey } from "./flowerSku.ts";
 import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
+import { defaultThcCatalogFlag } from "./thcSkuFlags.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
 
@@ -15,7 +16,7 @@ const CHUNK = 30_000;
 
 export const POS_TAB_SPECS: SheetTabSpec[] = [
   { title: "POS_Staff", headers: ["row_id", "record_type", "staff_uid", "sccx_id", "pos_id", "display_name", "active", "updated_at", "created_at", "doc"] },
-  { title: "POS_Shifts", headers: ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"] },
+  { title: "POS_Shifts", headers: ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc", "weed_in_store", "weed_answered_at", "weed_answered_by"] },
   { title: "POS_Sales", headers: ["row_id", "sale_id", "shift_id", "staff", "payment_method", "status", "total_cents", "ref_no", "created_at", "doc"] },
   { title: "POS_Refills", headers: ["row_id", "kitchen_row_id", "batch_id", "store_code", "sku", "qty", "qty_sent", "qty_received", "kind", "status", "kitchen_status", "variance_reason", "confirmed_at", "created_at", "record_type", "doc"] },
   { title: "POS_Counts", headers: ["row_id", "count_id", "shift_id", "kind", "sku", "system_qty", "counted_qty", "variance_reason", "confirmed_at", "doc"] },
@@ -63,6 +64,7 @@ function mergeCatalog(state: State) {
     added += 1;
     state.products.push({
       sku: product.sku,
+      thc_flag: defaultThcCatalogFlag(product),
       sku_sort: skuSortKey(product.sku),
       name: product.name,
       category: product.category,
@@ -274,6 +276,9 @@ export class SheetDb implements PosDb {
       ended_at: row.ended_at ?? "",
       end_reason: row.end_reason ?? "",
       opening_confirmed_at: row.opening_confirmed_at ?? "",
+      weed_in_store: row.weed_in_store == null ? "" : row.weed_in_store ? "WEED" : "NO WEED",
+      weed_answered_at: row.weed_answered_at ?? "",
+      weed_answered_by: row.weed_answered_by ?? "",
       doc: JSON.stringify(row),
     }));
     const sales = state.sales.map((sale) => ({

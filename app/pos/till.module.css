@@ -10,6 +10,109 @@
   overflow: hidden;
 }
 
+.weedGate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 20px;
+  background: #17130f;
+  color: #fff;
+}
+
+.weedGateCard {
+  width: min(100%, 520px);
+  border: 3px solid #f5f5f4;
+  border-radius: 24px;
+  padding: 28px 20px;
+  background: #29221c;
+  text-align: center;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 45%);
+}
+
+.weedGateStore {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.weedGateCard h1 {
+  margin: 22px 0 10px;
+  font-size: clamp(34px, 10vw, 58px);
+  line-height: 1;
+}
+
+.weedGateCard p {
+  margin: 0 auto 24px;
+  max-width: 36ch;
+  color: #e7e5e4;
+}
+
+.weedGateActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.weedYes,
+.weedNo {
+  min-height: 112px;
+  border: 0;
+  border-radius: 18px;
+  color: #fff;
+  font-size: 32px;
+  font-weight: 950;
+}
+
+.weedYes { background: #15803d; }
+.weedNo { background: #b91c1c; }
+.weedYes:disabled,
+.weedNo:disabled { opacity: .55; }
+
+.weedPreview {
+  min-height: 100dvh;
+  padding: 16px;
+  background: #f3efe6;
+  color: #1c1917;
+  font-family: system-ui, sans-serif;
+}
+
+.weedPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0;
+  border-radius: 16px;
+  padding: 16px;
+  background: #24160f;
+  color: #fff;
+}
+
+.weedPreviewHeader div { display: grid; gap: 4px; }
+.weedPreviewHeader strong { font-size: 20px; }
+.weedPreviewHeader span { color: #d6d3d1; }
+
+.weedPreviewCard,
+.weedFlagList {
+  margin: 12px 0;
+  border: 1px solid #d6d3d1;
+  border-radius: 16px;
+  padding: 16px;
+  background: #fff;
+}
+
+.weedPreviewCard h2 { margin: 0 0 8px; }
+.weedPreviewCard p { margin: 8px 0; }
+.weedPreviewRows { display: grid; gap: 6px; }
+.weedPreviewRows div { border-radius: 8px; padding: 9px 10px; background: #f5f5f4; }
+
+.weedFlagList summary { cursor: pointer; font-weight: 850; }
+.weedFlagList div { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; margin-top: 12px; }
+.weedFlagList code { border-radius: 6px; padding: 5px 7px; background: #f5f5f4; }
+
 .demo {
   background: #fff7ed;
   color: #9a3412;
