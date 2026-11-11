@@ -6,7 +6,7 @@ import { skuSortKey } from "./flowerSku.ts";
 import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
-import { defaultThcCatalogFlag } from "./thcSkuFlags.ts";
+import { defaultThcCatalogFlag, thcCatalogReviewRequired } from "./thcSkuFlags.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
 
@@ -65,6 +65,7 @@ function mergeCatalog(state: State) {
     state.products.push({
       sku: product.sku,
       thc_flag: defaultThcCatalogFlag(product),
+      thc_review_required: thcCatalogReviewRequired(product),
       sku_sort: skuSortKey(product.sku),
       name: product.name,
       category: product.category,

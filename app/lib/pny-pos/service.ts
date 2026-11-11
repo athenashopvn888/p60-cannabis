@@ -47,7 +47,7 @@ import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
-import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
+import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku, thcCatalogReviewRequired } from "./thcSkuFlags.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -3909,13 +3909,14 @@ export class PosService {
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, thc_flag: defaultThcCatalogFlag({ sku, name, category }), sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, thc_flag: defaultThcCatalogFlag({ sku, name, category }), thc_review_required: thcCatalogReviewRequired({ sku, name, category }), sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: tillCode(), sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
           product.name = name;
           product.category = category;
           product.thc_flag = defaultThcCatalogFlag({ sku, name, category });
+          product.thc_review_required = thcCatalogReviewRequired({ sku, name, category });
           product.setb_active = active;
           if (price != null) product.default_price_cents = price;
           if (image != null) product.image_url = image;
