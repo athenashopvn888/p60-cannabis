@@ -16,6 +16,7 @@ import SkuOffList, { type OffLine } from "./SkuOffList";
 import CountCard from "./CountCard";
 import RefillList, { type PendingRefill } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
+import WeedShiftGate from "./WeedShiftGate";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
@@ -43,7 +44,8 @@ type View = {
   master?: boolean;
   can_sell?: boolean;
   block?: string | null;
-  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string };
+  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; weed_in_store?: boolean | null };
+  weed_gate?: { required: boolean; answer: boolean | null; answered_at: string | null };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
   close_lines?: CloseLine[];
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
@@ -142,6 +144,7 @@ export default function PosApp({
     floatFoundCents: number | null;
     deadline: string | null;
     initialStep: "count" | "deposit";
+    weedInStore: boolean | null;
     resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
   } | null>(null);
   const forced = pos2RouteFromLocation();
@@ -251,6 +254,7 @@ export default function PosApp({
       floatFoundCents: view.float_check?.found_cents ?? null,
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
+      weedInStore: view.shift?.weed_in_store ?? null,
       resumeSummary:
         extra && extra.depositCents != null && extra.floatCents != null
           ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel }
@@ -269,6 +273,19 @@ export default function PosApp({
     }
     if (view?.closing?.started) return;
     setSheet("close-ask");
+  }
+
+  async function answerWeed(weedInStore: boolean) {
+    setError("");
+    setBusy(true);
+    try {
+      await post(`${storeApi}/shift/weed`, { weed_in_store: weedInStore });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the answer");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function startClosing() {
@@ -532,6 +549,7 @@ export default function PosApp({
           onConfirm={async () => ""}
           onClose={() => undefined}
           onDone={finishCloseSummary}
+          weedInStore={closeSnap.weedInStore}
           stockCheck={closeSnap.stockCheck}
           floatExpectedCents={closeSnap.floatExpectedCents}
           floatFoundCents={closeSnap.floatFoundCents}
@@ -541,6 +559,10 @@ export default function PosApp({
         />
       </main>
     );
+  }
+
+  if (view.weed_gate?.required && !view.master) {
+    return <WeedShiftGate staffName={view.shift?.staff_name ?? "Staff"} busy={busy} error={error} onAnswer={(answer) => void answerWeed(answer)} />;
   }
 
   return (
@@ -774,6 +796,7 @@ export default function PosApp({
             void load().catch(() => undefined);
           }}
           onDone={finishCloseSummary}
+          weedInStore={closeSnap?.weedInStore ?? view.shift?.weed_in_store ?? null}
           stockCheck={closeSnap?.stockCheck ?? view.stock_check}
           floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}

@@ -5,6 +5,7 @@ import type { ClosingLine, State } from "./types.ts";
 export type SummarySku = { text: string; units: number; cents: number };
 
 export type ClosingSummaryView = {
+  weedInStore: boolean | null;
   cashSalesCents: number;
   depositedCents: number;
   floatCents: number;
@@ -72,6 +73,7 @@ export function closingSummaryView(state: State, sccxShiftId: string, storeCode:
   const found = draft?.float_found_cents ?? null;
   const expected = draft?.float_expected_cents ?? previousFloat;
   return {
+    weedInStore: shift.weed_in_store ?? null,
     cashSalesCents: closing.cash_sales_cents ?? closing.sales_total_cents,
     depositedCents: closing.deposited_cents,
     floatCents: closing.float_cents ?? 0,

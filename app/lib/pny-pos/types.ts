@@ -83,6 +83,11 @@ export type ShiftRow = {
   end_reason: string | null;
   opening_confirmed_at: string | null;
   refill_confirmed_at: string | null;
+  /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
+  weed_gate_required?: boolean;
+  weed_in_store?: boolean | null;
+  weed_answered_at?: string | null;
+  weed_answered_by?: string | null;
   /** Staff verify window start. Missing until the first staff PIN login of this release. */
   verify_opened_at?: string | null;
   verify_release?: string | null;

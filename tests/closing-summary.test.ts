@@ -33,6 +33,10 @@ function endedState(): State {
     end_reason: "POS_END",
     opening_confirmed_at: "2026-11-05T12:00:00.000Z",
     refill_confirmed_at: null,
+    weed_gate_required: true,
+    weed_in_store: false,
+    weed_answered_at: "2026-11-05T12:01:00.000Z",
+    weed_answered_by: "staff-test",
     created_at: "2026-11-05T12:00:00.000Z",
   });
   state.closing_drafts.push({
@@ -85,6 +89,7 @@ function endedState(): State {
 test("the closing summary lists off SKUs only and keeps the cash math", () => {
   const view = closingSummaryView(endedState(), "pny01-test-close", "PNY01");
   assert.ok(view);
+  assert.equal(view?.weedInStore, false);
   assert.equal(view?.cashSalesCents, 8000);
   assert.equal(view?.depositedCents, 5000);
   assert.equal(view?.floatCents, 2000);
