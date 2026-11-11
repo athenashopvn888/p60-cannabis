@@ -18,6 +18,8 @@ export type ProductRow = {
   sku: string;
   /** Stored per-SKU classification. Missing legacy values use the safe catalog default. */
   thc_flag?: boolean;
+  /** True when an Uncategorized row is named only by its SKU and needs classification review. */
+  thc_review_required?: boolean;
   sku_sort: number;
   name: string;
   category: string;

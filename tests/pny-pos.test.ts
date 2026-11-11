@@ -35,7 +35,7 @@ import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/p
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
-import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
+import { defaultThcCatalogFlag, isThcSku, THC_SKUS, thcCatalogReviewRequired } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -2880,17 +2880,31 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(defaultThcCatalogFlag({ sku: "711", name: "New rolling paper", category: "Add Ons" }), false);
   assert.equal(defaultThcCatalogFlag({ sku: "712", name: "New lighter", category: "Add Ons" }), false);
   assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
+  for (const name of ["RAW BLACK", "PRE-ROLLED CONES", "FILTER TIPS", "ROLLING ACCESSORY"]) {
+    assert.equal(defaultThcCatalogFlag({ sku: `paper-${name}`, name, category: "Add Ons" }), false);
+  }
+  assert.equal(defaultThcCatalogFlag({ sku: "m-1", name: "Mushroom gummies", category: "Flower" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "m-2", name: "Magic bar", category: "Vape Disposable" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "m-3", name: "Psilocybin capsules", category: "Edibles" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "7777", name: "7777", category: "Uncategorized" }), false);
+  assert.equal(thcCatalogReviewRequired({ sku: "7777", name: "7777", category: "Uncategorized" }), true);
+  assert.equal(defaultThcCatalogFlag({ sku: "7778", name: "Named flower", category: "Uncategorized" }), true);
+  assert.equal(thcCatalogReviewRequired({ sku: "7778", name: "Named flower", category: "Uncategorized" }), false);
 
   const h = harness();
   await h.svc.syncSetb([
     { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
     { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
     { sku: "777-3g", name: "New catalog flower", category: "Flower", price_cents: 2500, active: true },
+    { sku: "7777", name: "7777", category: "Uncategorized", price_cents: 100, active: true },
   ]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "weed-stock", sku: "188", qty: 4 });
   await h.svc.openingBalance(admin.token, { key: "paper-stock", sku: "710", qty: 3 });
   await h.svc.openingBalance(admin.token, { key: "new-flower-stock", sku: "777-3g", qty: 2 });
+  await h.svc.openingBalance(admin.token, { key: "review-stock", sku: "7777", qty: 1 });
+  assert.equal(h.db.state.products.find((row) => row.sku === "7777")?.thc_flag, false);
+  assert.equal(h.db.state.products.find((row) => row.sku === "7777")?.thc_review_required, true);
   await h.svc.importRoster({
     key: "weed-roster",
     staff: [
@@ -2919,6 +2933,7 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(noWeed.weed_gate.answer, false);
   assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
   assert.equal(noWeed.products.some((row) => row.sku === "777-3g"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "7777"), true);
   assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
   assert.equal(noWeed.verify.lines.some((row) => row.sku === "188"), false);
   assert.equal(noWeed.verify.lines.some((row) => row.sku === "777-3g"), false);

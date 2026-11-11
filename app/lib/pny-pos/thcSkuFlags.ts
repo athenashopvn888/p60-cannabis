@@ -261,17 +261,27 @@ export function isThcSku(sku: string) {
 }
 
 const NON_THC_SKUS = new Set(["240", "241", "668", "669", "710"]);
-const NON_THC_TEXT = /\b(cigarettes?|grabba|backwoods?|papers?|rolling\s+paper|lighter|vape\s+pens?|nicotine|magic\s*&\s*others)\b/i;
+const NON_THC_TEXT = /\b(cigarettes?|grabba|backwoods?|papers?|raw|cones?|tips?|rolling|lighter|vape\s+pens?|nicotine|mushrooms?|shrooms?|psilocybin|magic)\b/i;
+
+type CatalogProduct = { sku: string; name?: string; category?: string };
+
+/** An unknown SKU-only row is visible but cannot silently become THC. */
+export function thcCatalogReviewRequired(product: CatalogProduct) {
+  const sku = product.sku.trim();
+  if (THC_SET.has(sku)) return false;
+  return /^uncategorized$/i.test((product.category ?? "").trim()) && (product.name ?? "").trim() === sku;
+}
 
 /** New catalog keys fail closed as THC, except the approved non-THC groups. */
-export function defaultThcCatalogFlag(product: { sku: string; name?: string; category?: string }) {
+export function defaultThcCatalogFlag(product: CatalogProduct) {
   const sku = product.sku.trim();
   if (THC_SET.has(sku)) return true;
+  if (thcCatalogReviewRequired(product)) return false;
   if (/^10\d{2}$/.test(sku) || sku === "999" || NON_THC_SKUS.has(sku)) return false;
   return !NON_THC_TEXT.test(`${product.category ?? ""} ${product.name ?? ""}`);
 }
 
-export function isThcCatalogProduct(product: { sku: string; name?: string; category?: string; thc_flag?: boolean }) {
+export function isThcCatalogProduct(product: CatalogProduct & { thc_flag?: boolean }) {
   if (THC_SET.has(product.sku.trim())) return true;
   return product.thc_flag ?? defaultThcCatalogFlag(product);
 }
