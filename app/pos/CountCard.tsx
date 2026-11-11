@@ -44,6 +44,7 @@ export default function CountCard({
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
+  const [unlistedAskOpen, setUnlistedAskOpen] = useState(false);
 
   if (!current) return null;
   if (current.sku !== seen) {
@@ -109,6 +110,10 @@ export default function CountCard({
         setBlankLines(blanks);
         return;
       }
+      if (purpose === "verify" && allowExtra) {
+        setUnlistedAskOpen(true);
+        return;
+      }
       await onSubmit?.(false);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not submitted");
@@ -123,6 +128,21 @@ export default function CountCard({
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not submitted");
     }
+  }
+
+  async function completeWithoutUnlistedStock() {
+    setLocalError("");
+    try {
+      await onSubmit?.(false);
+      setUnlistedAskOpen(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not submitted");
+    }
+  }
+
+  function addUnlistedStock() {
+    setUnlistedAskOpen(false);
+    setExpanded(true);
   }
 
   async function jumpTo(line: CountCardLine) {
@@ -233,6 +253,19 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const unlistedModal = unlistedAskOpen ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="unlisted-stock-title" data-testid="unlisted-stock-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="unlisted-stock-title">Open stock check</h2>
+        <p>Are there any SKUs with stock that are not listed?</p>
+        <p>If yes, add the SKU and the quantity you physically counted. The expected quantity stays hidden.</p>
+        <div className={styles.askActions}>
+          <button className={styles.primary} type="button" autoFocus data-testid="unlisted-add" onClick={addUnlistedStock}>Yes, add SKU</button>
+          <button className={styles.secondary} type="button" disabled={busy} data-testid="unlisted-none" onClick={() => void completeWithoutUnlistedStock()}>No, complete open count</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
@@ -242,6 +275,7 @@ export default function CountCard({
         {error}
         {ruleModal}
         {blankModal}
+        {unlistedModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -279,6 +313,7 @@ export default function CountCard({
       {error}
       {ruleModal}
       {blankModal}
+      {unlistedModal}
     </div>
   );
 }

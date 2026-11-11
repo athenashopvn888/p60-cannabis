@@ -763,6 +763,7 @@ function finalizeVerify(state: State, shift: ShiftRow, actor: string, now: Date)
   if (draft.verify_submitted_at) return;
   const at = iso(now);
   const moment = now.getTime();
+  let foundCountId: string | null = null;
   for (const sku of verifySkuList(state, shift.id)) {
     const row = draft.opening_counts?.find((entry) => entry.sku === sku);
     if (row?.accepted_as_is && row.expected_qty != null) continue;
@@ -772,7 +773,29 @@ function finalizeVerify(state: State, shift: ShiftRow, actor: string, now: Date)
       row.expected_qty = expected;
       row.edited_at = row.edited_at || row.submitted_at;
       row.accepted_as_is = false;
-      row.added_stock = qtyOf(state, sku) === 0 && row.counted_qty > 0;
+      const system = qtyOf(state, sku);
+      row.added_stock = system === 0 && row.counted_qty > 0;
+      if (row.added_stock) {
+        if (!foundCountId) {
+          foundCountId = randomUUID();
+          state.counts.push({ id: foundCountId, shift_id: shift.id, kind: "OPENING", confirmed_at: at, created_at: at });
+        }
+        state.count_lines.push({ id: randomUUID(), count_id: foundCountId, sku, system_qty: system, counted_qty: row.counted_qty, variance_reason: "FOUND_NOT_LISTED_AT_OPEN" });
+        const next = balanceAdd(state, sku, row.counted_qty, at, true);
+        if (next == null) throw new PosError(409, "COUNT_STOCK", "The found stock could not be added.");
+        ledger(state, sku, row.counted_qty, "COUNT_VARIANCE", "stock_count", foundCountId, actor, "FOUND_NOT_LISTED_AT_OPEN", shift.id, at);
+        enqueue(state, "S_OpeningCounts", `OC-${shift.id}-${sku}`, {
+          row_id: `OC-${shift.id}-${sku}`,
+          store_code: tillCode(),
+          shift_id: shift.sccx_shift_id,
+          sku,
+          system_qty: String(system),
+          counted_qty: String(row.counted_qty),
+          variance: String(row.counted_qty),
+          reason: "FOUND_NOT_LISTED_AT_OPEN",
+          at,
+        }, at);
+      }
     } else if (row) {
       row.counted_qty = expected;
       row.expected_qty = expected;
