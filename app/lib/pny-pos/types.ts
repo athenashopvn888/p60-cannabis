@@ -16,6 +16,8 @@ export type StoreRow = {
 
 export type ProductRow = {
   sku: string;
+  /** Stored per-SKU classification. Missing legacy values use the safe catalog default. */
+  thc_flag?: boolean;
   sku_sort: number;
   name: string;
   category: string;

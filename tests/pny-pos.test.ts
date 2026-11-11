@@ -15,7 +15,7 @@ import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.t
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
-import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
@@ -35,7 +35,7 @@ import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/p
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
-import { isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
+import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -2867,18 +2867,30 @@ test("the float is stored on the close and does not change the deposit", async (
 });
 
 test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {
-  assert.equal(THC_SKUS.length, 146);
+  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
+  assert.equal(added.length, 102);
+  assert.equal(THC_SKUS.length, 248);
+  assert.equal(new Set(THC_SKUS).size, 248);
+  assert.equal(added.every(isThcSku), true);
   assert.equal(isThcSku("188"), true);
   assert.equal(isThcSku("710"), false);
+  assert.equal(["240", "668", "669", "710", "1006", "1080"].some(isThcSku), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "777-3g", name: "New flower", category: "Flower" }), true);
+  assert.equal(defaultThcCatalogFlag({ sku: "1090", name: "New cigarette", category: "Cigarettes" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "711", name: "New rolling paper", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "712", name: "New lighter", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
 
   const h = harness();
   await h.svc.syncSetb([
     { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
     { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
+    { sku: "777-3g", name: "New catalog flower", category: "Flower", price_cents: 2500, active: true },
   ]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "weed-stock", sku: "188", qty: 4 });
   await h.svc.openingBalance(admin.token, { key: "paper-stock", sku: "710", qty: 3 });
+  await h.svc.openingBalance(admin.token, { key: "new-flower-stock", sku: "777-3g", qty: 2 });
   await h.svc.importRoster({
     key: "weed-roster",
     staff: [
@@ -2906,9 +2918,12 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   const noWeed = await h.svc.state(login.token);
   assert.equal(noWeed.weed_gate.answer, false);
   assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "777-3g"), false);
   assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
   assert.equal(noWeed.verify.lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.verify.lines.some((row) => row.sku === "777-3g"), false);
   assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "777-3g"), false);
   assert.equal(qty(h.db, "188"), 4);
   await rejects(() => h.svc.cashout(login.token, { key: "hidden-thc", lines: [{ sku: "188", qty: 1 }] }), "THC_HIDDEN");
 
@@ -2943,6 +2958,33 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   const opening = h.db.state.closing_drafts.find((row) => row.shift_id === next.shift_id)?.opening_counts?.find((row) => row.sku === "188");
   assert.equal(opening?.expected_qty, 6);
   assert.equal((opening?.counted_qty ?? 0) - (opening?.expected_qty ?? 0), -1);
+});
+
+test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "legacy-weed-stock", sku: "188", qty: 2 });
+  await h.svc.importRoster({ key: "legacy-weed-roster", staff: [{ staff_uid: "legacy-staff", pos_id: "L1", display_name: "Legacy", active: true }] });
+  const opened = await h.svc.startShift({ key: "legacy-weed-start", store: "PNY01", staff_ref: "legacy-staff", shift_id: "legacy-weed-shift" });
+  const shift = h.db.state.shifts.find((row) => row.id === opened.shift_id)!;
+  delete shift.weed_gate_required;
+  delete shift.weed_in_store;
+  delete shift.weed_answered_at;
+  delete shift.weed_answered_by;
+  const login = await h.svc.login(String(opened.pin), "10.0.0.10");
+  const view = await h.svc.state(login.token);
+  assert.equal(view.weed_gate.required, false);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.products.find((row) => row.sku === "188")?.qty, 2);
+  assert.equal(view.verify.lines.some((row) => row.sku === "188"), true);
+});
+
+test("POS_Shifts keeps every legacy column in place and appends the WEED fields", () => {
+  const legacy = ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"];
+  const headers = POS_TAB_SPECS.find((spec) => spec.title === "POS_Shifts")?.headers ?? [];
+  assert.deepEqual(headers.slice(0, legacy.length), legacy);
+  assert.deepEqual(headers.slice(legacy.length), ["weed_in_store", "weed_answered_at", "weed_answered_by"]);
 });
 
 test("PNY02 does not receive the PNY01 WEED gate", async () => {

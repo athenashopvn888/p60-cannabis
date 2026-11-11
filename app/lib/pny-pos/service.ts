@@ -47,7 +47,7 @@ import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
-import { isThcSku } from "./thcSkuFlags.ts";
+import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
 import type {
@@ -542,8 +542,13 @@ function noWeedShift(shift: ShiftRow | undefined) {
   return shift?.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store === false;
 }
 
-function visibleForShift(shift: ShiftRow | undefined, sku: string) {
-  return !noWeedShift(shift) || !isThcSku(sku);
+function thcForState(state: State, sku: string) {
+  const product = state.products.find((row) => row.sku === sku);
+  return product ? isThcCatalogProduct(product) : isThcSku(sku);
+}
+
+function visibleForShift(state: State, shift: ShiftRow | undefined, sku: string) {
+  return !noWeedShift(shift) || !thcForState(state, sku);
 }
 
 function requireWeedAnswer(shift: ShiftRow) {
@@ -556,7 +561,7 @@ function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) 
   for (const balance of state.balances) if (balance.qty > 0 && balanceForStore(balance)) skus.add(balance.sku);
   for (const row of incoming) if (!row.store_code || row.store_code === tillCode()) skus.add(row.sku);
   return [...skus]
-    .filter((sku) => visibleForShift(shift, sku))
+    .filter((sku) => visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => ({
       sku,
@@ -586,7 +591,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...state.incoming.filter((row) => row.confirmed_shift_id === shiftId).map((row) => row.sku),
   ]);
   return [...skus]
-    .filter((sku) => visibleForShift(shift, sku))
+    .filter((sku) => visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => {
       const received = receivedQty(sku);
@@ -715,7 +720,7 @@ function verifySkuList(state: State, shiftId: string) {
   const shift = state.shifts.find((row) => row.id === shiftId);
   const skus = new Set(openingPlan(state, undefined, shift).map((line) => line.sku));
   const draft = draftsOf(state).find((row) => row.shift_id === shiftId);
-  for (const row of draft?.opening_counts ?? []) if (visibleForShift(shift, row.sku)) skus.add(row.sku);
+  for (const row of draft?.opening_counts ?? []) if (visibleForShift(state, shift, row.sku)) skus.add(row.sku);
   return sortCountSkus(state, skus);
 }
 
@@ -941,7 +946,7 @@ function countSkus(state: State, shift?: ShiftRow) {
     const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
     if (product.setb_active && storeProduct?.enabled) skus.add(product.sku);
   }
-  return [...skus].filter((sku) => visibleForShift(shift, sku)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...skus].filter((sku) => visibleForShift(state, shift, sku)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
 function revokeSessions(state: State, shiftId: string, at: string) {
@@ -2060,7 +2065,7 @@ export class PosService {
         seen.add(extra.sku);
         products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
-      products = products.filter((product) => visibleForShift(shift, product.sku));
+      products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
         .map((row) => {
@@ -2071,7 +2076,7 @@ export class PosService {
         .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
         .filter((ticket) => ticket.shift_id === shift.id && (ticket.status === "PENDING" || ticket.status === "OPEN"))
-        .filter((ticket) => tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id).every((line) => visibleForShift(shift, line.sku)))
+        .filter((ticket) => tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id).every((line) => visibleForShift(tx.state, shift, line.sku)))
         .map((ticket) => ({
           id: ticket.id,
           code: ticket.code,
@@ -2370,7 +2375,7 @@ export class PosService {
         if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket is not open.");
       }
       const lines = mergeLines(input.lines);
-      if (noWeedShift(shift) && lines.some((line) => isThcSku(line.sku))) {
+      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
         throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable on a NO WEED shift.");
       }
       const priced = lines.map((line) => {
@@ -3904,12 +3909,13 @@ export class PosService {
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, thc_flag: defaultThcCatalogFlag({ sku, name, category }), sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: tillCode(), sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
           product.name = name;
           product.category = category;
+          product.thc_flag = defaultThcCatalogFlag({ sku, name, category });
           product.setb_active = active;
           if (price != null) product.default_price_cents = price;
           if (image != null) product.image_url = image;

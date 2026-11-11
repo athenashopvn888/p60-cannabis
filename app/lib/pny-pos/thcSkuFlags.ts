@@ -1,6 +1,6 @@
 /**
- * PNY01 THC classification is deliberately per SKU. New catalog rows are not
- * treated as THC until Tri reviews and adds their exact SKU here.
+ * Approved PNY01 THC till keys. Catalog rows not yet listed here default to
+ * THC unless their category/name/SKU is one of the explicit non-THC groups.
  */
 const FLAGGED = `
 102-28g
@@ -8,13 +8,39 @@ const FLAGGED = `
 106-28g
 107-28g
 113-28g
+170-28g
+170-3g
+172-28g
+172-3g
 186-28g
+187-28g
+187-3g
 188
 189
+202-14g
+202-5g
+203-14g
+203-5g
+204-14g
+204-5g
 205-14g
+205-5g
 206-5g
+216-14g
+216-5g
+219-14g
+219-5g
+222-14g
+222-5g
+224-14g
+224-5g
+225-14g
+225-5g
 231
 232
+236-14g
+236-5g
+261-14g
 261-5g
 269-5g
 271-5g
@@ -22,7 +48,20 @@ const FLAGGED = `
 278-5g
 288-5g
 292-5g
+313-3g
+313-5g
+315-3g
 319-14g
+323-3g
+323-5g
+328-3g
+328-5g
+331-3g
+331-5g
+332-3g
+332-5g
+337-3g
+337-5g
 339-14g
 339-3g
 339-5g
@@ -31,23 +70,54 @@ const FLAGGED = `
 340-5g
 341-14g
 341-5g
+345-3g
+345-5g
 347-3g
 347-5g
 348-14g
 348-3g
 348-5g
+350-3g
+350-5g
+373-3g
+373-5g
+376-3g
+376-5g
 388
 389
 392-5g
 393-14g
 393-3g
 393-5g
+403-3g
+403-5g
+404-3g
+404-5g
 415-3g
 415-5g
 416-14g
 416-3g
 416-5g
+418-3g
+418-5g
+420-3g
+420-5g
+424-3g
+424-5g
+425-3g
+425-5g
+426-3g
+426-5g
+427-3g
+427-5g
+428-3g
+430-3g
+430-5g
+431-3g
+431-5g
 473-3g
+474-3g
+474-5g
 475-3g
 480-3g
 480-5g
@@ -69,14 +139,30 @@ const FLAGGED = `
 494-14g
 494-3g
 494-5g
+499-3g
+499-5g
+502-3g
+502-5g
+503-3g
+503-5g
 504-3g
+506-3g
+506-5g
 507-3g
+509-3g
+509-5g
+510-3g
+510-5g
+511-3g
+511-5g
 513-14g
 513-3g
 513-5g
 514-14g
 514-3g
 514-5g
+517-3g
+517-5g
 538-3g
 539-3g
 539-5g
@@ -91,6 +177,8 @@ const FLAGGED = `
 561-3g
 562-3g
 562-5g
+563-3g
+563-5g
 564
 565
 566
@@ -114,6 +202,8 @@ const FLAGGED = `
 607
 608
 609
+610
+611
 612
 613
 614
@@ -127,6 +217,8 @@ const FLAGGED = `
 655
 656
 657
+680
+681
 691
 800
 801
@@ -139,16 +231,26 @@ const FLAGGED = `
 860
 861
 868
+887
+888
+889
 920
+921
 930
 931
 932
 933
+940
+945
+946
+947
+960
 961
 962
 963
 965
 966
+969
 `;
 
 export const THC_SKUS = Object.freeze(FLAGGED.trim().split(/\s+/));
@@ -156,4 +258,20 @@ const THC_SET = new Set(THC_SKUS);
 
 export function isThcSku(sku: string) {
   return THC_SET.has(sku.trim());
+}
+
+const NON_THC_SKUS = new Set(["240", "241", "668", "669", "710"]);
+const NON_THC_TEXT = /\b(cigarettes?|grabba|backwoods?|papers?|rolling\s+paper|lighter|vape\s+pens?|nicotine|magic\s*&\s*others)\b/i;
+
+/** New catalog keys fail closed as THC, except the approved non-THC groups. */
+export function defaultThcCatalogFlag(product: { sku: string; name?: string; category?: string }) {
+  const sku = product.sku.trim();
+  if (THC_SET.has(sku)) return true;
+  if (/^10\d{2}$/.test(sku) || sku === "999" || NON_THC_SKUS.has(sku)) return false;
+  return !NON_THC_TEXT.test(`${product.category ?? ""} ${product.name ?? ""}`);
+}
+
+export function isThcCatalogProduct(product: { sku: string; name?: string; category?: string; thc_flag?: boolean }) {
+  if (THC_SET.has(product.sku.trim())) return true;
+  return product.thc_flag ?? defaultThcCatalogFlag(product);
 }
