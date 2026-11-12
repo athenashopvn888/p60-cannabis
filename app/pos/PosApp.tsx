@@ -180,7 +180,8 @@ export default function PosApp({
         setSheet("close");
       }, 0);
     } catch {
-      window.localStorage.removeItem(`pny-close-hold:${storeLabel}`);
+      // A close hold is intentionally append-only from the app's point of view.
+      // Only the staff's explicit "Done, I posted it" action may remove it.
     }
     return () => { cancelled = true; };
   }, [storeLabel]);
@@ -462,6 +463,12 @@ export default function PosApp({
   async function confirmEnd(depositCents: number, floatCents: number, finalDepositCode?: string | null) {
     setError("");
     setBusy(true);
+    const holdEndedAt = new Date().toISOString();
+    // Persist synchronously before /shift/end. The request revokes the session,
+    // so a refresh, poll, visibility change, or lost response must not erase the
+    // accountant screen staff still needs to photograph.
+    snapshotClose({ depositCents, floatCents, endedAt: holdEndedAt, finalDepositCode });
+    setCloseHold(true);
     try {
       const lines = (view?.close_lines ?? closeSnap?.lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
       const saved = await post(`${storeApi}/shift/end`, { lines, final_deposit_cents: depositCents, float_cents: floatCents }, crypto.randomUUID());
@@ -471,12 +478,12 @@ export default function PosApp({
         : typeof saved.close_label === "string" ? saved.close_label : "";
       const endedAt = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { created_at?: unknown }).created_at === "string"
         ? (saved.closing as { created_at: string }).created_at
-        : new Date().toISOString();
+        : holdEndedAt;
       snapshotClose({ depositCents, floatCents, closeLabel: label, endedAt, finalDepositCode });
-      setCloseHold(true);
       return label;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
+      throw err;
     } finally {
       setBusy(false);
     }

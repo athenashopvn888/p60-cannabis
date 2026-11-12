@@ -2709,6 +2709,11 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(pos, /!view\.authenticated && !\(sheet === "close" && closeHold && closeSnap\)/);
   assert.match(pos, /localStorage\.setItem\(`pny-close-hold:/);
   assert.match(pos, /localStorage\.removeItem\(`pny-close-hold:/);
+  const confirmEnd = pos.slice(pos.indexOf("async function confirmEnd"), pos.indexOf("function finishCloseSummary"));
+  assert.ok(confirmEnd.indexOf("snapshotClose(") < confirmEnd.indexOf("await post(`${storeApi}/shift/end`"));
+  assert.match(confirmEnd, /setCloseHold\(true\)[\s\S]*await post\(`\$\{storeApi\}\/shift\/end`/);
+  assert.equal(pos.match(/localStorage\.removeItem\(`pny-close-hold:/g)?.length, 1);
+  assert.doesNotMatch(pos.slice(pos.indexOf("useEffect(() =>"), pos.indexOf("const load = useCallback")), /localStorage\.removeItem/);
   assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
   assert.match(summaryUi, /TOTAL CASH COLLECTED/);
