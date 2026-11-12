@@ -2690,7 +2690,7 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   const kept = ensureStockLabel(fresh, "PNY02", "2026-12-01T15:00:00.000Z", "2026-12-01T15:00:00.000Z");
   assert.equal(first.master_id, "PNY2-1106");
   assert.equal(kept.master_id, first.master_id);
-  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /data-testid="close-label"/);
 });
 
 test("closing summary stays until Done after session revoke", () => {
@@ -2718,9 +2718,11 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(summaryUi, /closing-identity/);
   assert.match(summaryUi, /TOTAL CASH COLLECTED/);
   assert.match(summaryUi, /Expense paid from store cash/);
-  assert.match(summaryUi, /− Stock sold value/);
-  assert.match(summaryUi, /− Stock shorts/);
-  assert.match(summaryUi, /\+ Stock extra/);
+  assert.match(summaryUi, /less stock sold value =/);
+  assert.match(summaryUi, /less stock shorts =/);
+  assert.match(summaryUi, /add stock extra =/);
+  assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
+  assert.match(summaryUi, /Opening differences are shown for review and are not included/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
 });
 

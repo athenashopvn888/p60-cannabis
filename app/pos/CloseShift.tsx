@@ -180,6 +180,7 @@ export default function CloseShift({
               staffName={summaryMeta.staffName}
               startedAt={summaryMeta.startedAt}
               endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt}
+              closeLabel={closeLabel}
               deposits={summaryDeposits}
               cashSalesCents={totals.cash_sales_cents}
               depositedCents={deposited}
@@ -190,7 +191,6 @@ export default function CloseShift({
               floatExpectedCents={floatExpectedCents}
               floatFoundCents={floatFoundCents}
             />
-            {closeLabel ? <div className={styles.summaryRow} data-testid="close-label"><span>Close label</span><strong>{closeLabel}</strong></div> : null}
             <p data-testid="shift-locked">Shift closed</p>
             <button
               className={styles.primary}
