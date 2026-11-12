@@ -6,6 +6,7 @@ import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
 import { floatPhrase } from "../lib/pny-pos/tillLedger";
+import { recentMatchingDeposit } from "../lib/pny-pos/recentDeposit";
 import { filterSellProducts } from "./posSearch";
 import { pos2RouteFromLocation } from "./posPath";
 import { readTillState } from "./softState";
@@ -199,7 +200,8 @@ export default function PosApp({
     else setActiveTicket((current) => (current && data.tickets?.some((ticket) => ticket.id === current.id) ? current : null));
     if (!data.authenticated) {
       setCart({});
-      if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
+      if (data.code === "NO_SESSION") setError("");
+      else if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
     }
   }, [storeApi]);
 
@@ -405,6 +407,7 @@ export default function PosApp({
       setError("Enter a deposit greater than zero.");
       return;
     }
+    if (!confirmRecentDeposit(cents, "another deposit")) return;
     setBusy(true);
     try {
       const saved = await post(`${storeApi}/deposits`, { amount_cents: cents }, crypto.randomUUID());
@@ -455,6 +458,9 @@ export default function PosApp({
 
   async function saveCloseDeposit(cents: number, floatCents: number) {
     setError("");
+    if (!confirmRecentDeposit(cents, "this final deposit")) {
+      throw new Error("Final deposit not saved. The last bag remains recorded.");
+    }
     const saved = await post(`${storeApi}/shift/final-deposit`, { amount_cents: cents, float_cents: floatCents });
     await load();
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
@@ -495,7 +501,17 @@ export default function PosApp({
     setCloseHold(false);
     setCloseSnap(null);
     setError("");
-    void load().catch(() => undefined);
+    setView({ authenticated: false });
+  }
+
+  function confirmRecentDeposit(cents: number, saveLabel: string) {
+    if (storeLabel !== "PNY01") return true;
+    const match = recentMatchingDeposit(view?.deposits ?? [], cents);
+    if (!match) return true;
+    const code = match.deposit_code ? ` (${match.deposit_code})` : "";
+    return window.confirm(
+      `${formatMoney(cents)} was already entered${code} within the last 2 minutes. Save ${saveLabel} for the same amount?`,
+    );
   }
 
   async function saveVerifyLine(sku: string, countedQty: number) {
@@ -608,6 +624,7 @@ export default function PosApp({
           onConfirm={async () => ""}
           onClose={() => undefined}
           onDone={finishCloseSummary}
+          lastDeposit={null}
           weedInStore={closeSnap.weedInStore}
           summaryMeta={closeSnap.summaryMeta}
           stockCheck={closeSnap.stockCheck}
@@ -859,6 +876,9 @@ export default function PosApp({
             void load().catch(() => undefined);
           }}
           onDone={finishCloseSummary}
+          lastDeposit={storeLabel === "PNY01" ? (view.deposits ?? []).reduce<(NonNullable<View["deposits"]>[number]) | null>((latest, row) => (
+            !latest || Date.parse(row.created_at) > Date.parse(latest.created_at) ? row : latest
+          ), null) : null}
           weedInStore={closeSnap?.weedInStore ?? view.shift?.weed_in_store ?? null}
           summaryMeta={closeSnap?.summaryMeta ?? {
             storeLabel: storeCode,

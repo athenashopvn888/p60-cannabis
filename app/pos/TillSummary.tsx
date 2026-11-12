@@ -2,7 +2,7 @@
 
 import { STORE_TZ } from "../lib/pny-pos/constants";
 import { formatMoney } from "../lib/pny-pos/money";
-import { adjustMoney, balancePhrase, floatGapCents, floatPhrase, type AdjustLine } from "../lib/pny-pos/tillLedger";
+import { accountantCloseTotals, adjustMoney, balancePhrase, floatGapCents, floatPhrase, type AdjustLine } from "../lib/pny-pos/tillLedger";
 import styles from "./till.module.css";
 
 function closeDate(iso: string) {
@@ -95,10 +95,13 @@ export default function TillSummary({
   const floatLabel = floatKnown ? floatPhrase(floatGap) : null;
   // The accountant total uses the official closing differences only. Opening
   // verify and refill discrepancies remain visible below for review.
-  const stockShortsCents = closeLines.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
-  const stockExtraCents = closeLines.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
-  const totalCashCollectedCents = depositedCents + expenseCents + floatCents;
-  const overShortCents = totalCashCollectedCents - cashSalesCents - stockShortsCents + stockExtraCents;
+  const { stockShortsCents, stockExtraCents, totalCashCollectedCents, overShortCents } = accountantCloseTotals({
+    depositedCents,
+    expenseCents,
+    floatCents,
+    cashSalesCents,
+    closeLines,
+  });
   const final = balancePhrase(-overShortCents);
   const tone = (cents: number) => (cents < 0 ? styles.offShort : cents > 0 ? styles.offOver : styles.offEven);
   const finalClass = final.tone === "over" ? styles.finalOver : final.tone === "short" ? styles.finalShort : styles.offEven;

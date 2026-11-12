@@ -34,6 +34,8 @@ import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
+import { accountantCloseTotals } from "../app/lib/pny-pos/tillLedger.ts";
+import { recentMatchingDeposit } from "../app/lib/pny-pos/recentDeposit.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
@@ -2721,9 +2723,57 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(summaryUi, /less stock sold value =/);
   assert.match(summaryUi, /less stock shorts =/);
   assert.match(summaryUi, /add stock extra =/);
-  assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
+  assert.match(summaryUi, /accountantCloseTotals/);
   assert.match(summaryUi, /Opening differences are shown for review and are not included/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
+test("blind close discrepancies keep dollar variance without exposing stock quantities", () => {
+  const blind = blindStaffState({
+    stock_check: {
+      opening: { offCount: 1, lines: [{ sku: "open", text: "Open", off: 1, cents: 250, expected: 8, on_hand: 9 }] },
+      closing: { offCount: 2, lines: [{ sku: "short", text: "Short", off: -2, cents: -19300, expected: 7, on_hand: 5 }, { sku: "extra", text: "Extra", off: 1, cents: 500 }] },
+      refills: { count: 1, lines: [{ sku: "refill", text: "Refill", sent: 4, received: 3, diff: -1, cents: -700, expected: 4, on_hand: 3 }] },
+    },
+  });
+  assert.equal(blind.stock_check.opening.lines[0]?.cents, 250);
+  assert.equal(blind.stock_check.closing.lines[0]?.cents, -19300);
+  assert.equal(blind.stock_check.refills.lines[0]?.cents, -700);
+  assert.doesNotMatch(JSON.stringify(blind), /expected|on_hand/);
+
+  const totals = accountantCloseTotals({
+    depositedCents: 139800,
+    expenseCents: 0,
+    floatCents: 10700,
+    cashSalesCents: 73000,
+    closeLines: blind.stock_check.closing.lines as { cents: number }[],
+  });
+  assert.deepEqual(totals, {
+    stockShortsCents: 19300,
+    stockExtraCents: 500,
+    totalCashCollectedCents: 150500,
+    overShortCents: 58700,
+  });
+});
+
+test("Done returns quietly to PIN login and NO_SESSION is expected", () => {
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const done = pos.slice(pos.indexOf("function finishCloseSummary"), pos.indexOf("function confirmRecentDeposit"));
+  assert.match(done, /setView\(\{ authenticated: false \}\)/);
+  assert.doesNotMatch(done, /load\(/);
+  assert.match(pos, /data\.code === "NO_SESSION"\) setError\(""\)/);
+});
+
+test("matching deposit within two minutes asks before regular or final save", () => {
+  const deposits = [{ deposit_code: "PNY-D0017", amount_cents: 45500, created_at: "2026-11-12T14:28:17.000Z" }];
+  assert.equal(recentMatchingDeposit(deposits, 45500, Date.parse("2026-11-12T14:29:11.000Z"))?.deposit_code, "PNY-D0017");
+  assert.equal(recentMatchingDeposit(deposits, 45500, Date.parse("2026-11-12T14:30:18.000Z")), null);
+  assert.equal(recentMatchingDeposit(deposits, 45000, Date.parse("2026-11-12T14:29:11.000Z")), null);
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(pos.slice(pos.indexOf("async function saveDeposit"), pos.indexOf("async function submitCloseCount")), /confirmRecentDeposit\(cents, "another deposit"\)/);
+  assert.match(pos.slice(pos.indexOf("async function saveCloseDeposit"), pos.indexOf("async function confirmEnd")), /confirmRecentDeposit\(cents, "this final deposit"\)/);
+  assert.match(pos, /window\.confirm/);
+  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /Last bag already entered/);
 });
 
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
