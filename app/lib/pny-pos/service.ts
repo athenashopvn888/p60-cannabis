@@ -47,6 +47,8 @@ import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
+import { findKitchenDuplicate, kitchenReason, kitchenSignature, needsLargeConfirm, parseKitchenRefill } from "./kitchenBatch.ts";
+import { kitchenPinMatches, kitchenWritesEnabled, readKitchenSession, signKitchenSession } from "./kitchenAuth.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import type { SheetClient } from "./sheets.ts";
 import { SheetDb } from "./sheetStore.ts";
@@ -80,6 +82,35 @@ function iso(date: Date) {
 
 function audit(state: State, action: string, refType: string | null, refId: string | null, actor: string | null, detail: Json, at: string) {
   state.audit.push({ id: randomUUID(), action, ref_type: refType, ref_id: refId, actor, detail, created_at: at });
+}
+
+/** Shift, sale, count, deposit, closing, and staff records the kitchen must leave alone. */
+function protectedTillJson(state: State) {
+  return JSON.stringify({
+    shifts: state.shifts,
+    sales: state.sales,
+    sale_lines: state.sale_lines,
+    deposits: state.deposits,
+    counts: state.counts,
+    count_lines: state.count_lines,
+    closings: state.closings,
+    closing_drafts: state.closing_drafts,
+    staff: state.staff,
+    tickets: state.tickets,
+    ticket_lines: state.ticket_lines,
+  });
+}
+
+function torontoStamp(isoTime: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(isoTime));
 }
 
 function tillCode() {
@@ -1357,6 +1388,8 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
+  private kitchenDoorFails = 0;
+  private kitchenDoorLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
@@ -1848,6 +1881,7 @@ export class PosService {
   async login(pin: string, ip: string) {
     this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
     if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    if (kitchenPinMatches(pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -4395,6 +4429,353 @@ export class PosService {
         }),
       };
     });
+  }
+
+  async enterKitchen(pin: string, ip: string) {
+    this.requireKitchenStore();
+    this.hit(`kitchen-door:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (this.kitchenDoorLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
+    if (!/^\d{4}$/.test(pin) || !kitchenPinMatches(pin)) {
+      this.kitchenDoorFails += 1;
+      if (this.kitchenDoorFails >= MAX_PIN_FAILURES) this.kitchenDoorLocked = true;
+      if (this.kitchenDoorLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
+      throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    }
+    this.kitchenDoorFails = 0;
+    if (!this.deps.secrets.session) throw new PosError(503, "NOT_CONFIGURED", "Kitchen sign-in is not configured.");
+    return { ok: true as const, role: "kitchen" as const, token: signKitchenSession(this.deps.secrets.session, this.now().getTime()) };
+  }
+
+  async kitchenStock(token: string) {
+    this.requireKitchen(token);
+    const state = await this.readOnlyState();
+    const prices = await this.shelfPrices();
+    const readAt = iso(this.now());
+    const rows = this.kitchenRows(state, prices);
+    const updated = state.balances.filter((row) => balanceForStore(row)).map((row) => row.updated_at).sort().at(-1) ?? readAt;
+    const shift = this.openKitchenShift(state);
+    const units = rows.reduce((sum, row) => sum + row.on_hand, 0);
+    const retail_cents = rows.reduce((sum, row) => sum + row.on_hand * row.price_cents, 0);
+    const batches = state.audit
+      .filter((row) => (row.action === "KITCHEN_REFILL" || row.action === "KITCHEN_ADJUST") && !state.audit.some((undo) => undo.action === "KITCHEN_UNDO" && undo.ref_id === row.ref_id))
+      .slice(-12)
+      .reverse()
+      .map((row) => ({
+        batch_id: row.ref_id,
+        action: row.action,
+        at: row.created_at,
+        at_toronto: torontoStamp(row.created_at),
+        lines: Array.isArray(row.detail.lines) ? row.detail.lines : [],
+      }));
+    return {
+      ok: true as const,
+      role: "kitchen" as const,
+      writes: kitchenWritesEnabled(),
+      dry_run: !kitchenWritesEnabled(),
+      weed_in_store: shift?.weed_in_store ?? null,
+      no_weed: noWeedShift(shift),
+      shift_open: Boolean(shift),
+      read_at: readAt,
+      read_at_toronto: torontoStamp(readAt),
+      updated_at: updated,
+      updated_at_toronto: torontoStamp(updated),
+      sku_count: rows.length,
+      units,
+      retail_cents,
+      rows,
+      batches,
+    };
+  }
+
+  async kitchenRefill(token: string, input: { text?: string; lines?: { sku: string; size?: string; qty: number }[]; batch_id?: string; confirm?: boolean }) {
+    this.requireKitchen(token);
+    const requested = this.kitchenRefillRequest(input);
+    const preview = this.planKitchenRefill(await this.readOnlyState(), requested, input.batch_id?.trim() || "");
+    if (!input.confirm) return { ...preview, dry_run: true as const, writes: kitchenWritesEnabled() };
+    if (preview.duplicate) throw new PosError(409, "DUPLICATE_REFILL", preview.warning || "That refill was already sent.");
+    if (preview.unknown.length) throw new PosError(409, "UNKNOWN_SKU", "Unknown SKUs are listed in the preview. Remove them before confirming.");
+    if (!preview.shift_open) throw new PosError(409, "NO_SHIFT", "No open PNY01 shift to receive this refill.");
+    if (!kitchenWritesEnabled()) return { ...preview, dry_run: true as const, writes: false as const, would_write: preview.lines };
+    const applied = await this.db.transaction(async (tx) => {
+      const plan = this.planKitchenRefill(tx.state, requested, preview.batch_id);
+      if (plan.duplicate) throw new PosError(409, "DUPLICATE_REFILL", plan.warning || "That refill was already sent.");
+      if (plan.unknown.length || !plan.shift_open) throw new PosError(409, "NO_SHIFT", "The refill could not be received.");
+      const before = protectedTillJson(tx.state);
+      this.applyKitchenRefill(tx.state, plan);
+      if (protectedTillJson(tx.state) !== before) throw new PosError(409, "KITCHEN_GUARD", "Refill tried to change the till.");
+      return plan;
+    });
+    this.bumpMenu();
+    return { ...applied, dry_run: false as const, writes: true as const, applied: true as const };
+  }
+
+  async kitchenAdjust(token: string, input: { sku: string; delta: number; reason: string; note?: string; confirm?: boolean; confirm_large?: boolean }) {
+    this.requireKitchen(token);
+    const preview = this.planKitchenAdjust(await this.readOnlyState(), input);
+    if (!input.confirm) return { ...preview, dry_run: true as const, writes: kitchenWritesEnabled() };
+    if (preview.duplicate) throw new PosError(409, "DUPLICATE_ADJUST", preview.warning || "That adjustment was just saved.");
+    if (preview.unknown) throw new PosError(404, "SKU", "That SKU is not on the PNY01 shelf list.");
+    if (preview.after < 0) throw new PosError(409, "OUT_OF_STOCK", "That would take stock below zero.");
+    if (preview.large && !input.confirm_large) {
+      throw new PosError(409, "LARGE_QTY", `On hand is ${preview.before}. Confirm changing it by ${preview.delta}.`, { before: preview.before, after: preview.after, delta: preview.delta });
+    }
+    if (!kitchenWritesEnabled()) return { ...preview, dry_run: true as const, writes: false as const, would_write: preview };
+    const applied = await this.db.transaction(async (tx) => {
+      const plan = this.planKitchenAdjust(tx.state, input, preview.batch_id);
+      if (plan.duplicate || plan.unknown || plan.after < 0) throw new PosError(409, "BAD_ADJUST", plan.warning || "That adjustment cannot be saved.");
+      if (plan.large && !input.confirm_large) throw new PosError(409, "LARGE_QTY", "Confirm the large quantity.");
+      const before = protectedTillJson(tx.state);
+      this.applyKitchenAdjust(tx.state, plan);
+      if (protectedTillJson(tx.state) !== before) throw new PosError(409, "KITCHEN_GUARD", "Adjustment tried to change the till.");
+      return plan;
+    });
+    this.bumpMenu();
+    return { ...applied, dry_run: false as const, writes: true as const, applied: true as const };
+  }
+
+  async kitchenUndo(token: string, input: { batch_id: string; confirm?: boolean }) {
+    this.requireKitchen(token);
+    const batchId = input.batch_id.trim();
+    if (!batchId) throw new PosError(400, "BATCH", "Choose a batch to undo.");
+    const preview = this.planKitchenUndo(await this.readOnlyState(), batchId);
+    if (!input.confirm) return { ...preview, dry_run: true as const, writes: kitchenWritesEnabled() };
+    if (!kitchenWritesEnabled()) return { ...preview, dry_run: true as const, writes: false as const, would_write: preview.lines };
+    const applied = await this.db.transaction(async (tx) => {
+      const plan = this.planKitchenUndo(tx.state, batchId);
+      const before = protectedTillJson(tx.state);
+      this.applyKitchenUndo(tx.state, plan);
+      if (protectedTillJson(tx.state) !== before) throw new PosError(409, "KITCHEN_GUARD", "Undo tried to change the till.");
+      return plan;
+    });
+    this.bumpMenu();
+    return { ...applied, dry_run: false as const, writes: true as const, applied: true as const };
+  }
+
+  private requireKitchenStore() {
+    if (tillCode() !== "PNY01") throw new PosError(404, "KITCHEN_STORE", "Kitchen is only on PNY01.");
+  }
+
+  private requireKitchen(token: string) {
+    this.requireKitchenStore();
+    if (!readKitchenSession(token, this.deps.secrets.session, this.now().getTime())) {
+      throw new PosError(401, "NO_SESSION", "Sign in with the kitchen PIN.");
+    }
+  }
+
+  private async readOnlyState() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek?.bind(this.db);
+    if (!peek) throw new PosError(503, "READ_ONLY", "Stock can only be read without writing on this server.");
+    return peek();
+  }
+
+  private async shelfPrices() {
+    try {
+      const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+      return { raw, flowers, items };
+    } catch {
+      return { raw: new Map<string, number>(), flowers: null as FlowerIndex | null, items: null as ItemIndex | null };
+    }
+  }
+
+  private openKitchenShift(state: State) {
+    return state.shifts.find((row) => row.store_code === "PNY01" && (row.status === "ACTIVE" || row.status === "CLOSING"));
+  }
+
+  private kitchenKnown(state: State, sku: string) {
+    const product = state.products.find((row) => row.sku === sku && row.setb_active);
+    const store = state.store_products.find((row) => row.sku === sku && (!row.store_code || row.store_code === "PNY01"));
+    if (product && store?.enabled !== false) return true;
+    if (state.balances.some((row) => row.sku === sku && balanceForStore(row))) return true;
+    return quoteForSku(sku) != null;
+  }
+
+  private kitchenRows(state: State, prices: { raw: Map<string, number>; flowers: FlowerIndex | null; items: ItemIndex | null }) {
+    const skus = new Set<string>();
+    for (const product of state.products) {
+      if (!product.setb_active) continue;
+      const store = state.store_products.find((row) => row.sku === product.sku && (tillCode() === "PNY01" ? !row.store_code || row.store_code === "PNY01" : row.store_code === tillCode()));
+      if (store && !store.enabled) continue;
+      skus.add(product.sku);
+    }
+    for (const balance of state.balances) if (balanceForStore(balance)) skus.add(balance.sku);
+    return [...skus].sort((a, b) => a.localeCompare(b, "en", { numeric: true })).map((sku) => {
+      const product = state.products.find((row) => row.sku === sku);
+      const balance = state.balances.find((row) => row.sku === sku && balanceForStore(row));
+      const name = product?.name || productName(state, sku);
+      const category = product?.category || "Uncategorized";
+      let price = 0;
+      try {
+        price = sellingPriceCents(state, sku, prices.raw, prices.flowers, prices.items);
+      } catch {
+        price = product?.default_price_cents ?? 0;
+      }
+      return {
+        sku,
+        name,
+        size: sizeLabel(sku, category, name),
+        category,
+        price_cents: price,
+        on_hand: qtyOf(state, sku),
+        thc: thcForState(state, sku),
+        updated_at: balance?.updated_at ?? null,
+      };
+    });
+  }
+
+  private kitchenRefillRequest(input: { text?: string; lines?: { sku: string; size?: string; qty: number }[] }) {
+    const pasted = input.lines?.length
+      ? { lines: input.lines.map((line) => ({ sku: line.sku, size: line.size ?? "", qty: line.qty, raw: line.sku })), errors: [] as string[] }
+      : parseKitchenRefill(input.text ?? "");
+    if (pasted.errors.length) throw new PosError(400, "BAD_REFILL", pasted.errors[0] ?? "Could not read the refill.", { errors: pasted.errors });
+    const merged = new Map<string, { sku: string; size: string; qty: number }>();
+    for (const line of pasted.lines) {
+      const current = merged.get(line.sku);
+      if (current) current.qty += line.qty;
+      else merged.set(line.sku, { sku: line.sku, size: line.size, qty: line.qty });
+    }
+    const lines = [...merged.values()];
+    if (!lines.length) throw new PosError(400, "EMPTY", "Enter at least one SKU and quantity.");
+    if (lines.some((line) => !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999)) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+    return lines;
+  }
+
+  private planKitchenRefill(state: State, requested: { sku: string; size: string; qty: number }[], batchId: string) {
+    const shift = this.openKitchenShift(state);
+    const known = [];
+    const unknown = [];
+    for (const line of requested) {
+      const row = this.kitchenRows(state, { raw: new Map(), flowers: null, items: null }).find((item) => item.sku === line.sku);
+      const before = qtyOf(state, line.sku);
+      const item = { sku: line.sku, name: row?.name ?? line.sku, size: row?.size || line.size, qty: line.qty, before, after: before + line.qty, thc: thcForState(state, line.sku) };
+      if (row || this.kitchenKnown(state, line.sku)) known.push(item);
+      else unknown.push(item);
+    }
+    const signature = kitchenSignature("REFILL", known.map((line) => ({ sku: line.sku, qty: line.qty })));
+    const batch_id = batchId || `KITCHEN-${this.now().getTime()}`;
+    const duplicate = known.length ? findKitchenDuplicate(state.audit, batch_id, signature, this.now().getTime()) : null;
+    const warning = duplicate === "batch"
+      ? "That batch was already received."
+      : duplicate === "window"
+        ? "The same refill was received in the last 10 minutes."
+        : !shift
+          ? "No open shift. This refill cannot be received yet."
+          : "";
+    return { ok: true as const, batch_id, signature, lines: known, unknown, duplicate, warning, shift_open: Boolean(shift), shift_id: shift?.sccx_shift_id ?? null, no_weed: noWeedShift(shift) };
+  }
+
+  private applyKitchenRefill(state: State, plan: ReturnType<PosService["planKitchenRefill"]>) {
+    const shift = this.openKitchenShift(state);
+    if (!shift) throw new PosError(409, "NO_SHIFT", "No open PNY01 shift to receive this refill.");
+    const at = iso(this.now());
+    for (const line of plan.lines) {
+      const kitchenRowId = randomUUID();
+      const next = balanceAdd(state, line.sku, line.qty, at, true);
+      if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive the refill.");
+      const entry = ledger(state, line.sku, line.qty, "INCOMING_CONFIRM", "incoming", kitchenRowId, "KITCHEN", null, shift.id, at);
+      state.incoming.push({
+        kitchen_row_id: kitchenRowId,
+        batch_id: plan.batch_id,
+        store_code: "PNY01",
+        sku: line.sku,
+        qty_sent: line.qty,
+        kind: "REFILL",
+        kitchen_created_at: at,
+        imported_at: at,
+        status: "CONFIRMED",
+        qty_received: line.qty,
+        variance_reason: null,
+        confirmed_shift_id: shift.id,
+        confirmed_at: at,
+        linked_ledger_id: entry.id,
+        created_at: at,
+      });
+      ensureQuotedProduct(state, line.sku, at);
+    }
+    audit(state, "KITCHEN_REFILL", "kitchen_batch", plan.batch_id, "KITCHEN", {
+      signature: plan.signature,
+      shift_id: shift.sccx_shift_id,
+      lines: plan.lines.map((line) => ({ sku: line.sku, qty: line.qty, before: line.before, after: line.after })),
+    }, at);
+  }
+
+  private planKitchenAdjust(state: State, input: { sku: string; delta: number; reason: string; note?: string }, batchId = "") {
+    const sku = input.sku.trim();
+    const delta = input.delta;
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 999) throw new PosError(400, "BAD_QTY", "Enter a whole number from -999 to 999, other than zero.");
+    const reason = kitchenReason(input.reason ?? "", input.note ?? "");
+    if (!reason.ok) throw new PosError(400, "REASON", reason.error);
+    const known = this.kitchenKnown(state, sku);
+    const before = qtyOf(state, sku);
+    const after = before + delta;
+    const signature = kitchenSignature("ADJUST", [{ sku, qty: delta }]);
+    const batch_id = batchId || `KITCHEN-ADJ-${this.now().getTime()}`;
+    const duplicate = known ? findKitchenDuplicate(state.audit, batch_id, signature, this.now().getTime()) : null;
+    return {
+      ok: true as const,
+      batch_id,
+      signature,
+      sku,
+      name: productName(state, sku),
+      size: sizeLabel(sku),
+      delta,
+      before,
+      after,
+      reason: reason.ok ? reason.reason : "",
+      note: reason.ok ? reason.note : "",
+      unknown: !known,
+      large: needsLargeConfirm(before, delta),
+      duplicate,
+      warning: duplicate === "batch" ? "That adjustment was already saved." : duplicate === "window" ? "The same adjustment was saved in the last 10 minutes." : after < 0 ? "That would take stock below zero." : "",
+    };
+  }
+
+  private applyKitchenAdjust(state: State, plan: ReturnType<PosService["planKitchenAdjust"]>) {
+    const shift = this.openKitchenShift(state);
+    const at = iso(this.now());
+    const next = balanceAdd(state, plan.sku, plan.delta, at, plan.delta > 0);
+    if (next == null) throw new PosError(409, "OUT_OF_STOCK", "That would take stock below zero.");
+    const ref = randomUUID();
+    ledger(state, plan.sku, plan.delta, "ADJUSTMENT", "kitchen_adjust", ref, "KITCHEN", `${plan.reason}${plan.note ? `: ${plan.note}` : ""}`, shift?.id ?? null, at);
+    audit(state, "KITCHEN_ADJUST", "kitchen_batch", plan.batch_id, "KITCHEN", {
+      signature: plan.signature,
+      reason: plan.reason,
+      note: plan.note,
+      shift_id: shift?.sccx_shift_id ?? null,
+      lines: [{ sku: plan.sku, qty: plan.delta, before: plan.before, after: plan.after }],
+    }, at);
+  }
+
+  private planKitchenUndo(state: State, batchId: string) {
+    const saved = state.audit.find((row) => (row.action === "KITCHEN_REFILL" || row.action === "KITCHEN_ADJUST") && row.ref_id === batchId);
+    if (!saved) throw new PosError(404, "BATCH", "That batch is not on the kitchen log.");
+    if (state.audit.some((row) => row.action === "KITCHEN_UNDO" && row.ref_id === batchId)) throw new PosError(409, "ALREADY_UNDONE", "That batch was already undone.");
+    const lines = Array.isArray(saved.detail.lines) ? saved.detail.lines as { sku: string; qty: number; before: number; after: number }[] : [];
+    if (!lines.length) throw new PosError(409, "BATCH", "That batch has no lines to undo.");
+    const reversal = lines.map((line) => {
+      const onHand = qtyOf(state, line.sku);
+      return { sku: line.sku, qty: -line.qty, before: onHand, after: onHand - line.qty };
+    });
+    if (reversal.some((line) => line.after < 0)) throw new PosError(409, "CANNOT_UNDO", "Undo would take a SKU below zero. Stock has moved since this batch.");
+    return { ok: true as const, batch_id: batchId, action: saved.action, lines: reversal };
+  }
+
+  private applyKitchenUndo(state: State, plan: ReturnType<PosService["planKitchenUndo"]>) {
+    const shift = this.openKitchenShift(state);
+    const at = iso(this.now());
+    for (const line of plan.lines) {
+      const next = balanceAdd(state, line.sku, line.qty, at, false);
+      if (next == null) throw new PosError(409, "CANNOT_UNDO", "Undo would take a SKU below zero.");
+      const movement = plan.action === "KITCHEN_REFILL" ? "INCOMING_CONFIRM" : "ADJUSTMENT";
+      ledger(state, line.sku, line.qty, movement, "kitchen_undo", plan.batch_id, "KITCHEN", "undo", shift?.id ?? null, at);
+    }
+    if (plan.action === "KITCHEN_REFILL") {
+      for (const row of state.incoming) {
+        if (row.batch_id !== plan.batch_id) continue;
+        row.status = "REJECTED";
+        row.qty_received = 0;
+      }
+    }
+    audit(state, "KITCHEN_UNDO", "kitchen_batch", plan.batch_id, "KITCHEN", { lines: plan.lines }, at);
   }
 
   async reconciliation() {

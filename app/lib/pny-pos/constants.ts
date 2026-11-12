@@ -31,7 +31,13 @@ export const OUTBOX_TAB_ORDER = [
 ] as const;
 
 export const DEMO_PIN = "6666";
+/** TEMP demo kitchen PIN. The door on /pos/kitchen checks KITCHEN_PIN_HASH_TEMP, not this value. */
 export const KITCHEN_PIN = "9999";
+/**
+ * TEMP hash of the kitchen door PIN. Not a till PIN.
+ * Rotate by setting PNY_KITCHEN_PIN_HASH to a new scrypt$salt$hash from hashPin().
+ */
+export const KITCHEN_PIN_HASH_TEMP = "scrypt$6e91ddbb568b9bce822aedab60d3c8c4$6f42facb772b7bfc15c11446eb664136297daca2c974026629dbd2e908acdcff";
 /** Second login on the open shift. View-only. Does not start the staff verify window. */
 export const MASTER_PIN = "1988";
 /** Bump to restart the staff verify window on the next staff PIN login. */
