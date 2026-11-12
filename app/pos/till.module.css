@@ -1122,14 +1122,17 @@
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: #f3efe6;
+  background: #fff;
   display: flex;
   flex-direction: column;
   overflow: auto;
 }
 
 .closeBody {
-  padding: 16px;
+  width: min(100%, 900px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 18px 16px 30px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1183,9 +1186,9 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
+  padding: 9px 0;
   border-bottom: 1px solid #e7e5e4;
-  font-size: 16px;
+  font-size: clamp(16px, 2.4vw, 21px);
 }
 
 .summaryRow strong {
@@ -1194,15 +1197,15 @@
 
 .accountantBanner {
   margin-bottom: 14px;
-  border: 4px solid #7f1d1d;
-  border-radius: 14px;
-  background: #fef2f2;
-  color: #991b1b;
-  padding: 16px 14px;
-  text-align: center;
-  font-size: clamp(20px, 6vw, 30px);
-  line-height: 1.08;
-  font-weight: 950;
+  border: 0;
+  border-radius: 16px;
+  background: #fff1bf;
+  color: #92400e;
+  padding: 18px 20px;
+  text-align: left;
+  font-size: clamp(20px, 3.2vw, 28px);
+  line-height: 1.22;
+  font-weight: 900;
 }
 
 .summaryIdentity {
@@ -1211,19 +1214,72 @@
   border-radius: 12px;
   background: #1c1917;
   color: #fff;
-  padding: 12px;
-  font-size: 15px;
+  padding: 18px 20px;
+  font-size: 16px;
 }
 
-.summaryIdentity strong {
-  font-size: 22px;
+.summaryBrand {
+  font-size: clamp(17px, 2.4vw, 23px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.summaryIdentity .summaryStaff {
+  margin: 4px 0 2px;
+  font-size: clamp(32px, 5vw, 44px);
+  line-height: 1;
+}
+
+.summaryShift {
+  font-size: clamp(17px, 2.6vw, 24px);
+}
+
+.summaryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  color: #d6d3d1;
+}
+
+.summaryMeta span + span::before {
+  content: "·";
+  margin-right: 12px;
+}
+
+.summaryCheck {
+  border-radius: 16px;
+  background: #fff1bf;
+  color: #854d0e;
+  padding: 16px 20px;
+  margin-top: 14px;
+}
+
+.summaryCheck h3,
+.summaryCheck p {
+  margin: 0;
+}
+
+.summaryCheck h3 {
+  color: #b45309;
+  font-size: clamp(24px, 3vw, 30px);
+}
+
+.summaryCheck p {
+  margin-top: 6px;
+  font-size: clamp(15px, 2.2vw, 19px);
+  line-height: 1.35;
+}
+
+.summaryHeading {
+  margin: 18px 0 8px;
+  font-size: clamp(28px, 4vw, 38px);
 }
 
 .depositSummary {
-  border: 1px solid #d6d3d1;
-  border-radius: 12px;
-  background: #fff;
-  padding: 10px 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .depositSummary h3,
@@ -1231,12 +1287,28 @@
   margin: 0 0 8px;
 }
 
+.depositSummary h3 {
+  font-size: clamp(21px, 3vw, 28px);
+}
+
 .summaryTotal {
   margin-top: 4px;
   border-top: 3px solid #1c1917;
   border-bottom: 3px solid #1c1917;
-  font-size: 18px;
+  font-size: clamp(18px, 2.8vw, 24px);
   font-weight: 900;
+}
+
+.finalRow {
+  border-bottom: 0;
+  font-size: clamp(22px, 3.2vw, 28px);
+  font-weight: 900;
+}
+
+.summaryFormula {
+  margin: 2px 0 16px;
+  font-size: clamp(14px, 2vw, 18px);
+  line-height: 1.35;
 }
 
 .balance {
@@ -1587,9 +1659,9 @@
 .stockBlue,
 .stockAmber,
 .stockRose {
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-top: 14px;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-top: 16px;
 }
 
 .stockBlue {
@@ -1609,7 +1681,7 @@
 .stockRose h3,
 .gapPanel h2 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: clamp(25px, 3.4vw, 32px);
 }
 
 .offList {
@@ -1658,12 +1730,12 @@
 
 .finalOver {
   color: #16a34a;
-  font-size: 22px;
+  font-size: clamp(24px, 3.4vw, 32px);
 }
 
 .finalShort {
   color: #dc2626;
-  font-size: 22px;
+  font-size: clamp(24px, 3.4vw, 32px);
 }
 
 .adjGrid {
@@ -1682,20 +1754,39 @@
 
 .adjHead {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   color: #44403c;
 }
 
 .adjLine {
-  padding: 10px 0;
+  padding: 7px 0;
   border-bottom: 1px solid rgba(28, 25, 23, 0.12);
   font-weight: 800;
+  font-size: clamp(16px, 2.5vw, 22px);
   font-variant-numeric: tabular-nums;
+}
+
+.offCount {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(18px, 2.8vw, 25px);
+}
+
+.adjTotal {
+  border-bottom: 0;
+  font-weight: 900;
 }
 
 .adjEmpty {
   margin: 8px 0 0;
+}
+
+.stockNote {
+  margin: 10px 0 0;
+  color: #57534e;
+  font-size: clamp(13px, 1.8vw, 17px);
+  line-height: 1.35;
 }
 
 .fieldLabel {
