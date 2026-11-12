@@ -39,6 +39,7 @@ export default function CloseShift({
   deadline,
   initialStep,
   resumeSummary,
+  lastDeposit,
 }: {
   lines: CloseLine[];
   totals: Totals;
@@ -71,6 +72,7 @@ export default function CloseShift({
   initialStep?: "count" | "deposit";
   /** When set (after session revoke remount), jump straight to summary with locked cash figures. */
   resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+  lastDeposit?: { deposit_code?: string | null; amount_cents: number; created_at: string } | null;
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "summary">(
     resumeSummary ? "summary" : (initialStep ?? (lines.length === 0 ? "deposit" : "count")),
@@ -160,6 +162,18 @@ export default function CloseShift({
           }}>
             <h2>Final deposit</h2>
             <p>Cash on hand before this drop is {formatMoney(totals.cash_on_hand_cents)}.</p>
+            {lastDeposit ? (
+              <div className={styles.lastDepositNotice} data-testid="last-deposit-notice" role="status">
+                <strong>Last bag already entered</strong>
+                <span>{lastDeposit.deposit_code || "No bag number"} · {formatMoney(lastDeposit.amount_cents)} · {new Intl.DateTimeFormat("en-CA", {
+                  timeZone: "America/Toronto",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
+                }).format(new Date(lastDeposit.created_at))} Toronto</span>
+                <small>Enter a final deposit below only if this is another bag.</small>
+              </div>
+            ) : null}
             <label className={styles.fieldLabel} htmlFor="final-deposit">Deposit</label>
             <input id="final-deposit" className={styles.qtyInput} inputMode="decimal" aria-label="Final deposit" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
             <label className={styles.fieldLabel} htmlFor="float-left">Float left in the till</label>

@@ -8,6 +8,20 @@ export type AdjustLine = {
   cents: number;
 };
 
+export function accountantCloseTotals(input: {
+  depositedCents: number;
+  expenseCents: number;
+  floatCents: number;
+  cashSalesCents: number;
+  closeLines: { cents: number }[];
+}) {
+  const stockShortsCents = input.closeLines.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
+  const stockExtraCents = input.closeLines.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
+  const totalCashCollectedCents = input.depositedCents + input.expenseCents + input.floatCents;
+  const overShortCents = totalCashCollectedCents - input.cashSalesCents - stockShortsCents + stockExtraCents;
+  return { stockShortsCents, stockExtraCents, totalCashCollectedCents, overShortCents };
+}
+
 /** Dollars that increase a SHORT balance. Extra stock or extra float is negative. */
 export function shortSideCents(lines: { cents: number }[]) {
   return -lines.reduce((sum, line) => sum + line.cents, 0);

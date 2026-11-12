@@ -1208,6 +1208,38 @@
   font-weight: 900;
 }
 
+.lastDepositNotice {
+  display: grid;
+  gap: 5px;
+  border: 2px solid #b45309;
+  border-radius: 14px;
+  background: #fffbeb;
+  color: #78350f;
+  padding: 14px 16px;
+}
+
+.lastDepositNotice strong {
+  font-size: 19px;
+}
+
+.lastDepositNotice span {
+  font-weight: 800;
+}
+
+.previewBadge {
+  position: fixed;
+  z-index: 40;
+  top: 8px;
+  right: 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
 .summaryIdentity {
   display: grid;
   gap: 4px;
