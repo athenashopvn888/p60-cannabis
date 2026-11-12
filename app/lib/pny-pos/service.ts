@@ -2001,7 +2001,7 @@ export class PosService {
       const now = this.now();
       const at = iso(now);
       const { shift, staff, session } = this.session(tx.state, token, now);
-      denyMaster(session);
+      const actor = session.master ? "MASTER" : staff.staff_uid;
       if (tillCode() !== "PNY01" || shift.store_code !== "PNY01" || shift.weed_gate_required !== true) {
         throw new PosError(404, "WEED_GATE", "This question is only used by new PNY01 shifts.");
       }
@@ -2024,12 +2024,12 @@ export class PosService {
       const previousAnswer = shift.weed_in_store;
       shift.weed_in_store = weedInStore;
       shift.weed_answered_at = at;
-      shift.weed_answered_by = staff.staff_uid;
+      shift.weed_answered_by = actor;
       if (initialAnswer) {
         startStaffVerify(shift, at);
         openTillWithoutCount(shift, at);
       }
-      audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, staff.staff_uid, {
+      audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, actor, {
         shift_id: shift.sccx_shift_id,
         previous_answer: previousAnswer == null ? null : previousAnswer ? "WEED" : "NO WEED",
         answer: weedInStore ? "WEED" : "NO WEED",
