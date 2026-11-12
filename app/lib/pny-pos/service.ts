@@ -4449,9 +4449,9 @@ export class PosService {
   async kitchenStock(token: string) {
     this.requireKitchen(token);
     const state = await this.readOnlyState();
-    const prices = await this.shelfPrices();
+    const [prices, masters] = await Promise.all([this.shelfPrices(), this.sheetMasters().catch(() => new Map<string, MasterProduct>())]);
     const readAt = iso(this.now());
-    const rows = this.kitchenRows(state, prices);
+    const rows = this.kitchenRows(state, prices, masters);
     const updated = state.balances.filter((row) => balanceForStore(row)).map((row) => row.updated_at).sort().at(-1) ?? readAt;
     const shift = this.openKitchenShift(state);
     const units = rows.reduce((sum, row) => sum + row.on_hand, 0);
@@ -4589,7 +4589,7 @@ export class PosService {
     return quoteForSku(sku) != null;
   }
 
-  private kitchenRows(state: State, prices: { raw: Map<string, number>; flowers: FlowerIndex | null; items: ItemIndex | null }) {
+  private kitchenRows(state: State, prices: { raw: Map<string, number>; flowers: FlowerIndex | null; items: ItemIndex | null }, masters: Map<string, MasterProduct> = new Map()) {
     const skus = new Set<string>();
     for (const product of state.products) {
       if (!product.setb_active) continue;
@@ -4600,15 +4600,26 @@ export class PosService {
     for (const balance of state.balances) if (balanceForStore(balance)) skus.add(balance.sku);
     return [...skus].sort((a, b) => a.localeCompare(b, "en", { numeric: true })).map((sku) => {
       const product = state.products.find((row) => row.sku === sku);
+      const master = masters.get(sku)?.product;
       const balance = state.balances.find((row) => row.sku === sku && balanceForStore(row));
-      const name = product?.name || productName(state, sku);
-      const category = product?.category || "Uncategorized";
+      const storedName = product?.name && product.name !== sku ? product.name : master?.name || product?.name || productName(state, sku);
+      const storedCategory = product?.category && product.category !== "Uncategorized" ? product.category : master?.category || product?.category || "Uncategorized";
       let price = 0;
       try {
         price = sellingPriceCents(state, sku, prices.raw, prices.flowers, prices.items);
       } catch {
-        price = product?.default_price_cents ?? 0;
+        price = product?.default_price_cents ?? master?.default_price_cents ?? 0;
       }
+      const shown = presentCatalogItem({
+        sku,
+        name: storedName,
+        category: storedCategory,
+        price_cents: price,
+        image_url: product?.image_url ?? master?.image_url ?? null,
+      }, prices.flowers, prices.items);
+      const name = shown.name;
+      const category = shown.category;
+      price = shown.price_cents;
       return {
         sku,
         name,
