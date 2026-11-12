@@ -15,16 +15,16 @@ export async function GET(request: Request) {
     const service = await getService();
     const stock = await service.kitchenStock(await kitchenToken());
     if (new URL(request.url).searchParams.get("format") !== "csv") return json(stock);
-    const header = ["SKU", "Name", "Size", "Category", "Shelf price", "On hand", "THC", "Counted"];
+    const header = ["SKU", "Name", "Qty", "Price", "Counted", "Size", "Category", "THC"];
     const lines = stock.rows.map((row) => [
       row.sku,
       row.name,
+      row.on_hand,
+      formatMoney(row.price_cents),
+      "",
       row.size,
       row.category,
-      formatMoney(row.price_cents),
-      row.on_hand,
       row.thc ? "Y" : "N",
-      "",
     ].map(csvCell).join(","));
     return new Response([header.join(","), ...lines].join("\n"), {
       headers: {

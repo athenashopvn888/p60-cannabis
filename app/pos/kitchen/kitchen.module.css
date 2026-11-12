@@ -76,27 +76,98 @@
 }
 
 .tableWrap {
-  margin: 0 14px 16px;
+  margin: 0 0 16px;
+  max-height: 65dvh;
   overflow: auto;
-  border-radius: 14px;
   background: white;
 }
 
 .table {
   width: 100%;
-  border-collapse: collapse;
-  min-width: 720px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.shelf {
+  width: 640px;
+  min-width: 640px;
 }
 
 .table th,
 .table td {
   text-align: left;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid #e7e5e4;
   white-space: nowrap;
+  background: white;
+  vertical-align: top;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f5f5f4;
+  font-size: 12px;
+}
+
+.sku,
+.skuHead {
+  position: sticky;
+  left: 0;
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
+  font-size: 16px;
+  font-weight: 800;
+  background: white;
+  box-shadow: 6px 0 8px -6px rgba(28, 25, 23, 0.45);
+}
+
+.table .sku {
+  z-index: 1;
+}
+
+.table .skuHead {
+  z-index: 4;
+  top: 0;
+  left: 0;
+  background: #f5f5f4;
+  font-size: 15px;
+}
+
+.name,
+.nameHead {
+  width: 148px;
+  min-width: 148px;
+  max-width: 148px;
+  white-space: normal;
+  line-height: 1.25;
+  font-size: 14px;
+}
+
+.qty,
+.qtyHead {
+  width: 48px;
+  min-width: 48px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.qtyHead {
+  font-size: 12px;
+}
+
+.qtyZero {
+  color: #dc2626;
 }
 
 .zero td {
+  background: #fee2e2;
+}
+
+.zero .sku {
   background: #fee2e2;
 }
 
@@ -201,7 +272,15 @@
   .shell {
     background: white;
   }
-  .table {
+  .table,
+  .shelf {
+    width: 100%;
     min-width: 0;
+  }
+  .sku,
+  .skuHead,
+  .table th {
+    position: static;
+    box-shadow: none;
   }
 }

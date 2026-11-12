@@ -117,8 +117,8 @@ export default function KitchenApp() {
   }
 
   function exportCsv() {
-    const header = ["SKU", "Name", "Size", "Category", "Shelf price", "On hand", "THC", "Counted"];
-    const lines = visible.map((row) => [row.sku, row.name, row.size, row.category, formatMoney(row.price_cents), row.on_hand, row.thc ? "Y" : "N", ""].map(csvEscape).join(","));
+    const header = ["SKU", "Name", "Qty", "Price", "Counted", "Size", "Category", "THC"];
+    const lines = visible.map((row) => [row.sku, row.name, row.on_hand, formatMoney(row.price_cents), "", row.size, row.category, row.thc ? "Y" : "N"].map(csvEscape).join(","));
     const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -288,21 +288,27 @@ export default function KitchenApp() {
         <span>{formatMoney(visibleRetail)} retail</span>
       </div>
       <div className={`${styles.tableWrap} ${styles.noPrint}`}>
-        <table className={styles.table}>
+        <table className={`${styles.table} ${styles.shelf}`}>
           <thead>
             <tr>
-              <th>SKU</th><th>Name</th><th>Size</th><th>Category</th><th>Price</th><th>On hand</th><th>THC</th>
+              <th className={styles.skuHead}>SKU</th>
+              <th className={styles.nameHead}>Name</th>
+              <th className={styles.qtyHead}>Qty</th>
+              <th>Price</th>
+              <th>Size</th>
+              <th>Category</th>
+              <th>THC</th>
             </tr>
           </thead>
           <tbody>
             {visible.map((row) => (
               <tr key={row.sku} className={row.on_hand === 0 ? styles.zero : undefined} data-testid={`sku-${row.sku}`}>
-                <td>{row.sku}</td>
-                <td>{row.name}</td>
+                <td className={styles.sku}>{row.sku}</td>
+                <td className={styles.name}>{row.name}</td>
+                <td className={row.on_hand === 0 ? `${styles.qty} ${styles.qtyZero}` : styles.qty}>{row.on_hand}</td>
+                <td>{formatMoney(row.price_cents)}</td>
                 <td>{row.size}</td>
                 <td>{row.category}</td>
-                <td>{formatMoney(row.price_cents)}</td>
-                <td>{row.on_hand}</td>
                 <td className={row.thc ? styles.thc : undefined}>{row.thc ? "Y" : "N"}{stock.no_weed && row.thc ? " hidden on till" : ""}</td>
               </tr>
             ))}
@@ -314,11 +320,20 @@ export default function KitchenApp() {
         <p>{stock.read_at_toronto} Toronto</p>
         <table className={styles.table}>
           <thead>
-            <tr><th>SKU</th><th>Name</th><th>Size</th><th>On hand</th><th>Counted</th></tr>
+            <tr><th>SKU</th><th>Name</th><th>Qty</th><th>Price</th><th>Counted</th><th>Size</th><th>Category</th><th>THC</th></tr>
           </thead>
           <tbody>
             {visible.map((row) => (
-              <tr key={row.sku}><td>{row.sku}</td><td>{row.name}</td><td>{row.size}</td><td>{row.on_hand}</td><td></td></tr>
+              <tr key={row.sku}>
+                <td>{row.sku}</td>
+                <td>{row.name}</td>
+                <td>{row.on_hand}</td>
+                <td>{formatMoney(row.price_cents)}</td>
+                <td></td>
+                <td>{row.size}</td>
+                <td>{row.category}</td>
+                <td>{row.thc ? "Y" : "N"}</td>
+              </tr>
             ))}
           </tbody>
         </table>
