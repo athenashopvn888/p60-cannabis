@@ -38,6 +38,15 @@ export function formatStoreTime(iso: string) {
   }).format(new Date(iso));
 }
 
+export function formatStoreDate(iso: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
 /** Chip order for the customer menu and the till. Anything else follows, A to Z. */
 const CATEGORY_ORDER = ["exotic", "premium", "aaa+", "aa", "budget", "add ons", "cigarettes", "edibles", "concentrates"];
 

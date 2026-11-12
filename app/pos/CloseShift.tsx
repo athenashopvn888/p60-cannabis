@@ -4,7 +4,6 @@ import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import type { AdjustLine } from "../lib/pny-pos/tillLedger";
 import CountCard from "./CountCard";
-import DepositSlip from "./DepositSlip";
 import TillSummary from "./TillSummary";
 import type { OffLine } from "./SkuOffList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
@@ -33,6 +32,7 @@ export default function CloseShift({
   onClose,
   onDone,
   weedInStore,
+  summaryMeta,
   stockCheck,
   floatExpectedCents,
   floatFoundCents,
@@ -48,10 +48,18 @@ export default function CloseShift({
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: (confirmBlanksZero?: boolean) => Promise<void>;
   onSaveDeposit: (cents: number, floatCents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number, floatCents: number) => Promise<void | string>;
+  onConfirm: (depositCents: number, floatCents: number, finalDepositCode?: string | null) => Promise<void | string>;
   onClose: () => void;
   onDone?: () => void;
   weedInStore?: boolean | null;
+  summaryMeta: {
+    storeLabel: string;
+    staffName: string;
+    startedAt: string;
+    endedAt: string | null;
+    deposits: { code: string | null; amountCents: number }[];
+    finalDepositCode?: string | null;
+  };
   stockCheck?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
     closing: { offCount: number; ready?: boolean; lines: OffLine[] };
@@ -64,10 +72,10 @@ export default function CloseShift({
   /** When set (after session revoke remount), jump straight to summary with locked cash figures. */
   resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
 }) {
-  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(
+  const [step, setStep] = useState<"count" | "deposit" | "summary">(
     resumeSummary ? "summary" : (initialStep ?? (lines.length === 0 ? "deposit" : "count")),
   );
-  const [slipCode, setSlipCode] = useState<string | null>(null);
+  const [finalDepositCode, setFinalDepositCode] = useState<string | null>(summaryMeta.finalDepositCode ?? null);
   const [deposit, setDeposit] = useState(
     resumeSummary
       ? (resumeSummary.depositCents / 100).toFixed(2)
@@ -99,6 +107,12 @@ export default function CloseShift({
     units: line.diff,
     cents: line.cents ?? 0,
   }));
+  const summaryDeposits = [
+    ...summaryMeta.deposits,
+    ...(drop > 0 && !(finalDepositCode && summaryMeta.deposits.some((row) => row.code === finalDepositCode))
+      ? [{ code: finalDepositCode, amountCents: drop }]
+      : []),
+  ];
 
   return (
     <section className={styles.close} data-testid="pos-close">
@@ -134,13 +148,11 @@ export default function CloseShift({
             if (locking) return;
             setLocking(true);
             void onSaveDeposit(depositCents, floatCents).then(async (saved) => {
-              const label = await onConfirm(depositCents, floatCents);
+              const code = saved && typeof saved === "object" ? saved.deposit_code ?? null : null;
+              setFinalDepositCode(code);
+              const label = await onConfirm(depositCents, floatCents, code);
               if (typeof label === "string") setCloseLabel(label);
-              const code = saved && typeof saved === "object" ? saved.deposit_code : null;
-              if (code) {
-                setSlipCode(code);
-                setStep("slip");
-              } else setStep("summary");
+              setStep("summary");
             }).catch((err: unknown) => {
               setLocking(false);
               setLocalError(err instanceof Error ? err.message : "Deposit was not saved");
@@ -157,17 +169,18 @@ export default function CloseShift({
           </form>
         ) : null}
 
-        {step === "slip" && slipCode ? (
-          <DepositSlip code={slipCode} onDone={() => setStep("summary")} />
-        ) : null}
-
         {step === "summary" ? (
           <div data-testid="close-summary">
-            <div className={styles.banner} data-testid="close-summary-banner" role="status">
-              Screenshot this and send it to the group before tapping Done.
+            <div className={styles.accountantBanner} data-testid="close-summary-banner" role="status">
+              TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT
             </div>
             <TillSummary
               weedInStore={weedInStore}
+              storeLabel={summaryMeta.storeLabel}
+              staffName={summaryMeta.staffName}
+              startedAt={summaryMeta.startedAt}
+              endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt}
+              deposits={summaryDeposits}
               cashSalesCents={totals.cash_sales_cents}
               depositedCents={deposited}
               floatCents={floatCents}
@@ -185,7 +198,7 @@ export default function CloseShift({
               data-testid="close-summary-done"
               onClick={() => (onDone ? onDone() : onClose())}
             >
-              Done
+              Done, I posted it
             </button>
           </div>
         ) : null}

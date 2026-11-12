@@ -18,6 +18,7 @@ export default function Pos2Page() {
       apiBase={PNY02_STORE.apiBase}
       tillHref={PNY02_STORE.tillPath}
       label={PNY02_STORE.label}
+      storeCode={PNY02_STORE.code}
       menuUrl={PNY02_STORE.menuUrl}
     />
   );

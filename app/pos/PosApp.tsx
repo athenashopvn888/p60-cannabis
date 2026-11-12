@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
@@ -35,6 +35,26 @@ type Product = { sku: string; name: string; category: string; price_cents: numbe
 
 type Ticket = { id: string; code: string; status: string; expires_at: string; lines: { sku: string; name: string; qty: number }[] };
 type CountLine = { sku: string; name: string };
+type CloseSnapshot = {
+  lines: CloseLine[];
+  totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+  savedDeposit: number | null;
+  stockCheck: View["stock_check"];
+  floatExpectedCents: number | null;
+  floatFoundCents: number | null;
+  deadline: string | null;
+  initialStep: "count" | "deposit";
+  weedInStore: boolean | null;
+  summaryMeta: {
+    storeLabel: string;
+    staffName: string;
+    startedAt: string;
+    endedAt: string | null;
+    deposits: { code: string | null; amountCents: number }[];
+    finalDepositCode?: string | null;
+  };
+  resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+};
 type View = {
   authenticated?: boolean;
   demo?: boolean;
@@ -45,9 +65,10 @@ type View = {
   master?: boolean;
   can_sell?: boolean;
   block?: string | null;
-  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; weed_in_store?: boolean | null };
+  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; started_at: string; weed_in_store?: boolean | null };
   weed_gate?: { required: boolean; answer: boolean | null; answered_at: string | null };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
+  deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
   close_lines?: CloseLine[];
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
   opening_lines?: OpeningLine[];
@@ -106,11 +127,13 @@ export default function PosApp({
   apiBase = "/api/pos",
   tillHref = "/pos/till",
   label = "PNY01",
+  storeCode = "PNY01",
   menuUrl = CUSTOMER_MENU_URL,
 }: {
   apiBase?: string;
   tillHref?: string;
   label?: string;
+  storeCode?: string;
   menuUrl?: string;
 } = {}) {
   const [view, setView] = useState<View | null>(null);
@@ -136,23 +159,31 @@ export default function PosApp({
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
   const [closeHold, setCloseHold] = useState(false);
-  const [closeSnap, setCloseSnap] = useState<{
-    lines: CloseLine[];
-    totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
-    savedDeposit: number | null;
-    stockCheck: View["stock_check"];
-    floatExpectedCents: number | null;
-    floatFoundCents: number | null;
-    deadline: string | null;
-    initialStep: "count" | "deposit";
-    weedInStore: boolean | null;
-    resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
-  } | null>(null);
+  const [closeSnap, setCloseSnap] = useState<CloseSnapshot | null>(null);
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeLabel = forced?.label ?? label;
   const storeTill = forced?.tillHref ?? tillHref;
   const storeMenu = forced?.menuUrl ?? menuUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const raw = window.localStorage.getItem(`pny-close-hold:${storeLabel}`);
+      if (!raw) return;
+      const held = JSON.parse(raw) as CloseSnapshot;
+      if (!held.resumeSummary || !held.summaryMeta?.endedAt) return;
+      window.setTimeout(() => {
+        if (cancelled) return;
+        setCloseSnap(held);
+        setCloseHold(true);
+        setSheet("close");
+      }, 0);
+    } catch {
+      window.localStorage.removeItem(`pny-close-hold:${storeLabel}`);
+    }
+    return () => { cancelled = true; };
+  }, [storeLabel]);
 
   const load = useCallback(async () => {
     const result = await readTillState(storeApi);
@@ -238,9 +269,9 @@ export default function PosApp({
     }
   }
 
-  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string }) {
+  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; endedAt?: string; finalDepositCode?: string | null }) {
     if (!view) return;
-    setCloseSnap({
+    const snapshot: CloseSnapshot = {
       lines: view.close_lines ?? [],
       totals: {
         sales_cents: view.totals?.sales_cents ?? 0,
@@ -256,11 +287,24 @@ export default function PosApp({
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
       weedInStore: view.shift?.weed_in_store ?? null,
+      summaryMeta: {
+        storeLabel: storeCode,
+        staffName: view.shift?.staff_name ?? "Staff",
+        startedAt: view.shift?.started_at ?? new Date().toISOString(),
+        endedAt: extra?.endedAt ?? null,
+        deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
+        finalDepositCode: extra?.finalDepositCode ?? null,
+      },
       resumeSummary:
         extra && extra.depositCents != null && extra.floatCents != null
           ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel }
           : null,
-    });
+    };
+    setCloseSnap(snapshot);
+    if (snapshot.resumeSummary && snapshot.summaryMeta.endedAt) {
+      // Persist only the discrepancy summary, never the full count plan or expected/on-hand stock.
+      window.localStorage.setItem(`pny-close-hold:${storeLabel}`, JSON.stringify({ ...snapshot, lines: [] }));
+    }
   }
 
   function openEnd() {
@@ -415,7 +459,7 @@ export default function PosApp({
     return { deposit_code: typeof saved.deposit_code === "string" ? saved.deposit_code : null };
   }
 
-  async function confirmEnd(depositCents: number, floatCents: number) {
+  async function confirmEnd(depositCents: number, floatCents: number, finalDepositCode?: string | null) {
     setError("");
     setBusy(true);
     try {
@@ -425,7 +469,10 @@ export default function PosApp({
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
         : typeof saved.close_label === "string" ? saved.close_label : "";
-      snapshotClose({ depositCents, floatCents, closeLabel: label });
+      const endedAt = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { created_at?: unknown }).created_at === "string"
+        ? (saved.closing as { created_at: string }).created_at
+        : new Date().toISOString();
+      snapshotClose({ depositCents, floatCents, closeLabel: label, endedAt, finalDepositCode });
       setCloseHold(true);
       return label;
     } catch (err) {
@@ -436,6 +483,7 @@ export default function PosApp({
   }
 
   function finishCloseSummary() {
+    window.localStorage.removeItem(`pny-close-hold:${storeLabel}`);
     setSheet(null);
     setCloseHold(false);
     setCloseSnap(null);
@@ -554,6 +602,7 @@ export default function PosApp({
           onClose={() => undefined}
           onDone={finishCloseSummary}
           weedInStore={closeSnap.weedInStore}
+          summaryMeta={closeSnap.summaryMeta}
           stockCheck={closeSnap.stockCheck}
           floatExpectedCents={closeSnap.floatExpectedCents}
           floatFoundCents={closeSnap.floatFoundCents}
@@ -804,6 +853,13 @@ export default function PosApp({
           }}
           onDone={finishCloseSummary}
           weedInStore={closeSnap?.weedInStore ?? view.shift?.weed_in_store ?? null}
+          summaryMeta={closeSnap?.summaryMeta ?? {
+            storeLabel: storeCode,
+            staffName: view.shift?.staff_name ?? "Staff",
+            startedAt: view.shift?.started_at ?? new Date().toISOString(),
+            endedAt: null,
+            deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
+          }}
           stockCheck={closeSnap?.stockCheck ?? view.stock_check}
           floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}

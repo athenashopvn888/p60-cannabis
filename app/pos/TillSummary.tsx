@@ -1,7 +1,7 @@
 "use client";
 
-import { formatMoney } from "../lib/pny-pos/money";
-import { adjustMoney, balancePhrase, floatGapCents, floatPhrase, shortSideCents, tillBalanceRaw, type AdjustLine } from "../lib/pny-pos/tillLedger";
+import { formatMoney, formatStoreDate, formatStoreTime } from "../lib/pny-pos/money";
+import { adjustMoney, balancePhrase, floatGapCents, floatPhrase, type AdjustLine } from "../lib/pny-pos/tillLedger";
 import styles from "./till.module.css";
 
 function Grid({ lines, testId }: { lines: AdjustLine[]; testId: string }) {
@@ -30,6 +30,12 @@ function Grid({ lines, testId }: { lines: AdjustLine[]; testId: string }) {
 
 export default function TillSummary({
   weedInStore,
+  storeLabel,
+  staffName,
+  startedAt,
+  endedAt,
+  deposits,
+  expenseCents = 0,
   cashSalesCents,
   depositedCents,
   floatCents,
@@ -40,6 +46,12 @@ export default function TillSummary({
   floatFoundCents,
 }: {
   weedInStore?: boolean | null;
+  storeLabel: string;
+  staffName: string;
+  startedAt: string;
+  endedAt: string;
+  deposits: { code: string | null; amountCents: number }[];
+  expenseCents?: number;
   cashSalesCents: number;
   depositedCents: number;
   floatCents: number;
@@ -52,33 +64,41 @@ export default function TillSummary({
   const floatKnown = floatExpectedCents != null && floatFoundCents != null;
   const floatGap = floatKnown ? floatGapCents(floatExpectedCents, floatFoundCents) : 0;
   const floatLabel = floatKnown ? floatPhrase(floatGap) : null;
-  const openCents = shortSideCents(openLines) + (floatKnown ? -floatGap : 0);
-  const refillCents = shortSideCents(refillLines);
-  const closeCents = shortSideCents(closeLines);
-  const raw = tillBalanceRaw({
-    cash_sales_cents: cashSalesCents,
-    deposited_cents: depositedCents,
-    float_cents: floatCents,
-    open_cents: openCents,
-    refill_cents: refillCents,
-    close_cents: closeCents,
-  });
-  const final = balancePhrase(raw);
+  const differences = [...openLines, ...refillLines, ...closeLines];
+  const stockShortsCents = differences.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
+  const stockExtraCents = differences.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
+  const totalCashCollectedCents = depositedCents + expenseCents + floatCents;
+  const overShortCents = totalCashCollectedCents - cashSalesCents - stockShortsCents + stockExtraCents;
+  const final = balancePhrase(-overShortCents);
   const tone = (cents: number) => (cents < 0 ? styles.offShort : cents > 0 ? styles.offOver : styles.offEven);
   const finalClass = final.tone === "over" ? styles.finalOver : final.tone === "short" ? styles.finalShort : styles.offEven;
 
   return (
     <div data-testid="till-summary">
+      <div className={styles.summaryIdentity} data-testid="closing-identity">
+        <strong>{storeLabel}</strong>
+        <span>{staffName}</span>
+        <span>{formatStoreDate(endedAt)} · {formatStoreTime(startedAt)}–{formatStoreTime(endedAt)} Toronto</span>
+      </div>
       <h2>Closing summary</h2>
       {weedInStore != null ? <div className={styles.summaryRow} data-testid="weed-shift-answer"><span>WEED in store this shift</span><strong>{weedInStore ? "WEED" : "NO WEED"}</strong></div> : null}
-      <div className={styles.summaryRow}><span>Cash sales</span><strong>{formatMoney(cashSalesCents)}</strong></div>
-      <div className={styles.summaryRow}><span>− Deposits</span><strong>{formatMoney(depositedCents)}</strong></div>
-      <div className={styles.summaryRow} data-testid="float-left"><span>− Cash on hand (float)</span><strong>{formatMoney(floatCents)}</strong></div>
-      <div className={styles.summaryRow}><span>Open count</span><strong className={tone(openCents)}>{adjustMoney(openCents)}</strong></div>
-      <div className={styles.summaryRow}><span>Refill count</span><strong className={tone(refillCents)}>{adjustMoney(refillCents)}</strong></div>
-      <div className={styles.summaryRow}><span>Closing count</span><strong className={tone(closeCents)}>{adjustMoney(closeCents)}</strong></div>
+      <section className={styles.depositSummary} data-testid="closing-deposits">
+        <h3>Deposits</h3>
+        {deposits.length === 0 ? <p>No deposit bags</p> : deposits.map((deposit, index) => (
+          <div className={styles.summaryRow} key={`${deposit.code ?? "na"}-${index}`}>
+            <span>Bag {deposit.code || "n/a"}</span><strong>{formatMoney(deposit.amountCents)}</strong>
+          </div>
+        ))}
+      </section>
+      <div className={styles.summaryRow}><span>Total deposits</span><strong>{formatMoney(depositedCents)}</strong></div>
+      <div className={styles.summaryRow}><span>Expense paid from store cash</span><strong>{formatMoney(expenseCents)}</strong></div>
+      <div className={styles.summaryRow} data-testid="float-left"><span>Float left</span><strong>{formatMoney(floatCents)}</strong></div>
+      <div className={`${styles.summaryRow} ${styles.summaryTotal}`} data-testid="total-cash-collected"><span>TOTAL CASH COLLECTED</span><strong>{formatMoney(totalCashCollectedCents)}</strong></div>
+      <div className={styles.summaryRow}><span>− Stock sold value</span><strong>{formatMoney(cashSalesCents)}</strong></div>
+      <div className={styles.summaryRow}><span>− Stock shorts</span><strong className={tone(-stockShortsCents)}>{formatMoney(stockShortsCents)}</strong></div>
+      <div className={styles.summaryRow}><span>+ Stock extra</span><strong className={tone(stockExtraCents)}>{formatMoney(stockExtraCents)}</strong></div>
       <div className={styles.summaryRow} data-testid="till-balance">
-        <span>FINAL TILL BALANCE</span>
+        <span>Total</span>
         <strong className={finalClass}>{final.word} {formatMoney(final.cents)}</strong>
       </div>
 
