@@ -2953,6 +2953,14 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(h.db.state.audit.filter((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id).length, 1);
   await h.svc.answerWeedInStore(login.token, false);
 
+  const master = await h.svc.login("1988", "10.0.0.18");
+  assert.equal((await h.svc.state(master.token)).master, true);
+  const masterToggle = await h.svc.answerWeedInStore(master.token, true);
+  assert.equal(masterToggle.changed, true);
+  assert.equal(h.db.state.shifts.find((row) => row.id === first.shift_id)?.weed_answered_by, "MASTER");
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id && row.actor === "MASTER"), true);
+  await h.svc.answerWeedInStore(master.token, false);
+
   h.db.state.incoming.push(
     { kitchen_row_id: "weed-refill", batch_id: "batch", store_code: "PNY01", sku: "188", qty_sent: 2, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
     { kitchen_row_id: "paper-refill", batch_id: "batch", store_code: "PNY01", sku: "710", qty_sent: 5, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
@@ -2995,6 +3003,8 @@ test("PNY01 staff cannot change WEED after the closing count starts", async () =
   await h.svc.answerWeedInStore(login.token, true);
   await h.svc.startClosingCount(login.token);
   await rejects(() => h.svc.answerWeedInStore(login.token, false), "WEED_TOGGLE_CLOSED");
+  const master = await h.svc.login("1988", "10.0.0.12");
+  await rejects(() => h.svc.answerWeedInStore(master.token, false), "WEED_TOGGLE_CLOSED");
   assert.equal(h.db.state.shifts.find((row) => row.id === opened.shift_id)?.weed_in_store, true);
 });
 
