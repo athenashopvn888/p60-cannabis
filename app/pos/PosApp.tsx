@@ -17,6 +17,7 @@ import CountCard from "./CountCard";
 import RefillList, { type PendingRefill } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import WeedShiftGate from "./WeedShiftGate";
+import WeedToggle from "./WeedToggle";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
@@ -280,9 +281,12 @@ export default function PosApp({
     setBusy(true);
     try {
       await post(`${storeApi}/shift/weed`, { weed_in_store: weedInStore });
+      setCart({});
       await load();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the answer");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -579,6 +583,9 @@ export default function PosApp({
           ) : null}
         </div>
         <div className={styles.headerActions}>
+          {view.phase === "sell" && view.weed_gate?.answer != null && !view.master ? (
+            <WeedToggle current={view.weed_gate.answer} busy={busy} cartHasItems={!cartEmpty} error={error} onOpen={() => setError("")} onConfirm={answerWeed} />
+          ) : null}
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-refill" onClick={() => setRefillOpen(true)}>
               Refill

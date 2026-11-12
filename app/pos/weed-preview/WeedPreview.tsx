@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import WeedShiftGate from "../WeedShiftGate";
+import WeedToggle from "../WeedToggle";
 import styles from "../till.module.css";
 
 const NON_THC = ["710 · RAW PAPER KING SIZE", "1006 · CANADIAN FULL", "1080 · OVNS 2500"];
@@ -20,7 +21,7 @@ export default function WeedPreview({ thcSkus }: { thcSkus: string[] }) {
           <strong>PNY01 · Preview Staff</strong>
           <span>Saved answer: {answer ? "WEED" : "NO WEED"}</span>
         </div>
-        <button type="button" className={styles.secondary} onClick={() => setAnswer(null)}>Try again</button>
+        <WeedToggle current={answer} busy={false} onConfirm={setAnswer} />
       </header>
 
       <section className={styles.weedPreviewCard}>
