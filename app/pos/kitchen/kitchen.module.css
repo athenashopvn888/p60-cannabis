@@ -136,12 +136,13 @@
   font-size: 15px;
 }
 
-.name,
-.nameHead {
+.table .name,
+.table .nameHead {
   width: 148px;
   min-width: 148px;
   max-width: 148px;
   white-space: normal;
+  overflow-wrap: anywhere;
   line-height: 1.25;
   font-size: 14px;
 }
