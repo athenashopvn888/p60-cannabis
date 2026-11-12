@@ -245,7 +245,7 @@ export default function KitchenApp() {
           <div className={styles.dots} data-testid="kitchen-pin">{pin.replace(/./g, "•") || " "}</div>
           <div className={styles.keys}>
             {["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"].map((key) => (
-              <button key={key} type="button" className={key === "Clear" || key === "⌫" ? styles.ghost : undefined} onClick={() => {
+              <button key={key} type="button" className={key === "Clear" || key === "⌫" ? `${styles.btn} ${styles.ghost}` : styles.btn} onClick={() => {
                 if (key === "Clear") setPin("");
                 else if (key === "⌫") setPin((value) => value.slice(0, -1));
                 else if (pin.length < 4) setPin((value) => value + key);
@@ -253,7 +253,7 @@ export default function KitchenApp() {
             ))}
           </div>
           {error ? <p className={styles.warn}>{error}</p> : null}
-          <button type="submit" disabled={busy || pin.length !== 4}>Sign in</button>
+          <button className={styles.btn} type="submit" disabled={busy || pin.length !== 4}>Sign in</button>
         </form>
       </main>
     );
@@ -267,7 +267,7 @@ export default function KitchenApp() {
       <header className={styles.top}>
         <div className={styles.brand}>PNY1 Kitchen</div>
         <div>Updated {stock.updated_at_toronto} Toronto · read {stock.read_at_toronto}</div>
-        <button className={styles.ghost} type="button" onClick={() => void fetch("/api/pos/kitchen/logout", { method: "POST" }).then(() => setStock(null))}>Sign out</button>
+        <button className={`${styles.btn} ${styles.ghost}`} type="button" onClick={() => void fetch("/api/pos/kitchen/logout", { method: "POST" }).then(() => setStock(null))}>Sign out</button>
       </header>
       <div className={stock.writes ? `${styles.banner} ${styles.live}` : styles.banner} data-testid="kitchen-mode">
         {stock.writes ? "Writes are on. Confirm saves stock." : "Dry run. The shelf you see is live. Refill and adjust show what would be written and save nothing."}
@@ -279,8 +279,8 @@ export default function KitchenApp() {
         <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Category">
           {categories.map((item) => <option key={item}>{item}</option>)}
         </select>
-        <button className={styles.ghost} type="button" onClick={exportCsv}>Export CSV</button>
-        <button className={styles.ghost} type="button" onClick={() => window.print()}>Print count sheet</button>
+        <button className={`${styles.btn} ${styles.ghost}`} type="button" onClick={exportCsv}>Export CSV</button>
+        <button className={`${styles.btn} ${styles.ghost}`} type="button" onClick={() => window.print()}>Print count sheet</button>
       </div>
       <div className={styles.totals}>
         <span>{visible.length} SKUs</span>
@@ -288,7 +288,7 @@ export default function KitchenApp() {
         <span>{formatMoney(visibleRetail)} retail</span>
       </div>
       <div className={`${styles.tableWrap} ${styles.noPrint}`}>
-        <table>
+        <table className={styles.table}>
           <thead>
             <tr>
               <th>SKU</th><th>Name</th><th>Size</th><th>Category</th><th>Price</th><th>On hand</th><th>THC</th>
@@ -312,7 +312,7 @@ export default function KitchenApp() {
       <section className={styles.printOnly}>
         <h1>PNY1 kitchen count</h1>
         <p>{stock.read_at_toronto} Toronto</p>
-        <table>
+        <table className={styles.table}>
           <thead>
             <tr><th>SKU</th><th>Name</th><th>Size</th><th>On hand</th><th>Counted</th></tr>
           </thead>
@@ -328,7 +328,7 @@ export default function KitchenApp() {
         <p>SKU, size, qty. One line each, or a CSV. It uses the same received refill as the till.</p>
         <textarea rows={5} value={refillText} onChange={(event) => { setRefillText(event.target.value); setRefillPreview(null); }} placeholder={"170, 3g, 2\n1001, 4"} aria-label="Refill lines" />
         <div className={styles.actions}>
-          <label className={styles.file}>
+          <label className={`${styles.btn} ${styles.file}`}>
             CSV
             <input type="file" accept=".csv,text/csv,text/plain" hidden onChange={(event) => {
               const file = event.target.files?.[0];
@@ -336,12 +336,12 @@ export default function KitchenApp() {
               void file.text().then((text) => { setRefillText(text); setRefillPreview(null); });
             }} />
           </label>
-          <button type="button" disabled={busy || !refillText.trim()} onClick={() => void previewRefill()}>Preview</button>
-          <button type="button" disabled={busy || !refillPreview || Boolean(refillPreview.duplicate) || unknown.length > 0} onClick={() => void confirmRefill()}>Confirm</button>
+          <button className={styles.btn} type="button" disabled={busy || !refillText.trim()} onClick={() => void previewRefill()}>Preview</button>
+          <button className={styles.btn} type="button" disabled={busy || !refillPreview || Boolean(refillPreview.duplicate) || unknown.length > 0} onClick={() => void confirmRefill()}>Confirm</button>
         </div>
         {typeof refillPreview?.warning === "string" && refillPreview.warning ? <p className={styles.warn}>{refillPreview.warning}</p> : null}
         {refillLines.length ? (
-          <table className={styles.diff}>
+          <table className={`${styles.table} ${styles.diff}`}>
             <thead><tr><th>SKU</th><th>Size</th><th>Now</th><th>Add</th><th>After</th></tr></thead>
             <tbody>
               {refillLines.map((line) => (
@@ -365,8 +365,8 @@ export default function KitchenApp() {
             <option value="other">other</option>
           </select>
           <input className={styles.grow} value={note} onChange={(event) => setNote(event.target.value)} placeholder={reason === "other" ? "Note required" : "Note"} aria-label="Adjustment note" />
-          <button type="button" disabled={busy} onClick={() => void previewAdjust()}>Preview</button>
-          <button type="button" disabled={busy || !adjustPreview} onClick={() => void confirmAdjust(Boolean(adjustPreview?.large))}>Confirm</button>
+          <button className={styles.btn} type="button" disabled={busy} onClick={() => void previewAdjust()}>Preview</button>
+          <button className={styles.btn} type="button" disabled={busy || !adjustPreview} onClick={() => void confirmAdjust(Boolean(adjustPreview?.large))}>Confirm</button>
         </div>
         {adjustPreview ? (
           <p>
@@ -383,7 +383,7 @@ export default function KitchenApp() {
         {stock.batches.map((batch) => (
           <div key={batch.batch_id ?? batch.at_toronto} className={styles.actions}>
             <span>{batch.at_toronto} · {batch.action === "KITCHEN_REFILL" ? "Refill" : "Adjust"} · {batch.lines.map((line) => `${line.sku} ${Number(line.qty) > 0 ? "+" : ""}${line.qty}`).join(", ")}</span>
-            <button className={styles.ghost} type="button" disabled={busy || !batch.batch_id} onClick={() => batch.batch_id && void undo(batch.batch_id)}>Undo</button>
+            <button className={`${styles.btn} ${styles.ghost}`} type="button" disabled={busy || !batch.batch_id} onClick={() => batch.batch_id && void undo(batch.batch_id)}>Undo</button>
           </div>
         ))}
       </section>

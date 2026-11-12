@@ -82,14 +82,14 @@
   background: white;
 }
 
-table {
+.table {
   width: 100%;
   border-collapse: collapse;
   min-width: 720px;
 }
 
-th,
-td {
+.table th,
+.table td {
   text-align: left;
   padding: 8px 10px;
   border-bottom: 1px solid #e7e5e4;
@@ -124,7 +124,7 @@ td {
   margin-top: 8px;
 }
 
-button,
+.btn,
 .file {
   min-height: 44px;
   border: 0;
@@ -201,7 +201,7 @@ button,
   .shell {
     background: white;
   }
-  table {
+  .table {
     min-width: 0;
   }
 }
