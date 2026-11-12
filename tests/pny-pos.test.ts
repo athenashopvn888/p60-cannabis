@@ -2707,6 +2707,9 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(pos, /pos-close-hold/);
   assert.match(pos, /finishCloseSummary/);
   assert.match(pos, /!view\.authenticated && !\(sheet === "close" && closeHold && closeSnap\)/);
+  assert.match(pos, /localStorage\.setItem\(`pny-close-hold:/);
+  assert.match(pos, /localStorage\.removeItem\(`pny-close-hold:/);
+  assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
   assert.match(summaryUi, /TOTAL CASH COLLECTED/);
   assert.match(summaryUi, /Expense paid from store cash/);

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
 import type { AdjustLine } from "../lib/pny-pos/tillLedger";
 import CountCard from "./CountCard";
-import DepositSlip from "./DepositSlip";
 import TillSummary from "./TillSummary";
 import type { OffLine } from "./SkuOffList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
@@ -73,10 +72,10 @@ export default function CloseShift({
   /** When set (after session revoke remount), jump straight to summary with locked cash figures. */
   resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
 }) {
-  const [step, setStep] = useState<"count" | "deposit" | "slip" | "summary">(
+  const [step, setStep] = useState<"count" | "deposit" | "summary">(
     resumeSummary ? "summary" : (initialStep ?? (lines.length === 0 ? "deposit" : "count")),
   );
-  const [slipCode, setSlipCode] = useState<string | null>(null);
+  const [finalDepositCode, setFinalDepositCode] = useState<string | null>(summaryMeta.finalDepositCode ?? null);
   const [deposit, setDeposit] = useState(
     resumeSummary
       ? (resumeSummary.depositCents / 100).toFixed(2)
@@ -108,7 +107,6 @@ export default function CloseShift({
     units: line.diff,
     cents: line.cents ?? 0,
   }));
-  const finalDepositCode = summaryMeta.finalDepositCode ?? slipCode;
   const summaryDeposits = [
     ...summaryMeta.deposits,
     ...(drop > 0 && !(finalDepositCode && summaryMeta.deposits.some((row) => row.code === finalDepositCode))
@@ -150,13 +148,11 @@ export default function CloseShift({
             if (locking) return;
             setLocking(true);
             void onSaveDeposit(depositCents, floatCents).then(async (saved) => {
-              const code = saved && typeof saved === "object" ? saved.deposit_code : null;
+              const code = saved && typeof saved === "object" ? saved.deposit_code ?? null : null;
+              setFinalDepositCode(code);
               const label = await onConfirm(depositCents, floatCents, code);
               if (typeof label === "string") setCloseLabel(label);
-              if (code) {
-                setSlipCode(code);
-                setStep("slip");
-              } else setStep("summary");
+              setStep("summary");
             }).catch((err: unknown) => {
               setLocking(false);
               setLocalError(err instanceof Error ? err.message : "Deposit was not saved");
@@ -171,10 +167,6 @@ export default function CloseShift({
             <p>Leave this at 0.00 when the drawer is emptied.</p>
             <button className={styles.primary} type="submit" disabled={busy || locking}>Save deposit</button>
           </form>
-        ) : null}
-
-        {step === "slip" && slipCode ? (
-          <DepositSlip code={slipCode} onDone={() => setStep("summary")} />
         ) : null}
 
         {step === "summary" ? (

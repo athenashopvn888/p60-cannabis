@@ -14,7 +14,7 @@ export default function ClosingSummaryPreviewPage() {
           TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT
         </div>
         <TillSummary
-          storeLabel={store.label}
+          storeLabel={store.code}
           staffName="Preview Staff"
           startedAt="2026-11-10T15:00:00.000Z"
           endedAt="2026-11-10T23:30:00.000Z"

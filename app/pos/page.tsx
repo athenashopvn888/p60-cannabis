@@ -12,5 +12,5 @@ export const metadata: Metadata = {
 export default function PosPage() {
   const store = lockedStore();
   if (!store || store.code === "PNY01") return <PosApp />;
-  return <PosApp apiBase="/api/pos" tillHref="/pos/till" label={store.label} menuUrl={store.menuUrl} />;
+  return <PosApp apiBase="/api/pos" tillHref="/pos/till" label={store.label} storeCode={store.code} menuUrl={store.menuUrl} />;
 }
