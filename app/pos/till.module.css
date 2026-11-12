@@ -244,6 +244,18 @@
   min-height: 30px;
 }
 
+.weedToggleOn {
+  border-color: #4ade80;
+  background: #166534;
+  color: #fff;
+}
+
+.weedToggleOff {
+  border-color: #fca5a5;
+  background: #991b1b;
+  color: #fff;
+}
+
 .tillCards {
   display: flex;
   flex-direction: column;

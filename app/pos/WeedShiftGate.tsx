@@ -13,7 +13,7 @@ export default function WeedShiftGate({ staffName, busy, error, onAnswer }: {
       <section className={styles.weedGateCard}>
         <div className={styles.weedGateStore}>PNY01 · {staffName}</div>
         <h1 id="weed-gate-title">WEED in store this shift?</h1>
-        <p>Choose one before the opening stock count. This answer cannot be skipped or changed.</p>
+        <p>Choose one before the opening stock count. You can change it later from the top navigation.</p>
         <div className={styles.weedGateActions}>
           <button className={styles.weedYes} type="button" disabled={busy} onClick={() => onAnswer(true)}>YES</button>
           <button className={styles.weedNo} type="button" disabled={busy} onClick={() => onAnswer(false)}>NO</button>

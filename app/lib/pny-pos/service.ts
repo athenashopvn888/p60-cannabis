@@ -1995,7 +1995,7 @@ export class PosService {
     return { ok: true };
   }
 
-  /** Save the required PNY01 shift answer without changing stock, sales, counts, refills, or the PIN. */
+  /** Save or change the PNY01 WEED setting without changing stock, sales, counts, refills, or the PIN. */
   async answerWeedInStore(token: string, weedInStore: boolean) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
@@ -2005,21 +2005,33 @@ export class PosService {
       if (tillCode() !== "PNY01" || shift.store_code !== "PNY01" || shift.weed_gate_required !== true) {
         throw new PosError(404, "WEED_GATE", "This question is only used by new PNY01 shifts.");
       }
-      if (shift.weed_in_store != null) {
-        if (shift.weed_in_store !== weedInStore) throw new PosError(409, "WEED_ANSWER_FINAL", "The WEED / NO WEED answer is already saved for this shift.");
-        return { ok: true as const, weed_in_store: shift.weed_in_store, answered_at: shift.weed_answered_at, shift_id: shift.sccx_shift_id };
+      if (shift.status !== "ACTIVE") {
+        throw new PosError(409, "WEED_TOGGLE_CLOSED", "WEED cannot be changed after closing starts.");
+      }
+      const initialAnswer = shift.weed_in_store == null;
+      if (!initialAnswer && shift.weed_in_store === weedInStore) {
+        return { ok: true as const, changed: false, weed_in_store: shift.weed_in_store, answered_at: shift.weed_answered_at, shift_id: shift.sccx_shift_id };
+      }
+      const closingDraft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      if (!initialAnswer && closingDraft?.closing_started_at) {
+        throw new PosError(409, "WEED_TOGGLE_CLOSED", "WEED cannot be changed after the closing count starts.");
       }
       const stockBefore = JSON.stringify(tx.state.balances);
       const salesBefore = JSON.stringify(tx.state.sales);
       const countsBefore = JSON.stringify(tx.state.counts);
+      const refillsBefore = JSON.stringify(tx.state.incoming);
       const pinBefore = shift.pin_hash;
+      const previousAnswer = shift.weed_in_store;
       shift.weed_in_store = weedInStore;
       shift.weed_answered_at = at;
       shift.weed_answered_by = staff.staff_uid;
-      startStaffVerify(shift, at);
-      openTillWithoutCount(shift, at);
-      audit(tx.state, "WEED_SHIFT_ANSWER", "shift", shift.id, staff.staff_uid, {
+      if (initialAnswer) {
+        startStaffVerify(shift, at);
+        openTillWithoutCount(shift, at);
+      }
+      audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, staff.staff_uid, {
         shift_id: shift.sccx_shift_id,
+        previous_answer: previousAnswer == null ? null : previousAnswer ? "WEED" : "NO WEED",
         answer: weedInStore ? "WEED" : "NO WEED",
         answered_at: at,
       }, at);
@@ -2027,9 +2039,10 @@ export class PosService {
         JSON.stringify(tx.state.balances) !== stockBefore
         || JSON.stringify(tx.state.sales) !== salesBefore
         || JSON.stringify(tx.state.counts) !== countsBefore
+        || JSON.stringify(tx.state.incoming) !== refillsBefore
         || shift.pin_hash !== pinBefore
       ) throw new PosError(409, "WEED_GATE_WRITE", "Saving the answer must not change till data.");
-      return { ok: true as const, weed_in_store: weedInStore, answered_at: at, shift_id: shift.sccx_shift_id };
+      return { ok: true as const, changed: true, weed_in_store: weedInStore, answered_at: at, shift_id: shift.sccx_shift_id };
     });
   }
 

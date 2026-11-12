@@ -707,6 +707,10 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.ok(refillAt >= 0 && refillAt < summaryAt && summaryAt < tillAt && tillAt < endAt && endAt < depositAt);
   assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.tillLink \{[^}]*background:\s*#166534/);
   assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.posHeader \.headerActions \{[^}]*flex-wrap:\s*nowrap/);
+  const weedToggle = readFileSync("app/pos/WeedToggle.tsx", "utf8");
+  assert.match(weedToggle, /data-testid="weed-toggle"/);
+  assert.match(weedToggle, /Their saved quantities will not be changed/);
+  assert.match(posHeader, /<WeedToggle/);
   assert.match(posApp, /deposits\/confirm-pin/);
   assert.doesNotMatch(posApp, /data-testid="cash-on-hand"|data-testid="total-deposited"|data-testid="total-sales"/);
   const customerQr = readFileSync("app/pos/CustomerQr.tsx", "utf8");
@@ -2927,6 +2931,28 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(qty(h.db, "188"), 4);
   await rejects(() => h.svc.cashout(login.token, { key: "hidden-thc", lines: [{ sku: "188", qty: 1 }] }), "THC_HIDDEN");
 
+  const beforeToggle = {
+    balances: JSON.stringify(h.db.state.balances),
+    sales: JSON.stringify(h.db.state.sales),
+    counts: JSON.stringify(h.db.state.counts),
+    incoming: JSON.stringify(h.db.state.incoming),
+    pin: shift.pin_hash,
+  };
+  const toggledOn = await h.svc.answerWeedInStore(login.token, true);
+  assert.equal(toggledOn.changed, true);
+  const weedOn = await h.svc.state(login.token);
+  assert.equal(weedOn.products.some((row) => row.sku === "188"), true);
+  assert.equal(JSON.stringify(h.db.state.balances), beforeToggle.balances);
+  assert.equal(JSON.stringify(h.db.state.sales), beforeToggle.sales);
+  assert.equal(JSON.stringify(h.db.state.counts), beforeToggle.counts);
+  assert.equal(JSON.stringify(h.db.state.incoming), beforeToggle.incoming);
+  assert.equal(shift.pin_hash, beforeToggle.pin);
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id), true);
+  const sameAnswer = await h.svc.answerWeedInStore(login.token, true);
+  assert.equal(sameAnswer.changed, false);
+  assert.equal(h.db.state.audit.filter((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id).length, 1);
+  await h.svc.answerWeedInStore(login.token, false);
+
   h.db.state.incoming.push(
     { kitchen_row_id: "weed-refill", batch_id: "batch", store_code: "PNY01", sku: "188", qty_sent: 2, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
     { kitchen_row_id: "paper-refill", batch_id: "batch", store_code: "PNY01", sku: "710", qty_sent: 5, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
@@ -2958,6 +2984,18 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   const opening = h.db.state.closing_drafts.find((row) => row.shift_id === next.shift_id)?.opening_counts?.find((row) => row.sku === "188");
   assert.equal(opening?.expected_qty, 6);
   assert.equal((opening?.counted_qty ?? 0) - (opening?.expected_qty ?? 0), -1);
+});
+
+test("PNY01 staff cannot change WEED after the closing count starts", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
+  await h.svc.importRoster({ key: "toggle-roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const opened = await h.svc.startShift({ key: "toggle-start", store: "PNY01", staff_ref: "staff-a", shift_id: "toggle-shift" });
+  const login = await h.svc.login(String(opened.pin), "10.0.0.11");
+  await h.svc.answerWeedInStore(login.token, true);
+  await h.svc.startClosingCount(login.token);
+  await rejects(() => h.svc.answerWeedInStore(login.token, false), "WEED_TOGGLE_CLOSED");
+  assert.equal(h.db.state.shifts.find((row) => row.id === opened.shift_id)?.weed_in_store, true);
 });
 
 test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
