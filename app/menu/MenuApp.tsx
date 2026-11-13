@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChips, sortCategories } from "../lib/pny-pos/money";
 import { menuPriceText } from "./menuPrice";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
+import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 
 type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string; flower_type?: string; thc?: string };
 type Menu = {
@@ -55,6 +56,9 @@ export default function MenuApp({
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
   const [category, setCategory] = useState("");
+  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
+  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
+  const commandKeys = commandKeysRef.current;
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
@@ -113,14 +117,17 @@ export default function MenuApp({
   async function place() {
     setError("");
     setBusy(true);
+    const body = { lines: lines.map(([sku, qty]) => ({ sku, qty })) };
+    const key = commandKeys.key("menu-order", body);
     try {
       const response = await fetch(`${menuApi}/orders`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ lines: lines.map(([sku, qty]) => ({ sku, qty })) }),
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify(body),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not place the order");
+      commandKeys.complete("menu-order", key);
       setPaid(false);
       setTicket({ code: data.code, total_cents: data.total_cents, expires_at: data.expires_at });
       setCart({});

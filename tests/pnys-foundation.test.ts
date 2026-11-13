@@ -133,3 +133,8 @@ test("PNYS poll paths are detached reads and legacy projection rewrites are remo
   assert.match(service, /has_more: hasMore/);
   assert.match(feedRoute, /params\.get\("limit"\)/);
 });
+
+test("PNYS mutations take a database row lock before changing stock or command receipts", async () => {
+  const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
+  assert.match(adapter, /select version, doc from \$\{schema\}\.live_state where store_code = \$1 for update/i);
+});

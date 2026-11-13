@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
@@ -9,6 +9,7 @@ import { readTillState } from "../softState";
 import { usePosPoll } from "../usePosPoll";
 import DepositSlip from "../DepositSlip";
 import VerifyBanner, { useVerifyOpen } from "../VerifyBanner";
+import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 
 type View = {
   authenticated?: boolean;
@@ -30,8 +31,9 @@ async function post(url: string, body: unknown, key?: string) {
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
   const data = await response.json();
   if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string };
+    const failure = new Error(data.error || "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
     failure.code = typeof data.code === "string" ? data.code : undefined;
+    failure.details = data;
     throw failure;
   }
   return data;
@@ -53,6 +55,9 @@ export default function TillApp({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
+  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
+  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
+  const commandKeys = commandKeysRef.current;
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeHome = forced?.homeHref ?? homeHref;
@@ -111,8 +116,18 @@ export default function TillApp({
     setError("");
     const cents = Math.round(Number(deposit) * 100);
     setBusy(true);
+    const body = { amount_cents: cents };
+    const key = commandKeys.key("deposit", body);
     try {
-      const saved = await post(`${storeApi}/deposits`, { amount_cents: cents }, crypto.randomUUID());
+      let saved;
+      try {
+        saved = await post(`${storeApi}/deposits`, body, key);
+      } catch (err) {
+        const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+        if (code !== "NEAR_DUPLICATE_DEPOSIT" || !window.confirm("A deposit for this amount was just recorded. Is this a different physical bag?")) throw err;
+        saved = await post(`${storeApi}/deposits`, { ...body, confirm_near_duplicate: true }, key);
+      }
+      commandKeys.complete("deposit", key);
       setDeposit("");
       setOpen(false);
       if (typeof saved.deposit_code === "string") setSlipCode(saved.deposit_code);

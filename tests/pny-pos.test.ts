@@ -25,7 +25,7 @@ import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCen
 import { expandSetbItems, expandSkuCell, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
-import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
+import { depositCodeLabel, formatDepositCode, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
 import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
@@ -38,6 +38,7 @@ import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 import { hashPin } from "../app/lib/pny-pos/crypto.ts";
 import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
+import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -74,6 +75,18 @@ test("missing special-login hashes fail closed", { concurrency: false }, () => {
     if (saved.kitchen) process.env.PNY_KITCHEN_PIN_HASH = saved.kitchen;
     if (saved.master) process.env.PNY_MASTER_PIN_HASH = saved.master;
   }
+});
+
+test("durable client command keys survive retries and rotate after success", () => {
+  let sequence = 0;
+  const keys = new DurableCommandKeys(() => `command-${++sequence}`);
+  const body = { lines: [{ sku: "1001", qty: 1 }], payment: "CASH" };
+  const first = keys.key("cashout", body);
+  assert.equal(keys.key("cashout", { payment: "CASH", lines: [{ qty: 1, sku: "1001" }] }), first);
+  assert.notEqual(keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" }), first);
+  const changed = keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" });
+  keys.complete("cashout", changed);
+  assert.notEqual(keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" }), changed);
 });
 
 function harness(start = new Date("2026-11-03T15:00:00.000Z")) {
@@ -352,6 +365,29 @@ test("7. one idempotency key creates one sale and a different body conflicts", a
   assert.equal(qty(h.db, "1001"), 1);
   await rejects(() => h.svc.cashout(h.token, { key: "sale-1", lines: [{ sku: "1001", qty: 2 }] }), "IDEMPOTENCY_CONFLICT");
   assert.equal(h.db.state.sales.length, 1);
+});
+
+test("a retry after a service restart returns the durable receipt without another sale", async () => {
+  const h = await readyTill();
+  const command = { key: "restart-sale", lines: [{ sku: "1001", qty: 1 }] };
+  const first = await h.svc.cashout(h.token, command);
+  const restarted = new PosService(h.db, { now: () => h.clock.t, sheet: h.sheet, secrets, demo: null });
+  const replayed = await restarted.cashout(h.token, command);
+  assert.equal(replayed.sale_id, first.sale_id);
+  assert.equal(replayed.replay, true);
+  assert.equal(h.db.state.sales.length, 1);
+  assert.equal(qty(h.db, "1001"), 1);
+});
+
+test("a simultaneous sale and refill serialize without losing either stock movement", async () => {
+  const h = await readyTill({ "1001": 2, "1002": 0 });
+  await Promise.all([
+    h.svc.cashout(h.token, { key: "race-sale", lines: [{ sku: "1001", qty: 1 }] }),
+    h.svc.sendRefill(h.token, { key: "race-refill", lines: [{ sku: "1001", qty: 3 }] }),
+  ]);
+  assert.equal(qty(h.db, "1001"), 4);
+  assert.equal(h.db.state.sales.filter((row) => row.status === "COMPLETED").length, 1);
+  assert.equal(h.db.state.incoming.filter((row) => row.batch_id === "race-refill").length, 1);
 });
 
 test("8. the total is the sum of server prices with tax included and client prices ignored", async () => {
@@ -2570,6 +2606,8 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.equal(depositCodeLabel(undefined), "n/a");
   assert.equal(depositCodeLabel("D0004"), "D0004");
   assert.equal(depositCodeLabel(first.deposit_code), first.deposit_code);
+  assert.equal(formatDepositCode(1, "PNYS-D"), "PNYS-D0001");
+  assert.equal(depositCodeLabel("PNYS-D0001"), "PNYS-D0001");
   assert.equal(nextDepositSeq(0, ["D0004", "PNY-D0002"]), 5);
   const finalDeposit = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200 });
   const repeated = await h.svc.saveFinalDeposit(h.token, { amount_cents: 150 });
@@ -2593,6 +2631,34 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
   assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /deposit_code/);
   assert.match(summary.text, /PNY-D0001/);
+});
+
+test("same-amount deposits warn on the server and confirmation records one new unique bag", async () => {
+  const h = await readyTill();
+  const first = await h.svc.deposit(h.token, { key: "near-a", amount_cents: 400 });
+  await rejects(() => h.svc.deposit(h.token, { key: "near-b", amount_cents: 400 }), "NEAR_DUPLICATE_DEPOSIT");
+  assert.equal(h.db.state.deposits.length, 1);
+  const confirmed = await h.svc.deposit(h.token, { key: "near-b", amount_cents: 400, confirm_near_duplicate: true });
+  const replayed = await h.svc.deposit(h.token, { key: "near-b", amount_cents: 400 });
+  assert.equal(replayed.deposit_code, confirmed.deposit_code);
+  assert.notEqual(confirmed.deposit_code, first.deposit_code);
+  assert.equal(new Set(h.db.state.deposits.map((row) => row.deposit_code)).size, 2);
+});
+
+test("shift end refuses a deposit bag reference already used by the store", async () => {
+  const h = await readyTill();
+  const existing = await h.svc.deposit(h.token, { key: "bag-existing", amount_cents: 100 });
+  const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
+  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  assert.ok(draft);
+  draft.final_deposit_code = existing.deposit_code;
+  await rejects(() => h.svc.endShiftFromPos(h.token, {
+    key: "bag-duplicate-end",
+    final_deposit_cents: 200,
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
+  }), "DUPLICATE_DEPOSIT_REF");
+  assert.equal(h.db.state.deposits.length, 1);
 });
 
 test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async () => {
