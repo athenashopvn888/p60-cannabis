@@ -277,8 +277,18 @@ async function main() {
     const verified = await client.query(`
       select
         (select version from pnys_pos.live_state where store_code='PNYS') as version,
-        (select count(*)::int from pg_tables where schemaname in ('pnys_pos','pos_hub')) as table_count,
-        (select count(*)::int from pg_tables where schemaname in ('pnys_pos','pos_hub') and rowsecurity and forcerowsecurity) as rls_forced_count,
+        (select count(*)::int
+           from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+          where c.relkind in ('r','p')
+            and n.nspname in ('pnys_pos','pos_hub')) as table_count,
+        (select count(*)::int
+           from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+          where c.relkind in ('r','p')
+            and n.nspname in ('pnys_pos','pos_hub')
+            and c.relrowsecurity
+            and c.relforcerowsecurity) as rls_forced_count,
         (select count(*)::int from pg_policies where schemaname in ('pnys_pos','pos_hub') and policyname='pnys_app_all') as policy_count,
         has_table_privilege('pnys_app','pnys_pos.live_state','select,insert,update,delete') as app_live_state_access,
         has_table_privilege('pnys_app','pnys_pos.clone_audit','select') as app_audit_read,
