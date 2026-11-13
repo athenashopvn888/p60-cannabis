@@ -40,16 +40,23 @@ test("migration and rollback never write to pny_pos", async () => {
   const undo = await readFile(new URL("../supabase/undo/20261113090000_pnys_foundation.undo.sql", import.meta.url), "utf8");
   const security = await readFile(new URL("../supabase/migrations/20261113193000_pnys_catalog_rls_reconciliation.sql", import.meta.url), "utf8");
   const securityUndo = await readFile(new URL("../supabase/undo/20261113193000_pnys_catalog_rls_reconciliation.undo.sql", import.meta.url), "utf8");
+  const appLogin = await readFile(new URL("../supabase/migrations/20261113200000_pnys_app_login.sql", import.meta.url), "utf8");
+  const appLoginUndo = await readFile(new URL("../supabase/undo/20261113200000_pnys_app_login.undo.sql", import.meta.url), "utf8");
   assert.doesNotMatch(forward, /\b(insert|update|delete|alter|drop)\s+(into\s+|table\s+)?pny_pos\b/i);
   assert.doesNotMatch(undo, /\bpny_pos\b/i);
   assert.doesNotMatch(security, /\b(insert|update|delete|alter|drop|truncate)\s+(into\s+|table\s+)?pny_pos\b/i);
   assert.doesNotMatch(securityUndo, /\b(insert|update|delete|alter|drop|truncate)\s+(into\s+|table\s+)?pny_pos\b/i);
+  assert.doesNotMatch(appLogin, /\bpny_pos\b/i);
+  assert.doesNotMatch(appLoginUndo, /\bpny_pos\b/i);
   assert.match(forward, /create schema if not exists pnys_pos/);
   assert.match(forward, /create schema if not exists pos_hub/);
   assert.match(security, /create role pnys_app nologin nobypassrls/);
   assert.match(security, /enable row level security/);
   assert.match(security, /force row level security/);
   assert.match(security, /create policy pnys_app_all/);
+  assert.match(appLogin, /alter role pnys_app login nobypassrls/);
+  assert.match(appLogin, /rolpassword is not null/);
+  assert.match(appLoginUndo, /alter role pnys_app nologin nobypassrls/);
 });
 
 test("shared shell has fixed bars, scroll panel, safe areas and 360px rule", async () => {
