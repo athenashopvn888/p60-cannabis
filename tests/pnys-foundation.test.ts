@@ -139,7 +139,11 @@ test("scanner keeps native and free fallback decoding and is wired to all count/
   const refill = await readFile(new URL("../app/pos/RefillList.tsx", import.meta.url), "utf8");
   assert.match(scanner, /BarcodeDetector/);
   assert.match(scanner, /@zxing\/browser/);
+  assert.match(scanner, /decodeFromStream/);
+  assert.match(scanner, /import\("jsqr"\)/);
+  assert.match(scanner, /adaptiveThreshold/);
   assert.match(scanner, /facingMode:\s*\{ ideal:\s*"environment"/);
+  assert.match(scanner, /focusMode:\s*"continuous"/);
   assert.match(scanner, /THC hidden this shift/);
   assert.match(pos, /data-testid="scan-button"|<ProductScanner/);
   assert.match(count, /<ProductScanner/);

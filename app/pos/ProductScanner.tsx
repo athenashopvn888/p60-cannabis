@@ -8,6 +8,44 @@ type ScannerControls = { stop: () => void };
 type NativeDetector = { detect: (source: HTMLVideoElement) => Promise<{ rawValue?: string }[]> };
 type NativeDetectorConstructor = new (options?: { formats?: string[] }) => NativeDetector;
 
+function adaptiveThreshold(source: ImageData, windowSize = 31, offset = -5) {
+  const { width, height, data } = source;
+  const gray = new Uint8Array(width * height);
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let row = 0;
+    for (let x = 0; x < width; x += 1) {
+      const pixel = (y * width + x) * 4;
+      const value = Math.round(data[pixel] * 0.299 + data[pixel + 1] * 0.587 + data[pixel + 2] * 0.114);
+      gray[y * width + x] = value;
+      row += value;
+      integral[(y + 1) * (width + 1) + x + 1] = integral[y * (width + 1) + x + 1] + row;
+    }
+  }
+  const output = new Uint8ClampedArray(width * height * 4);
+  const half = Math.floor(windowSize / 2);
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - half);
+    const y1 = Math.min(height - 1, y + half);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - half);
+      const x1 = Math.min(width - 1, x + half);
+      const sum = integral[(y1 + 1) * (width + 1) + x1 + 1]
+        - integral[y0 * (width + 1) + x1 + 1]
+        - integral[(y1 + 1) * (width + 1) + x0]
+        + integral[y0 * (width + 1) + x0];
+      const mean = sum / ((x1 - x0 + 1) * (y1 - y0 + 1));
+      const value = gray[y * width + x] < mean - offset ? 0 : 255;
+      const pixel = (y * width + x) * 4;
+      output[pixel] = value;
+      output[pixel + 1] = value;
+      output[pixel + 2] = value;
+      output[pixel + 3] = 255;
+    }
+  }
+  return output;
+}
+
 function successFeedback() {
   navigator.vibrate?.(80);
   try {
@@ -60,6 +98,7 @@ export default function ProductScanner({
     let stream: MediaStream | null = null;
     let controls: ScannerControls | null = null;
     let timer = 0;
+    let enhancedTimer = 0;
 
     const accept = (raw: string) => {
       if (cancelled) return;
@@ -89,11 +128,18 @@ export default function ProductScanner({
 
     async function start(videoElement: HTMLVideoElement) {
       try {
+        const constraints = {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          advanced: [{ focusMode: "continuous" }],
+        } as unknown as MediaTrackConstraints;
+        stream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
         const Detector = (globalThis as typeof globalThis & { BarcodeDetector?: NativeDetectorConstructor }).BarcodeDetector;
         if (Detector) {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-          videoElement.srcObject = stream;
-          await videoElement.play();
           const detector = new Detector({ formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"] });
           const detect = async () => {
             if (cancelled) return;
@@ -107,16 +153,46 @@ export default function ProductScanner({
             timer = window.setTimeout(detect, 220);
           };
           void detect();
-          return;
         }
 
         const { BrowserMultiFormatReader } = await import("@zxing/browser");
         const reader = new BrowserMultiFormatReader();
-        controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } } },
+        controls = await reader.decodeFromStream(
+          stream,
           videoElement,
           (result) => { if (result) accept(result.getText()); },
         );
+
+        // Blurry printed bag QRs can defeat both Android BarcodeDetector and
+        // the standard ZXing pass. Try the visible frame and progressively
+        // tighter center crops with local contrast thresholding as a fallback.
+        const { default: jsQR } = await import("jsqr");
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        const scanEnhanced = () => {
+          if (cancelled || !context || videoElement.readyState < 2) return;
+          const sourceWidth = videoElement.videoWidth;
+          const sourceHeight = videoElement.videoHeight;
+          const crops = [1, 0.82, 0.64];
+          for (const ratio of crops) {
+            const side = Math.min(sourceWidth, sourceHeight) * ratio;
+            const sx = (sourceWidth - side) / 2;
+            const sy = (sourceHeight - side) / 2;
+            const target = Math.min(760, Math.max(360, Math.round(side)));
+            canvas.width = target;
+            canvas.height = target;
+            context.drawImage(videoElement, sx, sy, side, side, 0, 0, target, target);
+            const frame = context.getImageData(0, 0, target, target);
+            const normal = jsQR(frame.data, target, target, { inversionAttempts: "attemptBoth" });
+            const enhanced = normal ?? jsQR(adaptiveThreshold(frame), target, target, { inversionAttempts: "attemptBoth" });
+            if (enhanced?.data) {
+              accept(enhanced.data);
+              return;
+            }
+          }
+          enhancedTimer = window.setTimeout(scanEnhanced, 500);
+        };
+        enhancedTimer = window.setTimeout(scanEnhanced, 250);
       } catch (error) {
         setFailure(true);
         setMessage(error instanceof Error && error.name === "NotAllowedError"
@@ -129,6 +205,7 @@ export default function ProductScanner({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.clearTimeout(enhancedTimer);
       controls?.stop();
       stream?.getTracks().forEach((track) => track.stop());
       video.srcObject = null;
