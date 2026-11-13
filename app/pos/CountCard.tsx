@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import styles from "./till.module.css";
 
 export type CountCardLine = {
@@ -14,6 +14,7 @@ export default function CountCard({
   lines,
   busy,
   allowExtra,
+  knownLines = [],
   compact,
   purpose = "verify",
   onSave,
@@ -23,6 +24,7 @@ export default function CountCard({
   lines: CountCardLine[];
   busy: boolean;
   allowExtra?: boolean;
+  knownLines?: CountCardLine[];
   compact?: boolean;
   purpose?: "verify" | "closing";
   onSave: (sku: string, countedQty: number) => Promise<void>;
@@ -44,6 +46,7 @@ export default function CountCard({
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
+  const knownSkuListId = useId();
 
   if (!current) return null;
   if (current.sku !== seen) {
@@ -170,7 +173,16 @@ export default function CountCard({
       ))}
       {allowExtra ? (
         <div className={styles.countListRow}>
-          <input aria-label="Add SKU" placeholder="SKU" value={extraSku} onChange={(event) => setExtraSku(event.target.value)} />
+          <input
+            aria-label="Search or add SKU"
+            placeholder="Search SKU or name"
+            list={knownSkuListId}
+            value={extraSku}
+            onChange={(event) => setExtraSku(event.target.value)}
+          />
+          <datalist id={knownSkuListId}>
+            {knownLines.map((line) => <option key={line.sku} value={line.sku}>{line.text}</option>)}
+          </datalist>
           <input inputMode="numeric" aria-label="Add quantity" placeholder="Qty" value={extraQty} onChange={(event) => setExtraQty(event.target.value.replace(/[^\d]/g, ""))} />
           <button className={styles.countNext} type="button" disabled={busy} onClick={() => void addExtra()}>Add</button>
         </div>

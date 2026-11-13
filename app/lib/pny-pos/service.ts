@@ -575,6 +575,8 @@ function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) 
 /** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
 function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>) {
   const shift = state.shifts.find((row) => row.id === shiftId);
+  const draft = draftsOf(state).find((row) => row.shift_id === shiftId);
+  const addedSkus = new Set((draft?.counts ?? []).map((row) => row.sku));
   const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
   const openingLines = opening ? state.count_lines.filter((row) => row.count_id === opening.id) : [];
   const saleIds = new Set(state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED").map((sale) => sale.id));
@@ -589,6 +591,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...state.balances.filter((row) => balanceForStore(row)).map((row) => row.sku),
     ...openingLines.map((row) => row.sku),
     ...state.incoming.filter((row) => row.confirmed_shift_id === shiftId).map((row) => row.sku),
+    ...addedSkus,
   ]);
   return [...skus]
     .filter((sku) => visibleForShift(state, shift, sku))
@@ -609,7 +612,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
         expected_qty: openingQty + received - sold,
       };
     })
-    .filter((line) => line.opening_qty + line.received_qty > 0);
+    .filter((line) => line.opening_qty + line.received_qty > 0 || addedSkus.has(line.sku));
 }
 
 function issueDepositCode(state: State) {
@@ -3181,8 +3184,11 @@ export class PosService {
       denyMaster(session);
       requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      const sku = input.sku.trim();
       const plan = shiftClosePlan(tx.state, shift.id);
-      if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this close.");
+      if (!plan.some((line) => line.sku === sku) && !countSkus(tx.state, shift).includes(sku)) {
+        throw new PosError(400, "BAD_SKU", "That SKU is not in this store catalog.");
+      }
       if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
       const drafts = draftsOf(tx.state);
       let draft = drafts.find((row) => row.shift_id === shift.id);
@@ -3192,17 +3198,18 @@ export class PosService {
       }
       if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
       const at = iso(this.now());
-      const expected = expectedAtSubmit(tx.state, shift, input.sku, this.now().getTime());
-      const existing = draft.counts.find((row) => row.sku === input.sku);
+      const expected = expectedAtSubmit(tx.state, shift, sku, this.now().getTime());
+      const existing = draft.counts.find((row) => row.sku === sku);
       if (existing) {
         existing.counted_qty = input.counted_qty;
         existing.edited_at = at;
         existing.expected_qty = expected;
         existing.accepted_as_is = false;
-      } else draft.counts.push({ sku: input.sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
+      } else draft.counts.push({ sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
       draft.updated_at = iso(this.now());
-      const done = plan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
-      return { ok: true, done, total: plan.length };
+      const updatedPlan = shiftClosePlan(tx.state, shift.id);
+      const done = updatedPlan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
+      return { ok: true, done, total: updatedPlan.length };
     });
   }
 

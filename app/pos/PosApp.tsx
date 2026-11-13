@@ -9,6 +9,7 @@ import { floatPhrase } from "../lib/pny-pos/tillLedger";
 import { filterSellProducts } from "./posSearch";
 import { pos2RouteFromLocation } from "./posPath";
 import { readTillState } from "./softState";
+import { startClosingWithRecovery } from "./closeStart";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
@@ -37,6 +38,7 @@ type Ticket = { id: string; code: string; status: string; expires_at: string; li
 type CountLine = { sku: string; name: string };
 type CloseSnapshot = {
   lines: CloseLine[];
+  knownLines: { sku: string; text: string; counted_qty: number | null }[];
   totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
   savedDeposit: number | null;
   stockCheck: View["stock_check"];
@@ -102,10 +104,10 @@ type View = {
   code?: string;
 };
 
-async function post(url: string, body: unknown, key?: string) {
+async function post(url: string, body: unknown, key?: string, signal?: AbortSignal) {
     const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
-  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
+  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin", signal });
   const data = await response.json();
   if (!response.ok) {
     const failure = new Error(data.error || "Request failed") as Error & { code?: string };
@@ -274,6 +276,7 @@ export default function PosApp({
     if (!view) return;
     const snapshot: CloseSnapshot = {
       lines: view.close_lines ?? [],
+      knownLines: (view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null })),
       totals: {
         sales_cents: view.totals?.sales_cents ?? 0,
         cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,
@@ -341,9 +344,18 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${storeApi}/shift/close-start`, {});
+      const result = await startClosingWithRecovery(
+        async (signal) => { await post(`${storeApi}/shift/close-start`, {}, undefined, signal); },
+        async () => {
+          const recovered = await readTillState(storeApi);
+          if (recovered.keep) return false;
+          const data = recovered.data as View;
+          setView(data);
+          return Boolean(data.closing?.started);
+        },
+      );
       setSheet(null);
-      await load();
+      if (!result.recovered) await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the count");
     } finally {
@@ -598,6 +610,7 @@ export default function PosApp({
       <main className={styles.shell} data-testid="pos-close-hold">
         <CloseShift
           lines={closeSnap.lines}
+          knownLines={closeSnap.knownLines}
           totals={closeSnap.totals}
           savedDeposit={closeSnap.savedDeposit}
           busy={false}
@@ -814,6 +827,8 @@ export default function PosApp({
               <CountCard
                 compact
                 purpose="closing"
+                allowExtra
+                knownLines={(view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
                 lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
                 busy={busy || Boolean(view.master)}
                 onSave={saveCloseCount}
@@ -838,6 +853,7 @@ export default function PosApp({
       {sheet === "close" ? (
         <CloseShift
           lines={closeSnap?.lines ?? view.close_lines ?? []}
+          knownLines={closeSnap?.knownLines ?? (view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
           totals={closeSnap?.totals ?? {
             sales_cents: view.totals?.sales_cents ?? 0,
             cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,

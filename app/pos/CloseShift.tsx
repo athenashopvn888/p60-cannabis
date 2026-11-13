@@ -21,6 +21,7 @@ type Totals = { sales_cents: number; cash_sales_cents: number; debit_sales_cents
 
 export default function CloseShift({
   lines,
+  knownLines,
   totals,
   savedDeposit,
   busy,
@@ -41,6 +42,7 @@ export default function CloseShift({
   resumeSummary,
 }: {
   lines: CloseLine[];
+  knownLines?: { sku: string; text: string; counted_qty: number | null }[];
   totals: Totals;
   savedDeposit: number | null;
   busy: boolean;
@@ -132,10 +134,13 @@ export default function CloseShift({
             {verifyOpen && deadline ? <VerifyBanner deadline={deadline} /> : null}
             <CountCard
               lines={lines.map((line) => ({ sku: line.sku, text: line.text || `#${line.sku}`, counted_qty: line.counted_qty }))}
+              knownLines={knownLines}
+              allowExtra
+              purpose="closing"
               busy={busy}
               onSave={onSaveCount}
-              onSubmit={async () => {
-                await onSubmitCount?.();
+              onSubmit={async (confirmBlanksZero) => {
+                await onSubmitCount?.(confirmBlanksZero);
                 setStep("deposit");
               }}
             />
