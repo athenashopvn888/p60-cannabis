@@ -18,9 +18,16 @@ const SIZE_SUFFIX: Record<string, string> = {
  */
 export function skuFromLabelText(raw: string) {
   const normalized = raw.trim();
-  const labelNumber = normalized.match(/(?:^|\D)(\d{2,4})(?=\D|$)/)?.[1];
-  if (!labelNumber) return null;
-  const size = normalized.match(/(?:^|[^a-z0-9])(3|5|6|14|28)\s*g(?:\b|$)/i)?.[1];
+  const labelMatch = normalized.match(/(?:^|\D)(\d{2,4})(?=\D|$)/);
+  const labelNumber = labelMatch?.[1];
+  if (!labelMatch || !labelNumber) return null;
+  const digitOffset = (labelMatch.index ?? 0) + labelMatch[0].lastIndexOf(labelNumber);
+  const afterLabel = normalized.slice(digitOffset + labelNumber.length);
+  // Current bag QRs use a compact payload such as 224S5gSP1026. Printed
+  // label text uses a separated size such as "224 ICE CREAM CAKE 5g".
+  const compactSize = afterLabel.match(/^\s*(?:s|[-_/])?\s*(3|5|6|14|28)\s*g/i)?.[1];
+  const printedSize = normalized.match(/(?:^|[^a-z0-9])(3|5|6|14|28)\s*g(?:\b|$)/i)?.[1];
+  const size = compactSize ?? printedSize;
   return size ? `${labelNumber}-${SIZE_SUFFIX[size]}` : labelNumber;
 }
 

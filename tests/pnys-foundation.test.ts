@@ -111,6 +111,13 @@ test("a reconciled PNYS clone makes the login ready without changing live_state"
 
 test("label scans use the first number and the approved size mapping", () => {
   assert.equal(skuFromLabelText("261 DAYDREAM DIESEL 14g 461-B101"), "261-14g");
+  assert.equal(skuFromLabelText("224S5gSP1026"), "224-5g");
+  assert.deepEqual(matchScannedLabel("224S5gSP1026", [{ sku: "224-5g" }]), {
+    ok: true,
+    raw: "224S5gSP1026",
+    sku: "224-5g",
+    thcHidden: false,
+  });
   assert.equal(skuFromLabelText("406 DAYDREAM 6g LOT 999"), "406-5g");
   assert.equal(skuFromLabelText("715 BACKWOODS"), "715");
   const catalog = [{ sku: "261-14g" }, { sku: "406-5g", thc_hidden: true }];
