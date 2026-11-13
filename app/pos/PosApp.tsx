@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
@@ -24,6 +24,7 @@ type VerifyLine = { sku: string; text: string; name: string; price_cents: number
 import { usePosPoll } from "./usePosPoll";
 import { CUSTOMER_MENU_URL } from "./menuQr";
 import { ProductPhoto } from "./ProductPhoto";
+import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 import styles from "./till.module.css";
 
 function rowsOf<T>(items: T[], size: number) {
@@ -110,8 +111,9 @@ async function post(url: string, body: unknown, key?: string, signal?: AbortSign
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin", signal });
   const data = await response.json();
   if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string };
+    const failure = new Error(data.error || "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
     failure.code = typeof data.code === "string" ? data.code : undefined;
+    failure.details = data;
     throw failure;
   }
   return data;
@@ -162,6 +164,9 @@ export default function PosApp({
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
   const [closeHold, setCloseHold] = useState(false);
   const [closeSnap, setCloseSnap] = useState<CloseSnapshot | null>(null);
+  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
+  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
+  const commandKeys = commandKeysRef.current;
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeLabel = forced?.label ?? label;
@@ -259,7 +264,10 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const result = await post(`${storeApi}/cashout`, { lines, ticket_id: activeTicket?.id ?? null, payment_method: method }, crypto.randomUUID());
+      const body = { lines, ticket_id: activeTicket?.id ?? null, payment_method: method };
+      const key = commandKeys.key("cashout", body);
+      const result = await post(`${storeApi}/cashout`, body, key);
+      commandKeys.complete("cashout", key);
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
@@ -418,8 +426,18 @@ export default function PosApp({
       return;
     }
     setBusy(true);
+    const body = { amount_cents: cents };
+    const key = commandKeys.key("deposit", body);
     try {
-      const saved = await post(`${storeApi}/deposits`, { amount_cents: cents }, crypto.randomUUID());
+      let saved;
+      try {
+        saved = await post(`${storeApi}/deposits`, body, key);
+      } catch (err) {
+        const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+        if (code !== "NEAR_DUPLICATE_DEPOSIT" || !window.confirm("A deposit for this amount was just recorded. Is this a different physical bag?")) throw err;
+        saved = await post(`${storeApi}/deposits`, { ...body, confirm_near_duplicate: true }, key);
+      }
+      commandKeys.complete("deposit", key);
       setDepositAmount("");
       setSheet(null);
       if (typeof saved.deposit_code === "string") setDepositCode(saved.deposit_code);
@@ -481,9 +499,19 @@ export default function PosApp({
     // accountant screen staff still needs to photograph.
     snapshotClose({ depositCents, floatCents, endedAt: holdEndedAt, finalDepositCode });
     setCloseHold(true);
+    const lines = (view?.close_lines ?? closeSnap?.lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
+    const body = { lines, final_deposit_cents: depositCents, float_cents: floatCents };
+    const key = commandKeys.key("shift-end", body);
     try {
-      const lines = (view?.close_lines ?? closeSnap?.lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.counted_qty ?? 0 }));
-      const saved = await post(`${storeApi}/shift/end`, { lines, final_deposit_cents: depositCents, float_cents: floatCents }, crypto.randomUUID());
+      let saved;
+      try {
+        saved = await post(`${storeApi}/shift/end`, body, key);
+      } catch (err) {
+        const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+        if (code !== "NEAR_DUPLICATE_DEPOSIT" || !window.confirm("A deposit for this amount was just recorded. Is the final deposit a different physical bag?")) throw err;
+        saved = await post(`${storeApi}/shift/end`, { ...body, confirm_near_duplicate: true }, key);
+      }
+      commandKeys.complete("shift-end", key);
       setCart({});
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
@@ -546,7 +574,10 @@ export default function PosApp({
         counted_qty: line.counted_qty ?? 0,
         variance_reason: line.variance_reason || undefined,
       }));
-      await post(`${storeApi}/counts/opening`, { lines }, crypto.randomUUID());
+      const body = { lines };
+      const key = commandKeys.key("opening-count", body);
+      await post(`${storeApi}/counts/opening`, body, key);
+      commandKeys.complete("opening-count", key);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Count was not saved");
@@ -559,7 +590,10 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${storeApi}/incoming/confirm`, { lines }, crypto.randomUUID());
+      const body = { lines };
+      const key = commandKeys.key("incoming-confirm", body);
+      await post(`${storeApi}/incoming/confirm`, body, key);
+      commandKeys.complete("incoming-confirm", key);
       setRefillOpen(false);
       await load();
     } catch (err) {

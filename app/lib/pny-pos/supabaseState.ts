@@ -49,7 +49,9 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
       try {
         await client.query("begin");
         if (schema === "pnys_pos") await client.query("set local role pnys_app");
-        const loaded = await client.query(`select version, doc from ${schema}.live_state where store_code = $1`, [store]);
+        // Serialize mutations across serverless instances. Idempotency records, stock,
+        // sales, and refills commit together under this store-row lock.
+        const loaded = await client.query(`select version, doc from ${schema}.live_state where store_code = $1 for update`, [store]);
         const version = Number(loaded.rows[0]?.version ?? 0);
         const snapshot = structuredClone(asState(loaded.rows[0]?.doc)) as State;
         const before = JSON.stringify(snapshot);

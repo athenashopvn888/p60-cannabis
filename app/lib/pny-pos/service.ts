@@ -310,6 +310,8 @@ function requestHash(body: Json) {
   delete copy.key;
   delete copy.token;
   delete copy.adminToken;
+  // Confirmation is the second step of the same durable command, not a new command.
+  delete copy.confirm_near_duplicate;
   return sha256(stableStringify(copy));
 }
 
@@ -621,10 +623,49 @@ function issueDepositCode(state: State) {
   try {
     const seq = nextDepositSeq(state.deposit_seq, existing);
     state.deposit_seq = seq;
-    return formatDepositCode(seq);
+    return formatDepositCode(seq, currentStore().depositPrefix);
   } catch {
     throw new PosError(503, "DEPOSIT_CODE", "Could not assign a deposit number. Try again.");
   }
+}
+
+const NEAR_DUPLICATE_DEPOSIT_MS = 10 * 60 * 1000;
+
+function assertStoreUniqueDepositCode(state: State, code: string, reservedForShiftId?: string) {
+  if (state.deposits.some((row) => row.deposit_code === code)) {
+    throw new PosError(409, "DUPLICATE_DEPOSIT_REF", "That deposit bag reference is already recorded.", { deposit_code: code });
+  }
+  const otherReservation = draftsOf(state).find((row) => row.final_deposit_code === code && row.shift_id !== reservedForShiftId);
+  if (otherReservation) {
+    throw new PosError(409, "DUPLICATE_DEPOSIT_REF", "That deposit bag reference is reserved by another shift.", { deposit_code: code });
+  }
+}
+
+function nearDuplicateDeposit(state: State, shift: ShiftRow, amountCents: number, now: Date) {
+  const earliest = now.getTime() - NEAR_DUPLICATE_DEPOSIT_MS;
+  return state.deposits
+    .filter((row) => {
+      const owner = state.shifts.find((candidate) => candidate.id === row.shift_id);
+      const created = Date.parse(row.created_at);
+      return owner?.store_code === shift.store_code
+        && row.amount_cents === amountCents
+        && Number.isFinite(created)
+        && created >= earliest
+        && created <= now.getTime();
+    })
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+}
+
+function requireNearDuplicateConfirmation(state: State, shift: ShiftRow, amountCents: number, now: Date, confirmed?: boolean) {
+  if (confirmed) return null;
+  const duplicate = nearDuplicateDeposit(state, shift, amountCents, now);
+  if (!duplicate) return null;
+  throw new PosError(409, "NEAR_DUPLICATE_DEPOSIT", "A deposit for the same amount was recorded in the last 10 minutes. Confirm that this is a different physical bag.", {
+    confirm_required: true,
+    amount_cents: amountCents,
+    existing_deposit_code: duplicate.deposit_code ?? null,
+    existing_at: duplicate.created_at,
+  });
 }
 
 function issuePny2DepositCode(state: State) {
@@ -652,7 +693,7 @@ function releaseTailDepositCode(state: State, code: string | null | undefined) {
     state.deposit_seq_pny02 = seq - 1;
     return true;
   }
-  const match = /^(?:PNY-)?D(\d{4})$/.exec(code);
+  const match = /^(?:[A-Z0-9]+-)?D(\d{4})$/.exec(code);
   if (!match) return false;
   const seq = Number(match[1]);
   if (state.deposit_seq !== seq) return false;
@@ -2470,7 +2511,7 @@ export class PosService {
     return result.body;
   }
 
-  async deposit(token: string, input: { key: string; amount_cents: number; note?: string }) {
+  async deposit(token: string, input: { key: string; amount_cents: number; note?: string; confirm_near_duplicate?: boolean }) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
@@ -2482,10 +2523,20 @@ export class PosService {
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
+      const nearDuplicate = nearDuplicateDeposit(tx.state, shift, amount, now);
+      requireNearDuplicateConfirmation(tx.state, shift, amount, now, input.confirm_near_duplicate);
       const at = iso(now);
       const deposit_code = issueDepositCode(tx.state);
+      assertStoreUniqueDepositCode(tx.state, deposit_code);
       tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: amount, note: input.note?.trim() || null, deposit_code, created_at: at });
       const deposit = tx.state.deposits[tx.state.deposits.length - 1]!;
+      if (nearDuplicate && input.confirm_near_duplicate) {
+        audit(tx.state, "NEAR_DUPLICATE_DEPOSIT_CONFIRMED", "deposit", deposit.id, staff.staff_uid, {
+          amount_cents: amount,
+          existing_deposit_code: nearDuplicate.deposit_code ?? null,
+          new_deposit_code: deposit_code,
+        }, at);
+      }
       enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
         row_id: `D-${deposit.id}`,
         deposit_id: deposit.id,
@@ -3308,7 +3359,7 @@ export class PosService {
     });
   }
 
-  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number; float_cents?: number }) {
+  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number; float_cents?: number; confirm_near_duplicate?: boolean }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
     const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
@@ -3333,10 +3384,20 @@ export class PosService {
       if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
       const at = iso(now);
       if (finalDeposit > 0) {
+        const nearDuplicate = nearDuplicateDeposit(tx.state, shift, finalDeposit, now);
+        requireNearDuplicateConfirmation(tx.state, shift, finalDeposit, now, input.confirm_near_duplicate);
         const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
         const deposit_code = reserved || issueDepositCode(tx.state);
+        assertStoreUniqueDepositCode(tx.state, deposit_code, shift.id);
         const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", deposit_code, created_at: at };
         tx.state.deposits.push(deposit);
+        if (nearDuplicate && input.confirm_near_duplicate) {
+          audit(tx.state, "NEAR_DUPLICATE_DEPOSIT_CONFIRMED", "deposit", deposit.id, staff.staff_uid, {
+            amount_cents: finalDeposit,
+            existing_deposit_code: nearDuplicate.deposit_code ?? null,
+            new_deposit_code: deposit_code,
+          }, at);
+        }
         enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
           row_id: `D-${deposit.id}`,
           deposit_id: deposit.id,
