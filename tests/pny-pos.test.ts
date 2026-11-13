@@ -34,6 +34,7 @@ import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
+import { startClosingWithRecovery } from "../app/pos/closeStart.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
@@ -2814,6 +2815,43 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Start closing count\?/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Not yet/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
+});
+
+test("preview closing count can search and add known zero-quantity SKU 240", async () => {
+  const h = await readyTill({ "1001": 4 });
+  await h.svc.syncSetb([
+    { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
+    { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
+    { sku: "1009", name: "Retired", category: "Flower", price_cents: 100, active: false },
+    { sku: "240", name: "Cigarettes", category: "Cigarettes", price_cents: 500, active: true },
+  ]);
+  await h.svc.startClosingCount(h.token);
+
+  const before = await h.svc.state(h.token);
+  assert.equal(before.count_lines?.some((line) => line.sku === "240"), true);
+  assert.equal(before.close_lines?.some((line) => line.sku === "240"), false);
+
+  const saved = await h.svc.saveClosingCount(h.token, { sku: "240", counted_qty: 0 });
+  assert.equal(saved.total, (before.close_lines?.length ?? 0) + 1);
+  const after = await h.svc.state(h.token);
+  assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
+  await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
+});
+
+test("close start timeout recovers by rereading committed server state", async () => {
+  let aborted = false;
+  const result = await startClosingWithRecovery(
+    (signal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("Aborted", "AbortError"));
+      });
+    }),
+    async () => true,
+    1,
+  );
+  assert.equal(aborted, true);
+  assert.deepEqual(result, { recovered: true });
 });
 
 test("closing count requires every SKU and explicit confirmation records blanks as zero", async () => {
