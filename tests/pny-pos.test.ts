@@ -27,7 +27,7 @@ import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, formatDepositCode, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
-import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
+import { PNY02_STORE, PNYS_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
@@ -1243,6 +1243,36 @@ test("the env-hashed demo PIN is a signed session that another server accepts", 
   } finally {
     delete process.env.VERCEL_ENV;
   }
+});
+
+test("PNYS demo PIN creates only a test staff shift over the cloned inventory", async () => {
+  const now = new Date("2026-11-13T10:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({
+    sku: "240",
+    sku_sort: "000240",
+    name: "Test product",
+    category: "OTHER",
+    default_price_cents: 500,
+    image_url: null,
+    setb_active: true,
+    synced_at: now.toISOString(),
+    created_at: now.toISOString(),
+  });
+  db.state.store_products.push({ store_code: "PNYS", sku: "240", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "240", qty: 12, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+
+  const login = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.9.9.5"));
+  const state = await runStore(PNYS_STORE, () => svc.state(login.token));
+
+  assert.equal(state.shift?.pos_id, "DEMO1");
+  assert.equal(state.shift?.status, "ACTIVE");
+  assert.equal(db.state.balances.find((row) => row.sku === "240")?.qty, 12);
+  assert.equal(db.state.products.length, 1);
+  assert.equal(db.state.shifts.filter((row) => row.sccx_shift_id === "demo-shift-pnys").length, 1);
+  assert.equal(db.state.staff.filter((row) => row.staff_uid === "staff-demo-pnys").length, 1);
 });
 
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {

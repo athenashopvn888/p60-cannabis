@@ -1562,6 +1562,7 @@ export class PosService {
 
   private reopenDemoShift(state: State, now: Date) {
     if (tillCode() === "PNY02") return this.reopenPny2Demo(state, now);
+    if (tillCode() === "PNYS") return this.reopenPnysDemo(state, now);
     const shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-1")
       ?? state.shifts.find((row) => row.store_code === tillCode());
     if (!shift) return null;
@@ -1572,6 +1573,64 @@ export class PosService {
       shift.end_reason = null;
       shift.pin_failed_attempts = 0;
       if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+    }
+    if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+      shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
+    }
+    return shift;
+  }
+
+  /** Preview-only PNYS test staff/shift. Catalog and balances stay the cloned PNYS data. */
+  private reopenPnysDemo(state: State, now: Date) {
+    const at = iso(now);
+    let staff = state.staff.find((row) => row.staff_uid === "staff-demo-pnys");
+    if (!staff) {
+      staff = {
+        staff_uid: "staff-demo-pnys",
+        sccx_id: "demo-sccx-pnys",
+        pos_id: "DEMO1",
+        display_name: "Demo Budtender",
+        active: true,
+        updated_at: at,
+        created_at: at,
+      };
+      state.staff.push(staff);
+    }
+
+    let shift = state.shifts.find((row) => row.store_code === "PNYS" && row.sccx_shift_id === "demo-shift-pnys");
+    if (!shift) {
+      const store = state.stores.find((row) => row.code === "PNYS");
+      const letter = TICKET_LETTERS[(store?.ticket_letter_seq ?? 0) % TICKET_LETTERS.length];
+      if (store) store.ticket_letter_seq += 1;
+      shift = {
+        id: randomUUID(),
+        sccx_shift_id: "demo-shift-pnys",
+        staff_uid: staff.staff_uid,
+        store_code: "PNYS",
+        ticket_letter: letter,
+        ticket_seq: 0,
+        pin_hash: this.deps.demo?.pinHash ?? null,
+        pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        pin_failed_attempts: 0,
+        status: "ACTIVE",
+        started_at: at,
+        ended_at: null,
+        end_reason: null,
+        opening_confirmed_at: at,
+        refill_confirmed_at: at,
+        created_at: at,
+      };
+      state.shifts.push(shift);
+    }
+
+    if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
+      shift.status = "ACTIVE";
+      shift.started_at = at;
+      shift.ended_at = null;
+      shift.end_reason = null;
+      shift.pin_failed_attempts = 0;
+      shift.opening_confirmed_at = shift.opening_confirmed_at ?? at;
+      shift.refill_confirmed_at = shift.refill_confirmed_at ?? at;
     }
     if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
       shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
