@@ -7,6 +7,7 @@ import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import { createSupabaseStateDb } from "./supabaseState.ts";
 import type { State, Secrets } from "./types.ts";
+import type { StoreCode } from "./storeProfile.ts";
 
 const DEMO_SECRETS: Secrets = {
   shift: "demo-shift-secret-placeholder",
@@ -62,7 +63,7 @@ export function loadSecrets(): Secrets {
   };
 }
 
-function tagDemoStore(state: State, code: "PNY01" | "PNY02") {
+function tagDemoStore(state: State, code: StoreCode) {
   for (const row of state.shifts) row.store_code = code;
   for (const row of state.balances) row.store_code = code;
   for (const row of state.incoming) row.store_code = code;
@@ -83,7 +84,12 @@ async function boot() {
     const url = process.env.POS_SUPABASE_DB_URL?.trim() ?? "";
     if (!url) throw new Error("POS_SUPABASE_DB_URL is required when STORE_CODE or POS_STATE_BACKEND=supabase is set");
     const code = locked?.code ?? "PNY01";
-    const db = createSupabaseStateDb(url, code);
+    const schema = locked?.code === "PNYS" ? "pnys_pos" : "pny_pos";
+    const configuredSchema = process.env.POS_DB_SCHEMA?.trim();
+    if (configuredSchema && configuredSchema !== schema) {
+      throw new Error(`POS_DB_SCHEMA must be ${schema} for ${code}`);
+    }
+    const db = createSupabaseStateDb(url, code, schema);
     if (demoMode()) {
       await db.transaction(async (tx) => {
         if (tx.state.shifts.length === 0 && tx.state.products.length === 0) {

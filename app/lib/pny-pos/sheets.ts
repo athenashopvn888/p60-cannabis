@@ -532,6 +532,7 @@ export class GoogleSheet implements SheetClient {
 }
 
 export function sheetFromEnv(): SheetClient {
+  if (process.env.INTEGRATIONS_ENABLED?.trim() === "0") return new LocalSheet();
   const id = process.env.GSHEET_ID?.trim() ?? "";
   const email = process.env.GOOGLE_SA_PNY_CLIENT_EMAIL?.trim() ?? "";
   const key = process.env.GOOGLE_SA_PNY_PRIVATE_KEY ?? "";

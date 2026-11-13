@@ -35,6 +35,10 @@ async function fetchFeedWithRetry(url, attempts = 3) {
 }
 
 async function main() {
+  if ((process.env.STORE_CODE || '').trim().toUpperCase() === 'PNYS') {
+    console.log('[prebuild] PNYS isolation active — skipping the live PNY01 menu feed');
+    return;
+  }
   if (!APPS_SCRIPT_URL) {
     console.log('[prebuild] No APPS_SCRIPT_URL set — using existing static JSON files');
     return;
