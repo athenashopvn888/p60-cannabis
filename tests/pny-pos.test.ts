@@ -15,7 +15,7 @@ import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.t
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
-import { SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
+import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
@@ -34,7 +34,9 @@ import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
+import { startClosingWithRecovery } from "../app/pos/closeStart.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
+import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -105,8 +107,20 @@ async function readyTill(stock = { "1001": 2, "1002": 5 }) {
   });
   const started = await h.svc.startShift({ key: "start-a", store: "PNY01", staff_ref: "staff-a", pos_id: "A1", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.8");
+  await h.svc.answerWeedInStore(login.token, true);
   await h.svc.state(login.token);
   return { ...h, admin: admin.token, token: login.token, pin: String(started.pin), shiftId: String(started.shift_id) };
+}
+
+async function submitClosingValues(svc: PosService, token: string, values: Record<string, number> = {}) {
+  const view = await svc.state(token);
+  for (const line of view.close_lines ?? []) {
+    await svc.saveClosingCount(token, {
+      sku: line.sku,
+      counted_qty: values[line.sku] ?? line.system_qty,
+    });
+  }
+  await svc.submitClosingCount(token);
 }
 
 function qty(db: MemoryDb, sku: string) {
@@ -199,6 +213,7 @@ test("5. a pending refill is starting stock and 105-28g of 2 needs no reason", a
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.1");
+  await h.svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   h.db.state.incoming.push({
     kitchen_row_id: refillId,
@@ -246,6 +261,7 @@ test("a sized refill is listed on the menu and tobacco stays off", async () => {
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-menu" });
   const login = await h.svc.login(String(started.pin), "10.0.0.41");
+  await h.svc.answerWeedInStore(login.token, true);
   for (const sku of ["313-5g", "240"]) {
     h.db.state.incoming.push({
       kitchen_row_id: crypto.randomUUID(),
@@ -516,8 +532,10 @@ test("17. sales, deposits and counts succeed while the sheet is down and the out
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.0.0.4");
+  await h.svc.answerWeedInStore(login.token, true);
   h.sheet.reachable = false;
-  await h.svc.openingCount(login.token, { key: "count", lines: [{ sku: "1001", counted_qty: 4 }] });
+  await h.svc.saveOpeningCount(login.token, { sku: "1001", counted_qty: 4 });
+  await h.svc.submitVerifyCount(login.token);
   await h.svc.cashout(login.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(login.token, { key: "drop", amount_cents: 500 });
   const delayed = await h.svc.drainOutbox();
@@ -554,6 +572,7 @@ test("18. an emergency adjustment and a late kitchen row are linked without doub
 test("19. POS end shift kills the PIN and queues closing counts, summary and stock", async () => {
   const h = await readyTill();
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token, { "1001": 0 });
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end",
     lines: view.count_lines.map((line) => line.sku === "1001"
@@ -581,6 +600,7 @@ test("20. closed shifts are polled once and ack is safe to repeat", async () => 
   await h.svc.cashout(h.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 200 });
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   await h.svc.endShiftFromPos(h.token, { key: "end", lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
   const first = await h.svc.closedShifts();
   assert.equal(first.closings.length, 1);
@@ -645,7 +665,8 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.equal(existsSync("app/api/admin/login/route.ts"), false);
   const posApp = readFileSync("app/pos/PosApp.tsx", "utf8");
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
-  assert.match(posApp, /isFlowerCategory/);
+  assert.match(posApp, /filterSellProducts/);
+  assert.match(readFileSync("app/pos/posSearch.ts", "utf8"), /isFlowerCategory/);
   assert.match(posApp, /data-layout="list"/);
   assert.match(posApp, /data-size=/);
   assert.doesNotMatch(posApp, /stockCount|demo stock|qty_sent|System /);
@@ -687,6 +708,10 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.ok(refillAt >= 0 && refillAt < summaryAt && summaryAt < tillAt && tillAt < endAt && endAt < depositAt);
   assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.tillLink \{[^}]*background:\s*#166534/);
   assert.match(readFileSync("app/pos/till.module.css", "utf8"), /\.posHeader \.headerActions \{[^}]*flex-wrap:\s*nowrap/);
+  const weedToggle = readFileSync("app/pos/WeedToggle.tsx", "utf8");
+  assert.match(weedToggle, /data-testid="weed-toggle"/);
+  assert.match(weedToggle, /Their saved quantities will not be changed/);
+  assert.match(posHeader, /<WeedToggle/);
   assert.match(posApp, /deposits\/confirm-pin/);
   assert.doesNotMatch(posApp, /data-testid="cash-on-hand"|data-testid="total-deposited"|data-testid="total-sales"/);
   const customerQr = readFileSync("app/pos/CustomerQr.tsx", "utf8");
@@ -761,6 +786,7 @@ test("25. an admin void restores stock and is final; staff cannot void", async (
 test("27. end shift says the summary posts within 5 min and admin flags a missed SCCx ack after 15 min", async () => {
   const h = await readyTill();
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   const ended = await h.svc.endShiftFromPos(h.token, { key: "end", lines: view.count_lines.map((line) => ({ sku: line.sku, counted_qty: line.system_qty })) });
   assert.equal(ended.message, "Summary will post to BOT HUB within 5 min.");
   h.clock.t = new Date(h.clock.t.getTime() + 10 * 60 * 1000);
@@ -777,6 +803,8 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
     DATABASE_URL: process.env.DATABASE_URL,
     PNY_POS_DEMO: process.env.PNY_POS_DEMO,
     VERCEL_ENV: process.env.VERCEL_ENV,
+    STORE_CODE: process.env.STORE_CODE,
+    POS_STATE_BACKEND: process.env.POS_STATE_BACKEND,
     GSHEET_ID: process.env.GSHEET_ID,
     GOOGLE_SA_PNY_CLIENT_EMAIL: process.env.GOOGLE_SA_PNY_CLIENT_EMAIL,
     GOOGLE_SA_PNY_PRIVATE_KEY: process.env.GOOGLE_SA_PNY_PRIVATE_KEY,
@@ -793,6 +821,8 @@ test("the till uses the PNY sheet and ignores a Postgres URL", () => {
   try {
     delete process.env.DATABASE_URL;
     delete process.env.PNY_POS_DEMO;
+    delete process.env.STORE_CODE;
+    delete process.env.POS_STATE_BACKEND;
     delete process.env.GSHEET_ID;
     delete process.env.GOOGLE_SA_PNY_CLIENT_EMAIL;
     delete process.env.GOOGLE_SA_PNY_PRIVATE_KEY;
@@ -859,7 +889,7 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   assert.equal(shift.pin_hash, hash);
   const tillApp = readFileSync("app/pos/till/TillApp.tsx", "utf8");
   assert.match(tillApp, /apiBase = "\/api\/pos"/);
-  assert.match(tillApp, /\$\{apiBase\}\/till\/unlock/);
+  assert.match(tillApp, /\$\{storeApi\}\/till\/unlock/);
   assert.match(tillApp, /data-testid="pos-till-gate"/);
   assert.match(tillApp, /data-testid="till-unlock"/);
 });
@@ -1013,6 +1043,7 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   assert.equal(opened.ok, true);
   assert.equal("pin" in opened, false);
   const login = await svc.login(pin, "10.0.0.8");
+  await svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   sheet.tabs.POS_Refills.push({
     row_id: refillId,
@@ -1298,6 +1329,7 @@ test("cash stays in the drawer and debit does not, and the close balance uses sh
   const saved = await h.svc.state(h.token);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1001")?.counted_qty, 1);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1002")?.counted_qty, null);
+  await submitClosingValues(h.svc, h.token, { "1001": 1, "1002": 3 });
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "end-balance",
     final_deposit_cents: 400,
@@ -1349,7 +1381,7 @@ test("SKU 1000 rings the raw pack price with no tax and ignores the client price
     if (tab === "Items_raw_price") reads += 1;
     return readRows(tab);
   };
-  let writes: string[] = [];
+  const writes: string[] = [];
   const upsert = h.sheet.upsert.bind(h.sheet);
   h.sheet.upsert = async (tab: string, rows: Record<string, string>[]) => {
     writes.push(tab);
@@ -1384,6 +1416,7 @@ test("opening count is only stocked SKUs or an incoming refill, otherwise it wai
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-a" });
   const login = await h.svc.login(String(started.pin), "10.2.0.1");
+  await h.svc.answerWeedInStore(login.token, true);
   const waiting = await h.svc.state(login.token);
   assert.equal(waiting.phase, "sell");
   assert.equal(waiting.block, null);
@@ -1420,6 +1453,7 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   });
   assert.equal(opened.sccx_shift_id, "TEST01-close");
   const login = await svc.login(pin, "10.9.0.1");
+  await svc.answerWeedInStore(login.token, true);
   const refillId = crypto.randomUUID();
   sheet.tabs.POS_Refills.push({
     row_id: refillId,
@@ -1462,6 +1496,7 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
   assert.equal(draft.final_deposit_cents, 1000);
   assert.equal(draft.totals.cash_on_hand_cents, 1500);
+  await resumed.submitClosingCount(login.token);
 
   const ended = await resumed.endShiftFromPos(login.token, {
     key: "test01-end",
@@ -1570,6 +1605,7 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "flower-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-flower" });
   const login = await h.svc.login(String(started.pin), "10.0.0.77");
+  await h.svc.answerWeedInStore(login.token, true);
   for (const sku of ["502-3g", "1000"]) {
     h.db.state.incoming.push({
       kitchen_row_id: crypto.randomUUID(),
@@ -1657,6 +1693,7 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "items-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-items" });
   const login = await h.svc.login(String(started.pin), "10.0.0.88");
+  await h.svc.answerWeedInStore(login.token, true);
   const at = "2026-11-04T02:00:00.000Z";
   h.db.state.balances.push(
     { sku: "709", qty: 5, updated_at: at, created_at: at },
@@ -1937,7 +1974,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected |Confirm & End Shift/);
-  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /1 SKU off/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening Verify/);
   assert.equal(blind.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -2329,6 +2366,7 @@ test("master login does not start the verify window and cannot change the shift"
   await rejects(() => h.svc.saveOpeningCount(master.token, { sku: "1001", counted_qty: 1 }), "MASTER_VIEW");
   assert.equal(qty(h.db, "1001"), before);
   const staff = await h.svc.login(String(started.pin), "10.8.0.2");
+  await h.svc.answerWeedInStore(staff.token, true);
   const live = await h.svc.state(staff.token);
   const after = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
   assert.equal(live.master, false);
@@ -2416,8 +2454,9 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(closeUi, /Till balance/);
-  assert.match(closeUi, /signedMoney\(tillBalance\)/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /TOTAL CASH COLLECTED/);
+  assert.match(closeUi, /Float left in the till/);
+  assert.doesNotMatch(closeUi, /both stores/i);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
   assert.doesNotMatch(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /larger deposit is blocked/);
 
@@ -2432,6 +2471,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   const saved = await over.svc.saveFinalDeposit(over.token, { amount_cents: 200 });
   assert.equal(saved.final_deposit_cents, 200);
   const view = await over.svc.state(over.token);
+  await submitClosingValues(over.svc, over.token);
   const ended = await over.svc.endShiftFromPos(over.token, {
     key: "end-over",
     final_deposit_cents: 200,
@@ -2444,6 +2484,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   const short = await readyTill();
   await short.svc.cashout(short.token, { key: "short-sale", lines: [{ sku: "1001", qty: 1 }] });
   const shortView = await short.svc.state(short.token);
+  await submitClosingValues(short.svc, short.token);
   const shortEnd = await short.svc.endShiftFromPos(short.token, {
     key: "end-short",
     final_deposit_cents: 400,
@@ -2484,6 +2525,7 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.equal(finalDeposit.deposit_code, "PNY-D0003");
   assert.equal(repeated.deposit_code, "PNY-D0003");
   const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
   const ended = await h.svc.endShiftFromPos(h.token, {
     key: "slip-end",
     final_deposit_cents: 150,
@@ -2616,8 +2658,7 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   h.sheet.configured = true;
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.equal(shift?.status, "ACTIVE");
-  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 3 });
-  await h.svc.submitClosingCount(h.token);
+  await submitClosingValues(h.svc, h.token, { "1001": 3, "1002": 2 });
   const ended = await h.svc.endShiftFromPos(h.token, { key: "label-end", final_deposit_cents: 0, lines: [] });
   assert.equal(ended.close_label, "PNY-1104-1103");
   assert.match(ended.summary_text ?? "", /Close: PNY-1104-1103/);
@@ -2640,6 +2681,8 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   assert.equal(feed.closings.find((row) => row.shift_id === "sccx-a")?.cash_sales, 0);
   const started = await h.svc.startShift({ key: "label-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-b" });
   const next = await h.svc.login(String(started.pin), "10.4.0.2");
+  await h.svc.answerWeedInStore(next.token, true);
+  await submitClosingValues(h.svc, next.token);
   await h.svc.endShiftFromPos(next.token, { key: "label-end-2", final_deposit_cents: 0, lines: [] });
   assert.equal(h.sheet.tabs.Stock_Labels?.length, 1);
 
@@ -2648,7 +2691,40 @@ test("final deposit stamps the stock close label and appends a snapshot", async 
   const kept = ensureStockLabel(fresh, "PNY02", "2026-12-01T15:00:00.000Z", "2026-12-01T15:00:00.000Z");
   assert.equal(first.master_id, "PNY2-1106");
   assert.equal(kept.master_id, first.master_id);
-  assert.match(readFileSync("app/pos/CloseShift.tsx", "utf8"), /data-testid="close-label"/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /data-testid="close-label"/);
+});
+
+test("closing summary stays until Done after session revoke", () => {
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const summaryUi = readFileSync("app/pos/TillSummary.tsx", "utf8");
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(closeUi, /data-testid="close-summary-banner"/);
+  assert.match(closeUi, /TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT/);
+  assert.match(closeUi, /data-testid="close-summary-done"/);
+  assert.match(closeUi, /Done, I posted it/);
+  assert.match(closeUi, /resumeSummary/);
+  assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
+  assert.match(pos, /closeHold/);
+  assert.match(pos, /pos-close-hold/);
+  assert.match(pos, /finishCloseSummary/);
+  assert.match(pos, /!view\.authenticated && !\(sheet === "close" && closeHold && closeSnap\)/);
+  assert.match(pos, /localStorage\.setItem\(`pny-close-hold:/);
+  assert.match(pos, /localStorage\.removeItem\(`pny-close-hold:/);
+  const confirmEnd = pos.slice(pos.indexOf("async function confirmEnd"), pos.indexOf("function finishCloseSummary"));
+  assert.ok(confirmEnd.indexOf("snapshotClose(") < confirmEnd.indexOf("await post(`${storeApi}/shift/end`"));
+  assert.match(confirmEnd, /setCloseHold\(true\)[\s\S]*await post\(`\$\{storeApi\}\/shift\/end`/);
+  assert.equal(pos.match(/localStorage\.removeItem\(`pny-close-hold:/g)?.length, 1);
+  assert.doesNotMatch(pos.slice(pos.indexOf("useEffect(() =>"), pos.indexOf("const load = useCallback")), /localStorage\.removeItem/);
+  assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
+  assert.match(summaryUi, /closing-identity/);
+  assert.match(summaryUi, /TOTAL CASH COLLECTED/);
+  assert.match(summaryUi, /Expense paid from store cash/);
+  assert.match(summaryUi, /less stock sold value =/);
+  assert.match(summaryUi, /less stock shorts =/);
+  assert.match(summaryUi, /add stock extra =/);
+  assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
+  assert.match(summaryUi, /Opening differences are shown for review and are not included/);
+  assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
 });
 
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
@@ -2739,4 +2815,289 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Start closing count\?/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /Not yet/);
   assert.match(readFileSync("app/pos/PosApp.tsx", "utf8"), /data-testid="closing-count"/);
+});
+
+test("preview closing count can search and add known zero-quantity SKU 240", async () => {
+  const h = await readyTill({ "1001": 4 });
+  await h.svc.syncSetb([
+    { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
+    { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
+    { sku: "1009", name: "Retired", category: "Flower", price_cents: 100, active: false },
+    { sku: "240", name: "Cigarettes", category: "Cigarettes", price_cents: 500, active: true },
+  ]);
+  await h.svc.startClosingCount(h.token);
+
+  const before = await h.svc.state(h.token);
+  assert.equal(before.count_lines?.some((line) => line.sku === "240"), true);
+  assert.equal(before.close_lines?.some((line) => line.sku === "240"), false);
+
+  const saved = await h.svc.saveClosingCount(h.token, { sku: "240", counted_qty: 0 });
+  assert.equal(saved.total, (before.close_lines?.length ?? 0) + 1);
+  const after = await h.svc.state(h.token);
+  assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
+  await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
+});
+
+test("close start timeout recovers by rereading committed server state", async () => {
+  let aborted = false;
+  const result = await startClosingWithRecovery(
+    (signal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("Aborted", "AbortError"));
+      });
+    }),
+    async () => true,
+    1,
+  );
+  assert.equal(aborted, true);
+  assert.deepEqual(result, { recovered: true });
+});
+
+test("closing count requires every SKU and explicit confirmation records blanks as zero", async () => {
+  const h = await readyTill({ "1001": 4, "1002": 3 });
+  await h.svc.startClosingCount(h.token);
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 4 });
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_INCOMPLETE");
+      assert.deepEqual(error.details.blank_skus, ["1002"]);
+      return true;
+    },
+  );
+  await rejects(
+    () => h.svc.endShiftFromPos(h.token, { key: "cannot-skip", final_deposit_cents: 0, lines: [] }),
+    "COUNT_REQUIRED",
+  );
+
+  const submitted = await h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true });
+  assert.deepEqual(submitted.recorded_as_zero, ["1002"]);
+  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  const zero = draft?.counts.find((row) => row.sku === "1002");
+  assert.equal(zero?.counted_qty, 0);
+  assert.equal(zero?.accepted_as_is, false);
+  assert.ok(draft?.closing_submitted_at);
+
+  const blind = await h.svc.state(h.token);
+  assert.equal(JSON.stringify(blind.closing).includes("expected"), false);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "confirmed-zero", final_deposit_cents: 0, lines: [] });
+  const missing = ended.closing.closing_lines.find((row) => row.sku === "1002");
+  assert.equal(missing?.left, 0);
+  assert.equal(missing?.variance_qty, -3);
+  assert.equal(qty(h.db, "1002"), 0);
+  assert.ok(h.db.state.ledger.some((row) => row.sku === "1002" && row.movement_type === "COUNT_VARIANCE" && row.qty_delta === -3));
+
+  const countUi = readFileSync("app/pos/CountCard.tsx", "utf8");
+  assert.match(countUi, /items were not counted\. They will be recorded as 0 \(missing\)\. Go back and count, or confirm as 0\?/);
+  assert.match(countUi, /data-testid="blank-sku-list"/);
+  assert.match(countUi, /data-testid="blank-go-back"/);
+  assert.match(countUi, /autoFocus/);
+  assert.match(countUi, /data-testid="blank-confirm-zero"/);
+  assert.match(countUi, /Every SKU needs a typed number\. Zero is allowed\./);
+});
+
+test("the float is stored on the close and does not change the deposit", async () => {
+  const h = await readyTill({ "1001": 2 });
+  await h.svc.cashout(h.token, { key: "float-sale", lines: [{ sku: "1001", qty: 1 }] });
+  const saved = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200, float_cents: 500 });
+  assert.equal(saved.final_deposit_cents, 200);
+  assert.equal(saved.float_cents, 500);
+  const before = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
+  await submitClosingValues(h.svc, h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "float-end", final_deposit_cents: 200, float_cents: 500, lines: [] });
+  assert.equal(ended.closing.float_cents, 500);
+  assert.equal(ended.closing.final_deposit_cents, 200);
+  const after = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
+  assert.equal(after - before, 200);
+  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents);
+  const started = await h.svc.startShift({ key: "float-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-float" });
+  const next = await h.svc.login(String(started.pin), "10.9.0.1");
+  const open = await h.svc.state(next.token);
+  assert.equal(open.float_check.required, true);
+  assert.equal(open.float_check.expected_cents, 500);
+  assert.equal(open.float_check.done, false);
+  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400 });
+  assert.equal(checked.gap_cents, -100);
+  const verified = await h.svc.state(next.token);
+  assert.equal(verified.float_check.done, true);
+  assert.equal(verified.float_check.found_cents, 400);
+  assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
+});
+
+test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {
+  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
+  assert.equal(added.length, 102);
+  assert.equal(THC_SKUS.length, 248);
+  assert.equal(new Set(THC_SKUS).size, 248);
+  assert.equal(added.every(isThcSku), true);
+  assert.equal(isThcSku("188"), true);
+  assert.equal(isThcSku("710"), false);
+  assert.equal(["240", "668", "669", "710", "1006", "1080"].some(isThcSku), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "777-3g", name: "New flower", category: "Flower" }), true);
+  assert.equal(defaultThcCatalogFlag({ sku: "1090", name: "New cigarette", category: "Cigarettes" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "711", name: "New rolling paper", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "712", name: "New lighter", category: "Add Ons" }), false);
+  assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
+
+  const h = harness();
+  await h.svc.syncSetb([
+    { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
+    { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
+    { sku: "777-3g", name: "New catalog flower", category: "Flower", price_cents: 2500, active: true },
+  ]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "weed-stock", sku: "188", qty: 4 });
+  await h.svc.openingBalance(admin.token, { key: "paper-stock", sku: "710", qty: 3 });
+  await h.svc.openingBalance(admin.token, { key: "new-flower-stock", sku: "777-3g", qty: 2 });
+  await h.svc.importRoster({
+    key: "weed-roster",
+    staff: [
+      { staff_uid: "staff-a", sccx_id: "a", pos_id: "A1", display_name: "Ada", active: true },
+      { staff_uid: "staff-b", sccx_id: "b", pos_id: "B1", display_name: "Bea", active: true },
+    ],
+  });
+
+  const first = await h.svc.startShift({ key: "weed-start", store: "PNY01", staff_ref: "staff-a", shift_id: "weed-shift" });
+  const login = await h.svc.login(String(first.pin), "10.0.0.8");
+  const gated = await h.svc.state(login.token);
+  assert.equal(gated.phase, "weed");
+  assert.equal(gated.weed_gate.required, true);
+  assert.equal(gated.can_sell, false);
+  assert.equal(gated.shift.opening_confirmed, false);
+  await rejects(() => h.svc.cashout(login.token, { key: "skip-gate", lines: [{ sku: "710", qty: 1 }] }), "WEED_ANSWER_REQUIRED");
+
+  const saved = await h.svc.answerWeedInStore(login.token, false);
+  assert.equal(saved.weed_in_store, false);
+  const shift = h.db.state.shifts.find((row) => row.id === first.shift_id)!;
+  assert.equal(shift.weed_answered_by, "staff-a");
+  assert.equal(shift.weed_answered_at, h.clock.t.toISOString());
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_ANSWER" && row.ref_id === first.shift_id), true);
+
+  const noWeed = await h.svc.state(login.token);
+  assert.equal(noWeed.weed_gate.answer, false);
+  assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "777-3g"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
+  assert.equal(noWeed.verify.lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.verify.lines.some((row) => row.sku === "777-3g"), false);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "777-3g"), false);
+  assert.equal(qty(h.db, "188"), 4);
+  await rejects(() => h.svc.cashout(login.token, { key: "hidden-thc", lines: [{ sku: "188", qty: 1 }] }), "THC_HIDDEN");
+
+  const beforeToggle = {
+    balances: JSON.stringify(h.db.state.balances),
+    sales: JSON.stringify(h.db.state.sales),
+    counts: JSON.stringify(h.db.state.counts),
+    incoming: JSON.stringify(h.db.state.incoming),
+    pin: shift.pin_hash,
+  };
+  const toggledOn = await h.svc.answerWeedInStore(login.token, true);
+  assert.equal(toggledOn.changed, true);
+  const weedOn = await h.svc.state(login.token);
+  assert.equal(weedOn.products.some((row) => row.sku === "188"), true);
+  assert.equal(JSON.stringify(h.db.state.balances), beforeToggle.balances);
+  assert.equal(JSON.stringify(h.db.state.sales), beforeToggle.sales);
+  assert.equal(JSON.stringify(h.db.state.counts), beforeToggle.counts);
+  assert.equal(JSON.stringify(h.db.state.incoming), beforeToggle.incoming);
+  assert.equal(shift.pin_hash, beforeToggle.pin);
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id), true);
+  const sameAnswer = await h.svc.answerWeedInStore(login.token, true);
+  assert.equal(sameAnswer.changed, false);
+  assert.equal(h.db.state.audit.filter((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id).length, 1);
+  await h.svc.answerWeedInStore(login.token, false);
+
+  const master = await h.svc.login("1988", "10.0.0.18");
+  assert.equal((await h.svc.state(master.token)).master, true);
+  const masterToggle = await h.svc.answerWeedInStore(master.token, true);
+  assert.equal(masterToggle.changed, true);
+  assert.equal(h.db.state.shifts.find((row) => row.id === first.shift_id)?.weed_answered_by, "MASTER");
+  assert.equal(h.db.state.audit.some((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id && row.actor === "MASTER"), true);
+  await h.svc.answerWeedInStore(master.token, false);
+
+  h.db.state.incoming.push(
+    { kitchen_row_id: "weed-refill", batch_id: "batch", store_code: "PNY01", sku: "188", qty_sent: 2, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
+    { kitchen_row_id: "paper-refill", batch_id: "batch", store_code: "PNY01", sku: "710", qty_sent: 5, kind: "REFILL", kitchen_created_at: null, imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() },
+  );
+  await h.svc.confirmIncoming(login.token, { key: "receive-both", lines: [
+    { kitchen_row_id: "weed-refill", qty_received: 2 },
+    { kitchen_row_id: "paper-refill", qty_received: 5 },
+  ] });
+  assert.equal(qty(h.db, "188"), 6);
+  assert.equal(qty(h.db, "710"), 8);
+  const afterRefill = await h.svc.state(login.token);
+  assert.equal(afterRefill.products.some((row) => row.sku === "188"), false);
+  assert.equal(afterRefill.close_lines.some((row) => row.sku === "188"), false);
+  assert.equal(afterRefill.products.find((row) => row.sku === "710")?.qty, 8);
+
+  await h.svc.endShiftFromSccx({ key: "weed-off", store: "PNY01", shift_id: "weed-shift", reason: "SCCX_OFF" });
+  const firstClosing = h.db.state.closings.find((row) => row.shift_id === first.shift_id)!;
+  assert.match(firstClosing.summary_text, /WEED in store this shift: NO WEED/);
+  assert.equal(firstClosing.closing_lines.some((row) => row.sku === "188"), false);
+  assert.equal(qty(h.db, "188"), 6);
+
+  const next = await h.svc.startShift({ key: "next-weed-start", store: "PNY01", staff_ref: "staff-b", shift_id: "next-weed-shift" });
+  const nextLogin = await h.svc.login(String(next.pin), "10.0.0.9");
+  await h.svc.answerWeedInStore(nextLogin.token, true);
+  const weed = await h.svc.state(nextLogin.token);
+  assert.equal(weed.products.find((row) => row.sku === "188")?.qty, 6);
+  assert.equal(weed.verify.lines.some((row) => row.sku === "188"), true);
+  await h.svc.saveOpeningCount(nextLogin.token, { sku: "188", counted_qty: 5 });
+  const opening = h.db.state.closing_drafts.find((row) => row.shift_id === next.shift_id)?.opening_counts?.find((row) => row.sku === "188");
+  assert.equal(opening?.expected_qty, 6);
+  assert.equal((opening?.counted_qty ?? 0) - (opening?.expected_qty ?? 0), -1);
+});
+
+test("PNY01 staff cannot change WEED after the closing count starts", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
+  await h.svc.importRoster({ key: "toggle-roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
+  const opened = await h.svc.startShift({ key: "toggle-start", store: "PNY01", staff_ref: "staff-a", shift_id: "toggle-shift" });
+  const login = await h.svc.login(String(opened.pin), "10.0.0.11");
+  await h.svc.answerWeedInStore(login.token, true);
+  await h.svc.startClosingCount(login.token);
+  await rejects(() => h.svc.answerWeedInStore(login.token, false), "WEED_TOGGLE_CLOSED");
+  const master = await h.svc.login("1988", "10.0.0.12");
+  await rejects(() => h.svc.answerWeedInStore(master.token, false), "WEED_TOGGLE_CLOSED");
+  assert.equal(h.db.state.shifts.find((row) => row.id === opened.shift_id)?.weed_in_store, true);
+});
+
+test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
+  const h = harness();
+  await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "legacy-weed-stock", sku: "188", qty: 2 });
+  await h.svc.importRoster({ key: "legacy-weed-roster", staff: [{ staff_uid: "legacy-staff", pos_id: "L1", display_name: "Legacy", active: true }] });
+  const opened = await h.svc.startShift({ key: "legacy-weed-start", store: "PNY01", staff_ref: "legacy-staff", shift_id: "legacy-weed-shift" });
+  const shift = h.db.state.shifts.find((row) => row.id === opened.shift_id)!;
+  delete shift.weed_gate_required;
+  delete shift.weed_in_store;
+  delete shift.weed_answered_at;
+  delete shift.weed_answered_by;
+  const login = await h.svc.login(String(opened.pin), "10.0.0.10");
+  const view = await h.svc.state(login.token);
+  assert.equal(view.weed_gate.required, false);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.products.find((row) => row.sku === "188")?.qty, 2);
+  assert.equal(view.verify.lines.some((row) => row.sku === "188"), true);
+});
+
+test("POS_Shifts keeps every legacy column in place and appends the WEED fields", () => {
+  const legacy = ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"];
+  const headers = POS_TAB_SPECS.find((spec) => spec.title === "POS_Shifts")?.headers ?? [];
+  assert.deepEqual(headers.slice(0, legacy.length), legacy);
+  assert.deepEqual(headers.slice(legacy.length), ["weed_in_store", "weed_answered_at", "weed_answered_by"]);
+});
+
+test("PNY02 does not receive the PNY01 WEED gate", async () => {
+  const h = harness();
+  const opened = await runStore(PNY02_STORE, () => h.svc.openShiftWithPin({ staff_uid: "pny2-staff", display_name: "PNY2 Staff", pin: "2468" }));
+  const login = await runStore(PNY02_STORE, () => h.svc.login("2468", "10.0.0.2"));
+  const view = await runStore(PNY02_STORE, () => h.svc.state(login.token));
+  const shift = h.db.state.shifts.find((row) => row.id === opened.shift_id);
+  assert.equal(shift?.weed_gate_required, undefined);
+  assert.equal(view.weed_gate.required, false);
+  assert.equal(view.phase, "sell");
 });
