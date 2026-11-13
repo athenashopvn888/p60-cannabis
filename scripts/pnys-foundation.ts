@@ -32,7 +32,8 @@ function cloneCatalog(source: Json): Json {
     products, store_products: storeProducts, balances, stores,
     staff: [], shifts: [], sessions: [], incoming: [], counts: [], count_lines: [],
     tickets: [], ticket_lines: [], sales: [], sale_lines: [], deposits: [], closings: [],
-    ledger: [], outbox: [], idempotency: [], security: [], audits: [],
+    closing_drafts: [], ledger: [], outbox: [], idempotency: [], cursors: [], audit: [],
+    admin_sessions: [], deposit_seq: 0,
   };
 }
 
