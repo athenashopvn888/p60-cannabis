@@ -63,9 +63,11 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
     async peek() {
       const client = await pool.connect();
       try {
+        if (schema === "pnys_pos") await client.query("set role pnys_app");
         const loaded = await client.query(`select doc from ${schema}.live_state where store_code = $1`, [store]);
         return asState(loaded.rows[0]?.doc);
       } finally {
+        if (schema === "pnys_pos") await client.query("reset role").catch(() => undefined);
         client.release();
       }
     },
@@ -81,6 +83,7 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
       const client = await pool.connect();
       try {
         await client.query("begin");
+        if (schema === "pnys_pos") await client.query("set local role pnys_app");
         const loaded = await client.query(`select version, doc from ${schema}.live_state where store_code = $1`, [store]);
         const version = Number(loaded.rows[0]?.version ?? 0);
         const snapshot = structuredClone(asState(loaded.rows[0]?.doc)) as State;

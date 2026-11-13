@@ -3,7 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool, type PoolClient } from "pg";
 import { materializeCatalog } from "../app/lib/pny-pos/catalogMaterialization.ts";
+import { fetchPublishedFlowerGrid, flowersFromGrid } from "../app/lib/pny-pos/flowerRaw.ts";
+import { fetchSetbItemGrid, itemsFromGrid } from "../app/lib/pny-pos/itemRaw.ts";
 import { catalogFromFeed, defaultSetbProductsUrl } from "../app/lib/pny-pos/setbFeed.ts";
+import { reconcileTillCatalog } from "../app/lib/pny-pos/tillCatalog.ts";
 import type { State } from "../app/lib/pny-pos/types.ts";
 
 type Json = Record<string, unknown>;
@@ -30,7 +33,7 @@ function cloneCatalog(source: Json): Json {
   const balances = list(source, "balances")
     .filter((row) => (row.store_code ?? "PNY01") === "PNY01")
     .map((row) => ({ ...structuredClone(row), store_code: "PNYS" }));
-  const stores = [{ code: "PNYS", name: "PNYS", active: true, timezone: "America/Toronto", prices_tax_included: false, ticket_letter_seq: 0, created_at: new Date().toISOString() }];
+  const stores = [{ code: "PNYS", name: "PNYS", active: true, timezone: "America/Toronto", prices_tax_included: true, ticket_letter_seq: 0, created_at: new Date().toISOString() }];
   return {
     products, store_products: storeProducts, balances, stores,
     staff: [], shifts: [], sessions: [], incoming: [], counts: [], count_lines: [],
@@ -98,6 +101,12 @@ async function main() {
     const effectiveSource = structuredClone(source.doc) as unknown as State;
     materializeCatalog(effectiveSource, feed, "PNY01", at);
     materializeCatalog(target as unknown as State, feed, "PNYS", at);
+    const [flowers, items] = await Promise.all([
+      fetchPublishedFlowerGrid().then(flowersFromGrid),
+      fetchSetbItemGrid().then(itemsFromGrid),
+    ]);
+    reconcileTillCatalog(effectiveSource, "PNY01", at, { flowers, items });
+    reconcileTillCatalog(target as unknown as State, "PNYS", at, { flowers, items });
     const sourceView = catalogView(effectiveSource as unknown as Json, "PNY01");
     const targetView = catalogView(target, "PNYS");
     const requiredSkus = ["396-3g", "406-3g", "406-5g", "419-3g", "419-5g"];

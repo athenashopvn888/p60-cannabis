@@ -12,10 +12,13 @@
 
 - Forward migration: `supabase/migrations/20261113090000_pnys_foundation.sql`.
 - Manual rollback: `supabase/undo/20261113090000_pnys_foundation.undo.sql`.
+- Catalog/RLS correction: `supabase/migrations/20261113193000_pnys_catalog_rls_reconciliation.sql` with structural undo in `supabase/undo/20261113193000_pnys_catalog_rls_reconciliation.undo.sql`.
 - The forward migration's safety wrapper refuses SQL that writes to `pny_pos`.
 - `scripts/pnys-foundation.ts` reads PNY02 and PNY01 in explicit read-only transactions. It creates a permission-restricted PNY02 JSON backup before the PNYS write, then performs exactly one catalog/on-hand clone and records counts and SHA-256 checksums in `pnys_pos.clone_audit`.
 - The clone copies products, enabled/price overrides, THC flags, tiers encoded in catalog/category fields, and balances. It does not copy shifts, sales, deposits, staff, sessions, PINs, outbox work, or integrations.
 - A second clone is refused when an audit row already exists.
+- `scripts/reconcile-pnys-foundation.ts` takes a fresh PNYS backup and source snapshots, writes an exact guarded undo before changing the database, reconciles every balance SKU against the same layered sources as the PNY01 till, sets `prices_tax_included=true`, and records the source checksums and per-SKU resolution in `clone_audit`.
+- All tables in `pnys_pos` and `pos_hub` have RLS enabled and forced. Public/platform roles have no grants; the application explicitly assumes the non-login, non-bypass `pnys_app` role. `pnys_app` has application DML access and read-only access to `clone_audit`.
 
 ## Shell
 
