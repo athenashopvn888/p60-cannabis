@@ -1687,11 +1687,11 @@ export class PosService {
 
   /** Read-only. A one-store till with no approved opening stock is waiting, never a demo. */
   async publicStatus() {
-    const peek = (this.db as { peek?: () => Promise<State> }).peek;
-    if (!peek) return { waiting_for_opening: false };
-    const state = await peek();
+    if (!this.db.peek) return { waiting_for_opening: false };
+    const state = await this.db.peek();
     const open = state.shifts.some((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
-    return { waiting_for_opening: !state.opening_stock_at && !open };
+    const cloneReady = this.db.isReady ? await this.db.isReady() : false;
+    return { waiting_for_opening: !state.opening_stock_at && !cloneReady && !open };
   }
 
   async startShift(input: { key: string; store?: string; staff_ref?: string; pos_id?: string; shift_id?: string }) {
@@ -2133,6 +2133,10 @@ export class PosService {
         seen.add(extra.sku);
         products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
+      const scanProducts = products.map((product) => ({
+        sku: product.sku,
+        thc_hidden: !visibleForShift(tx.state, shift, product.sku),
+      }));
       products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
@@ -2203,6 +2207,7 @@ export class PosService {
           .map((row) => ({ id: row.id, deposit_code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
         categories: inStockCategories(products),
         products,
+        scan_products: scanProducts,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
         opening_lines: openingLines.map((line) => ({
           ...line,

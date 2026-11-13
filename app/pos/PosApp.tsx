@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
@@ -19,6 +19,8 @@ import RefillList, { type PendingRefill } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import WeedShiftGate from "./WeedShiftGate";
 import WeedToggle from "./WeedToggle";
+import ProductScanner from "./ProductScanner";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
@@ -80,6 +82,7 @@ type View = {
   float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null };
   categories?: string[];
   products?: Product[];
+  scan_products?: ScanCatalogItem[];
   count_lines?: CountLine[];
   incoming?: PendingRefill[];
   tickets?: Ticket[];
@@ -164,9 +167,7 @@ export default function PosApp({
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
   const [closeHold, setCloseHold] = useState(false);
   const [closeSnap, setCloseSnap] = useState<CloseSnapshot | null>(null);
-  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
-  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
-  const commandKeys = commandKeysRef.current;
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeLabel = forced?.label ?? label;
@@ -218,7 +219,7 @@ export default function PosApp({
   const gapsStored = gapKey !== "" && typeof window !== "undefined" && window.localStorage.getItem(gapKey) === "1";
   const showGaps = Boolean(view?.verify?.reveal && sheet == null && !gapsDismissed && !gapsStored);
 
-  const products = view?.products ?? [];
+  const products = useMemo(() => view?.products ?? [], [view?.products]);
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
   const categoryLayout = useMemo(() => layoutCategoryChips(categories), [categories]);
   const activeCategory = categories.includes(category) ? category : posDefaultCategory(categories);
@@ -244,6 +245,13 @@ export default function PosApp({
       return copy;
     });
   }
+
+  const addScannedProduct = useCallback((sku: string) => {
+    const product = products.find((item) => item.sku.toLowerCase() === sku.toLowerCase());
+    if (!product) return false;
+    setCart((current) => ({ ...current, [product.sku]: Math.min(99, (current[product.sku] ?? 0) + 1) }));
+    return true;
+  }, [products]);
 
   async function signIn() {
     setError("");
@@ -673,8 +681,9 @@ export default function PosApp({
   }
 
   return (
-    <main className={styles.shell} data-testid="pos-shell">
+    <main className={styles.shell} data-testid="pos-shell" data-pnys-shell={storeCode === "PNYS" ? "" : undefined}>
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
+      {storeCode === "PNYS" ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
@@ -753,7 +762,7 @@ export default function PosApp({
         />
       ) : null}
 
-      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
+      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} scanCatalog={view.scan_products ?? []} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">
@@ -865,6 +874,7 @@ export default function PosApp({
                 knownLines={(view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
                 lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
                 busy={busy || Boolean(view.master)}
+                scanCatalog={view.scan_products ?? []}
                 onSave={saveCloseCount}
                 onSubmit={submitCloseCount}
               />
@@ -878,6 +888,7 @@ export default function PosApp({
           ) : null}
           <div className={styles.footerBar}>
             <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
+            {tab === "sell" ? <ProductScanner catalog={view.scan_products ?? []} onMatch={addScannedProduct} /> : null}
             <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
             <strong className={styles.cartValue} data-testid="cart-total">{formatMoney(total)}</strong>
           </div>
@@ -922,6 +933,7 @@ export default function PosApp({
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
           deadline={verifyOpen ? (closeSnap?.deadline ?? view.verify?.deadline_at ?? null) : null}
           initialStep={closeSnap?.initialStep ?? (view.closing?.submitted ? "deposit" : "count")}
+          scanCatalog={view.scan_products ?? []}
         />
       ) : null}
       {sheet === "close-ask" ? (

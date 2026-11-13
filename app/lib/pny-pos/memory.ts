@@ -46,6 +46,8 @@ export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
   peek?: () => Promise<State>;
+  /** Read-only deployment readiness signal, independent of mutable till state. */
+  isReady?: () => Promise<boolean>;
   /** Best-effort hook after a commit. Must not throw into the sale. */
   onCommit?: (state: State) => void;
 }

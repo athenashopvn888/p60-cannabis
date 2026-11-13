@@ -25,6 +25,21 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
   });
   let tail: Promise<void> = Promise.resolve();
   const db: PosDb & { peek(): Promise<State> } = {
+    async isReady() {
+      if (schema !== "pnys_pos") return true;
+      const client = await pool.connect();
+      try {
+        await client.query("set role pnys_app");
+        const result = await client.query(
+          "select exists(select 1 from pnys_pos.clone_audit where target_store = $1 and reconciled = true) as ready",
+          [store],
+        );
+        return result.rows[0]?.ready === true;
+      } finally {
+        await client.query("reset role").catch(() => undefined);
+        client.release();
+      }
+    },
     async peek() {
       const client = await pool.connect();
       try {

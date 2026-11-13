@@ -8,6 +8,7 @@ import TillSummary from "./TillSummary";
 import type { OffLine } from "./SkuOffList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import styles from "./till.module.css";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 
 export type CloseLine = {
   sku: string;
@@ -40,6 +41,7 @@ export default function CloseShift({
   deadline,
   initialStep,
   resumeSummary,
+  scanCatalog = [],
 }: {
   lines: CloseLine[];
   knownLines?: { sku: string; text: string; counted_qty: number | null }[];
@@ -73,6 +75,7 @@ export default function CloseShift({
   initialStep?: "count" | "deposit";
   /** When set (after session revoke remount), jump straight to summary with locked cash figures. */
   resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+  scanCatalog?: ScanCatalogItem[];
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "summary">(
     resumeSummary ? "summary" : (initialStep ?? (lines.length === 0 ? "deposit" : "count")),
@@ -138,6 +141,7 @@ export default function CloseShift({
               allowExtra
               purpose="closing"
               busy={busy}
+              scanCatalog={scanCatalog}
               onSave={onSaveCount}
               onSubmit={async (confirmBlanksZero) => {
                 await onSubmitCount?.(confirmBlanksZero);

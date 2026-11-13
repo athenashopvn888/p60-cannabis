@@ -1375,8 +1375,24 @@
 
 .countRuleRow {
   display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-end;
   padding: 2px 8px 0;
+}
+
+@media (max-width: 480px) {
+  .footerBar .clearCart,
+  .footerBar .cash {
+    min-width: 72px;
+    padding-inline: 7px;
+    font-size: 13px;
+  }
+
+  .footerBar .cartValue {
+    padding-inline: 3px;
+    font-size: 22px;
+  }
 }
 
 .countRuleBtn {

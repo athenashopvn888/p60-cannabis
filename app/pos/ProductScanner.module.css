@@ -1,0 +1,13 @@
+.scanButton { min-height: 52px; min-width: 92px; border: 0; border-radius: 14px; background: #0f766e; color: #fff; font: 900 17px/1 system-ui, sans-serif; letter-spacing: .05em; }
+.scrim { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 12px; background: rgb(15 23 42 / 82%); }
+.panel { width: min(100%, 480px); padding: 14px; border-radius: 18px; background: #fff; color: #0f172a; box-shadow: 0 20px 60px rgb(0 0 0 / 35%); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading h2 { margin: 0; font-size: 20px; }
+.heading button { width: 44px; height: 44px; border: 0; border-radius: 12px; background: #e2e8f0; font-size: 28px; }
+.video { display: block; width: 100%; min-height: 240px; max-height: 60dvh; margin-top: 10px; border-radius: 14px; background: #020617; object-fit: cover; }
+.message, .failure { min-height: 24px; margin: 12px 0; font-weight: 800; text-align: center; }
+.message { color: #166534; }
+.failure { color: #b91c1c; }
+.decoded { display: block; max-height: 72px; margin: -4px 0 12px; overflow: auto; border-radius: 8px; padding: 8px; background: #f1f5f9; color: #334155; overflow-wrap: anywhere; font-size: 12px; }
+.close { width: 100%; min-height: 48px; border: 0; border-radius: 12px; background: #334155; color: #fff; font-weight: 800; }
+@media (max-width: 390px) { .scrim { padding: 8px; } .panel { padding: 10px; } .video { min-height: 210px; } }

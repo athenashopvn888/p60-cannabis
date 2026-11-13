@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
+import ProductScanner from "./ProductScanner";
 import styles from "./till.module.css";
 
 export type CountCardLine = {
@@ -20,6 +22,7 @@ export default function CountCard({
   onSave,
   onJump,
   onSubmit,
+  scanCatalog = [],
 }: {
   lines: CountCardLine[];
   busy: boolean;
@@ -30,6 +33,7 @@ export default function CountCard({
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
   onSubmit?: (confirmBlanksZero?: boolean) => Promise<void>;
+  scanCatalog?: ScanCatalogItem[];
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -138,6 +142,23 @@ export default function CountCard({
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
     }
+  }
+
+  function scanToSku(sku: string) {
+    const next = lines.findIndex((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (next >= 0) {
+      setIndex(next);
+      setExpanded(false);
+      return true;
+    }
+    const known = knownLines.find((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (known) {
+      openList();
+      setExtraSku(known.sku);
+      setExtraQty("");
+      return true;
+    }
+    return false;
   }
 
   async function addExtra() {
@@ -249,7 +270,7 @@ export default function CountCard({
   if (compact) {
     return (
       <div data-testid="count-card" className={styles.countDock}>
-        <div className={styles.countRuleRow}>{ruleButton}</div>
+        <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
         {list}
         {error}
         {ruleModal}
@@ -270,7 +291,7 @@ export default function CountCard({
 
   return (
     <div data-testid="count-card">
-      <div className={styles.countRuleRow}>{ruleButton}</div>
+      <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
       <div className={styles.countSplit}>
         <form className={styles.countMain} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <p className={styles.countSku}>{current.text}</p>

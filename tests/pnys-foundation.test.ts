@@ -9,6 +9,9 @@ import { reconcileTillCatalog } from "../app/lib/pny-pos/tillCatalog.ts";
 import type { ItemIndex } from "../app/lib/pny-pos/itemRaw.ts";
 import type { FlowerIndex } from "../app/lib/pny-pos/flowerRaw.ts";
 import type { State } from "../app/lib/pny-pos/types.ts";
+import { matchScannedLabel, skuFromLabelText } from "../app/lib/pny-pos/labelScan.ts";
+import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { PosService } from "../app/lib/pny-pos/service.ts";
 
 test("PNYS uses isolated routes and cookie", () => {
   assert.equal(storeProfile("PNYS"), PNYS_STORE);
@@ -66,6 +69,74 @@ test("shared shell has fixed bars, scroll panel, safe areas and 360px rule", asy
   assert.match(css, /safe-area-inset-top/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /max-width:\s*390px/);
+});
+
+test("customer routes cannot render the PNYS staff shell or link to staff routes", async () => {
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(layout, /PnysAppShell|data-pnys-shell/);
+  const customerRoutes = [
+    "../app/page.tsx",
+    "../app/menu/page.tsx",
+    "../app/delivery/page.tsx",
+    "../app/[tier]/page.tsx",
+    "../app/items/[category]/page.tsx",
+    "../app/item/[slug]/page.tsx",
+  ];
+  for (const route of customerRoutes) {
+    const source = await readFile(new URL(route, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /PnysAppShell|data-pnys-shell|href\s*=\s*["']\/pos(?:[\/"'])/i, route);
+  }
+});
+
+test("PIN screens have no staff navigation before authentication", async () => {
+  const pos = await readFile(new URL("../app/pos/PosApp.tsx", import.meta.url), "utf8");
+  const till = await readFile(new URL("../app/pos/till/TillApp.tsx", import.meta.url), "utf8");
+  assert.ok(pos.indexOf("if (!view.authenticated") < pos.indexOf("data-pnys-shell"));
+  assert.doesNotMatch(till, /Back to POS/);
+});
+
+test("a reconciled PNYS clone makes the login ready without changing live_state", async () => {
+  const db = new MemoryDb();
+  db.isReady = async () => true;
+  const service = new PosService(db, {
+    sheet: new LocalSheet(),
+    secrets: { shift: "s", roster: "r", poll: "p", session: "session-secret-value", admin: "a", cron: "c" },
+    demo: null,
+  });
+  assert.deepEqual(await service.publicStatus(), { waiting_for_opening: false });
+  const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
+  assert.match(adapter, /select exists\(select 1 from pnys_pos\.clone_audit/);
+  assert.doesNotMatch(adapter, /update pnys_pos\.clone_audit/i);
+});
+
+test("label scans use the first number and the approved size mapping", () => {
+  assert.equal(skuFromLabelText("261 DAYDREAM DIESEL 14g 461-B101"), "261-14g");
+  assert.equal(skuFromLabelText("406 DAYDREAM 6g LOT 999"), "406-5g");
+  assert.equal(skuFromLabelText("715 BACKWOODS"), "715");
+  const catalog = [{ sku: "261-14g" }, { sku: "406-5g", thc_hidden: true }];
+  assert.deepEqual(matchScannedLabel("261 DAYDREAM DIESEL 14g 461-B101", catalog), {
+    ok: true, raw: "261 DAYDREAM DIESEL 14g 461-B101", sku: "261-14g", thcHidden: false,
+  });
+  assert.deepEqual(matchScannedLabel("406 DAYDREAM 6g", catalog), {
+    ok: true, raw: "406 DAYDREAM 6g", sku: "406-5g", thcHidden: true,
+  });
+  assert.deepEqual(matchScannedLabel("999 UNKNOWN 14g", catalog), {
+    ok: false, raw: "999 UNKNOWN 14g", reason: "NOT_FOUND",
+  });
+});
+
+test("scanner keeps native and free fallback decoding and is wired to all count/refill surfaces", async () => {
+  const scanner = await readFile(new URL("../app/pos/ProductScanner.tsx", import.meta.url), "utf8");
+  const pos = await readFile(new URL("../app/pos/PosApp.tsx", import.meta.url), "utf8");
+  const count = await readFile(new URL("../app/pos/CountCard.tsx", import.meta.url), "utf8");
+  const refill = await readFile(new URL("../app/pos/RefillList.tsx", import.meta.url), "utf8");
+  assert.match(scanner, /BarcodeDetector/);
+  assert.match(scanner, /@zxing\/browser/);
+  assert.match(scanner, /facingMode:\s*\{ ideal:\s*"environment"/);
+  assert.match(scanner, /THC hidden this shift/);
+  assert.match(pos, /data-testid="scan-button"|<ProductScanner/);
+  assert.match(count, /<ProductScanner/);
+  assert.match(refill, /<ProductScanner/);
 });
 
 test("catalog materialization preserves stock and keeps PNY01-only additions", () => {

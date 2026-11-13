@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
+    "@zxing/browser": "^0.1.5",
     "next": "16.2.6",
     "papaparse": "^5.5.3",
     "pg": "^8.23.1",

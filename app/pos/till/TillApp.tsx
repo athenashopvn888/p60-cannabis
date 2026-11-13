@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
@@ -55,9 +55,7 @@ export default function TillApp({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
-  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
-  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
-  const commandKeys = commandKeysRef.current;
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeHome = forced?.homeHref ?? homeHref;
@@ -191,7 +189,6 @@ export default function TillApp({
           <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
-          <Link className={styles.backLink} href={storeHome} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
