@@ -10,7 +10,7 @@ import type { ItemIndex } from "../app/lib/pny-pos/itemRaw.ts";
 import type { FlowerIndex } from "../app/lib/pny-pos/flowerRaw.ts";
 import type { State } from "../app/lib/pny-pos/types.ts";
 import { matchScannedLabel, skuFromLabelText } from "../app/lib/pny-pos/labelScan.ts";
-import { MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { MemoryDb, type PosDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
 
 test("PNYS uses isolated routes and cookie", () => {
@@ -96,7 +96,7 @@ test("PIN screens have no staff navigation before authentication", async () => {
 });
 
 test("a reconciled PNYS clone makes the login ready without changing live_state", async () => {
-  const db = new MemoryDb();
+  const db = new MemoryDb() as MemoryDb & Pick<PosDb, "isReady">;
   db.isReady = async () => true;
   const service = new PosService(db, {
     sheet: new LocalSheet(),
