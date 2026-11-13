@@ -11,6 +11,7 @@ import { HOME_DOC_TITLE } from "./lib/homeDelivery";
 import type { Metadata } from "next";
 import "./globals.css";
 import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
+import PnysAppShell from "./components/pnys/PnysAppShell";
 
 export const revalidate = 300;
 
@@ -108,6 +109,14 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pnys = process.env.STORE_CODE?.trim().toUpperCase() === "PNYS";
+  if (pnys) {
+    return (
+      <html lang="en">
+        <body><PnysAppShell>{children}</PnysAppShell></body>
+      </html>
+    );
+  }
   const [fleet, cigaretteSnapshot] = await Promise.all([getFleetContent(), getCigaretteSnapshot()]);
   const contentBanners = fleet.active && fleet.banners.some((banner, index) => banner !== CODED_BANNERS[index]) ? fleet.banners : undefined;
   const cigarettes = toPublicCigaretteState(cigaretteSnapshot);

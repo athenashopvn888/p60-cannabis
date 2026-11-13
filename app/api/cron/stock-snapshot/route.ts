@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  if (process.env.INTEGRATIONS_ENABLED === "0") return json({ ok: true, disabled: true });
   try {
     const service = await cronOk(request);
     return json(await service.snapshotStock());
