@@ -24,7 +24,7 @@ import {
 import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSession, safeEqual, sha256, signStaffSession, stableStringify, verifyPin } from "./crypto.ts";
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
-import type { PosDb } from "./memory.ts";
+import type { PosDb, Tx } from "./memory.ts";
 import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
@@ -47,7 +47,6 @@ import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import type { SheetClient } from "./sheets.ts";
-import { SheetDb } from "./sheetStore.ts";
 import type {
   ClosingLine,
   ClosingRow,
@@ -1512,7 +1511,12 @@ export class PosService {
 
   private session(state: State, token: string, now: Date, gate: "pos" | "kitchen" | "any" = "pos") {
     this.ensurePny2(state, iso(now));
-    return requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
+    const current = requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
+    if (!current.session.master && !weedAnswerRequired(current.shift)) {
+      nameLiveShift(state, iso(now));
+      openTillWithoutCount(current.shift, iso(now));
+    }
+    return current;
   }
 
   private reopenDemoShift(state: State, now: Date) {
@@ -1620,6 +1624,14 @@ export class PosService {
     }
     recent.push(now);
     this.hits.set(bucket, recent);
+  }
+
+  /** Detached state for GET/poll paths. Mutating this snapshot never commits it. */
+  private async readState() {
+    const state = this.db.peek
+      ? await this.db.peek()
+      : await this.db.transaction(async (tx) => structuredClone(tx.state) as State);
+    return structuredClone(state) as State;
   }
 
   bootstrap() {
@@ -2051,9 +2063,8 @@ export class PosService {
 
   async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
     const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const now = this.now();
-      if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff, session } = this.session(tx.state, token, now, gate);
@@ -2214,7 +2225,6 @@ export class PosService {
         prices_include_tax: false,
         end_shift_message: END_SHIFT_MESSAGE,
       };
-    });
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
@@ -2563,16 +2573,10 @@ export class PosService {
    */
   async salesFeed(since: string | null, limit = 50) {
     const pageSize = Math.min(50, Math.max(1, Math.trunc(limit) || 50));
-    return this.db.transaction(async (tx) => {
-      const before = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      const allRows = tx.state.sales
+    const state = await this.readState();
+      const allRows = state.sales
         .filter((sale) => {
-          const shift = tx.state.shifts.find((row) => row.id === sale.shift_id);
+          const shift = state.shifts.find((row) => row.id === sale.shift_id);
           return !shift || shift.store_code === tillCode();
         })
         .map((sale, index) => ({ sale, index, cursor: `${sale.created_at}|${sale.id}` }))
@@ -2584,16 +2588,18 @@ export class PosService {
       const selected = !cursor
         ? []
         : cursorIndex >= 0
-          ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize)
-          : rows.filter((row) => row.cursor > cursor).slice(0, pageSize);
-      const sales = selected.map(({ sale, index: saleIndex }) => {
-        const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
-        const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
-        const items = tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
-          const product = tx.state.products.find((row) => row.sku === line.sku);
+          ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize + 1)
+          : rows.filter((row) => row.cursor > cursor).slice(0, pageSize + 1);
+      const hasMore = selected.length > pageSize;
+      const page = selected.slice(0, pageSize);
+      const sales = page.map(({ sale, index: saleIndex }) => {
+        const staff = state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        const ticket = sale.ticket_id ? state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+        const items = state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
+          const product = state.products.find((row) => row.sku === line.sku);
           return {
             sku: line.sku,
-            name: product?.name ?? productName(tx.state, line.sku),
+            name: product?.name ?? productName(state, line.sku),
             size: sizeLabel(line.sku, product?.category, product?.name),
             qty: line.qty,
             line_price_cents: line.line_total_cents,
@@ -2619,21 +2625,14 @@ export class PosService {
           store: tillCode(),
         };
       });
-      const after = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      if (after !== before) throw new PosError(500, "FEED_WRITE", "The sales feed must not change the till.");
       return {
         ok: true as const,
         store: tillCode(),
         sales,
-        next_cursor: selected.at(-1)?.cursor ?? (cursor || latest),
+        next_cursor: page.at(-1)?.cursor ?? (cursor || latest),
+        has_more: hasMore,
         bootstrap: !cursor,
       };
-    });
   }
 
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
@@ -3592,9 +3591,9 @@ export class PosService {
     if (this.menuCache && this.menuCache.store === tillCode() && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
     const [raw, flowers, itemCatalog, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const notes = await this.rawCartonNotes();
-    const body = await this.db.transaction(async (tx) => {
+    const body = await (async () => {
+      const tx: Tx = { state: await this.readState() };
       const now = iso(this.now());
-      if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
       this.ensurePny2(tx.state, now);
       const shift = tx.state.shifts.find((row) => row.store_code === tillCode() && row.status === "ACTIVE");
       if (shift) {
@@ -3653,7 +3652,7 @@ export class PosService {
         prices_include_tax: false,
         items,
       };
-    });
+    })();
     this.menuCache = { gen: this.menuGen, at: nowMs, store: tillCode(), body };
     return body;
   }
@@ -3717,7 +3716,7 @@ export class PosService {
   }
 
   async ticketStatus(code: string, journal?: DemoJournalOrder[]) {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
@@ -3738,7 +3737,6 @@ export class PosService {
         total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
         journal_order: journalFromTicket(tx.state, ticket.id),
       };
-    });
   }
 
   async expireDue() {
@@ -3758,7 +3756,7 @@ export class PosService {
 
   /** Read-only closings for the current store. Does not increment SCCx attempts. */
   async readClosings() {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const code = tillCode();
       const closings = tx.state.closings.flatMap((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
@@ -3787,18 +3785,16 @@ export class PosService {
         }];
       });
       return { ok: true as const, store: code, closings };
-    });
   }
 
   async closedShifts() {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const code = tillCode();
       const rows = tx.state.closings.filter((closing) => {
         if (closing.sccx_ack_at) return false;
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         return !shift || shift.store_code === code;
       });
-      for (const closing of rows) closing.sccx_attempts += 1;
       const closings = rows.map((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         const staff = tx.state.staff.find((row) => row.staff_uid === shift?.staff_uid);
@@ -3839,7 +3835,6 @@ export class PosService {
         };
       });
       return { ok: true, closings };
-    });
   }
 
   /** Read-only. Does not count an SCCx poll and does not change the till. */

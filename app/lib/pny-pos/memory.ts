@@ -44,6 +44,8 @@ export type Tx = { state: State };
 
 export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+  /** Read a detached snapshot without committing or projecting it. */
+  peek?: () => Promise<State>;
   /** Best-effort hook after a commit. Must not throw into the sale. */
   onCommit?: (state: State) => void;
 }
@@ -55,6 +57,10 @@ export class MemoryDb implements PosDb {
 
   constructor(state?: State) {
     this.state = state ?? emptyState();
+  }
+
+  async peek() {
+    return structuredClone(this.state) as State;
   }
 
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
