@@ -941,6 +941,7 @@ test("the sales feed returns new sales once and does not change the till", async
   assert.equal(boot.store, "PNY01");
   const page = await h.svc.salesFeed("0");
   assert.equal(page.sales.length, 2);
+  assert.equal(page.has_more, false);
   const cash = page.sales.find((row) => row.payment === "cash");
   const debit = page.sales.find((row) => row.payment === "debit");
   assert.ok(cash && debit);
@@ -958,6 +959,13 @@ test("the sales feed returns new sales once and does not change the till", async
     page.sales[1]?.shift_total_cents,
     (page.sales[0]?.total_cents ?? 0) + (page.sales[1]?.total_cents ?? 0),
   );
+  const firstPage = await h.svc.salesFeed("0", 1);
+  assert.equal(firstPage.sales.length, 1);
+  assert.equal(firstPage.has_more, true);
+  const nextPage = await h.svc.salesFeed(firstPage.next_cursor, 1);
+  assert.equal(nextPage.sales.length, 1);
+  assert.equal(nextPage.has_more, false);
+  assert.equal(nextPage.sales[0]?.id, page.sales[1]?.id);
   const repeat = await h.svc.salesFeed("0");
   assert.deepEqual(repeat.sales.map((row) => row.id), page.sales.map((row) => row.id));
   const second = await h.svc.salesFeed(`${page.sales[0]?.at}|${page.sales[0]?.id}`);
@@ -981,6 +989,24 @@ test("the sales feed returns new sales once and does not change the till", async
     if (savedToken == null) delete process.env.SALES_FEED_TOKEN;
     else process.env.SALES_FEED_TOKEN = savedToken;
   }
+});
+
+test("poll endpoints use detached reads instead of transactions", async () => {
+  const h = await readyTill({ "1001": 5, "1002": 5 });
+  let transactions = 0;
+  const transaction = h.db.transaction.bind(h.db);
+  h.db.transaction = async (fn) => {
+    transactions += 1;
+    return transaction(fn);
+  };
+
+  await h.svc.state(h.token);
+  await h.svc.menu();
+  await h.svc.salesFeed("0", 1);
+  await h.svc.readClosings();
+  await h.svc.closedShifts();
+
+  assert.equal(transactions, 0);
 });
 
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
@@ -2294,9 +2320,7 @@ test("after two hours the verify card closes and uncounted SKUs are accepted wit
   const locked = await h.svc.state(h.token);
   const accepted = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
   assert.equal(locked.verify.show_banner, false);
-  assert.equal(accepted?.accepted_as_is, true);
-  assert.equal(accepted?.expected_qty, 11);
-  assert.equal(accepted?.counted_qty, 11);
+  assert.equal(accepted, undefined, "a state poll must not persist the computed timeout result");
   assert.equal(locked.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   assert.equal(locked.verify.opening_lines.some((line) => line.sku === "1001"), false);
   assert.equal(locked.stock_check.opening.lines.find((line) => line.sku === "1002")?.off, -3);

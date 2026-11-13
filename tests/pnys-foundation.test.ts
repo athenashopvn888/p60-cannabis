@@ -119,3 +119,17 @@ test("PNYS foundation matches PNY01 tax-included store setting and assumes the r
   assert.match(adapter, /set local role pnys_app/);
   assert.match(adapter, /set role pnys_app/);
 });
+
+test("PNYS poll paths are detached reads and legacy projection rewrites are removed", async () => {
+  const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
+  const service = await readFile(new URL("../app/lib/pny-pos/service.ts", import.meta.url), "utf8");
+  const feedRoute = await readFile(new URL("../app/api/sales/feed/route.ts", import.meta.url), "utf8");
+
+  assert.match(adapter, /async peek\(\)/);
+  assert.match(adapter, /if \(after === before\)/);
+  assert.doesNotMatch(adapter, /async function project\(/);
+  assert.doesNotMatch(adapter, /delete from \$\{schema\}/i);
+  assert.match(service, /private async readState\(\)/);
+  assert.match(service, /has_more: hasMore/);
+  assert.match(feedRoute, /params\.get\("limit"\)/);
+});

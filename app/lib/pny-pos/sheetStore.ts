@@ -7,6 +7,7 @@ import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
 import { defaultThcCatalogFlag } from "./thcSkuFlags.ts";
+import { currentStore } from "./storeContext.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
 
@@ -190,6 +191,12 @@ export class SheetDb implements PosDb {
 
   forgetCache() {
     this.cache = null;
+  }
+
+  async peek() {
+    const snapshot = structuredClone(await this.load()) as State;
+    if (currentStore().code === "PNY02") await this.readPny2Stock(snapshot);
+    return snapshot;
   }
 
   private async applyPaperRefills(rows: SheetRow[]) {

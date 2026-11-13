@@ -116,6 +116,17 @@ export class PgDb implements PosDb {
     return this.ready;
   }
 
+  async peek() {
+    await this.ensureSchema();
+    const client = await this.pool.connect();
+    try {
+      const existing = await client.query("SELECT doc FROM pny_state WHERE id = 'main'");
+      return structuredClone((existing.rows[0]?.doc as State | undefined) ?? emptyState()) as State;
+    } finally {
+      client.release();
+    }
+  }
+
   async transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     await this.ensureSchema();
     const client = await this.pool.connect();
