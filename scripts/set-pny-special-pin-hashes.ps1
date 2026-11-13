@@ -1,12 +1,16 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('preview', 'production')]
+  [ValidateSet('preview')]
   [string]$Environment = 'preview',
-  [string]$Project = '',
+  [string]$Project = 'pnys-pos',
   [string]$Scope = 'athenashopvn888-2439s-projects'
 )
 
 $ErrorActionPreference = 'Stop'
+$expectedProject = 'pnys-pos'
+$expectedProjectId = 'prj_YxPnreV6iBh3AZIrTKKUK1z9tnuJ'
+$expectedOrgId = 'team_IqYig3d4WKblBzRjJ50L7GEc'
+$expectedScope = 'athenashopvn888-2439s-projects'
 $roles = @(
   @{ Name = 'MASTER'; Env = 'PNY_MASTER_PIN_HASH' },
   @{ Name = 'KITCHEN'; Env = 'PNY_KITCHEN_PIN_HASH' },
@@ -98,13 +102,27 @@ function Invoke-VercelCommand {
 }
 
 try {
-  if (-not $Project) {
-    $Project = if ($Environment -eq 'production') { 'pny1-pos' } else { 'p60-cannabis' }
+  if ($Environment -ne 'preview') {
+    throw 'This release script is preview-only.'
+  }
+  if ($Project -ne $expectedProject -or $Scope -ne $expectedScope) {
+    throw "Refusing to target anything except $expectedScope/$expectedProject."
+  }
+  $linkPath = Join-Path (Get-Location).Path '.vercel\project.json'
+  if (-not (Test-Path -LiteralPath $linkPath)) {
+    throw 'This checkout is not linked to Vercel. Run this command from the PNYS worktree.'
+  }
+  $link = Get-Content -LiteralPath $linkPath -Raw | ConvertFrom-Json
+  if ($link.projectName -ne $expectedProject -or $link.projectId -ne $expectedProjectId -or $link.orgId -ne $expectedOrgId) {
+    throw 'The linked Vercel project does not match the approved PNYS project. No PIN was requested or saved.'
   }
   $vercelArgs = @('--project', $Project, '--no-color')
   if ($Scope) { $vercelArgs += @('--scope', $Scope) }
 
-  Write-Host "Target: Vercel project $Project, $Environment environment. PINs will stay masked and only scrypt hashes will be sent."
+  Write-Host "Target team: $Scope"
+  Write-Host "Target project: $Project ($expectedProjectId)"
+  Write-Host "Target environment: $Environment"
+  Write-Host 'PINs stay masked; only scrypt hashes are sent.'
   $listResult = Invoke-VercelCommand -Arguments (@('env', 'ls', $Environment) + $vercelArgs)
   if ($listResult.ExitCode -ne 0) {
     throw "Vercel access check failed before any PIN was requested. Sign in to the account that owns '$Scope', then retry.`n$($listResult.Output.Trim())"
@@ -139,7 +157,7 @@ try {
     if ($saveResult.ExitCode -ne 0) { throw "Vercel did not save $name for $Environment.`n$($saveResult.Output.Trim())" }
   }
 
-  Write-Host "Saved all three PNY01 special-login hashes to $Environment. Redeploy the preview so it receives the new hashes."
+  Write-Host "Saved all three PNYS special-login hashes to $Environment. Redeploy the PNYS preview so it receives the new hashes."
 }
 finally {
   foreach ($key in @($plainPins.Keys)) { $plainPins[$key] = $null }
