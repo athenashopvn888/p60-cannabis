@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   DEMO_LABEL,
-  DEMO_PIN,
-  KITCHEN_PIN,
-  MASTER_PIN,
   VERIFY_RELEASE,
   FULL_SCAN_MS,
   IMPORT_DEBOUNCE_MS,
@@ -40,6 +37,7 @@ import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } f
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
+import { specialPinMatches } from "./pinAuth.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
@@ -71,7 +69,7 @@ export type PosDeps = {
   now?: () => Date;
   sheet: SheetClient;
   secrets: Secrets;
-  demo?: { pin: string; label: string } | null;
+  demo?: { pinHash: string | null; label: string } | null;
 };
 
 function iso(date: Date) {
@@ -1509,7 +1507,7 @@ export class PosService {
   }
 
   private demoPinAllowed() {
-    return Boolean(this.deps.demo);
+    return Boolean(this.deps.demo?.pinHash);
   }
 
   private session(state: State, token: string, now: Date, gate: "pos" | "kitchen" | "any" = "pos") {
@@ -1581,7 +1579,7 @@ export class PosService {
         store_code: "PNY02",
         ticket_letter: letter,
         ticket_seq: 0,
-        pin_hash: hashPin(DEMO_PIN),
+        pin_hash: this.deps.demo?.pinHash ?? null,
         pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
         pin_failed_attempts: 0,
         status: "ACTIVE",
@@ -1630,7 +1628,7 @@ export class PosService {
       store: tillCode(),
       demo: Boolean(this.deps.demo),
       demo_label: this.deps.demo ? DEMO_LABEL : null,
-      demo_pin: this.deps.demo?.pin ?? null,
+      demo_login_enabled: this.demoPinAllowed(),
     };
   }
 
@@ -1850,11 +1848,15 @@ export class PosService {
 
   async login(pin: string, ip: string) {
     this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
+    if (specialPinMatches("kitchen", pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    const demoPin = this.demoPinAllowed() && specialPinMatches("demo", pin);
+    const masterPin = specialPinMatches("master", pin);
+    if (!demoPin && !masterPin && !/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
-      if (this.demoPinAllowed() && safeEqual(pin, DEMO_PIN)) {
+      if (demoPin) {
         const shift = this.reopenDemoShift(tx.state, now);
         if (!shift?.pin_expires_at) {
           return { ok: false as const, status: 401, code: "NO_SHIFT", message: "Demo till is not seeded on this server. Reload and try again." };
@@ -1886,7 +1888,7 @@ export class PosService {
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
-      const master = safeEqual(pin, MASTER_PIN);
+      const master = masterPin;
       let shift = tx.state.shifts.find((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
       if (!shift && master) {
         shift = tx.state.shifts
@@ -1922,9 +1924,7 @@ export class PosService {
           code: locked ? "LOCKED" : "BAD_PIN",
           message: locked
             ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
-            : this.demoPinAllowed()
-              ? "That PIN is not correct. This demo uses PIN 6666. Five wrong tries lock the shift."
-              : "That PIN is not correct.",
+            : "That PIN is not correct.",
         };
       }
       shift.pin_failed_attempts = 0;
@@ -1949,12 +1949,12 @@ export class PosService {
 
   async kitchenLogin(pin: string, ip: string) {
     this.hit(`kitchen:${ip || "unknown"}`, 8, 15 * 60 * 1000);
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit kitchen PIN.");
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid kitchen PIN.");
     if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
-      if (!(this.demoPinAllowed() && safeEqual(pin, KITCHEN_PIN))) return { ok: false as const, fail: true as const };
+      if (!(this.deps.demo && specialPinMatches("kitchen", pin))) return { ok: false as const, fail: true as const };
       const shift = this.reopenDemoShift(tx.state, now);
       if (!shift?.pin_expires_at) {
         return { ok: false as const, fail: false as const, status: 401, code: "NO_SHIFT", message: "Demo kitchen is not seeded on this server. Reload and try again." };
@@ -2528,7 +2528,9 @@ export class PosService {
    * Keeps the current session and does not change the stored PIN.
    */
   async unlockTill(token: string, pin: string) {
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
+    const masterPin = specialPinMatches("master", pin);
+    if (!masterPin && !/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
@@ -2536,7 +2538,6 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN is expired." };
       }
-      const masterPin = safeEqual(pin, MASTER_PIN);
       if (!masterPin && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
         if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";

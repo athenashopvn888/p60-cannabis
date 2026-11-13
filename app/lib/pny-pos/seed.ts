@@ -1,5 +1,4 @@
-import { DEMO_PIN, STORE_CODE, STORE_TZ } from "./constants.ts";
-import { hashPin } from "./crypto.ts";
+import { STORE_CODE, STORE_TZ } from "./constants.ts";
 import { skuSortKey } from "./flowerSku.ts";
 import { catalogFromFeed, readCommittedPnyCatalog, type SetbProduct } from "./setbFeed.ts";
 import type { State } from "./types.ts";
@@ -17,7 +16,7 @@ function demoCatalog(): SetbProduct[] {
 }
 
 /** Sample PNY01 till. Every name is marked DEMO. Stock here is not the public store menu. */
-export function applyDemoSeed(state: State, now: Date) {
+export function applyDemoSeed(state: State, now: Date, demoPinHash: string | null = null) {
   const at = now.toISOString();
   const store = state.stores.find((row) => row.code === STORE_CODE);
   if (store) store.ticket_letter_seq = 1;
@@ -94,7 +93,7 @@ export function applyDemoSeed(state: State, now: Date) {
     store_code: STORE_CODE,
     ticket_letter: "A",
     ticket_seq: 102,
-    pin_hash: hashPin(DEMO_PIN),
+    pin_hash: demoPinHash,
     pin_expires_at: new Date(now.getTime() + 14 * 60 * 60 * 1000).toISOString(),
     pin_failed_attempts: 0,
     status: "ACTIVE",

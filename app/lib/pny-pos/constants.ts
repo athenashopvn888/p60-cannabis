@@ -30,10 +30,6 @@ export const OUTBOX_TAB_ORDER = [
   "_Meta",
 ] as const;
 
-export const DEMO_PIN = "6666";
-export const KITCHEN_PIN = "9999";
-/** Second login on the open shift. View-only. Does not start the staff verify window. */
-export const MASTER_PIN = "1988";
 /** Bump to restart the staff verify window on the next staff PIN login. */
 export const VERIFY_RELEASE = "staff-verify-2026-11-04";
 export const PIN_LENGTH = 4;
