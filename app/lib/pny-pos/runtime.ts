@@ -1,4 +1,4 @@
-import { DEMO_LABEL, DEMO_PIN, DEMO_SESSION_SECRET } from "./constants.ts";
+import { DEMO_LABEL, DEMO_SESSION_SECRET } from "./constants.ts";
 import { MemoryDb } from "./memory.ts";
 import { applyDemoSeed } from "./seed.ts";
 import { PosService, type PosDeps } from "./service.ts";
@@ -6,6 +6,7 @@ import { SheetDb } from "./sheetStore.ts";
 import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import { createSupabaseStateDb } from "./supabaseState.ts";
+import { specialPinHash } from "./pinAuth.ts";
 import type { State, Secrets } from "./types.ts";
 
 const DEMO_SECRETS: Secrets = {
@@ -78,6 +79,7 @@ async function boot() {
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
   const deps: PosDeps = { sheet, secrets, demo: null };
+  const demoPinHash = specialPinHash("demo");
   const locked = lockedStore();
   if (locked || stateBackend() === "supabase") {
     const url = process.env.POS_SUPABASE_DB_URL?.trim() ?? "";
@@ -87,19 +89,19 @@ async function boot() {
     if (demoMode()) {
       await db.transaction(async (tx) => {
         if (tx.state.shifts.length === 0 && tx.state.products.length === 0) {
-          applyDemoSeed(tx.state, new Date());
+          applyDemoSeed(tx.state, new Date(), demoPinHash);
           tagDemoStore(tx.state, code);
         }
       });
-      deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
+      deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
     }
     return new PosService(db, deps);
   }
   if (sheet.configured) return new PosService(new SheetDb(sheet), deps);
   const db = new MemoryDb();
   if (demoMode()) {
-    applyDemoSeed(db.state, new Date());
-    deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
+    applyDemoSeed(db.state, new Date(), demoPinHash);
+    deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
   }
   return new PosService(db, deps);
 }

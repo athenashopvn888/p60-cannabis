@@ -248,12 +248,12 @@ export default function KitchenApp() {
               <button key={key} type="button" className={key === "Clear" || key === "⌫" ? `${styles.btn} ${styles.ghost}` : styles.btn} onClick={() => {
                 if (key === "Clear") setPin("");
                 else if (key === "⌫") setPin((value) => value.slice(0, -1));
-                else if (pin.length < 4) setPin((value) => value + key);
+                else if (pin.length < 6) setPin((value) => value + key);
               }}>{key}</button>
             ))}
           </div>
           {error ? <p className={styles.warn}>{error}</p> : null}
-          <button className={styles.btn} type="submit" disabled={busy || pin.length !== 4}>Sign in</button>
+          <button className={styles.btn} type="submit" disabled={busy || pin.length < 1 || pin.length > 6}>Sign in</button>
         </form>
       </main>
     );

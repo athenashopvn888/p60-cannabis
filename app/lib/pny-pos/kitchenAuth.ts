@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
-import { KITCHEN_PIN_HASH_TEMP, PIN_TTL_MS } from "./constants.ts";
-import { safeEqual, verifyPin } from "./crypto.ts";
+import { PIN_TTL_MS } from "./constants.ts";
+import { safeEqual } from "./crypto.ts";
+import { specialPinMatches } from "./pinAuth.ts";
 
 export type KitchenTicket = {
   v: 1;
@@ -14,13 +15,8 @@ export function kitchenWritesEnabled() {
   return process.env.VERCEL_ENV === "production" && process.env.PNY_KITCHEN_WRITES === "1";
 }
 
-export function kitchenPinHash() {
-  const fromEnv = process.env.PNY_KITCHEN_PIN_HASH?.trim();
-  return fromEnv || KITCHEN_PIN_HASH_TEMP;
-}
-
 export function kitchenPinMatches(pin: string) {
-  return verifyPin(pin, kitchenPinHash());
+  return specialPinMatches("kitchen", pin);
 }
 
 export function signKitchenSession(secret: string, nowMs: number) {
