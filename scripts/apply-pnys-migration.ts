@@ -12,6 +12,11 @@ try {
   await pool.query(sql);
   const checked = await pool.query("select to_regclass('pnys_pos.live_state') as live_state, to_regclass('pos_hub.store') as hub_store");
   console.log(JSON.stringify({ applied: true, ...checked.rows[0] }));
+} catch (error) {
+  const raw = error instanceof Error ? error.message : "Unknown error";
+  const safe = raw.replaceAll(url, "[REDACTED]").replace(/postgres(?:ql)?:\/\/\S+/gi, "[REDACTED]");
+  console.error(`PNYS migration failed: ${safe}`);
+  process.exitCode = 1;
 } finally {
   await pool.end();
 }

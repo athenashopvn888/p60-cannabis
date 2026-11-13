@@ -61,20 +61,26 @@ async function main() {
   const url = process.env.POS_SUPABASE_DB_URL?.trim();
   if (!url) throw new Error("POS_SUPABASE_DB_URL is required");
   const backupOnly = process.argv.includes("--backup-only");
+  const cloneOnly = process.argv.includes("--clone-only");
+  if (backupOnly && cloneOnly) throw new Error("Choose backup-only or clone-only, not both");
   const backupArg = process.argv.slice(2).find((arg) => !arg.startsWith("--"));
   const backupDir = path.resolve(backupArg || "backups/pnys-foundation");
   const pool = new Pool({ connectionString: url, max: 1, ssl: /localhost|127\.0\.0\.1/.test(url) ? undefined : { rejectUnauthorized: false } });
   const client = await pool.connect();
   try {
-    const old = await readState(client, "PNY02");
-    await mkdir(backupDir, { recursive: true });
-    const backup = { store_code: "PNY02", version: Number(old.version), updated_at: old.updated_at, doc: old.doc };
-    const backupJson = `${JSON.stringify(backup, null, 2)}\n`;
-    const backupPath = path.join(backupDir, `pny02-readonly-${new Date().toISOString().replace(/[:.]/g,"-")}.json`);
-    await writeFile(backupPath, backupJson, { flag: "wx", mode: 0o600 });
-    const backupSha = createHash("sha256").update(backupJson).digest("hex");
+    let backupPath: string | null = null;
+    let backupSha: string | null = null;
+    if (!cloneOnly) {
+      const old = await readState(client, "PNY02");
+      await mkdir(backupDir, { recursive: true });
+      const backup = { store_code: "PNY02", version: Number(old.version), updated_at: old.updated_at, doc: old.doc };
+      const backupJson = `${JSON.stringify(backup, null, 2)}\n`;
+      backupPath = path.join(backupDir, `pny02-readonly-${new Date().toISOString().replace(/[:.]/g,"-")}.json`);
+      await writeFile(backupPath, backupJson, { flag: "wx", mode: 0o600 });
+      backupSha = createHash("sha256").update(backupJson).digest("hex");
+    }
     if (backupOnly) {
-      console.log(JSON.stringify({ backup: backupPath, backup_sha256: backupSha, store_code: "PNY02", version: Number(old.version), read_only: true }));
+      console.log(JSON.stringify({ backup: backupPath, backup_sha256: backupSha, store_code: "PNY02", read_only: true }));
       return;
     }
 
@@ -98,7 +104,7 @@ async function main() {
     await client.query("insert into pnys_pos.live_state(store_code,version,doc) values ('PNYS',0,$1::jsonb)", [JSON.stringify(target)]);
     await client.query("insert into pnys_pos.clone_audit(clone_id,source_store,target_store,source_version,source_counts,target_counts,source_checksum,target_checksum,reconciled) values($1,'PNY01','PNYS',$2,$3::jsonb,$4::jsonb,$5,$6,true)", [randomUUID(), Number(source.version), JSON.stringify(sourceCounts), JSON.stringify(targetCounts), sourceChecksum, targetChecksum]);
     await client.query("commit");
-    console.log(JSON.stringify({ backup: backupPath, backup_sha256: backupSha, source_version: Number(source.version), source_counts: sourceCounts, target_counts: targetCounts, source_checksum: sourceChecksum, target_checksum: targetChecksum, reconciled: true }));
+    console.log(JSON.stringify({ source_version: Number(source.version), source_counts: sourceCounts, target_counts: targetCounts, source_checksum: sourceChecksum, target_checksum: targetChecksum, reconciled: true }));
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;
@@ -108,4 +114,13 @@ async function main() {
   }
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  const secret = process.env.POS_SUPABASE_DB_URL ?? "";
+  const raw = error instanceof Error ? error.message : "Unknown error";
+  const withoutExactSecret = secret ? raw.replaceAll(secret, "[REDACTED]") : raw;
+  const safe = withoutExactSecret.replace(/postgres(?:ql)?:\/\/\S+/gi, "[REDACTED]");
+  console.error(`PNYS foundation failed: ${safe}`);
+  process.exitCode = 1;
+}
