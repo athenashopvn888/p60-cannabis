@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { PNYS_STORE, storeProfile } from "../app/lib/pny-pos/storeProfile.ts";
 import { lockedStore } from "../app/lib/pny-pos/singleStore.ts";
 import { LocalSheet, sheetFromEnv } from "../app/lib/pny-pos/sheets.ts";
+import { materializeCatalog } from "../app/lib/pny-pos/catalogMaterialization.ts";
+import type { State } from "../app/lib/pny-pos/types.ts";
 
 test("PNYS uses isolated routes and cookie", () => {
   assert.equal(storeProfile("PNYS"), PNYS_STORE);
@@ -46,4 +48,21 @@ test("shared shell has fixed bars, scroll panel, safe areas and 360px rule", asy
   assert.match(css, /safe-area-inset-top/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /max-width:\s*390px/);
+});
+
+test("catalog materialization preserves stock and keeps PNY01-only additions", () => {
+  const state = {
+    products: [{ sku: "396-3g", sku_sort: 396, name: "KHALIFA KUSH 3g", category: "BUDGET", default_price_cents: 1000, image_url: null, setb_active: true, synced_at: null, created_at: "old" }],
+    store_products: [{ store_code: "PNYS", sku: "396-3g", enabled: true, price_override_cents: null, created_at: "old", updated_at: "old" }],
+    balances: [{ store_code: "PNYS", sku: "240", qty: 37, created_at: "old", updated_at: "old" }],
+  } as Pick<State, "products" | "store_products" | "balances">;
+  const before = structuredClone(state.balances);
+  const result = materializeCatalog(state, [
+    { sku: "240", name: "GRABBA", category: "CIGARETTES", price_cents: 500, image_url: null, active: true },
+  ], "PNYS", "now");
+
+  assert.deepEqual(state.balances, before);
+  assert.deepEqual(result, { products: 2, store_products: 2, balances: 1 });
+  assert.equal(state.products.find((row) => row.sku === "240")?.thc_flag, false);
+  assert.equal(state.products.find((row) => row.sku === "396-3g")?.thc_flag, true);
 });

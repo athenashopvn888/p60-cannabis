@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Pool, type PoolClient } from "pg";
+import { materializeCatalog } from "../app/lib/pny-pos/catalogMaterialization.ts";
+import { catalogFromFeed, defaultSetbProductsUrl } from "../app/lib/pny-pos/setbFeed.ts";
+import type { State } from "../app/lib/pny-pos/types.ts";
 
 type Json = Record<string, unknown>;
 
@@ -87,7 +90,15 @@ async function main() {
 
     const source = await readState(client, "PNY01");
     const target = cloneCatalog(source.doc);
-    const sourceView = catalogView(source.doc, "PNY01");
+    const response = await fetch(defaultSetbProductsUrl(), { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`PNY01 catalog feed returned ${response.status}`);
+    const feed = catalogFromFeed(await response.json());
+    if (feed.length < 200) throw new Error(`PNY01 catalog feed unexpectedly small: ${feed.length}`);
+    const at = new Date().toISOString();
+    const effectiveSource = structuredClone(source.doc) as unknown as State;
+    materializeCatalog(effectiveSource, feed, "PNY01", at);
+    materializeCatalog(target as unknown as State, feed, "PNYS", at);
+    const sourceView = catalogView(effectiveSource as unknown as Json, "PNY01");
     const targetView = catalogView(target, "PNYS");
     const requiredSkus = ["396-3g", "406-3g", "406-5g", "419-3g", "419-5g"];
     const sourceSkus = new Set(sourceView.products.map((row) => String(row.sku)));
