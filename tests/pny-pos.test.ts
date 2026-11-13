@@ -18,7 +18,6 @@ import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../a
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
-import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
@@ -36,6 +35,8 @@ import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/d
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
+import { hashPin } from "../app/lib/pny-pos/crypto.ts";
+import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -45,6 +46,34 @@ const secrets: Secrets = {
   admin: "test-admin-secret-value",
   cron: "test-cron-secret-value",
 };
+
+const TEST_DEMO_PIN = "24680";
+const TEST_KITCHEN_PIN = "135790";
+const TEST_MASTER_PIN = "86420";
+const TEST_DEMO_PIN_HASH = hashPin(TEST_DEMO_PIN);
+process.env.PNY_DEMO_PIN_HASH = TEST_DEMO_PIN_HASH;
+process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+process.env.PNY_MASTER_PIN_HASH = hashPin(TEST_MASTER_PIN);
+
+test("missing special-login hashes fail closed", { concurrency: false }, () => {
+  const saved = {
+    demo: process.env.PNY_DEMO_PIN_HASH,
+    kitchen: process.env.PNY_KITCHEN_PIN_HASH,
+    master: process.env.PNY_MASTER_PIN_HASH,
+  };
+  try {
+    delete process.env.PNY_DEMO_PIN_HASH;
+    delete process.env.PNY_KITCHEN_PIN_HASH;
+    delete process.env.PNY_MASTER_PIN_HASH;
+    assert.equal(specialPinMatches("demo", TEST_DEMO_PIN), false);
+    assert.equal(specialPinMatches("kitchen", TEST_KITCHEN_PIN), false);
+    assert.equal(specialPinMatches("master", TEST_MASTER_PIN), false);
+  } finally {
+    if (saved.demo) process.env.PNY_DEMO_PIN_HASH = saved.demo;
+    if (saved.kitchen) process.env.PNY_KITCHEN_PIN_HASH = saved.kitchen;
+    if (saved.master) process.env.PNY_MASTER_PIN_HASH = saved.master;
+  }
+});
 
 function harness(start = new Date("2026-11-03T15:00:00.000Z")) {
   const clock = { t: start };
@@ -873,14 +902,14 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   const again = await h.svc.unlockTill(h.token, h.pin);
   assert.equal(again.view_only, false);
   assert.equal(h.db.state.shifts.find((row) => row.id === shift.id)?.pin_failed_attempts, 0);
-  const asMaster = await h.svc.unlockTill(h.token, "1988");
+  const asMaster = await h.svc.unlockTill(h.token, TEST_MASTER_PIN);
   assert.equal(asMaster.view_only, true);
   const still = await h.svc.state(h.token);
   assert.equal(still.master, false);
   assert.equal(still.can_sell, true);
   assert.equal(h.db.state.sessions.length, sessions);
-  const master = await h.svc.login("1988", "10.9.0.1");
-  const masterView = await h.svc.unlockTill(master.token, "1988");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.9.0.1");
+  const masterView = await h.svc.unlockTill(master.token, TEST_MASTER_PIN);
   assert.equal(masterView.view_only, true);
   const staffPinOnMaster = await h.svc.unlockTill(master.token, h.pin);
   assert.equal(staffPinOnMaster.view_only, true);
@@ -1116,19 +1145,18 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
 });
 
-test("demo PIN 6666 is a signed session that another server accepts", async () => {
-  assert.equal(DEMO_PIN, "6666");
-  assert.match(DEMO_PIN, /^\d{4}$/);
+test("the env-hashed demo PIN is a signed session that another server accepts", async () => {
+  assert.match(TEST_DEMO_PIN, /^\d{1,6}$/);
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return { db, svc };
   };
   const first = make();
   const second = make();
-  const login = await first.svc.login(DEMO_PIN, "10.9.9.1");
+  const login = await first.svc.login(TEST_DEMO_PIN, "10.9.9.1");
   assert.match(login.token, /^v1\./);
   const remote = await second.svc.state(login.token);
   assert.equal(remote.shift?.pos_id, "DEMO1");
@@ -1139,7 +1167,7 @@ test("demo PIN 6666 is a signed session that another server accepts", async () =
     shift.status = "ENDED";
     shift.pin_hash = null;
   });
-  const again = await second.svc.login(DEMO_PIN, "10.9.9.3");
+  const again = await second.svc.login(TEST_DEMO_PIN, "10.9.9.3");
   assert.equal((await second.svc.state(again.token)).shift?.status, "ACTIVE");
   process.env.VERCEL_ENV = "production";
   try {
@@ -1147,7 +1175,7 @@ test("demo PIN 6666 is a signed session that another server accepts", async () =
       shift.status = "ENDED";
       shift.pin_hash = null;
     });
-    const live = await second.svc.login(DEMO_PIN, "10.9.9.4");
+    const live = await second.svc.login(TEST_DEMO_PIN, "10.9.9.4");
     assert.equal((await second.svc.state(live.token)).shift?.status, "ACTIVE");
   } finally {
     delete process.env.VERCEL_ENV;
@@ -1157,9 +1185,9 @@ test("demo PIN 6666 is a signed session that another server accepts", async () =
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {
   const db = new MemoryDb();
   const now = new Date("2026-11-03T15:00:00.000Z");
-  applyDemoSeed(db.state, now);
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
   const sheet = new LocalSheet();
-  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA — real SETB products, sample stock, not live on-hand" } });
+  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA — real SETB products, sample stock, not live on-hand" } });
   const report = await svc.reconciliation();
   assert.equal(report.ok, true);
   const menu = await svc.menu();
@@ -1172,7 +1200,7 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(packs.every((item) => item.price_cents === 250 && item.unit_label === "per pack"), true);
   assert.equal(keysDeep(menu).has("qty"), false);
   assert.equal(keysDeep(menu).has("on_hand"), false);
-  const login = await svc.login(DEMO_PIN, "10.0.0.1");
+  const login = await svc.login(TEST_DEMO_PIN, "10.0.0.1");
   const state = await svc.state(login.token);
   assert.equal(state.pending_count, 2);
   assert.ok((state.totals?.sales_cents ?? 0) >= 500);
@@ -1233,12 +1261,12 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return { db, svc };
   };
   const origin = make();
-  const login = await origin.svc.login(DEMO_PIN, "10.8.1.1");
+  const login = await origin.svc.login(TEST_DEMO_PIN, "10.8.1.1");
   const open = (await origin.svc.state(login.token)).tickets[0];
   assert.ok(open);
   const seededSales = (await origin.svc.state(login.token)).totals?.sales_cents ?? 0;
@@ -1253,7 +1281,7 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   assert.equal(warm.tickets.some((row) => row.id === open.id), false);
   assert.equal(warm.totals?.sales_cents, seededSales + closed.total_cents);
   const cold = make();
-  const other = await cold.svc.login(DEMO_PIN, "10.8.1.2");
+  const other = await cold.svc.login(TEST_DEMO_PIN, "10.8.1.2");
   const reloaded = await cold.svc.state(other.token, journal);
   assert.equal(reloaded.tickets.some((row) => row.id === open.id), false);
   assert.equal(reloaded.totals?.sales_cents, warm.totals?.sales_cents);
@@ -1267,33 +1295,32 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   assert.equal((await cold.svc.ticketStatus(open.code, journal)).status, "PAID");
 });
 
-test("kitchen PIN 9999 opens the kitchen and the POS PIN 6666 does not", async () => {
-  assert.equal(KITCHEN_PIN, "9999");
-  assert.notEqual(KITCHEN_PIN, DEMO_PIN);
+test("the env-hashed kitchen PIN opens only the kitchen login", async () => {
+  assert.notEqual(TEST_KITCHEN_PIN, TEST_DEMO_PIN);
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return svc;
   };
   const svc = make();
-  await rejects(() => svc.kitchenLogin(DEMO_PIN, "10.7.0.1"), "BAD_PIN");
+  await rejects(() => svc.kitchenLogin(TEST_DEMO_PIN, "10.7.0.1"), "BAD_PIN");
   await rejects(() => svc.kitchenLogin("12345", "10.7.0.2"), "BAD_PIN");
-  const kitchen = await svc.kitchenLogin(KITCHEN_PIN, "10.7.0.3");
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.0.3");
   assert.match(kitchen.token, /^v1\./);
   const view = await svc.state(kitchen.token, undefined, "kitchen");
   assert.equal(view.shift?.pos_id, "DEMO1");
   await rejects(() => svc.state(kitchen.token), "SESSION_REJECTED");
-  const pos = await svc.login(DEMO_PIN, "10.7.0.4");
+  const pos = await svc.login(TEST_DEMO_PIN, "10.7.0.4");
   assert.equal((await svc.state(pos.token)).shift?.pos_id, "DEMO1");
   await rejects(() => svc.state(pos.token, undefined, "kitchen"), "SESSION_REJECTED");
-  await rejects(() => svc.login(KITCHEN_PIN, "10.7.0.5"), "BAD_PIN");
+  await rejects(() => svc.login(TEST_KITCHEN_PIN, "10.7.0.5"), "BAD_PIN");
 
   const locker = make();
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => locker.kitchenLogin("0000", "10.7.1.1"), "BAD_PIN");
   await rejects(() => locker.kitchenLogin("0000", "10.7.1.2"), "LOCKED");
-  await rejects(() => locker.kitchenLogin(KITCHEN_PIN, "10.7.1.3"), "LOCKED");
+  await rejects(() => locker.kitchenLogin(TEST_KITCHEN_PIN, "10.7.1.3"), "LOCKED");
 });
 
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
@@ -2349,7 +2376,7 @@ test("master login does not start the verify window and cannot change the shift"
   const hash = shift?.pin_hash;
   const openedAt = shift?.started_at;
   h.clock.t = new Date(h.clock.t.getTime() + 30 * 60 * 1000);
-  const master = await h.svc.login("1988", "10.8.0.1");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.8.0.1");
   const preview = await h.svc.state(master.token);
   const during = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
   assert.equal(preview.master, true);
@@ -2398,7 +2425,7 @@ test("master PIN can view the last ended shift without reopening it", async () =
   if (oldSession) oldSession.revoked_at = h.clock.t.toISOString();
   await rejects(() => h.svc.login(String(started.pin), "10.8.1.2"), "NO_SHIFT");
 
-  const master = await h.svc.login("1988", "10.8.1.3");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.8.1.3");
   const preview = await h.svc.state(master.token);
   assert.equal(preview.master, true);
   assert.equal(preview.shift?.status, "ENDED");
@@ -2971,7 +2998,7 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(h.db.state.audit.filter((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id).length, 1);
   await h.svc.answerWeedInStore(login.token, false);
 
-  const master = await h.svc.login("1988", "10.0.0.18");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.0.0.18");
   assert.equal((await h.svc.state(master.token)).master, true);
   const masterToggle = await h.svc.answerWeedInStore(master.token, true);
   assert.equal(masterToggle.changed, true);
@@ -3021,7 +3048,7 @@ test("PNY01 staff cannot change WEED after the closing count starts", async () =
   await h.svc.answerWeedInStore(login.token, true);
   await h.svc.startClosingCount(login.token);
   await rejects(() => h.svc.answerWeedInStore(login.token, false), "WEED_TOGGLE_CLOSED");
-  const master = await h.svc.login("1988", "10.0.0.12");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.0.0.12");
   await rejects(() => h.svc.answerWeedInStore(master.token, false), "WEED_TOGGLE_CLOSED");
   assert.equal(h.db.state.shifts.find((row) => row.id === opened.shift_id)?.weed_in_store, true);
 });

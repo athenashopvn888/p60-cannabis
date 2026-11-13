@@ -14,7 +14,7 @@ type View = {
   authenticated?: boolean;
   demo?: boolean;
   demo_label?: string | null;
-  demo_pin?: string | null;
+  demo_login_enabled?: boolean;
   shift?: { staff_name: string };
   master?: boolean;
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
@@ -140,18 +140,18 @@ export default function TillApp({
   if (!view.authenticated) {
     return (
       <main className={styles.shell} data-testid="pos-till-login">
-        {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
+        {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>Staff till</h1>
-          <p>Enter the same 4-digit shift PIN. Five wrong tries lock the shift.</p>
+          <p>Enter the 4-digit staff PIN or an authorized login PIN. Five wrong staff PIN tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           {pinPad((digit) => {
             if (digit === "Clear") setPin("");
             else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-            else setPin((current) => (current + digit).slice(0, 4));
+            else setPin((current) => (current + digit).slice(0, 6));
           })}
-          <button className={styles.primary} type="button" disabled={pin.length !== 4 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
+          <button className={styles.primary} type="button" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
             Sign in
           </button>
         </section>
@@ -165,15 +165,15 @@ export default function TillApp({
         {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>Till</h1>
-          <p>Enter the shift PIN to open the till. Five wrong tries lock the shift.</p>
+          <p>Enter the 4-digit staff PIN or the authorized master PIN. Five wrong staff PIN tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           {pinPad((digit) => {
             if (digit === "Clear") setPin("");
             else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-            else setPin((current) => (current + digit).slice(0, 4));
+            else setPin((current) => (current + digit).slice(0, 6));
           })}
-          <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length !== 4 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
+          <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
           <Link className={styles.backLink} href={storeHome} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>

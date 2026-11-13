@@ -59,7 +59,7 @@ type View = {
   authenticated?: boolean;
   demo?: boolean;
   demo_label?: string | null;
-  demo_pin?: string | null;
+  demo_login_enabled?: boolean;
   waiting_for_opening?: boolean;
   phase?: string;
   master?: boolean;
@@ -563,11 +563,11 @@ export default function PosApp({
     const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"];
     return (
       <main className={styles.shell} data-testid="pos-login">
-        {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
+        {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
         {view.waiting_for_opening ? <div className={styles.banner} data-testid="waiting-opening">waiting for opening stock</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>{storeLabel} staff till</h1>
-          <p>{view.waiting_for_opening ? "Opening stock has not been copied in yet." : "Enter the 4-digit shift PIN. Five wrong tries lock the shift."}</p>
+          <p>{view.waiting_for_opening ? "Opening stock has not been copied in yet." : "Enter the 4-digit staff PIN or an authorized login PIN. Five wrong staff PIN tries lock the shift."}</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           <div className={styles.keys}>
@@ -578,14 +578,14 @@ export default function PosApp({
                 onClick={() => {
                   if (digit === "Clear") setPin("");
                   else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-                  else setPin((current) => (current + digit).slice(0, 4));
+                  else setPin((current) => (current + digit).slice(0, 6));
                 }}
               >
                 {digit}
               </button>
             ))}
           </div>
-          <button className={styles.primary} type="button" disabled={pin.length !== 4 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
+          <button className={styles.primary} type="button" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
             Sign in
           </button>
         </section>

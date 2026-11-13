@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { hashPin } from "../app/lib/pny-pos/crypto.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
 import { kitchenPinMatches, kitchenWritesEnabled } from "../app/lib/pny-pos/kitchenAuth.ts";
@@ -18,6 +17,9 @@ const secrets: Secrets = {
   admin: "test-admin-secret-value",
   cron: "test-cron-secret-value",
 };
+
+const TEST_KITCHEN_PIN = "135790";
+process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
 
 function qty(db: MemoryDb, sku: string) {
   return db.state.balances.find((row) => row.sku === sku)?.qty ?? 0;
@@ -46,20 +48,20 @@ async function openTill() {
   const login = await svc.login(String(started.pin), "10.1.0.1");
   await svc.answerWeedInStore(login.token, true);
   await svc.state(login.token);
-  const kitchen = await svc.enterKitchen(KITCHEN_PIN, "10.1.0.2");
+  const kitchen = await svc.enterKitchen(TEST_KITCHEN_PIN, "10.1.0.2");
   return { db, svc, staff: login.token, kitchen: kitchen.token, pin: String(started.pin) };
 }
 
-test("kitchen PIN is the TEMP hash and is not a till PIN", async () => {
-  assert.equal(kitchenPinMatches(KITCHEN_PIN), true);
-  assert.equal(kitchenPinMatches("1988"), false);
+test("kitchen PIN is read from the env hash and is not a till PIN", async () => {
+  assert.equal(kitchenPinMatches(TEST_KITCHEN_PIN), true);
+  assert.equal(kitchenPinMatches("24680"), false);
   assert.equal(kitchenWritesEnabled(), false);
   const h = await openTill();
-  await rejects(() => h.svc.login(KITCHEN_PIN, "10.1.0.3"), "BAD_PIN");
+  await rejects(() => h.svc.login(TEST_KITCHEN_PIN, "10.1.0.3"), "BAD_PIN");
   const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
   assert.ok(shift);
-  shift.pin_hash = hashPin(KITCHEN_PIN);
-  await rejects(() => h.svc.login(KITCHEN_PIN, "10.1.0.4"), "BAD_PIN");
+  shift.pin_hash = hashPin(TEST_KITCHEN_PIN);
+  await rejects(() => h.svc.login(TEST_KITCHEN_PIN, "10.1.0.4"), "BAD_PIN");
   await rejects(() => h.svc.cashout(h.kitchen, { key: "no-sale", lines: [{ sku: "1002", qty: 1 }] }), "NO_SESSION");
   await rejects(() => h.svc.state(h.kitchen), "NO_SESSION");
   await rejects(() => h.svc.state(h.kitchen, undefined, "kitchen"), "NO_SESSION");
