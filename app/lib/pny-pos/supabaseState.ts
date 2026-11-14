@@ -1,5 +1,7 @@
 import { Pool, type PoolClient } from "pg";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
+import { enforceIntegrationOwner, enforceStoreWriteGate } from "./controls.ts";
+import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
 
 export class StaleRevision extends Error {
@@ -59,6 +61,53 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
   });
   let tail: Promise<void> = Promise.resolve();
   const db: PosDb & { peek(): Promise<State> } = {
+    async assertIntegrationOwner(channel) {
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "select channel,owner_store_code,generation,cutover_id from pos_hub.integration_owner where channel=$1 and enabled=true",
+          [channel],
+        );
+        return enforceIntegrationOwner(channel, store, result.rows[0]);
+      } finally {
+        client.release();
+      }
+    },
+    async deliveredIntegrationEvents(channel, cutoverId, eventIds) {
+      if (eventIds.length === 0) return new Set<string>();
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "select event_id from pos_hub.integration_delivery where channel=$1 and cutover_id=$2 and event_id=any($3::text[])",
+          [channel, cutoverId, eventIds],
+        );
+        return new Set(result.rows.map((row) => String(row.event_id)));
+      } finally {
+        client.release();
+      }
+    },
+    async recordIntegrationDelivery(lease, eventId, receipt = {}) {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const owner = await client.query(
+          "select 1 from pos_hub.integration_owner where channel=$1 and owner_store_code=$2 and generation=$3 and cutover_id=$4 and enabled=true for update",
+          [lease.channel, store, lease.generation, lease.cutover_id],
+        );
+        if (owner.rowCount !== 1) throw new PosError(423, "INTEGRATION_NOT_OWNER", `${lease.channel} ownership changed before delivery acknowledgement.`);
+        const saved = await client.query(
+          "insert into pos_hub.integration_delivery(channel,cutover_id,event_id,owner_store_code,generation,receipt) values($1,$2,$3,$4,$5,$6::jsonb) on conflict(channel,cutover_id,event_id) do nothing returning id",
+          [lease.channel, lease.cutover_id, eventId, store, lease.generation, JSON.stringify(receipt)],
+        );
+        await client.query("commit");
+        return saved.rowCount === 1;
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
     async peek() {
       const client = await pool.connect();
       try {
@@ -80,13 +129,21 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
       const client = await pool.connect();
       try {
         await client.query("begin");
-        const loaded = await client.query(`select version, doc from pny_pos.live_state where store_code = $1`, [store]);
+        const loaded = await client.query(`select version, doc from pny_pos.live_state where store_code = $1 for update`, [store]);
         const version = Number(loaded.rows[0]?.version ?? 0);
         const snapshot = structuredClone(asState(loaded.rows[0]?.doc)) as State;
+        const before = JSON.stringify(snapshot);
         const result = await fn({ state: snapshot });
+        const after = JSON.stringify(snapshot);
+        if (after === before) {
+          await client.query("commit");
+          return result;
+        }
+        const runtime = await client.query("select write_mode,generation from pos_hub.store_runtime where store_code=$1", [store]);
+        enforceStoreWriteGate(runtime.rows[0]);
         const saved = await client.query(
           `update pny_pos.live_state set doc = $1::jsonb, version = version + 1, updated_at = now() where store_code = $2 and version = $3 returning version`,
-          [JSON.stringify(snapshot), store, version],
+          [after, store, version],
         );
         if (saved.rowCount !== 1) throw new StaleRevision();
         await project(client, store, snapshot);

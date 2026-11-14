@@ -28,6 +28,7 @@ import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSessio
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
 import type { PosDb } from "./memory.ts";
+import type { IntegrationChannel, IntegrationLease } from "./controls.ts";
 import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
@@ -1384,6 +1385,26 @@ export class PosService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  async assertIntegrationOwner(channel: IntegrationChannel) {
+    if (!this.db.assertIntegrationOwner) {
+      throw new PosError(423, "INTEGRATION_GATE_UNAVAILABLE", `${channel} ownership cannot be verified.`);
+    }
+    return this.db.assertIntegrationOwner(channel);
+  }
+
+  private async deliveredIntegrationEvents(lease: IntegrationLease, eventIds: string[]) {
+    return this.db.deliveredIntegrationEvents
+      ? this.db.deliveredIntegrationEvents(lease.channel, lease.cutover_id, eventIds)
+      : new Set<string>();
+  }
+
+  async recordIntegrationDelivery(lease: IntegrationLease, eventId: string, receipt: Record<string, unknown> = {}) {
+    if (!this.db.recordIntegrationDelivery) {
+      throw new PosError(423, "INTEGRATION_GATE_UNAVAILABLE", `${lease.channel} delivery cannot be recorded.`);
+    }
+    return this.db.recordIntegrationDelivery(lease, eventId, receipt);
   }
 
   /**
@@ -3542,11 +3563,14 @@ export class PosService {
   }
 
   async drainOutbox() {
+    let lease = await this.assertIntegrationOwner("SHEET_OUTBOX");
     const now = this.now();
     const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime()));
     if (batch.length === 0) return { ok: true, sent: 0 };
+    const delivered = await this.deliveredIntegrationEvents(lease, batch.map((row) => row.row_id));
+    const pending = batch.filter((row) => !delivered.has(row.row_id));
     const groups = new Map<string, typeof batch>();
-    for (const row of batch) {
+    for (const row of pending) {
       const list = groups.get(row.tab) ?? [];
       list.push(row);
       groups.set(row.tab, list);
@@ -3555,7 +3579,11 @@ export class PosService {
     try {
       for (const tab of tabs) {
         const rows = groups.get(tab) ?? [];
-        if (rows.length) await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+        if (rows.length) {
+          lease = await this.assertIntegrationOwner("SHEET_OUTBOX");
+          await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+          for (const row of rows) await this.recordIntegrationDelivery(lease, row.row_id, { tab });
+        }
       }
       await this.db.transaction(async (tx) => {
         const at = iso(this.now());
@@ -3567,7 +3595,7 @@ export class PosService {
           current.last_error = null;
         }
       });
-      return { ok: true, sent: batch.length };
+      return { ok: true, sent: pending.length, replayed: delivered.size };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sheet write failed";
       await this.db.transaction(async (tx) => {

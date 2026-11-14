@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
+    await service.assertIntegrationOwner("SETB_SYNC");
     const url = defaultSetbProductsUrl();
     const headers: Record<string, string> = {};
     if (process.env.SETB_SYNC_SECRET) headers.authorization = `Bearer ${process.env.SETB_SYNC_SECRET}`;

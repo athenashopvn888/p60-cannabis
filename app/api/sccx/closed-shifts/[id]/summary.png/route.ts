@@ -10,6 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     assertSecret(request.headers.get("x-sccx-poll-secret"), loadSecrets().poll);
     const { id } = await context.params;
     const service = await getService();
+    await service.assertIntegrationOwner("SCCX_FEED");
     return closingSummaryImage(await service.closingSummary(id));
   } catch (error) {
     return toResponse(error);

@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     }
     const since = new URL(request.url).searchParams.get("since");
     const service = await getService();
+    await service.assertIntegrationOwner("SCCX_FEED");
     return json(await service.salesFeed(since));
   } catch (error) {
     return toResponse(error);

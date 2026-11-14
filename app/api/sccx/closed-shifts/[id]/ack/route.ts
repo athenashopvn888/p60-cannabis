@@ -10,7 +10,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     assertSecret(request.headers.get("x-sccx-poll-secret"), loadSecrets().poll);
     const { id } = await context.params;
     const service = await getService();
-    return json(await service.ackClosedShift(id, { key: idempotencyKey(request, body) }));
+    const lease = await service.assertIntegrationOwner("SCCX_ACK");
+    const key = idempotencyKey(request, body);
+    const result = await service.ackClosedShift(id, { key });
+    await service.recordIntegrationDelivery(lease, `closing:${id}:ack:${key}`, { shift_id: id });
+    return json(result);
   } catch (error) {
     return toResponse(error);
   }

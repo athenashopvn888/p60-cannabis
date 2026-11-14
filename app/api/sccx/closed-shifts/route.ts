@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     const store = new URL(request.url).searchParams.get("store") ?? STORE_CODE;
     if (store !== STORE_CODE) throw new PosError(404, "STORE", "This till is PNY01 only.");
     const service = await getService();
+    await service.assertIntegrationOwner("SCCX_FEED");
     const body = await service.closedShifts();
     const origin = new URL(request.url).origin;
     return json({
