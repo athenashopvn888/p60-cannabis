@@ -3,17 +3,18 @@ import { resolve } from "node:path";
 import { loadEnvConfig } from "@next/env";
 import { Pool } from "pg";
 
-loadEnvConfig(process.cwd());
-const url = process.env.POS_SUPABASE_DB_URL?.trim();
-if (!url) throw new Error("POS_SUPABASE_DB_URL is missing; refusing to apply Release 2g.");
+async function main() {
+  loadEnvConfig(process.cwd());
+  const url = process.env.POS_SUPABASE_DB_URL?.trim();
+  if (!url) throw new Error("POS_SUPABASE_DB_URL is missing; refusing to apply Release 2g.");
 
-const migrationPath = resolve("supabase/migrations/20261114130000_pnys_customers_coupons.sql");
-const migration = await readFile(migrationPath, "utf8");
-if (/\bpny_pos\b/i.test(migration.replace(/^\s*--.*$/gm, ""))) throw new Error("Migration unexpectedly references pny_pos.");
+  const migrationPath = resolve("supabase/migrations/20261114130000_pnys_customers_coupons.sql");
+  const migration = await readFile(migrationPath, "utf8");
+  if (/\bpny_pos\b/i.test(migration.replace(/^\s*--.*$/gm, ""))) throw new Error("Migration unexpectedly references pny_pos.");
 
-const pool = new Pool({ connectionString: url, max: 1, ssl: /localhost|127\.0\.0\.1/.test(url) ? undefined : { rejectUnauthorized: false } });
-const client = await pool.connect();
-try {
+  const pool = new Pool({ connectionString: url, max: 1, ssl: /localhost|127\.0\.0\.1/.test(url) ? undefined : { rejectUnauthorized: false } });
+  const client = await pool.connect();
+  try {
   const required = await client.query("select to_regclass('pnys_pos.live_state')::text as pnys, to_regclass('pos_hub.customer')::text as customer, to_regclass('pos_hub.coupon')::text as coupon");
   if (required.rows[0]?.pnys !== "pnys_pos.live_state" || required.rows[0]?.customer !== "pos_hub.customer" || required.rows[0]?.coupon !== "pos_hub.coupon") throw new Error("PNYS foundation tables are missing; refusing migration.");
   const schema = await client.query("select table_schema, table_name, column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema='pos_hub' and table_name in ('customer','customer_consent','customer_opt_out','coupon','coupon_redemption') order by table_name, ordinal_position");
@@ -26,7 +27,13 @@ try {
   const row = verify.rows[0];
   if (row?.visit !== "pos_hub.customer_visit" || row?.email !== true || row?.consent_type !== true || row?.rls !== true || row?.forced !== true) throw new Error("Release 2g verification failed.");
   process.stdout.write("PNYS Release 2g schema applied and verified; no customer rows were created.\n");
-} finally {
-  client.release();
-  await pool.end();
+  } finally {
+    client.release();
+    await pool.end();
+  }
 }
+
+void main().catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.message : "Release 2g migration failed."}\n`);
+  process.exitCode = 1;
+});
