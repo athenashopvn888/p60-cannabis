@@ -11,7 +11,7 @@ function pick(row: Row, keys: string[]) {
 }
 
 function offLines(value: unknown) {
-  return rows(value).map((row) => pick(row, ["sku", "text", "off"]));
+  return rows(value).map((row) => pick(row, ["sku", "text", "off", "cents"]));
 }
 
 function section(value: unknown) {
@@ -54,7 +54,7 @@ export function blindStaffState<T extends Row>(view: T): T {
       closing: section(stock.closing),
       refills: {
         count: Number(refills.count ?? 0),
-        lines: rows(refills.lines).map((row) => pick(row, ["sku", "text", "sent", "received", "diff"])),
+        lines: rows(refills.lines).map((row) => pick(row, ["sku", "text", "sent", "received", "diff", "cents"])),
       },
     };
   }

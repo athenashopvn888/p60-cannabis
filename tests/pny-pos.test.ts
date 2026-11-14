@@ -40,6 +40,7 @@ import { hashPin } from "../app/lib/pny-pos/crypto.ts";
 import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
 import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
 import { OUTBOX_LEASE_MS, outboxBackoffMs } from "../app/lib/pny-pos/outbox.ts";
+import { parseTillResponse } from "../app/pos/softState.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -227,13 +228,15 @@ test("3. SCCx off shift kills the PIN and flags the summary as no count", async 
   await rejects(() => h.svc.state(h.token), "NO_SESSION");
 });
 
-test("4. five bad PINs lock the shift, admin reissue works, and a 14 hour PIN is rejected", async () => {
+test("4. five bad PINs cool down one client without locking the shift, and a 14 hour PIN is rejected", async () => {
   const h = await readyTill();
   await rejects(() => h.svc.login("000000", "10.1.0.4"), "BAD_PIN");
   assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.pin_failed_attempts, 0);
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => h.svc.login("0000", "10.1.0.5"), "BAD_PIN");
-  await rejects(() => h.svc.login("0000", "10.1.0.5"), "LOCKED");
-  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "LOCKED");
+  await rejects(() => h.svc.login("0000", "10.1.0.5"), "RATE_LIMITED");
+  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "ACTIVE");
+  await rejects(() => h.svc.login(h.pin, "10.1.0.5"), "RATE_LIMITED");
+  assert.equal((await h.svc.login(h.pin, "10.1.0.6")).ok, true);
   const reissued = await h.svc.reissuePin(h.admin, { key: "reissue-1", shift_id: "sccx-a" });
   assert.match(String(reissued.pin), /^\d{4}$/);
   assert.notEqual(reissued.pin, h.pin);
@@ -366,6 +369,27 @@ test("7. one idempotency key creates one sale and a different body conflicts", a
   assert.equal(qty(h.db, "1001"), 1);
   await rejects(() => h.svc.cashout(h.token, { key: "sale-1", lines: [{ sku: "1001", qty: 2 }] }), "IDEMPOTENCY_CONFLICT");
   assert.equal(h.db.state.sales.length, 1);
+});
+
+test("expired idempotency receipts are purged and new receipts carry a seven-day expiry", async () => {
+  const h = await readyTill();
+  h.db.state.idempotency.push({
+    scope: "old-command",
+    key: "expired",
+    request_hash: "old",
+    response_json: "{}",
+    public_json: {},
+    status_code: 200,
+    purge_at: null,
+    created_at: new Date(h.clock.t.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  await h.svc.cashout(h.token, { key: "bounded-command", lines: [{ sku: "1001", qty: 1 }] });
+
+  assert.equal(h.db.state.idempotency.some((row) => row.key === "expired"), false);
+  const saved = h.db.state.idempotency.find((row) => row.key === "bounded-command");
+  assert.ok(saved?.purge_at);
+  assert.equal(Date.parse(saved.purge_at) - h.clock.t.getTime(), 7 * 24 * 60 * 60 * 1000);
 });
 
 test("a retry after a service restart returns the durable receipt without another sale", async () => {
@@ -3030,6 +3054,9 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(confirmEnd, /setCloseHold\(true\)[\s\S]*await post\(`\$\{storeApi\}\/shift\/end`/);
   assert.equal(pos.match(/localStorage\.removeItem\(`pny-close-hold:/g)?.length, 1);
   assert.doesNotMatch(pos.slice(pos.indexOf("useEffect(() =>"), pos.indexOf("const load = useCallback")), /localStorage\.removeItem/);
+  const finish = pos.slice(pos.indexOf("function finishCloseSummary"), pos.indexOf("async function saveVerifyLine"));
+  assert.match(finish, /setView\(\{ authenticated: false \}\)/);
+  assert.doesNotMatch(finish, /load\(/);
   assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
   assert.match(summaryUi, /TOTAL CASH COLLECTED/);
@@ -3040,6 +3067,25 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
   assert.match(summaryUi, /Opening differences are shown for review and are not included/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
+test("staff variance lines retain dollar values without revealing expected stock", () => {
+  const blind = blindStaffState({
+    stock_check: {
+      opening: { offCount: 1, lines: [{ sku: "1001", text: "#1001", off: -2, cents: -2000, expected: 7 }] },
+      closing: { offCount: 1, lines: [{ sku: "1002", text: "#1002", off: 1, cents: 500, expected: 2 }] },
+      refills: { count: 1, lines: [{ sku: "1003", text: "#1003", sent: 4, received: 3, diff: -1, cents: -800, expected: 4 }] },
+    },
+  });
+  assert.equal((blind.stock_check as { opening: { lines: { cents?: number }[] } }).opening.lines[0]?.cents, -2000);
+  assert.equal((blind.stock_check as { closing: { lines: { cents?: number }[] } }).closing.lines[0]?.cents, 500);
+  assert.equal((blind.stock_check as { refills: { lines: { cents?: number }[] } }).refills.lines[0]?.cents, -800);
+  assert.equal(JSON.stringify(blind).includes("expected"), false);
+});
+
+test("non-JSON till failures use a clear retry message", async () => {
+  const response = new Response("<html>gateway timeout</html>", { status: 504, headers: { "content-type": "text/html" } });
+  await assert.rejects(() => parseTillResponse(response), /The till could not be reached\. Try again\./);
 });
 
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
@@ -3151,6 +3197,30 @@ test("preview closing count can search and add known zero-quantity SKU 240", asy
   const after = await h.svc.state(h.token);
   assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
   await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
+});
+
+test("unusual closing counts require an explicit second confirmation", async () => {
+  const h = await readyTill({ "1001": 4 });
+  await h.svc.startClosingCount(h.token);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 }),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_CONFIRM_REQUIRED");
+      assert.deepEqual(error.details, { sku: "1001", counted_qty: 1001 });
+      return true;
+    },
+  );
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts.length ?? 0, 0);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 14 }),
+    (error: unknown) => error instanceof PosError && error.code === "COUNT_CONFIRM_REQUIRED",
+  );
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001, confirm_unusual: true });
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts[0]?.counted_qty, 1001);
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(pos, /COUNT_CONFIRM_REQUIRED/);
+  assert.match(pos, /confirm_unusual: true/);
 });
 
 test("close start timeout recovers by rereading committed server state", async () => {

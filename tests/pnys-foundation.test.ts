@@ -235,3 +235,14 @@ test("outbox CRON authenticates even while integrations are off and reports fail
   assert.match(vercel, /\/api\/cron\/sheet-outbox/);
   assert.match(vercel, /"schedule": "\*\/1 \* \* \* \*"|"schedule": "\* \* \* \* \*"/);
 });
+
+test("the Release 2b4 register accounts for every B01-B25 item and names evidence for every fix", async () => {
+  const register = await readFile(new URL("../docs/pnys-release-2b4-audit.md", import.meta.url), "utf8");
+  const rows = [...register.matchAll(/^\| (B\d{2}) \| (fixed|already fixed|deferred) \| (.+) \| (.+) \|$/gm)];
+  assert.deepEqual(rows.map((row) => row[1]), Array.from({ length: 25 }, (_, index) => `B${String(index + 1).padStart(2, "0")}`));
+  for (const row of rows) {
+    assert.ok(row[3]?.trim());
+    assert.ok(row[4]?.trim());
+    if (row[2] !== "deferred") assert.match(row[4] ?? "", /`[^`]+`/);
+  }
+});

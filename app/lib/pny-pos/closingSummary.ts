@@ -73,7 +73,7 @@ export function closingSummaryView(state: State, sccxShiftId: string, storeCode:
     closeLines.push({ text: label(state, line.sku), units, cents });
   }
   const previous = state.shifts
-    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at && row.ended_at <= shift.started_at)
     .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
   const previousFloat = previous ? state.closings.find((row) => row.shift_id === previous.id)?.float_cents ?? 0 : null;
   const found = draft?.float_found_cents ?? null;

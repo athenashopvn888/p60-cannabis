@@ -89,7 +89,7 @@ export function closingSummaryImage(view: ClosingSummaryView) {
 
 function Row({ label, value, color, strong = false }: { label: string; value: string; color?: string; strong?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", borderTop: strong ? "3px solid #1c1917" : "1px solid #e7e5e4", borderBottom: strong ? "3px solid #1c1917" : undefined, paddingTop: 6, paddingBottom: strong ? 6 : 0, marginTop: 6, fontWeight: strong ? 800 : 400 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", borderTop: strong ? "3px solid #1c1917" : "1px solid #e7e5e4", borderBottom: strong ? "3px solid #1c1917" : "none", paddingTop: 6, paddingBottom: strong ? 6 : 0, marginTop: 6, fontWeight: strong ? 800 : 400 }}>
       <div style={{ display: "flex" }}>{label}</div>
       <div style={{ display: "flex", fontWeight: 700, color: color ?? "#1c1917" }}>{value}</div>
     </div>

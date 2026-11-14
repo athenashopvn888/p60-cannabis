@@ -8,7 +8,7 @@ import CloseShift, { type CloseLine } from "./CloseShift";
 import { floatPhrase } from "../lib/pny-pos/tillLedger";
 import { filterSellProducts } from "./posSearch";
 import { pos2RouteFromLocation } from "./posPath";
-import { readTillState } from "./softState";
+import { parseTillResponse, readTillState } from "./softState";
 import { startClosingWithRecovery } from "./closeStart";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -109,17 +109,10 @@ type View = {
 };
 
 async function post(url: string, body: unknown, key?: string, signal?: AbortSignal) {
-    const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin", signal });
-  const data = await response.json();
-  if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
-    failure.code = typeof data.code === "string" ? data.code : undefined;
-    failure.details = data;
-    throw failure;
-  }
-  return data;
+  return parseTillResponse(response);
 }
 
 function failureText(error: unknown) {
@@ -471,7 +464,13 @@ export default function PosApp({
 
   async function saveCloseCount(sku: string, countedQty: number) {
     setError("");
-    await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty });
+    try {
+      await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+      if (code !== "COUNT_CONFIRM_REQUIRED" || !window.confirm("This count is unusual. Check the bag label and confirm the number is correct.")) throw error;
+      await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty, confirm_unusual: true });
+    }
     await load();
   }
 
@@ -543,7 +542,7 @@ export default function PosApp({
     setCloseHold(false);
     setCloseSnap(null);
     setError("");
-    void load().catch(() => undefined);
+    setView({ authenticated: false });
   }
 
   async function saveVerifyLine(sku: string, countedQty: number) {

@@ -3,6 +3,7 @@ import {
   DEMO_LABEL,
   VERIFY_RELEASE,
   FULL_SCAN_MS,
+  IDEMPOTENCY_TTL_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
   MAX_ORDER_LINES,
@@ -12,6 +13,7 @@ import {
   OUTBOX_ERROR_ATTEMPTS,
   OUTBOX_TAB_ORDER,
   PIN_REPLAY_TTL_MS,
+  PIN_FAILURE_WINDOW_MS,
   PIN_TTL_MS,
   SCCX_ACK_LATE_MS,
   SCHEMA_VERSION,
@@ -319,7 +321,23 @@ function requestHash(body: Json) {
   return sha256(stableStringify(copy));
 }
 
+function purgeExpiredIdempotency(state: State, now: Date) {
+  const nowMs = now.getTime();
+  state.idempotency = state.idempotency.filter((row) => {
+    const explicit = row.purge_at ? Date.parse(row.purge_at) : NaN;
+    const fallback = Date.parse(row.created_at) + IDEMPOTENCY_TTL_MS;
+    if (Number.isFinite(explicit) && explicit <= nowMs && row.response_json?.startsWith("v1.")) {
+      row.response_json = null;
+      row.purge_at = iso(new Date(fallback));
+      return fallback > nowMs;
+    }
+    const expires = Number.isFinite(explicit) ? explicit : fallback;
+    return !Number.isFinite(expires) || expires > nowMs;
+  });
+}
+
 function remember(state: State, scope: string, key: string, body: Json, result: Json, now: Date, secret: string, encrypt = false) {
+  purgeExpiredIdempotency(state, now);
   const publicBody = { ...result };
   delete publicBody.pin;
   state.idempotency.push({
@@ -329,19 +347,19 @@ function remember(state: State, scope: string, key: string, body: Json, result: 
     response_json: encrypt ? encryptJson(result, secret) : JSON.stringify(result),
     public_json: publicBody,
     status_code: 200,
-    purge_at: encrypt ? iso(new Date(now.getTime() + PIN_REPLAY_TTL_MS)) : null,
+    purge_at: iso(new Date(now.getTime() + (encrypt ? PIN_REPLAY_TTL_MS : IDEMPOTENCY_TTL_MS))),
     created_at: iso(now),
   });
 }
 
 function replay(state: State, scope: string, key: string, body: Json, now: Date, secret: string): Json | null {
   if (!key) throw new PosError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+  purgeExpiredIdempotency(state, now);
   const existing = state.idempotency.find((row) => row.scope === scope && row.key === key);
   if (!existing) return null;
   if (existing.request_hash !== requestHash(body)) {
     throw new PosError(409, "IDEMPOTENCY_CONFLICT", "This idempotency key was already used with a different request.");
   }
-  if (existing.purge_at && Date.parse(existing.purge_at) <= now.getTime()) existing.response_json = null;
   if (!existing.response_json) {
     return { ...(existing.public_json as Json), ok: true, replay: true, pin: null, pin_purged: true };
   }
@@ -966,7 +984,7 @@ function refillIssues(state: State, shiftId: string, raw?: Map<string, number>) 
 
 function previousClosing(state: State, shift: ShiftRow) {
   const previous = state.shifts
-    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at && row.ended_at <= shift.started_at)
     .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
   if (!previous) return null;
   return state.closings.find((row) => row.shift_id === previous.id) ?? null;
@@ -1963,7 +1981,7 @@ export class PosService {
   }
 
   async login(pin: string, ip: string) {
-    this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    this.hit(`login:${ip || "unknown"}`, 8, PIN_FAILURE_WINDOW_MS);
     if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
     if (specialPinMatches("kitchen", pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const demoPin = this.demoPinAllowed() && specialPinMatches("demo", pin);
@@ -2030,16 +2048,26 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
+      const failureActor = `pin:${sha256(ip || "unknown").slice(0, 16)}`;
+      const recentFailures = tx.state.audit.filter((row) =>
+        row.action === "PIN_LOGIN_FAILED"
+        && row.ref_id === shift.id
+        && row.actor === failureActor
+        && now.getTime() - Date.parse(row.created_at) < PIN_FAILURE_WINDOW_MS,
+      ).length;
+      if (!master && recentFailures >= MAX_PIN_FAILURES) {
+        return { ok: false as const, status: 429, code: "RATE_LIMITED", message: "Too many wrong PINs. Wait 15 minutes and try again." };
+      }
       if (!master && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
-        if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
-        const locked = shift.status === "LOCKED";
+        audit(tx.state, "PIN_LOGIN_FAILED", "shift", shift.id, failureActor, { attempt: recentFailures + 1 }, at);
+        const cooledDown = recentFailures + 1 >= MAX_PIN_FAILURES;
         return {
           ok: false as const,
-          status: locked ? 423 : 401,
-          code: locked ? "LOCKED" : "BAD_PIN",
-          message: locked
-            ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
+          status: cooledDown ? 429 : 401,
+          code: cooledDown ? "RATE_LIMITED" : "BAD_PIN",
+          message: cooledDown
+            ? "Too many wrong PINs. Wait 15 minutes and try again."
             : "That PIN is not correct.",
         };
       }
@@ -3297,7 +3325,7 @@ export class PosService {
     })));
   }
 
-  async saveClosingCount(token: string, input: { sku: string; counted_qty: number }) {
+  async saveClosingCount(token: string, input: { sku: string; counted_qty: number; confirm_unusual?: boolean }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
@@ -3318,6 +3346,14 @@ export class PosService {
       if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
       const at = iso(this.now());
       const expected = expectedAtSubmit(tx.state, shift, sku, this.now().getTime());
+      const skuNumber = Number.parseInt(sku, 10);
+      const unusual = Math.abs(input.counted_qty - expected) >= 10 || (Number.isFinite(skuNumber) && input.counted_qty === skuNumber);
+      if (unusual && !input.confirm_unusual) {
+        throw new PosError(409, "COUNT_CONFIRM_REQUIRED", "This count is unusual. Check the bag and confirm the number before saving.", {
+          sku,
+          counted_qty: input.counted_qty,
+        });
+      }
       const existing = draft.counts.find((row) => row.sku === sku);
       if (existing) {
         existing.counted_qty = input.counted_qty;

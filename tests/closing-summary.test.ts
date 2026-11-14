@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { closingSummaryView } from "../app/lib/pny-pos/closingSummary.ts";
 import { emptyState } from "../app/lib/pny-pos/memory.ts";
@@ -105,4 +106,40 @@ test("the closing summary lists off SKUs only and exposes frozen close metadata"
   assert.equal(view?.closeLines[0]?.units, 2);
   assert.equal(view?.closeLines[0]?.cents, 8000);
   assert.equal(JSON.stringify(view).includes("Left"), false);
+});
+
+test("historical close rendering uses the shift that ended before the rendered shift", () => {
+  const state = endedState();
+  const draft = state.closing_drafts[0];
+  if (draft) {
+    draft.float_expected_cents = null;
+    draft.float_found_cents = 2000;
+  }
+  const makeShift = (id: string, startedAt: string, endedAt: string) => ({
+    ...state.shifts[0]!,
+    id,
+    sccx_shift_id: id,
+    started_at: startedAt,
+    ended_at: endedAt,
+    created_at: startedAt,
+  });
+  state.shifts.push(
+    makeShift("before", "2026-11-04T08:00:00.000Z", "2026-11-05T11:00:00.000Z"),
+    makeShift("after", "2026-11-05T19:00:00.000Z", "2026-11-05T20:00:00.000Z"),
+  );
+  state.closings.push(
+    { ...state.closings[0]!, shift_id: "before", float_cents: 1500 },
+    { ...state.closings[0]!, shift_id: "after", float_cents: 9900 },
+  );
+
+  const view = closingSummaryView(state, "pny01-test-close", "PNY01");
+
+  assert.equal(view?.floatExpectedCents, 1500);
+  assert.equal(view?.floatFoundCents, 2000);
+});
+
+test("closing summary image never passes an undefined border to next/og", () => {
+  const source = readFileSync(new URL("../app/lib/pny-pos/closingSummaryImage.tsx", import.meta.url), "utf8");
+  assert.match(source, /borderBottom: strong \? "3px solid #1c1917" : "none"/);
+  assert.doesNotMatch(source, /borderBottom:[^\n]*undefined/);
 });

@@ -11,7 +11,11 @@ export async function POST(request: Request) {
     await beginDemoRequest(service);
     if (service.bootstrap().demo) await service.absorbForDemo(await loadDemoJournal());
     try {
-      return json(await service.saveClosingCount(await staffToken(), { sku: String(body.sku ?? ""), counted_qty: Number(body.counted_qty) }));
+      return json(await service.saveClosingCount(await staffToken(), {
+        sku: String(body.sku ?? ""),
+        counted_qty: Number(body.counted_qty),
+        confirm_unusual: body.confirm_unusual === true,
+      }));
     } finally {
       await endDemoRequest(service);
     }
