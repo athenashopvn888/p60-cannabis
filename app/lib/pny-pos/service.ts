@@ -2151,7 +2151,7 @@ export class PosService {
       nameLiveShift(tx.state, at);
       const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
       return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
-    });
+    }, { kind: "AUTH_SESSION" });
     if (!result.ok) throw new PosError(result.status, result.code, result.message);
     return result;
   }
@@ -2187,7 +2187,7 @@ export class PosService {
       });
       const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
       return { ok: true as const, token, staff_name: staff?.display_name ?? "Demo Budtender" };
-    });
+    }, { kind: "AUTH_SESSION" });
     if (!result.ok && result.fail) {
       this.kitchenFails += 1;
       if (this.kitchenFails >= MAX_PIN_FAILURES) this.kitchenLocked = true;
@@ -2214,7 +2214,7 @@ export class PosService {
         created_at: iso(now),
       });
       return { ok: true as const, token };
-    });
+    }, { kind: "AUTH_SESSION" });
     if (!result.ok) {
       this.managerFails += 1;
       if (this.managerFails >= MAX_PIN_FAILURES) this.managerLocked = true;
@@ -2229,7 +2229,7 @@ export class PosService {
     await this.db.transaction(async (tx) => {
       const session = tx.state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at);
       if (session) session.revoked_at = iso(this.now());
-    });
+    }, { kind: "AUTH_SESSION" });
     return { ok: true };
   }
 

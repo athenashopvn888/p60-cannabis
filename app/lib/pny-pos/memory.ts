@@ -49,9 +49,35 @@ export function emptyState(now = new Date().toISOString()): State {
 }
 
 export type Tx = { state: State };
+export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION";
+export type TransactionOptions = { kind?: TransactionKind };
+
+/**
+ * Authentication is the only mutation allowed by a frozen PNYS preview.
+ * Keep this deliberately narrow: sessions, authentication audit rows and the
+ * few shift fields used by PIN expiry/failure tracking may change. Stock,
+ * sales, refills, counts, deposits, integrations and shift lifecycle may not.
+ */
+export function isAuthSessionOnlyChange(before: State, after: State) {
+  const normalized = structuredClone(after) as State;
+  normalized.sessions = structuredClone(before.sessions);
+  normalized.admin_sessions = structuredClone(before.admin_sessions);
+  normalized.audit = structuredClone(before.audit);
+  if (normalized.shifts.length !== before.shifts.length) return false;
+  const beforeShifts = new Map(before.shifts.map((shift) => [shift.id, shift]));
+  for (const shift of normalized.shifts) {
+    const original = beforeShifts.get(shift.id);
+    if (!original) return false;
+    shift.pin_failed_attempts = original.pin_failed_attempts;
+    shift.pin_expires_at = original.pin_expires_at;
+    shift.verify_opened_at = original.verify_opened_at;
+    shift.verify_release = original.verify_release;
+  }
+  return JSON.stringify(normalized) === JSON.stringify(before);
+}
 
 export interface PosDb {
-  transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
+  transaction<T>(fn: (tx: Tx) => Promise<T>, options?: TransactionOptions): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
   peek?: () => Promise<State>;
   /** Read-only deployment readiness signal, independent of mutable till state. */
@@ -70,6 +96,7 @@ export class MemoryDb implements PosDb {
   generation = deploymentGeneration() || 1;
   integrationOwners = new Map<IntegrationChannel, IntegrationLease>();
   integrationDeliveries = new Set<string>();
+  allowFrozenPreviewAuth = false;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state?: State) {
@@ -108,12 +135,17 @@ export class MemoryDb implements PosDb {
     return true;
   }
 
-  transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  transaction<T>(fn: (tx: Tx) => Promise<T>, options: TransactionOptions = {}): Promise<T> {
     const run = this.tail.then(async () => {
       const snapshot = structuredClone(this.state) as State;
       const result = await fn({ state: snapshot });
-      if (JSON.stringify(snapshot) !== JSON.stringify(this.state) && this.writeMode !== "ACTIVE") {
-        throw new PosError(423, "STORE_WRITE_BLOCKED", `Store writes are ${this.writeMode}.`);
+      const changed = JSON.stringify(snapshot) !== JSON.stringify(this.state);
+      if (changed && this.writeMode !== "ACTIVE") {
+        const frozenPreviewAuth = this.writeMode === "FROZEN"
+          && this.allowFrozenPreviewAuth
+          && options.kind === "AUTH_SESSION"
+          && isAuthSessionOnlyChange(this.state, snapshot);
+        if (!frozenPreviewAuth) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
       }
       this.state = snapshot;
       try {

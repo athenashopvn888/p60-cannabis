@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { emptyState, type PosDb, type Tx } from "./memory.ts";
+import { emptyState, isAuthSessionOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
 import { deploymentGeneration, maintenanceMode } from "./controls.ts";
 import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
@@ -166,21 +166,24 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
         client.release();
       }
     },
-    transaction(fn) {
-      const run = tail.then(() => runOnce(fn));
+    transaction(fn, options = {}) {
+      const run = tail.then(() => runOnce(fn, options.kind ?? "OPERATIONAL"));
       tail = run.then(() => undefined, () => undefined);
       return run;
     },
   };
 
-  async function runOnce<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  async function runOnce<T>(fn: (tx: Tx) => Promise<T>, kind: TransactionKind): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const client = await pool.connect();
       try {
         await client.query("begin");
         if (schema === "pnys_pos") {
           await client.query("set local role pnys_app");
-          await client.query("select set_config('app.store_code',$1,true),set_config('app.generation',$2,true)", [store, String(deploymentGeneration())]);
+          await client.query(
+            "select set_config('app.store_code',$1,true),set_config('app.generation',$2,true),set_config('app.mutation_kind',$3,true),set_config('app.preview_test',$4,true)",
+            [store, String(deploymentGeneration()), kind, process.env.VERCEL_ENV === "preview" && process.env.TEST_STORE === "1" ? "true" : "false"],
+          );
         }
         // Serialize mutations across serverless instances. Idempotency records, stock,
         // sales, and refills commit together under this store-row lock.
@@ -188,6 +191,7 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
         const version = Number(loaded.rows[0]?.version ?? 0);
         const snapshot = structuredClone(asState(loaded.rows[0]?.doc)) as State;
         if (schema === "pnys_pos") await hydrateHub(client, snapshot);
+        const original = structuredClone(snapshot) as State;
         const before = JSON.stringify(snapshot);
         const result = await fn({ state: snapshot });
         const after = JSON.stringify(snapshot);
@@ -198,7 +202,15 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
         if (schema === "pnys_pos") {
           const runtime = await client.query("select write_mode,generation from pos_hub.store_runtime where store_code=$1", [store]);
           const row = runtime.rows[0];
-          if (!row || row.write_mode !== "ACTIVE") throw new PosError(423, "STORE_WRITE_BLOCKED", `Store writes are ${row?.write_mode ?? "UNCONFIGURED"}.`);
+          const frozenPreviewAuth = row?.write_mode === "FROZEN"
+            && kind === "AUTH_SESSION"
+            && store === "PNYS"
+            && process.env.VERCEL_ENV === "preview"
+            && process.env.TEST_STORE === "1"
+            && isAuthSessionOnlyChange(original, snapshot);
+          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth)) {
+            throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
+          }
           if (Number(row.generation) !== deploymentGeneration()) throw new PosError(423, "STALE_DEPLOYMENT", "This deployment generation cannot write.");
           if (maintenanceMode()) throw new PosError(423, "MAINTENANCE_MODE", "TEMPORARILY PAUSED — DO NOT TRADE");
         }
