@@ -406,11 +406,18 @@ function shiftTotals(state: State, shiftId: string) {
   const cashSales = sales.filter((sale) => sale.payment_method !== "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
   const debitSales = sales.filter((sale) => sale.payment_method === "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
   const deposited = deposits.reduce((sum, deposit) => sum + deposit.amount_cents, 0);
+  const saleIds = new Set(sales.map((sale) => sale.id));
+  const cigarettePacks = state.sale_lines.reduce((sum, line) => {
+    if (!saleIds.has(line.sale_id)) return sum;
+    const product = state.products.find((row) => row.sku === line.sku);
+    return cigarettePackCents(line.sku, product?.category, product?.name) == null ? sum : sum + line.qty;
+  }, 0);
   return {
     sales_total_cents: cashSales + debitSales,
     cash_sales_cents: cashSales,
     debit_sales_cents: debitSales,
     sale_count: sales.length,
+    cigarette_packs: cigarettePacks,
     void_count: voids.length,
     deposited_cents: deposited,
     cash_on_hand_cents: cashSales - deposited,
@@ -2375,6 +2382,8 @@ export class PosService {
           debit_sales_cents: totals.debit_sales_cents,
           cash_on_hand_cents: totals.cash_on_hand_cents,
           deposited_cents: totals.deposited_cents,
+          sale_count: totals.sale_count,
+          cigarette_packs: totals.cigarette_packs,
         },
         deposits: tx.state.deposits
           .filter((row) => row.shift_id === shift.id)

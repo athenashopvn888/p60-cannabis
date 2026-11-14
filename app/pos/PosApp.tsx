@@ -43,7 +43,7 @@ type CountLine = { sku: string; name: string };
 type CloseSnapshot = {
   lines: CloseLine[];
   knownLines: { sku: string; text: string; counted_qty: number | null }[];
-  totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+  totals: { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
   savedDeposit: number | null;
   stockCheck: View["stock_check"];
   floatExpectedCents: number | null;
@@ -74,7 +74,7 @@ type View = {
   block?: string | null;
   shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; started_at: string; weed_in_store?: boolean | null };
   weed_gate?: { required: boolean; answer: boolean | null; answered_at: string | null };
-  totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
+  totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
   deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
   close_lines?: CloseLine[];
   closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
@@ -330,6 +330,8 @@ export default function PosApp({
         debit_sales_cents: view.totals?.debit_sales_cents ?? 0,
         cash_on_hand_cents: view.totals?.cash_on_hand_cents ?? 0,
         deposited_cents: view.totals?.deposited_cents ?? 0,
+        sale_count: view.totals?.sale_count,
+        cigarette_packs: view.totals?.cigarette_packs,
       },
       savedDeposit: view.final_deposit_cents ?? null,
       stockCheck: view.stock_check,
@@ -946,6 +948,8 @@ export default function PosApp({
             debit_sales_cents: view.totals?.debit_sales_cents ?? 0,
             cash_on_hand_cents: view.totals?.cash_on_hand_cents ?? 0,
             deposited_cents: view.totals?.deposited_cents ?? 0,
+            sale_count: view.totals?.sale_count,
+            cigarette_packs: view.totals?.cigarette_packs,
           }}
           savedDeposit={closeSnap?.savedDeposit ?? view.final_deposit_cents ?? null}
           busy={busy}

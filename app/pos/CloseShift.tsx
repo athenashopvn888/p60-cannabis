@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatMoney } from "../lib/pny-pos/money";
-import { balancePhrase, type AdjustLine } from "../lib/pny-pos/tillLedger";
+import { type AdjustLine } from "../lib/pny-pos/tillLedger";
 import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 import CountCard from "./CountCard";
 import TillSummary from "./TillSummary";
@@ -11,7 +11,7 @@ import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import styles from "./till.module.css";
 
 export type CloseLine = { sku: string; text?: string; name: string; price_cents: number; counted_qty: number | null };
-type Totals = { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number };
+type Totals = { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
 type CloseStep = "count" | "cash" | "review" | "confirm" | "posted";
 
 const STEP_META = {
@@ -20,19 +20,6 @@ const STEP_META = {
   review: { number: 3, title: "Shorts & refills" },
   confirm: { number: 4, title: "Confirm & post" },
 } satisfies Record<Exclude<CloseStep, "posted">, { number: number; title: string }>;
-
-function FloatFormulaCompare({ baseCents, openingFloatCents }: { baseCents: number; openingFloatCents: number | null }) {
-  const without = balancePhrase(-baseCents);
-  const withFloat = openingFloatCents == null ? null : balancePhrase(-(baseCents - openingFloatCents));
-  return <section className={styles.floatCompare} data-testid="opening-float-formulas">
-    <h3>Opening-float comparison for dry run</h3>
-    <p>Both calculations are shown. Neither one is selected.</p>
-    <div className={styles.floatCards}>
-      <article data-testid="float-formula-excluded"><strong>Formula A · Opening float excluded</strong><span>{without.word} {formatMoney(without.cents)}</span><small>Cash collected − sales − shorts + extra</small></article>
-      <article data-testid="float-formula-deducted"><strong>Formula B · Opening float deducted</strong><span>{withFloat ? `${withFloat.word} ${formatMoney(withFloat.cents)}` : "UNAVAILABLE"}</span><small>{openingFloatCents == null ? "No opening-float value recorded" : `Formula A result − ${formatMoney(openingFloatCents)} opening float`}</small></article>
-    </div>
-  </section>;
-}
 
 export default function CloseShift({ lines, knownLines, totals, savedDeposit, busy, error, onSaveCount, onSubmitCount, onSaveDeposit, onConfirm, onClose, onDone, weedInStore, summaryMeta, stockCheck, floatExpectedCents, floatFoundCents, floatAdjustment, deadline, initialStep, resumeSummary, scanCatalog = [], previewStep, previewCountExpanded = false }: {
   lines: CloseLine[];
@@ -80,8 +67,6 @@ export default function CloseShift({ lines, knownLines, totals, savedDeposit, bu
   const closeLines = adjust(stockCheck?.closing.lines ?? []);
   const stockShortsCents = closeLines.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
   const stockExtraCents = closeLines.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
-  const baseBalanceCents = deposited + floatCents - totals.cash_sales_cents - stockShortsCents + stockExtraCents;
-  const openingFloatCents = floatFoundCents ?? floatExpectedCents ?? null;
   const summaryDeposits = [...summaryMeta.deposits, ...(drop > 0 && !(finalDepositCode && summaryMeta.deposits.some((row) => row.code === finalDepositCode)) ? [{ code: finalDepositCode, amountCents: drop }] : [])];
   const visibleMeta = step === "posted" ? { number: 4, title: "Shift posted" } : STEP_META[step];
 
@@ -135,10 +120,9 @@ export default function CloseShift({ lines, knownLines, totals, savedDeposit, bu
       {step === "review" ? <div data-testid="close-review"><h2>Shorts &amp; refill summary</h2>
         <section className={styles.stockAmber}><h3>Closing shorts / extra</h3><p><strong>{closeLines.length}</strong> SKU differences</p><p>Shorts {formatMoney(stockShortsCents)} · Extra {formatMoney(stockExtraCents)}</p></section>
         <section className={styles.stockRose}><h3>Refill issues</h3><p><strong>{refills.length}</strong> discrepancies</p>{refills.length === 0 ? <p>No refill discrepancy recorded</p> : refills.map((line) => <p key={line.sku}>{line.text}: {line.units > 0 ? "+" : ""}{line.units}</p>)}</section>
-        <FloatFormulaCompare baseCents={baseBalanceCents} openingFloatCents={openingFloatCents} />
       </div> : null}
-      {step === "confirm" ? <div data-testid="close-confirm"><div className={styles.accountantBanner} role="status">REVIEW EVERYTHING BELOW, THEN CONFIRM &amp; POST</div><FloatFormulaCompare baseCents={baseBalanceCents} openingFloatCents={openingFloatCents} /><TillSummary weedInStore={weedInStore} storeLabel={summaryMeta.storeLabel} staffName={summaryMeta.staffName} startedAt={summaryMeta.startedAt} endedAt={summaryMeta.endedAt ?? new Date().toISOString()} closeLabel={closeLabel} deposits={summaryDeposits} cashSalesCents={totals.cash_sales_cents} depositedCents={deposited} floatCents={floatCents} openLines={adjust(stockCheck?.opening.lines ?? [])} refillLines={refills} closeLines={closeLines} floatExpectedCents={floatExpectedCents} floatFoundCents={floatFoundCents} floatAdjustment={floatAdjustment} /></div> : null}
-      {step === "posted" ? <div data-testid="close-summary"><div className={styles.accountantBanner} data-testid="close-summary-banner" role="status">TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT</div><TillSummary weedInStore={weedInStore} storeLabel={summaryMeta.storeLabel} staffName={summaryMeta.staffName} startedAt={summaryMeta.startedAt} endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt} closeLabel={closeLabel} deposits={summaryDeposits} cashSalesCents={totals.cash_sales_cents} depositedCents={deposited} floatCents={floatCents} openLines={adjust(stockCheck?.opening.lines ?? [])} refillLines={refills} closeLines={closeLines} floatExpectedCents={floatExpectedCents} floatFoundCents={floatFoundCents} floatAdjustment={floatAdjustment} /><p data-testid="shift-locked">Shift closed</p></div> : null}
+      {step === "confirm" ? <div data-testid="close-confirm"><div className={styles.accountantBanner} role="status">CONFIRM CLOSING</div><TillSummary weedInStore={weedInStore} storeLabel={summaryMeta.storeLabel} staffName={summaryMeta.staffName} startedAt={summaryMeta.startedAt} endedAt={summaryMeta.endedAt ?? new Date().toISOString()} closeLabel={closeLabel} deposits={summaryDeposits} totalOrders={totals.sale_count} cigarettePacks={totals.cigarette_packs} cashSalesCents={totals.cash_sales_cents} depositedCents={deposited} floatCents={floatCents} openLines={adjust(stockCheck?.opening.lines ?? [])} refillLines={refills} closeLines={closeLines} floatExpectedCents={floatExpectedCents} floatFoundCents={floatFoundCents} floatAdjustment={floatAdjustment} /></div> : null}
+      {step === "posted" ? <div data-testid="close-summary"><div className={styles.accountantBanner} data-testid="close-summary-banner" role="status">TAKE A PICTURE AND POST IT IN THE TILL GROUP</div><TillSummary weedInStore={weedInStore} storeLabel={summaryMeta.storeLabel} staffName={summaryMeta.staffName} startedAt={summaryMeta.startedAt} endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt} closeLabel={closeLabel} deposits={summaryDeposits} totalOrders={totals.sale_count} cigarettePacks={totals.cigarette_packs} cashSalesCents={totals.cash_sales_cents} depositedCents={deposited} floatCents={floatCents} openLines={adjust(stockCheck?.opening.lines ?? [])} refillLines={refills} closeLines={closeLines} floatExpectedCents={floatExpectedCents} floatFoundCents={floatFoundCents} floatAdjustment={floatAdjustment} /><p data-testid="shift-locked">Shift closed</p></div> : null}
       {localError || error ? <p className={styles.error}>{localError || error}</p> : null}
     </div>
     {!(step === "count" && countExpanded) ? <footer className={styles.closeActions} data-testid="close-fixed-actions">

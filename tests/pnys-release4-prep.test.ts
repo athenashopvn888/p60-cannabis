@@ -55,7 +55,7 @@ test("opening cash UI requires a warning and carries the adjustment into the til
   assert.match(open, /Are you sure\?/);
   assert.match(open, /confirmAdjustment/);
   assert.match(report, /opening-float-adjustment/);
-  assert.match(report, /Recorded by/);
+  assert.match(report, /floatAdjustment\.staff/);
 });
 
 test("maintenance build has an explicit no-trade screen and server write block", () => {

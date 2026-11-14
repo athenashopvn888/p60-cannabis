@@ -441,12 +441,12 @@ test("9. header totals follow sale, deposit and void", async () => {
   await h.svc.cashout(h.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 400, note: "safe" });
   const mid = await h.svc.state(h.token);
-  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400 });
+  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400, sale_count: 1, cigarette_packs: 0 });
   const saleId = h.db.state.sales[0]?.id ?? "";
   await rejects(() => h.svc.voidSale(h.token, { key: "staff-void", sale_id: saleId, reason: "no" }), "ADMIN_ONLY");
   await h.svc.voidSale(h.admin, { key: "void-1", sale_id: saleId, reason: "mis-ring" });
   const after = await h.svc.state(h.token);
-  assert.deepEqual(after.totals, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400 });
+  assert.deepEqual(after.totals, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400, sale_count: 0, cigarette_packs: 0 });
   assert.equal(qty(h.db, "1001"), 2);
 });
 
@@ -2504,7 +2504,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected |Confirm & End Shift/);
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening Verify/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening cash adjustment/);
   assert.equal(blind.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -2982,7 +2982,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /TOTAL CASH COLLECTED/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /CASH ACCOUNTED/);
   assert.match(closeUi, /Float left in the till/);
   assert.doesNotMatch(closeUi, /both stores/i);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
@@ -3257,7 +3257,7 @@ test("closing summary stays until Done after session revoke", () => {
   const summaryUi = readFileSync("app/pos/TillSummary.tsx", "utf8");
   const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
   assert.match(closeUi, /data-testid="close-summary-banner"/);
-  assert.match(closeUi, /TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT/);
+  assert.match(closeUi, /TAKE A PICTURE AND POST IT IN THE TILL GROUP/);
   assert.match(closeUi, /data-testid="close-summary-done"/);
   assert.match(closeUi, /Done, I posted it/);
   assert.match(closeUi, /resumeSummary/);
@@ -3279,13 +3279,14 @@ test("closing summary stays until Done after session revoke", () => {
   assert.doesNotMatch(finish, /load\(/);
   assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
-  assert.match(summaryUi, /TOTAL CASH COLLECTED/);
-  assert.match(summaryUi, /Expense paid from store cash/);
-  assert.match(summaryUi, /less stock sold value =/);
-  assert.match(summaryUi, /less stock shorts =/);
-  assert.match(summaryUi, /add stock extra =/);
+  assert.match(summaryUi, /Stock adjustment/);
+  assert.match(summaryUi, /Safebox deposits/);
+  assert.match(summaryUi, /Cigarette sale/);
+  assert.match(summaryUi, /EXPECTED CASH/);
+  assert.match(summaryUi, /CASH ACCOUNTED/);
+  assert.match(summaryUi, /FINAL/);
   assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
-  assert.match(summaryUi, /Opening differences are shown for review and are not included/);
+  assert.doesNotMatch(summaryUi, /TOTAL CASH COLLECTED uses|Opening differences are shown|shown separately/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
 });
 
@@ -3308,9 +3309,7 @@ test("PNYS mobile close uses four shell steps and keeps persistence on the exist
   assert.match(countUi, /!expanded \? <div className=\{styles\.countSplit\}/);
   assert.match(countUi, /placeholder="Search SKU or name"/);
   assert.match(countUi, /knownLines\.map/);
-  assert.match(closeUi, /Formula A · Opening float excluded/);
-  assert.match(closeUi, /Formula B · Opening float deducted/);
-  assert.match(closeUi, /Neither one is selected/);
+  assert.doesNotMatch(closeUi, /Formula A|Formula B|Neither one is selected/);
   assert.match(closeUi, /await onSaveDeposit\(depositCents, floatCents\)/);
   assert.match(closeUi, /await onConfirm\(depositCents, floatCents, finalDepositCode\)/);
   assert.match(preview, /counted_qty: 0/);
