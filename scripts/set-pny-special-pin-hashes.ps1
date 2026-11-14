@@ -123,6 +123,9 @@ try {
   Write-Host "Target project: $Project ($expectedProjectId)"
   Write-Host "Target environment: $Environment"
   Write-Host 'PINs stay masked; only scrypt hashes are sent.'
+  Write-Host 'MASTER = Manager dashboard login.' -ForegroundColor Cyan
+  Write-Host 'KITCHEN = Kitchen dashboard login.' -ForegroundColor Cyan
+  Write-Host 'DEMO = Staff test-till login.' -ForegroundColor Cyan
   $listResult = Invoke-VercelCommand -Arguments (@('env', 'ls', $Environment) + $vercelArgs)
   if ($listResult.ExitCode -ne 0) {
     throw "Vercel access check failed before any PIN was requested. Sign in to the account that owns '$Scope', then retry.`n$($listResult.Output.Trim())"
