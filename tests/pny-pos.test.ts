@@ -1702,9 +1702,9 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
   assert.match(app, /Price, stock and expense changes are locked/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
-  assert.match(css, /position:fixed/);
-  assert.match(css, /overflow-y:auto/);
-  assert.match(css, /@media\(max-width:390px\)/);
+  assert.match(css, /position:\s*fixed/);
+  assert.match(css, /overflow-y:\s*auto/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
 });
 
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
