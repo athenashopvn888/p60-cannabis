@@ -176,7 +176,15 @@ export async function runRelease3b(env: Record<string, string>, writeArtifacts =
     const secrets: Secrets = { shift: env.SHIFT_SECRET!, roster: env.ROSTER_SECRET!, poll: env.CRON_SECRET!, session: env.SESSION_SECRET!, admin: env.ADMIN_SECRET!, cron: env.CRON_SECRET! };
     const clock = { value: NOW };
     const db = createSupabaseStateDb(connectionString, "PNYS", "pnys_pos");
-    const svc = new PosService(db, { now: () => clock.value, sheet: new LocalSheet(), secrets });
+    const svc = new PosService(db, {
+      now: () => clock.value,
+      sheet: new LocalSheet(),
+      secrets,
+      // Kitchen special-PIN login is intentionally enabled only when the
+      // preview/demo capability is present. The hash remains fail-closed and
+      // is supplied separately through PNY_KITCHEN_PIN_HASH above.
+      demo: { pinHash: null, label: "DRY-R3B preview harness" },
+    });
     const inPnys = <T>(run: () => Promise<T>) => runStore(PNYS_STORE, run);
 
     await inPnys(() => svc.openShiftWithPin({ staff_uid: `${PREFIX}-STAFF`, display_name: "DRY-R3B Staff", pos_id: `${PREFIX}-POS`, sccx_id: `${PREFIX}-SCCX`, shift_id: SHIFT_ID, pin: staffPin }));
