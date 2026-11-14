@@ -560,7 +560,7 @@ function weedAnswerRequired(shift: ShiftRow) {
 }
 
 function noWeedShift(shift: ShiftRow | undefined) {
-  return shift?.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store === false;
+  return shift?.weed_gate_required === true && shift.weed_in_store === false;
 }
 
 function thcForState(state: State, sku: string) {
@@ -582,7 +582,7 @@ function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) 
   for (const balance of state.balances) if (balance.qty > 0 && balanceForStore(balance)) skus.add(balance.sku);
   for (const row of incoming) if (!row.store_code || row.store_code === tillCode()) skus.add(row.sku);
   return [...skus]
-    .filter((sku) => visibleForShift(state, shift, sku))
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => ({
       sku,
@@ -615,7 +615,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...addedSkus,
   ]);
   return [...skus]
-    .filter((sku) => visibleForShift(state, shift, sku))
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => {
       const received = receivedQty(sku);
@@ -2507,6 +2507,10 @@ export class PosService {
         detail: row.detail,
         created_at: row.created_at,
       }));
+    const latestBackup = [...state.audit]
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_id === liveShift?.id)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
     return {
       authenticated: true as const,
       store_code: tillCode(),
@@ -2527,8 +2531,109 @@ export class PosService {
       refills,
       closings,
       audit_log: auditLog,
+      weed_mode: {
+        current: liveShift?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
+        shift_id: liveShift?.sccx_shift_id ?? null,
+        can_change: liveShift?.status === "ACTIVE",
+        thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
+        undo_backup_id: latestBackup?.id ?? null,
+      },
       write_actions: { enabled: false as const, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
     };
+  }
+
+  async managerSetWeedMode(adminToken: string, input: { key: string; weed_in_store: boolean; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_mode", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact WEED mode change before saving.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
+      if (!shift) throw new PosError(409, "NO_SHIFT", "An active PNYS shift is required.");
+      const current = shift.weed_in_store !== false;
+      if (current === input.weed_in_store) {
+        const unchanged = { ok: true as const, changed: false as const, weed_in_store: current, shift_id: shift.sccx_shift_id, backup_id: null };
+        remember(tx.state, "manager_weed_mode", input.key, body, unchanged, now, this.deps.secrets.session);
+        return unchanged;
+      }
+      const protectedBefore = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      const backupId = randomUUID();
+      tx.state.audit.push({ id: backupId, action: "WEED_MODE_BACKUP", ref_type: "shift", ref_id: shift.id, actor: "MANAGER", detail: {
+        backup_id: backupId,
+        shift_id: shift.sccx_shift_id,
+        previous_weed_gate_required: shift.weed_gate_required ?? null,
+        previous_weed_in_store: shift.weed_in_store ?? null,
+        previous_answered_at: shift.weed_answered_at ?? null,
+        previous_answered_by: shift.weed_answered_by ?? null,
+        target: input.weed_in_store ? "WEED" : "NO_WEED",
+      }, created_at: at });
+      const from = current ? "WEED" : "NO_WEED";
+      const to = input.weed_in_store ? "WEED" : "NO_WEED";
+      shift.weed_gate_required = true;
+      shift.weed_in_store = input.weed_in_store;
+      shift.weed_answered_at = at;
+      shift.weed_answered_by = "MANAGER";
+      audit(tx.state, "WEED_MODE_CHANGED", "shift", shift.id, "MANAGER", { backup_id: backupId, shift_id: shift.sccx_shift_id, from, to }, at);
+      const protectedAfter = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "WEED mode must not change operational data.");
+      const changed = { ok: true as const, changed: true as const, weed_in_store: input.weed_in_store, shift_id: shift.sccx_shift_id, backup_id: backupId, from, to };
+      remember(tx.state, "manager_weed_mode", input.key, body, changed, now, this.deps.secrets.session);
+      return changed;
+    });
+    this.bumpMenu();
+    return result;
+  }
+
+  async managerUndoWeedMode(adminToken: string, input: { key: string; backup_id: string; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_undo", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact undo before saving.");
+      const backup = tx.state.audit.find((row) => row.id === input.backup_id && row.action === "WEED_MODE_BACKUP");
+      if (!backup) throw new PosError(404, "BACKUP", "The WEED mode backup was not found.");
+      if (tx.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === backup.id)) throw new PosError(409, "UNDO_USED", "That backup was already restored.");
+      const shift = tx.state.shifts.find((row) => row.id === backup.ref_id && row.store_code === "PNYS" && row.status === "ACTIVE");
+      if (!shift) throw new PosError(409, "NO_SHIFT", "The backed-up PNYS shift is no longer active.");
+      const protectedBefore = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      const from = shift.weed_in_store === false ? "NO_WEED" : "WEED";
+      const previous = backup.detail.previous_weed_in_store;
+      shift.weed_gate_required = backup.detail.previous_weed_gate_required == null ? undefined : Boolean(backup.detail.previous_weed_gate_required);
+      shift.weed_in_store = previous == null ? null : Boolean(previous);
+      shift.weed_answered_at = typeof backup.detail.previous_answered_at === "string" ? backup.detail.previous_answered_at : null;
+      shift.weed_answered_by = typeof backup.detail.previous_answered_by === "string" ? backup.detail.previous_answered_by : null;
+      const to = shift.weed_in_store === false ? "NO_WEED" : "WEED";
+      audit(tx.state, "WEED_MODE_UNDONE", "shift", shift.id, "MANAGER", { backup_id: backup.id, shift_id: shift.sccx_shift_id, from, to }, at);
+      const protectedAfter = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "Undo must not change operational data.");
+      const restored = { ok: true as const, changed: true as const, weed_in_store: shift.weed_in_store !== false, shift_id: shift.sccx_shift_id, backup_id: backup.id, from, to };
+      remember(tx.state, "manager_weed_undo", input.key, body, restored, now, this.deps.secrets.session);
+      return restored;
+    });
+    this.bumpMenu();
+    return result;
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
@@ -4093,7 +4198,7 @@ export class PosService {
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
-          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
+          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0 || !visibleForShift(tx.state, shift, product.sku)) return [];
           const pack = cigarettePackCents(product.sku, product.category, product.name);
           const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
@@ -4116,7 +4221,7 @@ export class PosService {
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
       const seen = new Set(items.map((item) => item.sku));
       for (const extra of [...stockedCatalogRows(tx.state, itemCatalog), ...stockedMasterRows(tx.state, masters, flowers, itemCatalog)]) {
-        if (seen.has(extra.sku) || extra.qty <= 0) continue;
+        if (seen.has(extra.sku) || extra.qty <= 0 || !visibleForShift(tx.state, shift, extra.sku)) continue;
         seen.add(extra.sku);
         const carton = notes.get(extra.sku);
         items.push({
@@ -4159,6 +4264,9 @@ export class PosService {
       const pending = tx.state.tickets.filter((ticket) => ticket.shift_id === shift.id && ticket.status === "PENDING").length;
       if (pending >= MAX_PENDING_TICKETS) throw new PosError(429, "TICKET_LIMIT", "The till queue is full. Please see staff.");
       const lines = mergeLines(input.lines);
+      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+        throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable while PNYS is in NO WEED mode.");
+      }
       for (const line of lines) {
         try {
           priceOf(tx.state, line.sku, raw, flowers, items, masters);

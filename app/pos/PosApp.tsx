@@ -694,7 +694,7 @@ export default function PosApp({
           ) : null}
         </div>
         <div className={styles.headerActions}>
-          {view.phase === "sell" && view.weed_gate?.answer != null ? (
+          {view.phase === "sell" && storeCode === "PNY01" && view.weed_gate?.answer != null ? (
             <WeedToggle current={view.weed_gate.answer} busy={busy} cartHasItems={!cartEmpty} error={error} onOpen={() => setError("")} onConfirm={answerWeed} />
           ) : null}
           {view.phase === "sell" ? (

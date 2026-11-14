@@ -1700,11 +1700,76 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   assert.match(login, /data-testid="manager-login"/);
   assert.doesNotMatch(login, /<nav|href=|manager-actions/);
   for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
-  assert.match(app, /Price, stock and expense changes are locked/);
+  assert.match(app, /Price, stock and expense changes stay locked/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
   assert.match(css, /position:\s*fixed/);
   assert.match(css, /overflow-y:\s*auto/);
   assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+});
+
+test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push(
+    { sku: "188", thc_flag: true, sku_sort: 188, name: "Pink Animal", category: "FLOWER", default_price_cents: 2000, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+    { sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 250, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+  );
+  for (const sku of ["188", "710"]) {
+    db.state.store_products.push({ store_code: "PNYS", sku, enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+    db.state.balances.push({ store_code: "PNYS", sku, qty: 4, created_at: now.toISOString(), updated_at: now.toISOString() });
+  }
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.5.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.5.2"));
+  const defaultView = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(defaultView.products.some((row) => row.sku === "188"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).weed_mode.current, "WEED");
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "no-confirm", weed_in_store: false, confirm: false })), "CONFIRM_REQUIRED");
+
+  const protectedBefore = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts });
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "pnys-no-weed", weed_in_store: false, confirm: true }));
+  assert.equal(changed.from, "WEED");
+  assert.equal(changed.to, "NO_WEED");
+  assert.ok(changed.backup_id);
+  const backupIndex = db.state.audit.findIndex((row) => row.id === changed.backup_id && row.action === "WEED_MODE_BACKUP");
+  const changeIndex = db.state.audit.findIndex((row) => row.action === "WEED_MODE_CHANGED" && row.detail.backup_id === changed.backup_id);
+  assert.ok(backupIndex >= 0 && changeIndex > backupIndex);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts }), protectedBefore);
+
+  const noWeed = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "blocked-thc", lines: [{ sku: "188", qty: 1 }] })), "THC_HIDDEN");
+  const menuOff = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOff.items.some((row) => row.sku === "188"), false);
+  assert.equal(menuOff.items.some((row) => row.sku === "710"), true);
+
+  const undone = await runStore(PNYS_STORE, () => svc.managerUndoWeedMode(manager.token, { key: "undo-no-weed", backup_id: String(changed.backup_id), confirm: true }));
+  assert.equal(undone.to, "WEED");
+  assert.equal(db.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === changed.backup_id), true);
+  const restored = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(restored.products.some((row) => row.sku === "188"), true);
+  const menuOn = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOn.items.some((row) => row.sku === "188"), true);
+});
+
+test("PNYS mode controls remain Manager-only and proof screens cover sell, closing and customer menu in both modes", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const proof = readFileSync("app/pos/mode-preview/ModeProof.tsx", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(manager, /Confirm exact change/);
+  assert.match(manager, /undo backup and audit entry will be written first/i);
+  assert.match(manager, /api\/pos\/manager\/weed/);
+  assert.match(pos, /storeCode === "PNY01" && view\.weed_gate/);
+  assert.match(service, /WEED_MODE_BACKUP/);
+  assert.match(service, /WEED_MODE_CHANGED/);
+  assert.match(service, /WEED_MODE_UNDONE/);
+  assert.match(proof, /surface === "closing" \? allProducts : visible/);
+  assert.match(proof, /surface === "menu"/);
+  assert.match(proof, /noWeed \? allProducts\.filter/);
 });
 
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {

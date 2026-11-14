@@ -38,6 +38,23 @@
 .audit article { display: grid; gap: 3px; padding: 12px 13px; border-left: 4px solid #1d4ed8; border-radius: 8px; background: #fff; }
 .empty { padding: 18px; border: 1px dashed #94a3b8; border-radius: 12px; text-align: center; }
 .error { color: #b91c1c; font-weight: 750; }
+.modeCard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 12px; padding: 14px; border: 2px solid; border-radius: 14px; background: #fff; }
+.modeCard > div:first-child { display: grid; gap: 4px; }
+.modeCard span, .modeCard small { color: #64748b; }
+.modeCard > div > strong { font-size: 22px; }
+.modeOn { border-color: #15803d; }
+.modeOff { border-color: #b91c1c; }
+.modeOff > div > strong { color: #b91c1c; }
+.modeActions { display: grid; gap: 7px; }
+.modeActions button { min-height: 42px; padding: 0 12px; border: 0; border-radius: 9px; background: #1d4ed8; color: #fff; font-weight: 850; }
+.modeActions .undo { background: #e5e7eb; color: #111827; }
+.dialog { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 16px; background: rgb(15 23 42 / 65%); }
+.dialog section { width: min(100%, 380px); box-sizing: border-box; padding: 20px; border-radius: 18px; background: #fff; box-shadow: 0 20px 60px rgb(0 0 0 / 30%); }
+.dialog h2 { margin-top: 0; }
+.dialog section > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.dialog button { min-height: 50px; border: 0; border-radius: 10px; background: #e5e7eb; font-weight: 850; }
+.dialog button:last-child { background: #1d4ed8; color: #fff; }
+.change { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; padding: 12px; border-radius: 10px; background: #eff6ff; text-align: center; font-weight: 900; }
 
 @media (max-width: 390px) {
   .top { grid-template-columns: 1.15fr 1fr; font-size: 11px; }
@@ -48,4 +65,6 @@
   .cards { grid-template-columns: 1fr 1fr; }
   .cards article:first-child { grid-column: 1 / -1; }
   .bottom button { font-size: 10px; }
+  .modeCard { grid-template-columns: 1fr; }
+  .modeActions { grid-template-columns: 1fr 1fr; }
 }
