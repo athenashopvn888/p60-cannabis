@@ -10,6 +10,7 @@ export function emptyState(now = new Date().toISOString()): State {
         active: true,
         timezone: STORE_TZ,
         prices_tax_included: true,
+        weed_in_store: true,
         ticket_letter_seq: 0,
         created_at: now,
       },

@@ -584,7 +584,8 @@ function weedAnswerRequired(shift: ShiftRow) {
   return shift.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store == null;
 }
 
-function noWeedShift(shift: ShiftRow | undefined) {
+function noWeedShift(state: State, shift: ShiftRow | undefined) {
+  if (shift?.store_code === "PNYS") return state.stores.find((row) => row.code === "PNYS")?.weed_in_store === false;
   return shift?.weed_gate_required === true && shift.weed_in_store === false;
 }
 
@@ -594,7 +595,7 @@ function thcForState(state: State, sku: string) {
 }
 
 function visibleForShift(state: State, shift: ShiftRow | undefined, sku: string) {
-  return !noWeedShift(shift) || !thcForState(state, sku);
+  return !noWeedShift(state, shift) || !thcForState(state, sku);
 }
 
 function requireWeedAnswer(shift: ShiftRow) {
@@ -2554,8 +2555,9 @@ export class PosService {
       .filter((row) => row.store_code === tillCode())
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
+    const store = state.stores.find((row) => row.code === tillCode());
     const latestBackup = [...state.audit]
-      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_id === liveShift?.id)
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === tillCode())
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
     return {
@@ -2581,9 +2583,9 @@ export class PosService {
       customers,
       coupons,
       weed_mode: {
-        current: liveShift?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
+        current: store?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
         shift_id: liveShift?.sccx_shift_id ?? null,
-        can_change: liveShift?.status === "ACTIVE",
+        can_change: true,
         thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
         undo_backup_id: latestBackup?.id ?? null,
       },
@@ -2602,10 +2604,11 @@ export class PosService {
       if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
       if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact WEED mode change before saving.");
       const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
-      if (!shift) throw new PosError(409, "NO_SHIFT", "An active PNYS shift is required.");
-      const current = shift.weed_in_store !== false;
+      const store = tx.state.stores.find((row) => row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "PNYS store settings are unavailable.");
+      const current = store.weed_in_store !== false;
       if (current === input.weed_in_store) {
-        const unchanged = { ok: true as const, changed: false as const, weed_in_store: current, shift_id: shift.sccx_shift_id, backup_id: null };
+        const unchanged = { ok: true as const, changed: false as const, weed_in_store: current, shift_id: shift?.sccx_shift_id ?? null, backup_id: null };
         remember(tx.state, "manager_weed_mode", input.key, body, unchanged, now, this.deps.secrets.session);
         return unchanged;
       }
@@ -2618,22 +2621,16 @@ export class PosService {
         closing_drafts: tx.state.closing_drafts,
       });
       const backupId = randomUUID();
-      tx.state.audit.push({ id: backupId, action: "WEED_MODE_BACKUP", ref_type: "shift", ref_id: shift.id, actor: "MANAGER", detail: {
+      tx.state.audit.push({ id: backupId, action: "WEED_MODE_BACKUP", ref_type: "store", ref_id: store.code, actor: "MANAGER", detail: {
         backup_id: backupId,
-        shift_id: shift.sccx_shift_id,
-        previous_weed_gate_required: shift.weed_gate_required ?? null,
-        previous_weed_in_store: shift.weed_in_store ?? null,
-        previous_answered_at: shift.weed_answered_at ?? null,
-        previous_answered_by: shift.weed_answered_by ?? null,
+        shift_id: shift?.sccx_shift_id ?? null,
+        previous_weed_in_store: store.weed_in_store ?? true,
         target: input.weed_in_store ? "WEED" : "NO_WEED",
       }, created_at: at });
       const from = current ? "WEED" : "NO_WEED";
       const to = input.weed_in_store ? "WEED" : "NO_WEED";
-      shift.weed_gate_required = true;
-      shift.weed_in_store = input.weed_in_store;
-      shift.weed_answered_at = at;
-      shift.weed_answered_by = "MANAGER";
-      audit(tx.state, "WEED_MODE_CHANGED", "shift", shift.id, "MANAGER", { backup_id: backupId, shift_id: shift.sccx_shift_id, from, to }, at);
+      store.weed_in_store = input.weed_in_store;
+      audit(tx.state, "WEED_MODE_CHANGED", "store", store.code, "MANAGER", { backup_id: backupId, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
       const protectedAfter = stableStringify({
         balances: tx.state.balances,
         sales: tx.state.sales,
@@ -2643,7 +2640,7 @@ export class PosService {
         closing_drafts: tx.state.closing_drafts,
       });
       if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "WEED mode must not change operational data.");
-      const changed = { ok: true as const, changed: true as const, weed_in_store: input.weed_in_store, shift_id: shift.sccx_shift_id, backup_id: backupId, from, to };
+      const changed = { ok: true as const, changed: true as const, weed_in_store: input.weed_in_store, shift_id: shift?.sccx_shift_id ?? null, backup_id: backupId, from, to };
       remember(tx.state, "manager_weed_mode", input.key, body, changed, now, this.deps.secrets.session);
       return changed;
     });
@@ -2664,20 +2661,18 @@ export class PosService {
       const backup = tx.state.audit.find((row) => row.id === input.backup_id && row.action === "WEED_MODE_BACKUP");
       if (!backup) throw new PosError(404, "BACKUP", "The WEED mode backup was not found.");
       if (tx.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === backup.id)) throw new PosError(409, "UNDO_USED", "That backup was already restored.");
-      const shift = tx.state.shifts.find((row) => row.id === backup.ref_id && row.store_code === "PNYS" && row.status === "ACTIVE");
-      if (!shift) throw new PosError(409, "NO_SHIFT", "The backed-up PNYS shift is no longer active.");
+      const store = tx.state.stores.find((row) => row.code === backup.ref_id && row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "The backed-up PNYS store is unavailable.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
       const protectedBefore = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
-      const from = shift.weed_in_store === false ? "NO_WEED" : "WEED";
+      const from = store.weed_in_store === false ? "NO_WEED" : "WEED";
       const previous = backup.detail.previous_weed_in_store;
-      shift.weed_gate_required = backup.detail.previous_weed_gate_required == null ? undefined : Boolean(backup.detail.previous_weed_gate_required);
-      shift.weed_in_store = previous == null ? null : Boolean(previous);
-      shift.weed_answered_at = typeof backup.detail.previous_answered_at === "string" ? backup.detail.previous_answered_at : null;
-      shift.weed_answered_by = typeof backup.detail.previous_answered_by === "string" ? backup.detail.previous_answered_by : null;
-      const to = shift.weed_in_store === false ? "NO_WEED" : "WEED";
-      audit(tx.state, "WEED_MODE_UNDONE", "shift", shift.id, "MANAGER", { backup_id: backup.id, shift_id: shift.sccx_shift_id, from, to }, at);
+      store.weed_in_store = previous == null ? true : Boolean(previous);
+      const to = store.weed_in_store === false ? "NO_WEED" : "WEED";
+      audit(tx.state, "WEED_MODE_UNDONE", "store", store.code, "MANAGER", { backup_id: backup.id, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
       const protectedAfter = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
       if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "Undo must not change operational data.");
-      const restored = { ok: true as const, changed: true as const, weed_in_store: shift.weed_in_store !== false, shift_id: shift.sccx_shift_id, backup_id: backup.id, from, to };
+      const restored = { ok: true as const, changed: true as const, weed_in_store: store.weed_in_store !== false, shift_id: shift?.sccx_shift_id ?? null, backup_id: backup.id, from, to };
       remember(tx.state, "manager_weed_undo", input.key, body, restored, now, this.deps.secrets.session);
       return restored;
     });
@@ -2967,7 +2962,7 @@ export class PosService {
         if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket is not open.");
       }
       const lines = mergeLines(input.lines);
-      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
         throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable on a NO WEED shift.");
       }
       const priced = lines.map((line) => {
@@ -4427,7 +4422,7 @@ export class PosService {
       const pending = tx.state.tickets.filter((ticket) => ticket.shift_id === shift.id && ticket.status === "PENDING").length;
       if (pending >= MAX_PENDING_TICKETS) throw new PosError(429, "TICKET_LIMIT", "The till queue is full. Please see staff.");
       const lines = mergeLines(input.lines);
-      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
         throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable while PNYS is in NO WEED mode.");
       }
       for (const line of lines) {

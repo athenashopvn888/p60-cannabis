@@ -10,6 +10,8 @@ export type StoreRow = {
   active: boolean;
   timezone: string;
   prices_tax_included: boolean;
+  /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
+  weed_in_store?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
