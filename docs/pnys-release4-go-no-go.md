@@ -9,6 +9,7 @@ Release 4 remains plan-only. This file does not authorize a PNY01 bridge deploy,
 - [x] Integration ownership and generation exist for `SCCX_FEED`, `SCCX_ACK`, `SIGNAL`, `SHEET_OUTBOX`, `SHEET_IMPORT`, `STOCK_SNAPSHOT`, and `SETB_SYNC`.
 - [x] Delivery evidence is unique by `(channel, cutover_id, event_id)`.
 - [x] Tests reject non-owners, old generations, stale leases, and frozen/archive mutations.
+- [x] A `FROZEN` PNYS test preview permits only validated Staff/Kitchen/Manager authentication and session writes; operational writes remain blocked and gate failures do not consume PIN attempts.
 - [x] Normal PNYS and `TEMPORARILY PAUSED — DO NOT TRADE` builds compile and pass preview-only checks.
 - [x] Migration and guarded undo are stored in the repository.
 
