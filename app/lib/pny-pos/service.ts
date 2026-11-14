@@ -2460,17 +2460,41 @@ export class PosService {
   /** Read-only Kitchen dashboard data. This never advances or rewrites till state. */
   async kitchenState(token: string) {
     const state = await this.readState();
-    this.session(state, token, this.now(), "kitchen");
+    const now = this.now();
+    this.session(state, token, now, "kitchen");
+    const since = now.getTime() - 24 * 60 * 60 * 1000;
+    const saleIds = new Set(state.sales
+      .filter((sale) => sale.status === "COMPLETED" && Date.parse(sale.created_at) >= since)
+      .filter((sale) => state.shifts.some((shift) => shift.id === sale.shift_id && shift.store_code === tillCode()))
+      .map((sale) => sale.id));
+    const sold24h = new Map<string, number>();
+    for (const line of state.sale_lines) {
+      if (!saleIds.has(line.sale_id)) continue;
+      sold24h.set(line.sku, (sold24h.get(line.sku) ?? 0) + line.qty);
+    }
+    const pending = new Map<string, number>();
+    for (const row of state.incoming) {
+      if (row.store_code !== tillCode() || row.status !== "PENDING_CONFIRM") continue;
+      pending.set(row.sku, (pending.get(row.sku) ?? 0) + row.qty_sent);
+    }
     const products = state.products
       .filter((product) => product.setb_active)
       .filter((product) => state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled))
-      .map((product) => ({
-        sku: product.sku,
-        name: product.name,
-        category: product.category,
-        size: sizeLabel(product.sku, product.category, product.name),
-        on_hand: qtyOf(state, product.sku),
-      }))
+      .map((product) => {
+        const onHand = qtyOf(state, product.sku);
+        const sold = sold24h.get(product.sku) ?? 0;
+        const pendingQty = pending.get(product.sku) ?? 0;
+        return {
+          sku: product.sku,
+          name: product.name,
+          category: product.category,
+          size: sizeLabel(product.sku, product.category, product.name),
+          on_hand: onHand,
+          sold_24h: sold,
+          pending_qty: pendingQty,
+          suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
+        };
+      })
       .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
     const history = [...state.incoming]
       .sort((a, b) => b.created_at.localeCompare(a.created_at))

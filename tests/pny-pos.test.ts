@@ -1612,6 +1612,9 @@ test("PNYS Kitchen queues an idempotent pending refill and staff confirmation ad
   const now = new Date("2026-11-03T15:00:00.000Z");
   const db = new MemoryDb();
   applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const shift = db.state.shifts[0];
+  db.state.sales.push({ id: "kitchen-sale-24h", ref_no: "PNYS-KITCHEN-1", shift_id: shift.id, staff_uid: shift.staff_uid, ticket_id: null, total_cents: 2000, prices_tax_included: true, payment_method: "CASH", status: "COMPLETED", void_reason: null, voided_by: null, created_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString() });
+  db.state.sale_lines.push({ id: "kitchen-sale-line-24h", sale_id: "kitchen-sale-24h", sku: "240", qty: 3, unit_price_cents: 100, price_source: "TEST", line_total_cents: 300 });
   const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
   const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.1");
   const before = qty(db, "240");
@@ -1626,7 +1629,7 @@ test("PNYS Kitchen queues an idempotent pending refill and staff confirmation ad
   assert.equal(pending.qty_received, null);
   assert.equal(qty(db, "240"), before);
   const kitchenView = await svc.kitchenState(kitchen.token);
-  assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before), true);
+  assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before && row.sold_24h === 3 && row.pending_qty === 4 && row.suggested_refill_qty === Math.max(0, 6 - before - 4)), true);
   assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
 
   const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
@@ -1641,15 +1644,23 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
   assert.match(app, /data-testid="kitchen-login"/);
   assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
-  assert.match(app, /Zero on-hand SKUs remain searchable and can be added/);
   assert.match(app, /Search SKU, name or size/);
+  assert.match(app, /Low stock/);
+  assert.match(app, /Zero stock/);
+  assert.match(app, /Pending refill/);
+  assert.match(app, /Sold 24h × 2 − On hand − Pending/);
+  assert.match(app, /data-testid="kitchen-confirm"/);
+  assert.match(app, /total units/);
+  assert.match(app, /api\/pos\/kitchen\/logout/);
   assert.match(app, /className=\{styles\.scan\} disabled>SCAN/);
   assert.match(app, /data-testid="kitchen-history"/);
-  assert.match(app, /pending\. Store staff must open Refill and confirm/);
+  assert.match(app, /Status: PENDING_CONFIRM\. Store staff must confirm/);
   assert.match(css, /position: fixed/);
   assert.match(css, /overflow-y: auto/);
   assert.match(css, /@media\(max-width:390px\)/);
   assert.match(service, /async kitchenState\(token: string\)/);
+  assert.match(service, /suggested_refill_qty/);
+  assert.match(service, /24 \* 60 \* 60 \* 1000/);
   assert.match(service, /async queueKitchenRefill/);
   assert.match(service, /status: "PENDING_CONFIRM"/);
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);

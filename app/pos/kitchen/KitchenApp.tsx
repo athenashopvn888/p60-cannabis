@@ -4,21 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./kitchen.module.css";
 
-type Product = { sku: string; name: string; category: string; size: string; on_hand: number };
+type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; pending_qty: number; suggested_refill_qty: number };
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; created_at: string };
 type KitchenView = { authenticated: boolean; store_code?: string; products?: Product[]; history?: HistoryRow[] };
-type Screen = "refill" | "history" | "sent";
+type Screen = "refill" | "confirm" | "history" | "sent";
+type Filter = "all" | "low" | "zero" | "pending";
+type RefillLine = { sku: string; name: string; size: string; qty: number };
 
 const previewProducts: Product[] = [
-  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0 },
-  { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3 },
-  { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", on_hand: 0 },
-  { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", on_hand: 12 },
+  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6 },
+  { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
+  { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
+  { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
 ];
 const previewHistory: HistoryRow[] = [
-  { kitchen_row_id: "preview-pending", batch_id: "PNYS-PREVIEW", sku: "240", name: "Preview Product", size: "each", qty_sent: 4, qty_received: null, status: "PENDING_CONFIRM", created_at: "2026-11-14T02:30:00.000Z" },
+  { kitchen_row_id: "preview-pending", batch_id: "PNYS-PREVIEW", sku: "396-3g", name: "Preview Flower", size: "3g", qty_sent: 4, qty_received: null, status: "PENDING_CONFIRM", created_at: "2026-11-14T02:30:00.000Z" },
   { kitchen_row_id: "preview-confirmed", batch_id: "PNYS-EARLIER", sku: "261-14g", name: "Daydream Diesel", size: "14g", qty_sent: 2, qty_received: 2, status: "CONFIRMED", created_at: "2026-11-13T02:30:00.000Z" },
 ];
+const noProducts: Product[] = [];
 
 async function readJson(response: Response) {
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -26,13 +29,26 @@ async function readJson(response: Response) {
   return body;
 }
 
+function screenTitle(screen: Screen) {
+  if (screen === "refill") return "New refill";
+  if (screen === "confirm") return "Confirm batch";
+  if (screen === "history") return "Refill history";
+  return "Sent to store";
+}
+
 export default function KitchenApp({ preview }: { preview?: "login" | Screen }) {
   const isPreview = Boolean(preview);
+  const initialScreen = preview && preview !== "login" ? preview : "refill";
   const [view, setView] = useState<KitchenView>(() => preview === "login" ? { authenticated: false } : isPreview ? { authenticated: true, store_code: "PNYS", products: previewProducts, history: previewHistory } : { authenticated: false });
   const [pin, setPin] = useState("");
-  const [screen, setScreen] = useState<Screen>(preview && preview !== "login" ? preview : "refill");
+  const [screen, setScreen] = useState<Screen>(initialScreen);
+  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [qty, setQty] = useState<Record<string, string>>(preview === "sent" ? { "240": "4" } : {});
+  const [qty, setQty] = useState<Record<string, string>>(() => preview === "sent" ? { "240": "6", "261-14g": "3" } : ({} as Record<string, string>));
+  const [sentLines, setSentLines] = useState<RefillLine[]>(() => preview === "sent" ? [
+    { sku: "240", name: "Preview Product", size: "each", qty: 6 },
+    { sku: "261-14g", name: "Daydream Diesel", size: "14g", qty: 3 },
+  ] : []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const commands = useMemo(() => new DurableCommandKeys(), []);
@@ -53,6 +69,22 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     return () => controller.abort();
   }, [isPreview]);
 
+  const allProducts = view.products ?? noProducts;
+  const refillLines = useMemo(() => allProducts.flatMap((product) => {
+    const raw = qty[product.sku] ?? String(product.suggested_refill_qty || "");
+    const amount = /^\d+$/.test(raw) ? Number(raw) : 0;
+    return amount > 0 ? [{ sku: product.sku, name: product.name, size: product.size, qty: amount }] : [];
+  }), [allProducts, qty]);
+  const totalUnits = refillLines.reduce((sum, line) => sum + line.qty, 0);
+  const products = allProducts.filter((product) => {
+    const matchesQuery = `${product.sku} ${product.name} ${product.size}`.toLowerCase().includes(query.trim().toLowerCase());
+    if (!matchesQuery) return false;
+    if (filter === "low") return product.suggested_refill_qty > 0;
+    if (filter === "zero") return product.on_hand === 0;
+    if (filter === "pending") return product.pending_qty > 0;
+    return true;
+  });
+
   async function signIn() {
     setBusy(true); setError("");
     try {
@@ -62,16 +94,25 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     finally { setBusy(false); }
   }
 
+  async function logout() {
+    if (!isPreview) await fetch("/api/pos/kitchen/logout", { method: "POST", credentials: "same-origin" });
+    setPin(""); setQty({}); setView({ authenticated: false }); setScreen("refill");
+  }
+
+  function reviewBatch() {
+    if (!refillLines.length) { setError("Enter a quantity for at least one SKU."); return; }
+    setError(""); setScreen("confirm");
+  }
+
   async function sendRefill() {
-    const lines = Object.entries(qty).filter(([, value]) => /^\d+$/.test(value) && Number(value) > 0).map(([sku, value]) => ({ sku, qty: Number(value) }));
-    if (!lines.length) { setError("Enter a quantity for at least one SKU."); return; }
-    if (isPreview) { setScreen("sent"); return; }
-    const body = { lines };
+    if (!refillLines.length) { setError("Enter a quantity for at least one SKU."); setScreen("refill"); return; }
+    if (isPreview) { setSentLines(refillLines); setScreen("sent"); return; }
+    const body = { lines: refillLines.map(({ sku, qty: amount }) => ({ sku, qty: amount })) };
     const key = commands.key("kitchen-refill", body);
     setBusy(true); setError("");
     try {
       await readJson(await fetch("/api/pos/kitchen/refills", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": key }, credentials: "same-origin", body: JSON.stringify({ ...body, request_id: key }) }));
-      commands.complete("kitchen-refill", key); setQty({}); await load(); setScreen("sent");
+      commands.complete("kitchen-refill", key); setSentLines(refillLines); setQty({}); await load(); setScreen("sent");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Refill was not sent."); }
     finally { setBusy(false); }
   }
@@ -86,24 +127,37 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     </section>
   </main>;
 
-  const products = (view.products ?? []).filter((product) => `${product.sku} ${product.name} ${product.size}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const batchLines = screen === "sent" ? sentLines : refillLines;
+  const batchTotal = batchLines.reduce((sum, line) => sum + line.qty, 0);
   return <main className={styles.shell} data-testid="kitchen-shell" data-kitchen-screen={screen}>
-    <header className={styles.top}><div><strong>{view.store_code ?? "PNYS"}</strong><span> · Kitchen</span></div><div><strong>{screen === "refill" ? "New refill" : screen === "history" ? "Refill history" : "Sent to store"}</strong></div><strong className={styles.test}>TEST STORE</strong></header>
+    <header className={styles.top}>
+      <div><strong>{view.store_code ?? "PNYS"}</strong><span> · Kitchen</span></div>
+      <strong>{screenTitle(screen)}</strong>
+      <div className={styles.topActions}><strong className={styles.test}>TEST STORE</strong><button type="button" onClick={() => void logout()}>Logout</button></div>
+    </header>
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <p className={styles.hint}>Zero on-hand SKUs remain searchable and can be added.</p>
+        <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
+        <p className={styles.formula}><strong>Suggested refill</strong> = max(0, Sold 24h × 2 − On hand − Pending). Every suggestion is editable.</p>
+        <div className={styles.legend}><span>SKU</span><span>On hand</span><span>Sold 24h</span><span>Pending</span><span>Refill</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
-          <div><strong>{product.sku} · {product.size}</strong><span>{product.name}</span><small>On hand: {product.on_hand}</small></div>
-          <input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} placeholder="Qty" value={qty[product.sku] ?? ""} onChange={(event) => setQty({ ...qty, [product.sku]: event.target.value.replace(/[^\d]/g, "") })} />
+          <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span></div>
+          <span className={styles.metric}><small>On hand</small><strong>{product.on_hand}</strong></span>
+          <span className={styles.metric}><small>Sold 24h</small><strong>{product.sold_24h}</strong></span>
+          <span className={styles.metric}><small>Pending</small><strong>{product.pending_qty}</strong></span>
+          <label className={styles.qty}><small>Suggested</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? String(product.suggested_refill_qty || "")} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))} /></label>
         </article>)}</div>
+        {!products.length ? <p className={styles.empty}>No SKUs match this filter.</p> : null}
       </section> : null}
+      {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>Confirm refill batch</h1><p>Review every quantity before sending. Stock will not change until store staff confirms receipt.</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span></div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} SKUs</span><strong>{batchTotal} total units</strong></div></section> : null}
       {screen === "history" ? <section data-testid="kitchen-history"><h1>Refill history</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span></div><div><strong>{row.qty_sent} sent</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? "Waiting for staff" : row.status}</span></div></article>)}</div></section> : null}
-      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>Refill sent to PNYS</h1><p>It is pending. Store staff must open Refill and confirm the received quantities before stock changes.</p><button type="button" onClick={() => setScreen("history")}>View refill history</button></section> : null}
+      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>Refill sent to PNYS</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} total units</strong><p>Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.</p><button type="button" onClick={() => setScreen("history")}>View refill history</button></section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     <footer className={styles.bottom} data-testid="kitchen-actions">
-      {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>History</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>Send to store</button></> : null}
+      {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>History</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>Review · {totalUnits}</button></> : null}
+      {screen === "confirm" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>Back</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>Send to store · {batchTotal}</button></> : null}
       {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>New refill</button> : null}
       {screen === "sent" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>Done</button> : null}
     </footer>
