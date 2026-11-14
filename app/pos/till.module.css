@@ -1651,6 +1651,13 @@
   text-align: right;
 }
 
+.countListRow .countSearch {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 110px;
+  text-align: left;
+}
+
 .countNext,
 .countExpand {
   flex: 0 0 auto;

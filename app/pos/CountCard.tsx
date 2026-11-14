@@ -215,6 +215,7 @@ export default function CountCard({
       {allowExtra ? (
         <div className={styles.countListRow}>
           <input
+            className={styles.countSearch}
             aria-label="Search or add SKU"
             placeholder="Search SKU or name"
             list={knownSkuListId}
