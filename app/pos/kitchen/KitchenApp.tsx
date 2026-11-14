@@ -156,7 +156,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     <footer className={styles.bottom} data-testid="kitchen-actions">
-      {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>History</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>Review · {totalUnits}</button></> : null}
+      {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>History</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>REFILL LIST · {totalUnits}</button></> : null}
       {screen === "confirm" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>Back</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>Send to store · {batchTotal}</button></> : null}
       {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>New refill</button> : null}
       {screen === "sent" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>Done</button> : null}

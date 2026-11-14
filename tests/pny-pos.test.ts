@@ -1649,6 +1649,8 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /Zero stock/);
   assert.match(app, /Pending refill/);
   assert.match(app, /Sold 24h × 2 − On hand − Pending/);
+  assert.match(app, /REFILL LIST · \{totalUnits\}/);
+  assert.doesNotMatch(app, />Review · \{totalUnits\}</);
   assert.match(app, /data-testid="kitchen-confirm"/);
   assert.match(app, /total units/);
   assert.match(app, /api\/pos\/kitchen\/logout/);
