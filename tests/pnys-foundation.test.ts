@@ -222,3 +222,16 @@ test("PNYS mutations take a database row lock before changing stock or command r
   const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
   assert.match(adapter, /select version, doc from \$\{schema\}\.live_state where store_code = \$1 for update/i);
 });
+
+test("outbox CRON authenticates even while integrations are off and reports failures with a non-2xx status", async () => {
+  const route = await readFile(new URL("../app/api/cron/sheet-outbox/route.ts", import.meta.url), "utf8");
+  const retry = await readFile(new URL("../app/api/pos/admin/outbox/retry/route.ts", import.meta.url), "utf8");
+  const vercel = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.ok(route.indexOf("cronOk(request)") < route.indexOf("INTEGRATIONS_ENABLED"));
+  assert.match(route, /service\.outboxStatus\(\)/);
+  assert.match(route, /result\.ok \? 200 : 503/);
+  assert.match(retry, /retryOutboxFailures/);
+  assert.match(retry, /adminToken\(\)/);
+  assert.match(vercel, /\/api\/cron\/sheet-outbox/);
+  assert.match(vercel, /"schedule": "\*\/1 \* \* \* \*"|"schedule": "\* \* \* \* \*"/);
+});

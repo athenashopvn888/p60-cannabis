@@ -46,6 +46,7 @@ import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapsho
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
+import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -60,8 +61,6 @@ import type {
 } from "./types.ts";
 
 export const END_SHIFT_MESSAGE = "Summary will post to BOT HUB within 5 min.";
-const BACKOFF_MIN = [1, 2, 5, 10, 15];
-
 type Json = Record<string, unknown>;
 
 export type PosDeps = {
@@ -106,6 +105,8 @@ function nameLiveShift(state: State, at: string) {
     queued.status = "queued";
     queued.sent_at = null;
     queued.next_attempt_at = at;
+    queued.lease_id = null;
+    queued.lease_expires_at = null;
   }
   audit(state, "DISPLAY_NAME", "staff", TONIGHT_NAME_MARK, staff.staff_uid, { from: previous, to: TONIGHT_DISPLAY_NAME }, at);
 }
@@ -120,6 +121,9 @@ function enqueue(state: State, tab: string, rowId: string, payload: Record<strin
     existing.attempts = 0;
     existing.last_error = null;
     existing.next_attempt_at = at;
+    existing.lease_id = null;
+    existing.lease_expires_at = null;
+    existing.last_attempt_at = null;
     return;
   }
   state.outbox.push({
@@ -2224,7 +2228,7 @@ export class PosService {
       const phase = weedAnswerRequired(shift) ? "weed" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
-        .filter((row) => row.status === "queued")
+        .filter((row) => row.status !== "sent")
         .map((row) => Date.parse(row.created_at))
         .sort((a, b) => a - b)[0];
       return {
@@ -3666,10 +3670,68 @@ export class PosService {
     }
   }
 
+  async outboxStatus() {
+    const now = this.now();
+    const state = await this.readState();
+    const pending = state.outbox.filter((row) => row.status !== "sent");
+    const oldest = pending.map((row) => Date.parse(row.created_at)).filter(Number.isFinite).sort((a, b) => a - b)[0];
+    const failures = pending
+      .filter((row) => row.status === "error" || Boolean(row.last_error))
+      .sort((a, b) => (b.last_attempt_at ?? b.created_at).localeCompare(a.last_attempt_at ?? a.created_at))
+      .slice(0, 20)
+      .map((row) => ({
+        id: row.id,
+        tab: row.tab,
+        row_id: row.row_id,
+        status: row.status,
+        attempts: row.attempts,
+        last_error: row.last_error,
+        last_attempt_at: row.last_attempt_at ?? null,
+        next_attempt_at: row.next_attempt_at,
+      }));
+    return {
+      queued: pending.filter((row) => row.status === "queued").length,
+      sending: pending.filter((row) => row.status === "sending").length,
+      errors: pending.filter((row) => row.status === "error").length,
+      oldest_pending_at: oldest == null ? null : iso(new Date(oldest)),
+      delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
+      alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
+      failures,
+    };
+  }
+
   async drainOutbox() {
     const now = this.now();
-    const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime()));
-    if (batch.length === 0) return { ok: true, sent: 0 };
+    const leaseId = randomUUID();
+    const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
+    const batch = await this.db.transaction(async (tx) => {
+      const at = iso(now);
+      for (const row of tx.state.outbox) {
+        if (row.status !== "sending") continue;
+        const expires = Date.parse(row.lease_expires_at ?? row.next_attempt_at);
+        if (Number.isFinite(expires) && expires > now.getTime()) continue;
+        const expiredLease = row.lease_id ?? "unknown";
+        row.status = "queued";
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        row.next_attempt_at = at;
+        row.last_error = "Previous outbox worker lease expired before acknowledgement.";
+        audit(tx.state, "OUTBOX_LEASE_EXPIRED", "sheet_outbox", row.id, "cron", { row_id: row.row_id, tab: row.tab, lease_id: expiredLease }, at);
+      }
+      const due = tx.state.outbox
+        .filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .slice(0, OUTBOX_BATCH_SIZE);
+      for (const row of due) {
+        row.status = "sending";
+        row.lease_id = leaseId;
+        row.lease_expires_at = leaseExpiresAt;
+        row.next_attempt_at = leaseExpiresAt;
+        row.last_attempt_at = at;
+      }
+      return structuredClone(due);
+    });
+    if (batch.length === 0) return { ok: true, sent: 0, ...(await this.outboxStatus()) };
     const groups = new Map<string, typeof batch>();
     for (const row of batch) {
       const list = groups.get(row.tab) ?? [];
@@ -3677,38 +3739,93 @@ export class PosService {
       groups.set(row.tab, list);
     }
     const tabs = [...OUTBOX_TAB_ORDER.filter((tab) => groups.has(tab)), ...[...groups.keys()].filter((tab) => !OUTBOX_TAB_ORDER.includes(tab as (typeof OUTBOX_TAB_ORDER)[number]))];
-    try {
-      for (const tab of tabs) {
-        const rows = groups.get(tab) ?? [];
-        if (rows.length) await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+    let sent = 0;
+    for (const tab of tabs) {
+      const rows = groups.get(tab) ?? [];
+      if (!rows.length) continue;
+      try {
+        await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
+        const acknowledged = await this.db.transaction(async (tx) => {
+          const at = iso(this.now());
+          let count = 0;
+          for (const row of rows) {
+            const current = tx.state.outbox.find((item) => item.id === row.id);
+            if (!current || current.status !== "sending" || current.lease_id !== leaseId) continue;
+            current.status = "sent";
+            current.sent_at = at;
+            current.last_error = null;
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            count += 1;
+          }
+          return count;
+        });
+        sent += acknowledged;
+      } catch (error) {
+        const message = outboxErrorMessage(error);
+        const failedIds = new Set(rows.map((row) => row.id));
+        await this.db.transaction(async (tx) => {
+          const failedAt = this.now();
+          const at = iso(failedAt);
+          let holdUntil = at;
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId && failedIds.has(row.id))) {
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.attempts += 1;
+            current.last_error = message;
+            current.last_attempt_at = at;
+            current.next_attempt_at = iso(new Date(failedAt.getTime() + outboxBackoffMs(current.attempts)));
+            if (current.next_attempt_at > holdUntil) holdUntil = current.next_attempt_at;
+            current.status = current.attempts >= OUTBOX_ERROR_ATTEMPTS ? "error" : "queued";
+            audit(tx.state, current.status === "error" ? "OUTBOX_DEAD" : "OUTBOX_RETRY_SCHEDULED", "sheet_outbox", current.id, "cron", {
+              row_id: current.row_id,
+              tab: current.tab,
+              attempts: current.attempts,
+              next_attempt_at: current.next_attempt_at,
+            }, at);
+          }
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId)) {
+            current.status = "queued";
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.next_attempt_at = holdUntil;
+          }
+        });
+        return {
+          ok: false,
+          sent,
+          failed: rows.length,
+          sheet_down: error instanceof SheetUnavailable,
+          error: message,
+          ...(await this.outboxStatus()),
+        };
       }
-      await this.db.transaction(async (tx) => {
-        const at = iso(this.now());
-        for (const row of batch) {
-          const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status !== "queued") continue;
-          current.status = "sent";
-          current.sent_at = at;
-          current.last_error = null;
-        }
-      });
-      return { ok: true, sent: batch.length };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Sheet write failed";
-      await this.db.transaction(async (tx) => {
-        for (const row of batch) {
-          const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status === "sent") continue;
-          current.attempts += 1;
-          current.last_error = message;
-          const delay = BACKOFF_MIN[Math.min(current.attempts, BACKOFF_MIN.length) - 1] * 60 * 1000;
-          current.next_attempt_at = iso(new Date(this.now().getTime() + delay));
-          if (current.attempts >= OUTBOX_ERROR_ATTEMPTS) current.status = "error";
-        }
-      });
-      if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
-      return { ok: false, error: message };
     }
+    return { ok: true, sent, ...(await this.outboxStatus()) };
+  }
+
+  async retryOutboxFailures(adminToken: string, rowIds: string[] = []) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      requireAdmin(tx.state, adminToken, now);
+      const at = iso(now);
+      const wanted = new Set(rowIds.map((value) => value.trim()).filter(Boolean));
+      const recovered: string[] = [];
+      for (const row of tx.state.outbox) {
+        const expiredSending = row.status === "sending" && Date.parse(row.lease_expires_at ?? row.next_attempt_at) <= now.getTime();
+        if (row.status !== "error" && !expiredSending) continue;
+        if (wanted.size > 0 && !wanted.has(row.id) && !wanted.has(row.row_id)) continue;
+        row.status = "queued";
+        row.attempts = 0;
+        row.last_error = null;
+        row.next_attempt_at = at;
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        recovered.push(row.row_id);
+      }
+      audit(tx.state, "OUTBOX_MANUAL_RETRY", "sheet_outbox", null, "admin", { recovered }, at);
+      return { ok: true, recovered: recovered.length, row_ids: recovered };
+    });
   }
 
   async menu() {
@@ -4408,7 +4525,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       requireAdmin(tx.state, adminToken, now);
-      const oldest = tx.state.outbox.filter((row) => row.status === "queued").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
+      const oldest = tx.state.outbox.filter((row) => row.status !== "sent").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
       const closings = tx.state.closings.flatMap((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         if (!shift?.ended_at) return [];
@@ -4430,7 +4547,17 @@ export class PosService {
         sheet_sync_delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
         sheet_alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
         sccx_not_acked: closings.some((row) => row.late),
-        outbox: tx.state.outbox.map((row) => ({ id: row.id, tab: row.tab, row_id: row.row_id, status: row.status, attempts: row.attempts, last_error: row.last_error })),
+        outbox: tx.state.outbox.map((row) => ({
+          id: row.id,
+          tab: row.tab,
+          row_id: row.row_id,
+          status: row.status,
+          attempts: row.attempts,
+          last_error: row.last_error,
+          last_attempt_at: row.last_attempt_at ?? null,
+          next_attempt_at: row.next_attempt_at,
+          lease_expires_at: row.lease_expires_at ?? null,
+        })),
         closings,
         shifts: tx.state.shifts.map((shift) => ({
           id: shift.id,

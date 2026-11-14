@@ -286,8 +286,12 @@ export type OutboxRow = {
   attempts: number;
   last_error: string | null;
   next_attempt_at: string;
-  status: "queued" | "sent" | "error";
+  status: "queued" | "sending" | "sent" | "error";
   created_at: string;
+  /** Internal worker lease fields live in live_state and are never sent to Sheets. */
+  lease_id?: string | null;
+  lease_expires_at?: string | null;
+  last_attempt_at?: string | null;
 };
 
 export type CursorRow = {

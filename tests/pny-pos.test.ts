@@ -39,6 +39,7 @@ import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/th
 import { hashPin } from "../app/lib/pny-pos/crypto.ts";
 import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
 import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
+import { OUTBOX_LEASE_MS, outboxBackoffMs } from "../app/lib/pny-pos/outbox.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -618,6 +619,173 @@ test("17. sales, deposits and counts succeed while the sheet is down and the out
   h.clock.t = new Date(h.clock.t.getTime() + 11 * 60 * 1000);
   const view = await h.svc.state(login.token);
   assert.equal(view.sheet_sync_delayed, true);
+});
+
+test("outbox claims prevent overlapping CRON runs from sending a row twice", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-concurrent",
+    tab: "S_Sales",
+    row_id: "sale-concurrent",
+    payload: { row_id: "sale-concurrent", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  const originalUpsert = h.sheet.upsert.bind(h.sheet);
+  let writes = 0;
+  h.sheet.upsert = async (tab, rows) => {
+    writes += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await originalUpsert(tab, rows);
+  };
+
+  const results = await Promise.all([h.svc.drainOutbox(), h.svc.drainOutbox()]);
+
+  assert.equal(writes, 1);
+  assert.equal(results.reduce((sum, row) => sum + row.sent, 0), 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("outbox retry uses bounded backoff, exposes the failure, and recovers once", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-retry",
+    tab: "S_Sales",
+    row_id: "sale-retry",
+    payload: { row_id: "sale-retry", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+
+  const failed = await h.svc.drainOutbox();
+  assert.equal(failed.ok, false);
+  assert.equal(failed.sheet_down, true);
+  assert.equal(failed.failures[0]?.row_id, "sale-retry");
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(Date.parse(h.db.state.outbox[0]?.next_attempt_at ?? "") - h.clock.t.getTime(), outboxBackoffMs(1));
+
+  h.sheet.reachable = true;
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 0);
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("an early tab failure does not consume attempts for later unattempted tabs", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push(
+    {
+      id: "outbox-sales-failure",
+      tab: "S_Sales",
+      row_id: "sale-failure",
+      payload: { row_id: "sale-failure", amount: "100" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+    {
+      id: "outbox-deposit-unattempted",
+      tab: "S_Deposits",
+      row_id: "deposit-unattempted",
+      payload: { row_id: "deposit-unattempted", amount: "200" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+  );
+  h.sheet.reachable = false;
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.ok, false);
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(h.db.state.outbox[1]?.attempts, 0);
+  assert.equal(h.db.state.outbox[1]?.last_error, null);
+  assert.equal(h.db.state.outbox[1]?.status, "queued");
+  assert.equal(h.db.state.outbox[1]?.next_attempt_at, h.db.state.outbox[0]?.next_attempt_at);
+});
+
+test("an expired outbox worker lease is recovered with a stable row upsert", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-lease",
+    tab: "S_Deposits",
+    row_id: "deposit-lease",
+    payload: { row_id: "deposit-lease", amount: "200" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    status: "sending",
+    created_at: at,
+    lease_id: "dead-worker",
+    lease_expires_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    last_attempt_at: new Date(h.clock.t.getTime() - OUTBOX_LEASE_MS).toISOString(),
+  });
+  h.sheet.tabs.S_Deposits = [{ row_id: "deposit-lease", amount: "old" }];
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.sent, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.length, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.[0]?.amount, "200");
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_LEASE_EXPIRED"), true);
+});
+
+test("dead outbox rows stay visible until an authenticated manual recovery", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-dead",
+    tab: "S_Sales",
+    row_id: "sale-dead",
+    payload: { row_id: "sale-dead", amount: "300" },
+    sent_at: null,
+    attempts: 19,
+    last_error: "previous failure",
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+  await h.svc.drainOutbox();
+  const status = await h.svc.outboxStatus();
+  assert.equal(status.errors, 1);
+  assert.equal(status.failures[0]?.attempts, 20);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_DEAD"), true);
+
+  const admin = await h.svc.adminLogin(secrets.admin);
+  const recovered = await h.svc.retryOutboxFailures(admin.token, ["sale-dead"]);
+  assert.equal(recovered.recovered, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "queued");
+  assert.equal(h.db.state.outbox[0]?.attempts, 0);
+
+  h.sheet.reachable = true;
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_MANUAL_RETRY"), true);
 });
 
 test("18. an emergency adjustment and a late kitchen row are linked without double counting", async () => {
