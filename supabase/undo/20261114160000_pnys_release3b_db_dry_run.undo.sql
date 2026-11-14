@@ -20,10 +20,14 @@ delete from pnys_pos.deposit where store_code = 'PNYS' and id like 'DRY-R3B-%';
 delete from pnys_pos.closing where store_code = 'PNYS' and shift_id = 'DRY-R3B-SHIFT';
 delete from pnys_pos.shift where store_code = 'PNYS' and id = 'DRY-R3B-SHIFT';
 
-update pnys_pos.live_state
-set doc = $1::jsonb,
-    version = $2::bigint,
-    updated_at = $3::timestamptz
-where store_code = 'PNYS';
+update pnys_pos.live_state state
+set doc = backup.doc,
+    version = backup.version,
+    updated_at = backup.updated_at
+from pnys_pos.release3b_backup backup
+where state.store_code = 'PNYS'
+  and backup.run_id = 'DRY-R3B-20261114';
+
+drop table pnys_pos.release3b_backup;
 
 commit;

@@ -19,7 +19,23 @@ const COUPON_CODE = `${PREFIX}-10`;
 const NOW = new Date("2026-11-14T16:00:00.000Z");
 const PRIVATE_DIR = resolve("artifacts/pnys-release3b");
 const REPORT_DIR = resolve("reports/pnys-release3b");
-const CLEANUP_SQL = resolve("supabase/undo/20261114160000_pnys_release3b_db_dry_run.undo.sql");
+export const CLEANUP_SQL_TEXT = [
+  "begin;",
+  "delete from pos_hub.coupon_redemption where shift_id='DRY-R3B-SHIFT' or coupon_id in (select id from pos_hub.coupon where code='DRY-R3B-10') or customer_id in (select id from pos_hub.customer where email='dry-r3b@example.invalid');",
+  "delete from pos_hub.customer_visit where shift_id='DRY-R3B-SHIFT' or customer_id in (select id from pos_hub.customer where email='dry-r3b@example.invalid');",
+  "delete from pos_hub.customer_consent where source='DRY-R3B-IN_STORE' or customer_id in (select id from pos_hub.customer where email='dry-r3b@example.invalid');",
+  "delete from pos_hub.coupon where code='DRY-R3B-10';",
+  "delete from pos_hub.customer where email='dry-r3b@example.invalid';",
+  "delete from pnys_pos.sale where store_code='PNYS' and id like 'DRY-R3B-%';",
+  "delete from pnys_pos.refill where store_code='PNYS' and kitchen_row_id like 'DRY-R3B-%';",
+  "delete from pnys_pos.stock_count where store_code='PNYS' and id like 'DRY-R3B-%';",
+  "delete from pnys_pos.deposit where store_code='PNYS' and id like 'DRY-R3B-%';",
+  "delete from pnys_pos.closing where store_code='PNYS' and shift_id='DRY-R3B-SHIFT';",
+  "delete from pnys_pos.shift where store_code='PNYS' and id='DRY-R3B-SHIFT';",
+  "update pnys_pos.live_state state set doc=backup.doc,version=backup.version,updated_at=backup.updated_at from pnys_pos.release3b_backup backup where state.store_code='PNYS' and backup.run_id='DRY-R3B-20261114';",
+  "drop table pnys_pos.release3b_backup;",
+  "commit;",
+].join("\n");
 
 function parseEnv(text: string) {
   const values: Record<string, string> = {};
@@ -110,10 +126,7 @@ async function materialize(client: PoolClient, state: State) {
   }
 }
 
-async function main() {
-  const env = process.argv[2]
-    ? parseEnv(await readFile(process.argv[2], "utf8"))
-    : Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+export async function runRelease3b(env: Record<string, string>, writeArtifacts = false) {
   if (env.STORE_CODE !== "PNYS" || env.POS_DB_SCHEMA !== "pnys_pos" || env.POS_HUB_SCHEMA !== "pos_hub" || !env.POS_SUPABASE_DB_URL) throw new Error("Fail closed: expected PNYS preview database settings.");
   if (/pny1-pos|pny_pos(?!s)/i.test(env.VERCEL_URL || "")) throw new Error("Fail closed: PNY01 target detected.");
   const connectionString = env.POS_SUPABASE_DB_URL;
@@ -127,8 +140,21 @@ async function main() {
     const preDoc = loaded.rows[0].doc as State;
     backup = { version: Number(loaded.rows[0].version), updated_at: loaded.rows[0].updated_at, doc: preDoc, counts: await counts(client), balances: balanceProof(preDoc), doc_checksum: sha(preDoc) };
     if (await dryRowCount(client) !== 0) throw new Error("Fail closed: pre-existing DRY-R3B rows found.");
-    await mkdir(PRIVATE_DIR, { recursive: true });
-    await writeFile(resolve(PRIVATE_DIR, "private-backup.json"), JSON.stringify(backup));
+    if ((await client.query("select to_regclass('pnys_pos.release3b_backup') as table_name")).rows[0].table_name) throw new Error("Fail closed: a prior Release 3b backup table exists.");
+    await client.query(`create table pnys_pos.release3b_backup (
+      run_id text primary key check (run_id = 'DRY-R3B-20261114'), version bigint not null,
+      updated_at timestamptz not null, doc jsonb not null, table_counts jsonb not null,
+      balance_proof jsonb not null, created_at timestamptz not null default now()
+    )`);
+    await client.query(`insert into pnys_pos.release3b_backup(run_id,version,updated_at,doc,table_counts,balance_proof)
+    values('DRY-R3B-20261114',$1,$2,$3::jsonb,$4::jsonb,$5::jsonb)`, [backup.version, backup.updated_at, JSON.stringify(backup.doc), JSON.stringify(backup.counts), JSON.stringify(backup.balances)]);
+    await client.query(`revoke all on pnys_pos.release3b_backup from public;
+    alter table pnys_pos.release3b_backup enable row level security;
+    alter table pnys_pos.release3b_backup force row level security;`);
+    if (writeArtifacts) {
+      await mkdir(PRIVATE_DIR, { recursive: true });
+      await writeFile(resolve(PRIVATE_DIR, "private-backup.json"), JSON.stringify(backup));
+    }
 
     const testState = emptyState(NOW.toISOString());
     testState.stores = [{ code: "PNYS", name: "PNYS DRY RUN", active: true, timezone: "America/Toronto", prices_tax_included: true, weed_in_store: true, ticket_letter_seq: 0, created_at: NOW.toISOString() }];
@@ -222,8 +248,7 @@ async function main() {
     if (Object.values(hub.rows[0] as Record<string, number>).some((value) => Number(value) !== 1)) throw new Error("Expected one row in every pos_hub test table.");
     if (canonical(mirrorCounts.rows[0]) !== canonical({ shift_rows: 1, sale_rows: 2, refill_rows: 1, count_rows: 1, deposit_rows: 1, closing_rows: 1 })) throw new Error("PNYS relational mirror rows are incomplete.");
 
-    const cleanupSql = await readFile(CLEANUP_SQL, "utf8");
-    await client.query(cleanupSql, [JSON.stringify(backup.doc), backup.version, backup.updated_at]);
+    await client.query(CLEANUP_SQL_TEXT);
     seeded = false;
     const postLoaded = await client.query("select version,updated_at::text,doc from pnys_pos.live_state where store_code='PNYS'");
     const post = { version: Number(postLoaded.rows[0].version), updated_at: postLoaded.rows[0].updated_at, doc_checksum: sha(postLoaded.rows[0].doc), balances: balanceProof(postLoaded.rows[0].doc), counts: await counts(client), dry_rows: await dryRowCount(client) };
@@ -231,15 +256,17 @@ async function main() {
     if (!cleanupVerified) throw new Error("Cleanup verification failed; private backup retained.");
 
     const report = { release: "PNYS Release 3b", scope: "PNYS preview database only", prefix: PREFIX, backup: { version: backup.version, doc_checksum: backup.doc_checksum, balances: backup.balances, counts: backup.counts }, database_result: databaseResult, cleanup: { verified: true, post } };
-    await mkdir(REPORT_DIR, { recursive: true });
-    await writeFile(resolve(REPORT_DIR, "reconciliation.json"), JSON.stringify(report, null, 2));
+    if (writeArtifacts) {
+      await mkdir(REPORT_DIR, { recursive: true });
+      await writeFile(resolve(REPORT_DIR, "reconciliation.json"), JSON.stringify(report, null, 2));
+    }
     const money = (value: number) => `$${(value / 100).toFixed(2)}`;
     const markdown = `# PNYS Release 3b — Database Dry Run\n\nStatus: **PASSED AND CLEANED**\n\nScope: PNYS preview database only. No pny_pos or pny1-pos access.\n\n## Database reconciliation\n\n| SKU | Opening | Refills | Sales | Expected | Counted | Variance |\n|---|---:|---:|---:|---:|---:|---:|\n${stock.map((row) => `| ${row.sku} | ${row.opening} | ${row.refills} | ${row.sales} | ${row.expected} | ${row.counted} | ${row.variance} |`).join("\n")}\n\n- Gross merchandise: ${money(cash.gross_sales_cents)}\n- Coupon: -${money(cash.coupon_discount_cents)}\n- Net sales: ${money(cash.net_sales_cents)}\n- Cash / debit: ${money(cash.cash_sales_cents)} / ${money(cash.debit_sales_cents)}\n- Deposit: ${money(cash.deposited_cents)}\n- Cash variance: ${money(databaseResult.cash.direct_variance_cents)}\n- Stock short: ${money(closing.shortage_cents)}\n\n> **ACCOUNTANT DECISION REQUIRED — opening-float formula remains a placeholder.**\n\n## Cleanup proof\n\n- Full live_state checksum restored: ${post.doc_checksum}\n- Balance checksum restored: ${post.balances.checksum}\n- Balance rows / units restored: ${post.balances.count} / ${post.balances.units}\n- All affected table counts match the backup: yes\n- Remaining DRY-R3B rows: 0\n`;
-    await writeFile(resolve(REPORT_DIR, "reconciliation.md"), markdown);
-    process.stdout.write("PNYS Release 3b database dry run passed, reconciled, cleaned, and restored.\n");
+    if (writeArtifacts) await writeFile(resolve(REPORT_DIR, "reconciliation.md"), markdown);
+    return { ...report, markdown };
   } finally {
     if (seeded && backup) {
-      try { await client.query(await readFile(CLEANUP_SQL, "utf8"), [JSON.stringify(backup.doc), backup.version, backup.updated_at]); }
+      try { await client.query(CLEANUP_SQL_TEXT); }
       catch { process.stderr.write("Emergency cleanup failed; use the private backup and guarded undo immediately.\n"); }
     }
     client.release();
@@ -247,4 +274,9 @@ async function main() {
   }
 }
 
-void main().then(() => process.exit(0)).catch((error) => { process.stderr.write(`${error instanceof Error ? error.message : "Release 3b failed."}\n`); process.exit(1); });
+if (process.env.PNYS_RELEASE3B_CLI === "1") {
+  const envPromise = process.argv[2]
+    ? readFile(process.argv[2], "utf8").then(parseEnv)
+    : Promise.resolve(Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string")));
+  void envPromise.then((env) => runRelease3b(env, true)).then(() => { process.stdout.write("PNYS Release 3b database dry run passed, reconciled, cleaned, and restored.\n"); process.exit(0); }).catch((error) => { process.stderr.write(`${error instanceof Error ? error.message : "Release 3b failed."}\n`); process.exit(1); });
+}
