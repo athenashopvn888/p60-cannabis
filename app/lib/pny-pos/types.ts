@@ -10,12 +10,16 @@ export type StoreRow = {
   active: boolean;
   timezone: string;
   prices_tax_included: boolean;
+  /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
+  weed_in_store?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
 
 export type ProductRow = {
   sku: string;
+  /** Stored per-SKU classification. Missing legacy values use the safe catalog default. */
+  thc_flag?: boolean;
   sku_sort: number;
   name: string;
   category: string;
@@ -83,6 +87,11 @@ export type ShiftRow = {
   end_reason: string | null;
   opening_confirmed_at: string | null;
   refill_confirmed_at: string | null;
+  /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
+  weed_gate_required?: boolean;
+  weed_in_store?: boolean | null;
+  weed_answered_at?: string | null;
+  weed_answered_by?: string | null;
   /** Staff verify window start. Missing until the first staff PIN login of this release. */
   verify_opened_at?: string | null;
   verify_release?: string | null;
@@ -165,6 +174,66 @@ export type SaleRow = {
   void_reason: string | null;
   voided_by: string | null;
   created_at: string;
+  customer_id?: string | null;
+  coupon_id?: string | null;
+  discount_cents?: number;
+};
+
+export type CustomerRow = {
+  id: string;
+  phone_e164: string;
+  display_name: string;
+  email: string | null;
+  created_store_code: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerConsentRow = {
+  id: string;
+  customer_id: string;
+  consent_type: "EXPRESS" | "IMPLIED";
+  consented_at: string;
+  source: string;
+  store_code: string;
+  unsubscribed_at: string | null;
+  created_at: string;
+};
+
+export type CustomerVisitRow = {
+  id: string;
+  customer_id: string;
+  store_code: string;
+  sale_id: string;
+  shift_id: string;
+  spend_cents: number;
+  visited_at: string;
+};
+
+export type CouponRow = {
+  id: string;
+  store_code: string;
+  code: string;
+  label: string;
+  active: boolean;
+  discount_type: "FIXED" | "PERCENT";
+  discount_value: number;
+  min_spend_cents: number;
+  max_redemptions_per_customer: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CouponRedemptionRow = {
+  id: string;
+  coupon_id: string;
+  customer_id: string | null;
+  store_code: string;
+  shift_id: string;
+  sale_id: string;
+  discount_cents: number;
+  redeemed_at: string;
 };
 
 export type SaleLineRow = {
@@ -213,6 +282,13 @@ export type ClosingRow = {
   cash_on_hand_cents: number;
   deposited_cents: number;
   final_deposit_cents?: number;
+  /** Cash left in the drawer after the final deposit. Missing means 0. */
+  float_cents?: number;
+  opening_float_expected_cents?: number | null;
+  opening_float_counted_cents?: number | null;
+  opening_float_difference_cents?: number | null;
+  opening_float_adjusted_by?: string | null;
+  opening_float_adjusted_at?: string | null;
   shortage_cents?: number;
   overage_cents?: number;
   balance_cents?: number;
@@ -249,6 +325,14 @@ export type ClosingDraftRow = {
   closing_submitted_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
+  /** Cash left in the drawer when this shift closes. Not a deposit. */
+  float_cents?: number | null;
+  /** Cash counted at the next opening, compared with the previous close. */
+  float_found_cents?: number | null;
+  float_expected_cents?: number | null;
+  float_difference_cents?: number | null;
+  float_adjusted_by?: string | null;
+  float_adjusted_at?: string | null;
   updated_at: string;
 };
 
@@ -272,8 +356,12 @@ export type OutboxRow = {
   attempts: number;
   last_error: string | null;
   next_attempt_at: string;
-  status: "queued" | "sent" | "error";
+  status: "queued" | "sending" | "sent" | "error";
   created_at: string;
+  /** Internal worker lease fields live in live_state and are never sent to Sheets. */
+  lease_id?: string | null;
+  lease_expires_at?: string | null;
+  last_attempt_at?: string | null;
 };
 
 export type CursorRow = {
@@ -325,11 +413,19 @@ export type State = {
   cursors: CursorRow[];
   audit: AuditRow[];
   admin_sessions: AdminSessionRow[];
+  /** Central customer records are persisted in pos_hub and hydrated into this transaction snapshot. */
+  customers?: CustomerRow[];
+  customer_consents?: CustomerConsentRow[];
+  customer_visits?: CustomerVisitRow[];
+  coupons?: CouponRow[];
+  coupon_redemptions?: CouponRedemptionRow[];
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;
   /** One master stock id per store. Missing until the first close after labels shipped. */
   stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
+  /** Set when the approved opening stock is copied in. Missing means the till is waiting. */
+  opening_stock_at?: string | null;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

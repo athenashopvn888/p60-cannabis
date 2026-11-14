@@ -12,7 +12,16 @@ export async function GET(request: Request) {
     const store = new URL(request.url).searchParams.get("store") ?? STORE_CODE;
     if (store !== STORE_CODE) throw new PosError(404, "STORE", "This till is PNY01 only.");
     const service = await getService();
-    return json(await service.closedShifts());
+    await service.assertIntegrationOwner("SCCX_FEED");
+    const body = await service.closedShifts();
+    const origin = new URL(request.url).origin;
+    return json({
+      ...body,
+      closings: body.closings.map((row) => ({
+        ...row,
+        summary_image_url: `${origin}/api/sccx/closed-shifts/${encodeURIComponent(row.shift_id)}/summary.png`,
+      })),
+    });
   } catch (error) {
     return toResponse(error);
   }

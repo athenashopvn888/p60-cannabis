@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
+import ProductScanner from "./ProductScanner";
 import styles from "./till.module.css";
 
 export type PendingRefill = { kitchen_row_id: string; sku: string; text: string; qty_sent: number };
@@ -11,12 +13,14 @@ export default function RefillList({
   viewOnly,
   onClose,
   onReceive,
+  scanCatalog = [],
 }: {
   lines: PendingRefill[];
   busy: boolean;
   viewOnly?: boolean;
   onClose: () => void;
   onReceive: (lines: { kitchen_row_id: string; qty_received: number }[]) => Promise<void>;
+  scanCatalog?: ScanCatalogItem[];
 }) {
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -28,6 +32,16 @@ export default function RefillList({
     setQty(next);
     setError("");
     setEditing(true);
+  }
+
+  function scanToRefill(sku: string) {
+    const line = lines.find((item) => item.sku.toLowerCase() === sku.toLowerCase());
+    if (!line) return false;
+    if (!editing) startEdit();
+    window.setTimeout(() => {
+      document.querySelector<HTMLInputElement>(`[data-refill-sku="${CSS.escape(line.sku)}"]`)?.focus();
+    }, 0);
+    return true;
   }
 
   async function confirmEdit() {
@@ -49,6 +63,7 @@ export default function RefillList({
         </div>
       </header>
       <div className={styles.refillBody}>
+        {scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToRefill} /> : null}
         {lines.length === 0 ? <p>No refills waiting.</p> : null}
         {lines.map((line) => (
           <div key={line.kitchen_row_id} className={styles.refillRow} data-testid="refill-row">
@@ -58,6 +73,7 @@ export default function RefillList({
                 className={styles.qtyInput}
                 inputMode="numeric"
                 aria-label={`Received ${line.text}`}
+                data-refill-sku={line.sku}
                 value={qty[line.kitchen_row_id] ?? ""}
                 onChange={(event) => setQty({ ...qty, [line.kitchen_row_id]: event.target.value.replace(/[^\d]/g, "") })}
               />

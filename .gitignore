@@ -49,3 +49,4 @@ onhand_template.csv
 next-env.d.ts
 
 .vercel
+.env*.local

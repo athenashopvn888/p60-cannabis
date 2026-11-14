@@ -11,6 +11,8 @@ export const SHEET_DELAY_MS = 10 * 60 * 1000;
 export const SHEET_ALERT_MS = 30 * 60 * 1000;
 export const SCCX_ACK_LATE_MS = 15 * 60 * 1000;
 export const PIN_REPLAY_TTL_MS = 15 * 60 * 1000;
+export const IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const PIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 export const MAX_PENDING_TICKETS = 20;
 export const MAX_ORDER_LINES = 10;
 export const MAX_PIN_FAILURES = 5;
@@ -30,10 +32,6 @@ export const OUTBOX_TAB_ORDER = [
   "_Meta",
 ] as const;
 
-export const DEMO_PIN = "6666";
-export const KITCHEN_PIN = "9999";
-/** Second login on the open shift. View-only. Does not start the staff verify window. */
-export const MASTER_PIN = "1988";
 /** Bump to restart the staff verify window on the next staff PIN login. */
 export const VERIFY_RELEASE = "staff-verify-2026-11-04";
 export const PIN_LENGTH = 4;

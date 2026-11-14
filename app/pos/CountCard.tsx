@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
+import ProductScanner from "./ProductScanner";
 import styles from "./till.module.css";
 
 export type CountCardLine = {
@@ -14,20 +16,30 @@ export default function CountCard({
   lines,
   busy,
   allowExtra,
+  knownLines = [],
   compact,
   purpose = "verify",
   onSave,
   onJump,
   onSubmit,
+  scanCatalog = [],
+  submitSignal = 0,
+  onExpandedChange,
+  initialExpanded = false,
 }: {
   lines: CountCardLine[];
   busy: boolean;
   allowExtra?: boolean;
+  knownLines?: CountCardLine[];
   compact?: boolean;
   purpose?: "verify" | "closing";
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
-  onSubmit?: () => Promise<void>;
+  onSubmit?: (confirmBlanksZero?: boolean) => Promise<void>;
+  scanCatalog?: ScanCatalogItem[];
+  submitSignal?: number;
+  onExpandedChange?: (expanded: boolean) => void;
+  initialExpanded?: boolean;
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -37,14 +49,30 @@ export default function CountCard({
   void onJump;
   const [qty, setQty] = useState(current?.counted_qty == null ? "" : String(current.counted_qty));
   const [seen, setSeen] = useState(current?.sku ?? "");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const lastSubmitSignal = useRef(submitSignal);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [extraSku, setExtraSku] = useState("");
   const [extraQty, setExtraQty] = useState("");
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
+  const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
+  const knownSkuListId = useId();
+
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
+
+  useEffect(() => {
+    if (submitSignal === lastSubmitSignal.current) return;
+    lastSubmitSignal.current = submitSignal;
+    void requestSubmit();
+    // requestSubmit intentionally uses the current count draft at signal time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitSignal]);
 
   if (!current) return null;
+
   if (current.sku !== seen) {
     setSeen(current.sku);
     setQty(current.counted_qty == null ? (drafts[current.sku] ?? "") : String(current.counted_qty));
@@ -72,19 +100,55 @@ export default function CountCard({
     setExpanded(true);
   }
 
-  async function submitAll() {
+  async function saveTypedCounts() {
     setLocalError("");
+    const typed = new Map<string, number>();
     for (const line of lines) {
       if (line.locked) continue;
-      const value = drafts[line.sku] ?? "";
+      const draft = line.sku === current.sku ? qty : drafts[line.sku];
+      const value = /^\d+$/.test(draft ?? "") ? draft : line.counted_qty == null ? "" : String(line.counted_qty);
       if (!/^\d+$/.test(value)) continue;
-      if (line.counted_qty === Number(value)) continue;
+      const counted = Number(value);
+      typed.set(line.sku, counted);
+      if (line.counted_qty === counted) continue;
       try {
-        await onSave(line.sku, Number(value));
+        await onSave(line.sku, counted);
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : "Count was not saved");
+        throw err;
+      }
+    }
+    return lines.filter((line) => !line.locked && !typed.has(line.sku));
+  }
+
+  async function submitAll() {
+    try {
+      await saveTypedCounts();
+    } catch {
+      return;
+    }
+  }
+
+  async function requestSubmit() {
+    try {
+      const blanks = await saveTypedCounts();
+      if (purpose === "closing" && blanks.length) {
+        setBlankLines(blanks);
         return;
       }
+      await onSubmit?.(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not submitted");
+    }
+  }
+
+  async function confirmBlanksAsZero() {
+    setLocalError("");
+    try {
+      await onSubmit?.(true);
+      setBlankLines(null);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Count was not submitted");
     }
   }
 
@@ -98,6 +162,23 @@ export default function CountCard({
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
     }
+  }
+
+  function scanToSku(sku: string) {
+    const next = lines.findIndex((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (next >= 0) {
+      setIndex(next);
+      setExpanded(false);
+      return true;
+    }
+    const known = knownLines.find((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (known) {
+      openList();
+      setExtraSku(known.sku);
+      setExtraQty("");
+      return true;
+    }
+    return false;
   }
 
   async function addExtra() {
@@ -133,7 +214,17 @@ export default function CountCard({
       ))}
       {allowExtra ? (
         <div className={styles.countListRow}>
-          <input aria-label="Add SKU" placeholder="SKU" value={extraSku} onChange={(event) => setExtraSku(event.target.value)} />
+          <input
+            className={styles.countSearch}
+            aria-label="Search or add SKU"
+            placeholder="Search SKU or name"
+            list={knownSkuListId}
+            value={extraSku}
+            onChange={(event) => setExtraSku(event.target.value)}
+          />
+          <datalist id={knownSkuListId}>
+            {knownLines.map((line) => <option key={line.sku} value={line.sku}>{line.text}</option>)}
+          </datalist>
           <input inputMode="numeric" aria-label="Add quantity" placeholder="Qty" value={extraQty} onChange={(event) => setExtraQty(event.target.value.replace(/[^\d]/g, ""))} />
           <button className={styles.countNext} type="button" disabled={busy} onClick={() => void addExtra()}>Add</button>
         </div>
@@ -162,7 +253,7 @@ export default function CountCard({
           <>
             <p>Count every SKU. You can change a number until you tap Submit. The count does not show what the system expects.</p>
             <p>Keep selling. Each SKU uses sales up to the last time you edited it. A sale after that edit is taken off the expected amount, so the difference stays the same.</p>
-            <p>Blank SKUs stay blank until the final deposit. Then they are accepted as-is. The shift locks only after that deposit.</p>
+            <p>Every SKU needs a typed number. Zero is allowed. The shift cannot end until the closing count is submitted.</p>
           </>
         ) : (
           <>
@@ -181,14 +272,30 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const blankModal = blankLines ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="blank-count-title" data-testid="blank-count-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="blank-count-title">Closing count incomplete</h2>
+        <p>{blankLines.length} items were not counted. They will be recorded as 0 (missing). Go back and count, or confirm as 0?</p>
+        <ul className={styles.blankSkuList} data-testid="blank-sku-list">
+          {blankLines.map((line) => <li key={line.sku}><strong>{line.sku}</strong>{line.text !== `#${line.sku}` ? ` · ${line.text}` : ""}</li>)}
+        </ul>
+        <div className={styles.askActions}>
+          <button className={styles.primary} type="button" autoFocus data-testid="blank-go-back" onClick={() => setBlankLines(null)}>Go back and count</button>
+          <button className={styles.secondary} type="button" disabled={busy} data-testid="blank-confirm-zero" onClick={() => void confirmBlanksAsZero()}>Confirm as 0</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
       <div data-testid="count-card" className={styles.countDock}>
-        <div className={styles.countRuleRow}>{ruleButton}</div>
+        <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
         {list}
         {error}
         {ruleModal}
+        {blankModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -198,15 +305,15 @@ export default function CountCard({
             <small data-testid="count-progress">{index + 1} of {lines.length}</small>
           </button>
         </form>
-        {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
+        {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       </div>
     );
   }
 
   return (
     <div data-testid="count-card">
-      <div className={styles.countRuleRow}>{ruleButton}</div>
-      <div className={styles.countSplit}>
+      <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
+      {!expanded ? <div className={styles.countSplit}>
         <form className={styles.countMain} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <p className={styles.countSku}>{current.text}</p>
           <div className={styles.countEntry}>
@@ -220,11 +327,12 @@ export default function CountCard({
             {expanded ? "Collapse" : "Expand"}
           </button>
         </div>
-      </div>
-      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void onSubmit()}>Submit</button> : null}
+      </div> : null}
+      {!expanded && onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       {list}
       {error}
       {ruleModal}
+      {blankModal}
     </div>
   );
 }

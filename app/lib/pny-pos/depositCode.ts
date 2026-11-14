@@ -1,4 +1,4 @@
-const DEPOSIT_CODE = /^(?:PNY-)?D(\d{4})$/;
+const DEPOSIT_CODE = /^(?:[A-Z0-9]+-)?D(\d{4})$/;
 
 /** Next slip number. PNY-D0001, PNY-D0002. The counter moves only when a number is stored. */
 export function nextDepositSeq(current: number | undefined, existing: Array<string | null | undefined>) {
@@ -13,8 +13,8 @@ export function nextDepositSeq(current: number | undefined, existing: Array<stri
   return next;
 }
 
-export function formatDepositCode(seq: number) {
-  return `PNY-D${String(seq).padStart(4, "0")}`;
+export function formatDepositCode(seq: number, prefix = "PNY-D") {
+  return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
 /** Past deposits with no stored number stay usable and display as n/a. */

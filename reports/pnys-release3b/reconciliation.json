@@ -1,0 +1,79 @@
+{
+  "release": "PNYS Release 3b",
+  "scope": "PNYS preview database only",
+  "prefix": "DRY-R3B",
+  "backup": {
+    "version": 20,
+    "doc_checksum": "4dfe7eb19b4512e271dce7e39f68024f45d771459e0e6c0ee78469beab23884f",
+    "balances": {
+      "count": 206,
+      "units": 1210,
+      "checksum": "8993d56cd6646d2ae00a5185bf5b267c7f3476d638d9308f513a3665e6cf91d3"
+    },
+    "counts": {
+      "hub_visit": 0,
+      "pnys_sale": 0,
+      "hub_coupon": 0,
+      "pnys_count": 0,
+      "pnys_shift": 0,
+      "hub_consent": 0,
+      "pnys_refill": 0,
+      "hub_customer": 0,
+      "pnys_closing": 0,
+      "pnys_deposit": 0,
+      "hub_redemption": 0,
+      "hub_policy_audit": 0
+    }
+  },
+  "database_result": {
+    "source": "pnys_pos.live_state + pnys_pos relational mirrors + pos_hub",
+    "final_version": 38,
+    "stock": [
+      { "sku": "9901-3g", "opening": 6, "refills": 0, "sales": 0, "expected": 6, "counted": 6, "variance": 0 },
+      { "sku": "9902", "opening": 10, "refills": 3, "sales": 2, "expected": 11, "counted": 10, "variance": -1 },
+      { "sku": "9903", "opening": 5, "refills": 0, "sales": 1, "expected": 4, "counted": 4, "variance": 0 }
+    ],
+    "cash": {
+      "gross_sales_cents": 5500,
+      "coupon_discount_cents": 1000,
+      "net_sales_cents": 4500,
+      "cash_sales_cents": 4000,
+      "debit_sales_cents": 500,
+      "deposited_cents": 4000,
+      "end_float_cents": 0,
+      "direct_variance_cents": 0
+    },
+    "shortage_cents": 2500,
+    "hub_rows": { "customer_rows": 1, "consent_rows": 1, "visit_rows": 1, "coupon_rows": 1, "redemption_rows": 1 },
+    "mirror_rows": { "shift_rows": 1, "sale_rows": 2, "refill_rows": 1, "count_rows": 1, "deposit_rows": 1, "closing_rows": 1 },
+    "opening_float_formula": "ACCOUNTANT DECISION REQUIRED — placeholder only; no formula selected"
+  },
+  "cleanup": {
+    "verified": true,
+    "post": {
+      "version": 20,
+      "updated_at": "2026-11-13 14:37:13.000066+00",
+      "doc_checksum": "4dfe7eb19b4512e271dce7e39f68024f45d771459e0e6c0ee78469beab23884f",
+      "balances": {
+        "count": 206,
+        "units": 1210,
+        "checksum": "8993d56cd6646d2ae00a5185bf5b267c7f3476d638d9308f513a3665e6cf91d3"
+      },
+      "counts": {
+        "hub_visit": 0,
+        "pnys_sale": 0,
+        "hub_coupon": 0,
+        "pnys_count": 0,
+        "pnys_shift": 0,
+        "hub_consent": 0,
+        "pnys_refill": 0,
+        "hub_customer": 0,
+        "pnys_closing": 0,
+        "pnys_deposit": 0,
+        "hub_redemption": 0,
+        "hub_policy_audit": 0
+      },
+      "dry_rows": 0
+    }
+  }
+}
