@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 import ProductScanner from "./ProductScanner";
 import styles from "./till.module.css";
@@ -23,6 +23,9 @@ export default function CountCard({
   onJump,
   onSubmit,
   scanCatalog = [],
+  submitSignal = 0,
+  onExpandedChange,
+  initialExpanded = false,
 }: {
   lines: CountCardLine[];
   busy: boolean;
@@ -34,6 +37,9 @@ export default function CountCard({
   onJump?: (sku: string) => Promise<void>;
   onSubmit?: (confirmBlanksZero?: boolean) => Promise<void>;
   scanCatalog?: ScanCatalogItem[];
+  submitSignal?: number;
+  onExpandedChange?: (expanded: boolean) => void;
+  initialExpanded?: boolean;
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -43,7 +49,8 @@ export default function CountCard({
   void onJump;
   const [qty, setQty] = useState(current?.counted_qty == null ? "" : String(current.counted_qty));
   const [seen, setSeen] = useState(current?.sku ?? "");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const lastSubmitSignal = useRef(submitSignal);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [extraSku, setExtraSku] = useState("");
   const [extraQty, setExtraQty] = useState("");
@@ -52,7 +59,20 @@ export default function CountCard({
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
   const knownSkuListId = useId();
 
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
+
+  useEffect(() => {
+    if (submitSignal === lastSubmitSignal.current) return;
+    lastSubmitSignal.current = submitSignal;
+    void requestSubmit();
+    // requestSubmit intentionally uses the current count draft at signal time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitSignal]);
+
   if (!current) return null;
+
   if (current.sku !== seen) {
     setSeen(current.sku);
     setQty(current.counted_qty == null ? (drafts[current.sku] ?? "") : String(current.counted_qty));
@@ -292,7 +312,7 @@ export default function CountCard({
   return (
     <div data-testid="count-card">
       <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
-      <div className={styles.countSplit}>
+      {!expanded ? <div className={styles.countSplit}>
         <form className={styles.countMain} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <p className={styles.countSku}>{current.text}</p>
           <div className={styles.countEntry}>
@@ -306,8 +326,8 @@ export default function CountCard({
             {expanded ? "Collapse" : "Expand"}
           </button>
         </div>
-      </div>
-      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
+      </div> : null}
+      {!expanded && onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       {list}
       {error}
       {ruleModal}

@@ -3042,7 +3042,8 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(closeUi, /data-testid="close-summary-done"/);
   assert.match(closeUi, /Done, I posted it/);
   assert.match(closeUi, /resumeSummary/);
-  assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
+  assert.match(closeUi, /resumeSummary \? "posted"/);
+  assert.match(closeUi, /step === "posted"[\s\S]*close-summary/);
   assert.match(pos, /closeHold/);
   assert.match(pos, /pos-close-hold/);
   assert.match(pos, /finishCloseSummary/);
@@ -3067,6 +3068,34 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
   assert.match(summaryUi, /Opening differences are shown for review and are not included/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
+test("PNYS mobile close uses four shell steps and keeps persistence on the existing callbacks", () => {
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const countUi = readFileSync("app/pos/CountCard.tsx", "utf8");
+  const css = readFileSync("app/pos/till.module.css", "utf8");
+  const preview = readFileSync("app/pos/closing-summary-preview/ClosingFlowPreview.tsx", "utf8");
+  assert.match(closeUi, /count: \{ number: 1, title: "Closing stock count" \}/);
+  assert.match(closeUi, /cash: \{ number: 2, title: "Cash & deposit" \}/);
+  assert.match(closeUi, /review: \{ number: 3, title: "Shorts & refills" \}/);
+  assert.match(closeUi, /confirm: \{ number: 4, title: "Confirm & post" \}/);
+  assert.match(closeUi, /data-testid="close-fixed-top"/);
+  assert.match(closeUi, /data-testid="close-scroll-middle"/);
+  assert.match(closeUi, /data-testid="close-fixed-actions"/);
+  assert.match(css, /\.closeBody[\s\S]*overflow-y: auto/);
+  assert.match(css, /@media \(max-width: 390px\)/);
+  assert.match(closeUi, /className=\{styles\.scanDisabled\} disabled>SCAN/);
+  assert.match(closeUi, /step === "count" && countExpanded/);
+  assert.match(countUi, /!expanded \? <div className=\{styles\.countSplit\}/);
+  assert.match(countUi, /placeholder="Search SKU or name"/);
+  assert.match(countUi, /knownLines\.map/);
+  assert.match(closeUi, /Formula A · Opening float excluded/);
+  assert.match(closeUi, /Formula B · Opening float deducted/);
+  assert.match(closeUi, /Neither one is selected/);
+  assert.match(closeUi, /await onSaveDeposit\(depositCents, floatCents\)/);
+  assert.match(closeUi, /await onConfirm\(depositCents, floatCents, finalDepositCode\)/);
+  assert.match(preview, /counted_qty: 0/);
+  assert.match(preview, /scanCatalog=\{\[\]\}/);
 });
 
 test("staff variance lines retain dollar values without revealing expected stock", () => {
