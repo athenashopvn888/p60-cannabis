@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChips, sortCategories } from "../lib/pny-pos/money";
 import { menuPriceText } from "./menuPrice";
@@ -45,23 +45,24 @@ function chooseLayout(next: Layout) {
 export default function MenuApp({
   menuApi = "/api/menu",
   label = "PNY01",
+  previewMenu,
 }: {
   menuApi?: string;
   label?: string;
+  previewMenu?: Menu;
 } = {}) {
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(previewMenu ?? null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
   const [category, setCategory] = useState("");
-  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
-  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
-  const commandKeys = commandKeysRef.current;
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
+    if (previewMenu) return;
     let stop = false;
     const load = () => {
       void fetch(menuApi, { cache: "no-store" })
@@ -76,7 +77,7 @@ export default function MenuApp({
       stop = true;
       window.clearInterval(timer);
     };
-  }, [menuApi]);
+  }, [menuApi, previewMenu]);
 
   const items = menu?.items ?? [];
   const categories = useMemo(

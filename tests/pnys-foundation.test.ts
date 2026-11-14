@@ -9,6 +9,9 @@ import { reconcileTillCatalog } from "../app/lib/pny-pos/tillCatalog.ts";
 import type { ItemIndex } from "../app/lib/pny-pos/itemRaw.ts";
 import type { FlowerIndex } from "../app/lib/pny-pos/flowerRaw.ts";
 import type { State } from "../app/lib/pny-pos/types.ts";
+import { matchScannedLabel, skuFromLabelText } from "../app/lib/pny-pos/labelScan.ts";
+import { MemoryDb, type PosDb } from "../app/lib/pny-pos/memory.ts";
+import { PosService } from "../app/lib/pny-pos/service.ts";
 
 test("PNYS uses isolated routes and cookie", () => {
   assert.equal(storeProfile("PNYS"), PNYS_STORE);
@@ -66,6 +69,87 @@ test("shared shell has fixed bars, scroll panel, safe areas and 360px rule", asy
   assert.match(css, /safe-area-inset-top/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /max-width:\s*390px/);
+});
+
+test("customer routes cannot render the PNYS staff shell or link to staff routes", async () => {
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(layout, /PnysAppShell|data-pnys-shell/);
+  const customerRoutes = [
+    "../app/page.tsx",
+    "../app/menu/page.tsx",
+    "../app/delivery/page.tsx",
+    "../app/[tier]/page.tsx",
+    "../app/items/[category]/page.tsx",
+    "../app/item/[slug]/page.tsx",
+  ];
+  for (const route of customerRoutes) {
+    const source = await readFile(new URL(route, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /PnysAppShell|data-pnys-shell|href\s*=\s*["']\/pos(?:[\/"'])/i, route);
+  }
+});
+
+test("PIN screens have no staff navigation before authentication", async () => {
+  const pos = await readFile(new URL("../app/pos/PosApp.tsx", import.meta.url), "utf8");
+  const till = await readFile(new URL("../app/pos/till/TillApp.tsx", import.meta.url), "utf8");
+  assert.ok(pos.indexOf("if (!view.authenticated") < pos.indexOf("data-pnys-shell"));
+  assert.doesNotMatch(till, /Back to POS/);
+});
+
+test("a reconciled PNYS clone makes the login ready without changing live_state", async () => {
+  const db = new MemoryDb() as MemoryDb & Pick<PosDb, "isReady">;
+  db.isReady = async () => true;
+  const service = new PosService(db, {
+    sheet: new LocalSheet(),
+    secrets: { shift: "s", roster: "r", poll: "p", session: "session-secret-value", admin: "a", cron: "c" },
+    demo: null,
+  });
+  assert.deepEqual(await service.publicStatus(), { waiting_for_opening: false });
+  const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
+  assert.match(adapter, /select exists\(select 1 from pnys_pos\.clone_audit/);
+  assert.doesNotMatch(adapter, /update pnys_pos\.clone_audit/i);
+});
+
+test("label scans use the first number and the approved size mapping", () => {
+  assert.equal(skuFromLabelText("261 DAYDREAM DIESEL 14g 461-B101"), "261-14g");
+  assert.equal(skuFromLabelText("224S5gSP1026"), "224-5g");
+  assert.deepEqual(matchScannedLabel("224S5gSP1026", [{ sku: "224-5g" }]), {
+    ok: true,
+    raw: "224S5gSP1026",
+    sku: "224-5g",
+    thcHidden: false,
+  });
+  assert.equal(skuFromLabelText("406 DAYDREAM 6g LOT 999"), "406-5g");
+  assert.equal(skuFromLabelText("715 BACKWOODS"), "715");
+  const catalog = [{ sku: "261-14g" }, { sku: "406-5g", thc_hidden: true }];
+  assert.deepEqual(matchScannedLabel("261 DAYDREAM DIESEL 14g 461-B101", catalog), {
+    ok: true, raw: "261 DAYDREAM DIESEL 14g 461-B101", sku: "261-14g", thcHidden: false,
+  });
+  assert.deepEqual(matchScannedLabel("406 DAYDREAM 6g", catalog), {
+    ok: true, raw: "406 DAYDREAM 6g", sku: "406-5g", thcHidden: true,
+  });
+  assert.deepEqual(matchScannedLabel("999 UNKNOWN 14g", catalog), {
+    ok: false, raw: "999 UNKNOWN 14g", reason: "NOT_FOUND",
+  });
+});
+
+test("scanner keeps native and free fallback decoding and is wired to all count/refill surfaces", async () => {
+  const scanner = await readFile(new URL("../app/pos/ProductScanner.tsx", import.meta.url), "utf8");
+  const pos = await readFile(new URL("../app/pos/PosApp.tsx", import.meta.url), "utf8");
+  const count = await readFile(new URL("../app/pos/CountCard.tsx", import.meta.url), "utf8");
+  const refill = await readFile(new URL("../app/pos/RefillList.tsx", import.meta.url), "utf8");
+  assert.match(scanner, /BarcodeDetector/);
+  assert.match(scanner, /@zxing\/browser/);
+  assert.match(scanner, /decodeFromStream/);
+  assert.match(scanner, /import\("jsqr"\)/);
+  assert.match(scanner, /adaptiveThreshold/);
+  assert.match(scanner, /facingMode:\s*\{ ideal:\s*"environment"/);
+  assert.match(scanner, /focusMode:\s*"continuous"/);
+  assert.match(scanner, /NEXT_PUBLIC_PNYS_SCAN_ENABLED === "1"/);
+  assert.match(scanner, /disabled=\{!scannerEnabled\}/);
+  assert.match(scanner, /THC hidden this shift/);
+  assert.match(pos, /data-testid="scan-button"|<ProductScanner/);
+  assert.match(count, /<ProductScanner/);
+  assert.match(refill, /<ProductScanner/);
 });
 
 test("catalog materialization preserves stock and keeps PNY01-only additions", () => {
@@ -137,4 +221,28 @@ test("PNYS poll paths are detached reads and legacy projection rewrites are remo
 test("PNYS mutations take a database row lock before changing stock or command receipts", async () => {
   const adapter = await readFile(new URL("../app/lib/pny-pos/supabaseState.ts", import.meta.url), "utf8");
   assert.match(adapter, /select version, doc from \$\{schema\}\.live_state where store_code = \$1 for update/i);
+});
+
+test("outbox CRON authenticates even while integrations are off and reports failures with a non-2xx status", async () => {
+  const route = await readFile(new URL("../app/api/cron/sheet-outbox/route.ts", import.meta.url), "utf8");
+  const retry = await readFile(new URL("../app/api/pos/admin/outbox/retry/route.ts", import.meta.url), "utf8");
+  const vercel = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.ok(route.indexOf("cronOk(request)") < route.indexOf("INTEGRATIONS_ENABLED"));
+  assert.match(route, /service\.outboxStatus\(\)/);
+  assert.match(route, /result\.ok \? 200 : 503/);
+  assert.match(retry, /retryOutboxFailures/);
+  assert.match(retry, /adminToken\(\)/);
+  assert.match(vercel, /\/api\/cron\/sheet-outbox/);
+  assert.match(vercel, /"schedule": "\*\/1 \* \* \* \*"|"schedule": "\* \* \* \* \*"/);
+});
+
+test("the Release 2b4 register accounts for every B01-B25 item and names evidence for every fix", async () => {
+  const register = await readFile(new URL("../docs/pnys-release-2b4-audit.md", import.meta.url), "utf8");
+  const rows = [...register.matchAll(/^\| (B\d{2}) \| (fixed|already fixed|deferred) \| (.+) \| (.+) \|$/gm)];
+  assert.deepEqual(rows.map((row) => row[1]), Array.from({ length: 25 }, (_, index) => `B${String(index + 1).padStart(2, "0")}`));
+  for (const row of rows) {
+    assert.ok(row[3]?.trim());
+    assert.ok(row[4]?.trim());
+    if (row[2] !== "deferred") assert.match(row[4] ?? "", /`[^`]+`/);
+  }
 });

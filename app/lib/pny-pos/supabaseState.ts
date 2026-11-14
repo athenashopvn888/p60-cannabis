@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
 import type { State } from "./types.ts";
 import type { StoreCode } from "./storeProfile.ts";
@@ -14,7 +14,58 @@ type StateSchema = "pny_pos" | "pnys_pos";
 
 function asState(doc: unknown): State {
   if (!doc || typeof doc !== "object" || !Array.isArray((doc as State).shifts)) return emptyState();
-  return doc as State;
+  const state = doc as State;
+  state.customers ??= [];
+  state.customer_consents ??= [];
+  state.customer_visits ??= [];
+  state.coupons ??= [];
+  state.coupon_redemptions ??= [];
+  return state;
+}
+
+async function hydrateHub(client: PoolClient, state: State) {
+  const [customers, consents, visits, coupons, redemptions] = await Promise.all([
+    client.query("select id::text, phone_e164, coalesce(display_name,'') as display_name, email, created_store_code, created_at::text, updated_at::text from pos_hub.customer order by created_at"),
+    client.query("select id::text, customer_id::text, coalesce(consent_type, case when consented then 'EXPRESS' else 'IMPLIED' end) as consent_type, coalesce(consented_at, recorded_at)::text as consented_at, source, store_code, unsubscribed_at::text, recorded_at::text as created_at from pos_hub.customer_consent order by recorded_at"),
+    client.query("select id::text, customer_id::text, store_code, sale_id, shift_id, spend_cents, visited_at::text from pos_hub.customer_visit order by visited_at"),
+    client.query("select id::text, coalesce(store_code,'PNYS') as store_code, code, coalesce(label, code) as label, active, definition, created_by, created_at::text, created_at::text as updated_at from pos_hub.coupon order by created_at"),
+    client.query("select id::text, coupon_id::text, customer_id::text, store_code, shift_id, sale_id, discount_cents, redeemed_at::text from pos_hub.coupon_redemption order by redeemed_at"),
+  ]);
+  state.customers = customers.rows;
+  state.customer_consents = consents.rows;
+  state.customer_visits = visits.rows;
+  state.coupons = coupons.rows.map((row) => ({
+    id: row.id, store_code: row.store_code, code: row.code, label: row.label, active: row.active,
+    discount_type: row.definition?.discount_type === "PERCENT" ? "PERCENT" : "FIXED",
+    discount_value: Number(row.definition?.discount_value ?? 0),
+    min_spend_cents: Number(row.definition?.min_spend_cents ?? 0),
+    max_redemptions_per_customer: Number(row.definition?.max_redemptions_per_customer ?? 1),
+    created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at,
+  }));
+  state.coupon_redemptions = redemptions.rows;
+}
+
+async function projectHub(client: PoolClient, state: State) {
+  for (const row of state.customers ?? []) await client.query(
+    "insert into pos_hub.customer(id,phone_e164,display_name,email,created_store_code,created_at,updated_at) values($1::uuid,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz) on conflict(id) do update set phone_e164=excluded.phone_e164,display_name=excluded.display_name,email=excluded.email,updated_at=excluded.updated_at",
+    [row.id, row.phone_e164, row.display_name, row.email, row.created_store_code, row.created_at, row.updated_at],
+  );
+  for (const row of state.customer_consents ?? []) await client.query(
+    "insert into pos_hub.customer_consent(id,customer_id,channel,consented,store_code,recorded_at,source,consent_type,consented_at,unsubscribed_at) values($1::uuid,$2::uuid,'SMS',$3,$4,$5::timestamptz,$6,$7,$8::timestamptz,$9::timestamptz) on conflict(id) do update set consent_type=excluded.consent_type,consented_at=excluded.consented_at,source=excluded.source,unsubscribed_at=excluded.unsubscribed_at",
+    [row.id, row.customer_id, row.unsubscribed_at == null, row.store_code, row.created_at, row.source, row.consent_type, row.consented_at, row.unsubscribed_at],
+  );
+  for (const row of state.customer_visits ?? []) await client.query(
+    "insert into pos_hub.customer_visit(id,customer_id,store_code,sale_id,shift_id,spend_cents,visited_at) values($1::uuid,$2::uuid,$3,$4,$5,$6,$7::timestamptz) on conflict(store_code,sale_id) do update set customer_id=excluded.customer_id,spend_cents=excluded.spend_cents,visited_at=excluded.visited_at",
+    [row.id, row.customer_id, row.store_code, row.sale_id, row.shift_id, row.spend_cents, row.visited_at],
+  );
+  for (const row of state.coupons ?? []) await client.query(
+    "insert into pos_hub.coupon(id,code,active,definition,created_by,created_at,store_code,label) values($1::uuid,$2,$3,$4::jsonb,$5,$6::timestamptz,$7,$8) on conflict(id) do update set code=excluded.code,active=excluded.active,definition=excluded.definition,store_code=excluded.store_code,label=excluded.label",
+    [row.id, row.code, row.active, JSON.stringify({ discount_type: row.discount_type, discount_value: row.discount_value, min_spend_cents: row.min_spend_cents, max_redemptions_per_customer: row.max_redemptions_per_customer }), row.created_by, row.created_at, row.store_code, row.label],
+  );
+  for (const row of state.coupon_redemptions ?? []) await client.query(
+    "insert into pos_hub.coupon_redemption(id,coupon_id,customer_id,store_code,shift_id,sale_id,discount_cents,redeemed_at) values($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::timestamptz) on conflict(store_code,sale_id,coupon_id) do nothing",
+    [row.id, row.coupon_id, row.customer_id, row.store_code, row.shift_id, row.sale_id, row.discount_cents, row.redeemed_at],
+  );
 }
 
 export function createSupabaseStateDb(connectionString: string, store: StoreCode, schema: StateSchema = "pny_pos"): PosDb {
@@ -25,12 +76,29 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
   });
   let tail: Promise<void> = Promise.resolve();
   const db: PosDb & { peek(): Promise<State> } = {
+    async isReady() {
+      if (schema !== "pnys_pos") return true;
+      const client = await pool.connect();
+      try {
+        await client.query("set role pnys_app");
+        const result = await client.query(
+          "select exists(select 1 from pnys_pos.clone_audit where target_store = $1 and reconciled = true) as ready",
+          [store],
+        );
+        return result.rows[0]?.ready === true;
+      } finally {
+        await client.query("reset role").catch(() => undefined);
+        client.release();
+      }
+    },
     async peek() {
       const client = await pool.connect();
       try {
         if (schema === "pnys_pos") await client.query("set role pnys_app");
         const loaded = await client.query(`select doc from ${schema}.live_state where store_code = $1`, [store]);
-        return asState(loaded.rows[0]?.doc);
+        const state = asState(loaded.rows[0]?.doc);
+        if (schema === "pnys_pos") await hydrateHub(client, state);
+        return state;
       } finally {
         if (schema === "pnys_pos") await client.query("reset role").catch(() => undefined);
         client.release();
@@ -54,6 +122,7 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
         const loaded = await client.query(`select version, doc from ${schema}.live_state where store_code = $1 for update`, [store]);
         const version = Number(loaded.rows[0]?.version ?? 0);
         const snapshot = structuredClone(asState(loaded.rows[0]?.doc)) as State;
+        if (schema === "pnys_pos") await hydrateHub(client, snapshot);
         const before = JSON.stringify(snapshot);
         const result = await fn({ state: snapshot });
         const after = JSON.stringify(snapshot);
@@ -61,6 +130,7 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
           await client.query("commit");
           return result;
         }
+        if (schema === "pnys_pos") await projectHub(client, snapshot);
         const saved = await client.query(
           `update ${schema}.live_state set doc = $1::jsonb, version = version + 1, updated_at = now() where store_code = $2 and version = $3 returning version`,
           [after, store, version],

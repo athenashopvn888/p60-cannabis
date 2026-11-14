@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
@@ -8,7 +8,7 @@ import CloseShift, { type CloseLine } from "./CloseShift";
 import { floatPhrase } from "../lib/pny-pos/tillLedger";
 import { filterSellProducts } from "./posSearch";
 import { pos2RouteFromLocation } from "./posPath";
-import { readTillState } from "./softState";
+import { parseTillResponse, readTillState } from "./softState";
 import { startClosingWithRecovery } from "./closeStart";
 import DepositSlip from "./DepositSlip";
 import CustomerQr from "./CustomerQr";
@@ -19,6 +19,8 @@ import RefillList, { type PendingRefill } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import WeedShiftGate from "./WeedShiftGate";
 import WeedToggle from "./WeedToggle";
+import ProductScanner from "./ProductScanner";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
 import { usePosPoll } from "./usePosPoll";
@@ -80,6 +82,7 @@ type View = {
   float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null };
   categories?: string[];
   products?: Product[];
+  scan_products?: ScanCatalogItem[];
   count_lines?: CountLine[];
   incoming?: PendingRefill[];
   tickets?: Ticket[];
@@ -106,17 +109,10 @@ type View = {
 };
 
 async function post(url: string, body: unknown, key?: string, signal?: AbortSignal) {
-    const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin", signal });
-  const data = await response.json();
-  if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
-    failure.code = typeof data.code === "string" ? data.code : undefined;
-    failure.details = data;
-    throw failure;
-  }
-  return data;
+  return parseTillResponse(response);
 }
 
 function failureText(error: unknown) {
@@ -158,15 +154,20 @@ export default function PosApp({
   const [copied, setCopied] = useState(false);
   const [refillOpen, setRefillOpen] = useState(false);
   const [refNo, setRefNo] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerConsent, setCustomerConsent] = useState<"" | "EXPRESS" | "IMPLIED">("");
+  const [customerMatch, setCustomerMatch] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [couponQuote, setCouponQuote] = useState<{ label: string; discount_cents: number; total_cents: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
   const [closeHold, setCloseHold] = useState(false);
   const [closeSnap, setCloseSnap] = useState<CloseSnapshot | null>(null);
-  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
-  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
-  const commandKeys = commandKeysRef.current;
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeLabel = forced?.label ?? label;
@@ -218,7 +219,7 @@ export default function PosApp({
   const gapsStored = gapKey !== "" && typeof window !== "undefined" && window.localStorage.getItem(gapKey) === "1";
   const showGaps = Boolean(view?.verify?.reveal && sheet == null && !gapsDismissed && !gapsStored);
 
-  const products = view?.products ?? [];
+  const products = useMemo(() => view?.products ?? [], [view?.products]);
   const categories = useMemo(() => sortCategories(view?.categories ?? []), [view?.categories]);
   const categoryLayout = useMemo(() => layoutCategoryChips(categories), [categories]);
   const activeCategory = categories.includes(category) ? category : posDefaultCategory(categories);
@@ -245,6 +246,13 @@ export default function PosApp({
     });
   }
 
+  const addScannedProduct = useCallback((sku: string) => {
+    const product = products.find((item) => item.sku.toLowerCase() === sku.toLowerCase());
+    if (!product) return false;
+    setCart((current) => ({ ...current, [product.sku]: Math.min(99, (current[product.sku] ?? 0) + 1) }));
+    return true;
+  }, [products]);
+
   async function signIn() {
     setError("");
     setBusy(true);
@@ -264,13 +272,20 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const body = { lines, ticket_id: activeTicket?.id ?? null, payment_method: method };
+      const body = {
+        lines,
+        ticket_id: activeTicket?.id ?? null,
+        payment_method: method,
+        customer: customerPhone.trim() ? { phone: customerPhone, name: customerName, email: customerEmail, consent_type: customerConsent || undefined, consented_at: customerConsent ? new Date().toISOString() : undefined, consent_source: customerConsent ? "IN_STORE" : undefined } : null,
+        coupon_code: couponCode.trim() || null,
+      };
       const key = commandKeys.key("cashout", body);
       const result = await post(`${storeApi}/cashout`, body, key);
       commandKeys.complete("cashout", key);
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
+      setCustomerPhone(""); setCustomerName(""); setCustomerEmail(""); setCustomerConsent(""); setCustomerMatch(""); setCouponCode(""); setCouponQuote(null);
       setSheet("done");
       await load();
     } catch (err) {
@@ -278,6 +293,28 @@ export default function PosApp({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function findCustomer() {
+    setBusy(true); setError(""); setCustomerMatch(""); setCouponQuote(null);
+    try {
+      const result = await post(`${storeApi}/customers/lookup`, { phone: customerPhone });
+      if (result.found && result.customer) {
+        const match = result.customer as { name?: string; phone_last4?: string };
+        setCustomerName(String(match.name ?? ""));
+        setCustomerMatch(`${String(match.name ?? "Customer")} · •••• ${String(match.phone_last4 ?? "")}`);
+      } else setCustomerMatch("New customer — enter a name to save at checkout.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Customer lookup failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function applyCoupon() {
+    setBusy(true); setError(""); setCouponQuote(null);
+    try {
+      const result = await post(`${storeApi}/customers/coupon-quote`, { lines: Object.entries(cart).map(([sku, qty]) => ({ sku, qty })), customer_phone: customerPhone, coupon_code: couponCode });
+      setCouponQuote({ label: String(result.label ?? result.code ?? "Coupon"), discount_cents: Number(result.discount_cents), total_cents: Number(result.total_cents) });
+    } catch (err) { setError(err instanceof Error ? err.message : "Coupon could not be applied."); }
+    finally { setBusy(false); }
   }
 
   function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; endedAt?: string; finalDepositCode?: string | null }) {
@@ -463,7 +500,13 @@ export default function PosApp({
 
   async function saveCloseCount(sku: string, countedQty: number) {
     setError("");
-    await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty });
+    try {
+      await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+      if (code !== "COUNT_CONFIRM_REQUIRED" || !window.confirm("This count is unusual. Check the bag label and confirm the number is correct.")) throw error;
+      await post(`${storeApi}/shift/count`, { sku, counted_qty: countedQty, confirm_unusual: true });
+    }
     await load();
   }
 
@@ -535,7 +578,7 @@ export default function PosApp({
     setCloseHold(false);
     setCloseSnap(null);
     setError("");
-    void load().catch(() => undefined);
+    setView({ authenticated: false });
   }
 
   async function saveVerifyLine(sku: string, countedQty: number) {
@@ -673,8 +716,9 @@ export default function PosApp({
   }
 
   return (
-    <main className={styles.shell} data-testid="pos-shell">
+    <main className={styles.shell} data-testid="pos-shell" data-pnys-shell={storeCode === "PNYS" ? "" : undefined}>
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
+      {storeCode === "PNYS" ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
@@ -686,7 +730,7 @@ export default function PosApp({
           ) : null}
         </div>
         <div className={styles.headerActions}>
-          {view.phase === "sell" && view.weed_gate?.answer != null ? (
+          {view.phase === "sell" && storeCode === "PNY01" && view.weed_gate?.answer != null ? (
             <WeedToggle current={view.weed_gate.answer} busy={busy} cartHasItems={!cartEmpty} error={error} onOpen={() => setError("")} onConfirm={answerWeed} />
           ) : null}
           {view.phase === "sell" ? (
@@ -753,7 +797,7 @@ export default function PosApp({
         />
       ) : null}
 
-      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
+      {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} scanCatalog={view.scan_products ?? []} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">
@@ -865,6 +909,7 @@ export default function PosApp({
                 knownLines={(view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
                 lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
                 busy={busy || Boolean(view.master)}
+                scanCatalog={view.scan_products ?? []}
                 onSave={saveCloseCount}
                 onSubmit={submitCloseCount}
               />
@@ -878,6 +923,7 @@ export default function PosApp({
           ) : null}
           <div className={styles.footerBar}>
             <button className={styles.clearCart} type="button" data-testid="clear-cart" disabled={cartEmpty} onClick={clearCart}>Clear</button>
+            {tab === "sell" ? <ProductScanner catalog={view.scan_products ?? []} onMatch={addScannedProduct} /> : null}
             <button className={styles.cash} type="button" disabled={total === 0 || !view.can_sell} onClick={() => { setError(""); setSheet("cash"); }}>Cashout</button>
             <strong className={styles.cartValue} data-testid="cart-total">{formatMoney(total)}</strong>
           </div>
@@ -922,6 +968,7 @@ export default function PosApp({
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
           deadline={verifyOpen ? (closeSnap?.deadline ?? view.verify?.deadline_at ?? null) : null}
           initialStep={closeSnap?.initialStep ?? (view.closing?.submitted ? "deposit" : "count")}
+          scanCatalog={view.scan_products ?? []}
         />
       ) : null}
       {sheet === "close-ask" ? (
@@ -964,6 +1011,16 @@ export default function PosApp({
               <>
                 <h2>Cashout {formatMoney(total)}</h2>
                 <p>Pick Cash or Debit. Debit is recorded only. No card is charged.</p>
+                <label htmlFor="customer-phone">Customer phone (optional)</label>
+                <div className={styles.pay}><input id="customer-phone" className={styles.field} inputMode="tel" value={customerPhone} onChange={(event) => { setCustomerPhone(event.target.value); setCustomerMatch(""); setCouponQuote(null); }} placeholder="416 555 1234"/><button className={styles.secondary} type="button" disabled={busy || !customerPhone.trim()} onClick={() => void findCustomer()}>Find</button></div>
+                {customerMatch ? <p data-testid="customer-match">{customerMatch}</p> : null}
+                {customerPhone.trim() ? <>
+                  <label htmlFor="customer-name">Name</label><input id="customer-name" className={styles.field} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Customer name"/>
+                  <label htmlFor="customer-email">Email (optional)</label><input id="customer-email" className={styles.field} inputMode="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="name@example.com"/>
+                  <label htmlFor="customer-consent">CASL consent (nothing is auto-sent)</label><select id="customer-consent" className={styles.field} value={customerConsent} onChange={(event) => setCustomerConsent(event.target.value as "" | "EXPRESS" | "IMPLIED")}><option value="">Not recorded</option><option value="EXPRESS">Express</option><option value="IMPLIED">Implied</option></select>
+                  <label htmlFor="coupon-code">Coupon code</label><div className={styles.pay}><input id="coupon-code" className={styles.field} value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase()); setCouponQuote(null); }} placeholder="SAVE10"/><button className={styles.secondary} type="button" disabled={busy || !couponCode.trim()} onClick={() => void applyCoupon()}>Apply</button></div>
+                  {couponQuote ? <p data-testid="coupon-quote"><strong>{couponQuote.label}</strong> · −{formatMoney(couponQuote.discount_cents)} · New total {formatMoney(couponQuote.total_cents)}</p> : null}
+                </> : null}
                 {activeTicket ? <p>Ticket {activeTicket.code} will be marked paid.</p> : null}
                 {Object.entries(cart).map(([sku, qty]) => {
                   const product = products.find((item) => item.sku === sku);

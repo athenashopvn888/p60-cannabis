@@ -27,7 +27,7 @@ import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, formatDepositCode, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
-import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
+import { PNY02_STORE, PNYS_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
@@ -39,6 +39,8 @@ import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/th
 import { hashPin } from "../app/lib/pny-pos/crypto.ts";
 import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
 import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
+import { OUTBOX_LEASE_MS, outboxBackoffMs } from "../app/lib/pny-pos/outbox.ts";
+import { parseTillResponse } from "../app/pos/softState.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -226,13 +228,15 @@ test("3. SCCx off shift kills the PIN and flags the summary as no count", async 
   await rejects(() => h.svc.state(h.token), "NO_SESSION");
 });
 
-test("4. five bad PINs lock the shift, admin reissue works, and a 14 hour PIN is rejected", async () => {
+test("4. five bad PINs cool down one client without locking the shift, and a 14 hour PIN is rejected", async () => {
   const h = await readyTill();
   await rejects(() => h.svc.login("000000", "10.1.0.4"), "BAD_PIN");
   assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.pin_failed_attempts, 0);
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => h.svc.login("0000", "10.1.0.5"), "BAD_PIN");
-  await rejects(() => h.svc.login("0000", "10.1.0.5"), "LOCKED");
-  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "LOCKED");
+  await rejects(() => h.svc.login("0000", "10.1.0.5"), "RATE_LIMITED");
+  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "ACTIVE");
+  await rejects(() => h.svc.login(h.pin, "10.1.0.5"), "RATE_LIMITED");
+  assert.equal((await h.svc.login(h.pin, "10.1.0.6")).ok, true);
   const reissued = await h.svc.reissuePin(h.admin, { key: "reissue-1", shift_id: "sccx-a" });
   assert.match(String(reissued.pin), /^\d{4}$/);
   assert.notEqual(reissued.pin, h.pin);
@@ -365,6 +369,27 @@ test("7. one idempotency key creates one sale and a different body conflicts", a
   assert.equal(qty(h.db, "1001"), 1);
   await rejects(() => h.svc.cashout(h.token, { key: "sale-1", lines: [{ sku: "1001", qty: 2 }] }), "IDEMPOTENCY_CONFLICT");
   assert.equal(h.db.state.sales.length, 1);
+});
+
+test("expired idempotency receipts are purged and new receipts carry a seven-day expiry", async () => {
+  const h = await readyTill();
+  h.db.state.idempotency.push({
+    scope: "old-command",
+    key: "expired",
+    request_hash: "old",
+    response_json: "{}",
+    public_json: {},
+    status_code: 200,
+    purge_at: null,
+    created_at: new Date(h.clock.t.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  await h.svc.cashout(h.token, { key: "bounded-command", lines: [{ sku: "1001", qty: 1 }] });
+
+  assert.equal(h.db.state.idempotency.some((row) => row.key === "expired"), false);
+  const saved = h.db.state.idempotency.find((row) => row.key === "bounded-command");
+  assert.ok(saved?.purge_at);
+  assert.equal(Date.parse(saved.purge_at) - h.clock.t.getTime(), 7 * 24 * 60 * 60 * 1000);
 });
 
 test("a retry after a service restart returns the durable receipt without another sale", async () => {
@@ -618,6 +643,173 @@ test("17. sales, deposits and counts succeed while the sheet is down and the out
   h.clock.t = new Date(h.clock.t.getTime() + 11 * 60 * 1000);
   const view = await h.svc.state(login.token);
   assert.equal(view.sheet_sync_delayed, true);
+});
+
+test("outbox claims prevent overlapping CRON runs from sending a row twice", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-concurrent",
+    tab: "S_Sales",
+    row_id: "sale-concurrent",
+    payload: { row_id: "sale-concurrent", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  const originalUpsert = h.sheet.upsert.bind(h.sheet);
+  let writes = 0;
+  h.sheet.upsert = async (tab, rows) => {
+    writes += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await originalUpsert(tab, rows);
+  };
+
+  const results = await Promise.all([h.svc.drainOutbox(), h.svc.drainOutbox()]);
+
+  assert.equal(writes, 1);
+  assert.equal(results.reduce((sum, row) => sum + row.sent, 0), 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("outbox retry uses bounded backoff, exposes the failure, and recovers once", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-retry",
+    tab: "S_Sales",
+    row_id: "sale-retry",
+    payload: { row_id: "sale-retry", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+
+  const failed = await h.svc.drainOutbox();
+  assert.equal(failed.ok, false);
+  assert.equal(failed.sheet_down, true);
+  assert.equal(failed.failures[0]?.row_id, "sale-retry");
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(Date.parse(h.db.state.outbox[0]?.next_attempt_at ?? "") - h.clock.t.getTime(), outboxBackoffMs(1));
+
+  h.sheet.reachable = true;
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 0);
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("an early tab failure does not consume attempts for later unattempted tabs", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push(
+    {
+      id: "outbox-sales-failure",
+      tab: "S_Sales",
+      row_id: "sale-failure",
+      payload: { row_id: "sale-failure", amount: "100" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+    {
+      id: "outbox-deposit-unattempted",
+      tab: "S_Deposits",
+      row_id: "deposit-unattempted",
+      payload: { row_id: "deposit-unattempted", amount: "200" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+  );
+  h.sheet.reachable = false;
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.ok, false);
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(h.db.state.outbox[1]?.attempts, 0);
+  assert.equal(h.db.state.outbox[1]?.last_error, null);
+  assert.equal(h.db.state.outbox[1]?.status, "queued");
+  assert.equal(h.db.state.outbox[1]?.next_attempt_at, h.db.state.outbox[0]?.next_attempt_at);
+});
+
+test("an expired outbox worker lease is recovered with a stable row upsert", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-lease",
+    tab: "S_Deposits",
+    row_id: "deposit-lease",
+    payload: { row_id: "deposit-lease", amount: "200" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    status: "sending",
+    created_at: at,
+    lease_id: "dead-worker",
+    lease_expires_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    last_attempt_at: new Date(h.clock.t.getTime() - OUTBOX_LEASE_MS).toISOString(),
+  });
+  h.sheet.tabs.S_Deposits = [{ row_id: "deposit-lease", amount: "old" }];
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.sent, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.length, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.[0]?.amount, "200");
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_LEASE_EXPIRED"), true);
+});
+
+test("dead outbox rows stay visible until an authenticated manual recovery", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-dead",
+    tab: "S_Sales",
+    row_id: "sale-dead",
+    payload: { row_id: "sale-dead", amount: "300" },
+    sent_at: null,
+    attempts: 19,
+    last_error: "previous failure",
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+  await h.svc.drainOutbox();
+  const status = await h.svc.outboxStatus();
+  assert.equal(status.errors, 1);
+  assert.equal(status.failures[0]?.attempts, 20);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_DEAD"), true);
+
+  const admin = await h.svc.adminLogin(secrets.admin);
+  const recovered = await h.svc.retryOutboxFailures(admin.token, ["sale-dead"]);
+  assert.equal(recovered.recovered, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "queued");
+  assert.equal(h.db.state.outbox[0]?.attempts, 0);
+
+  h.sheet.reachable = true;
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_MANUAL_RETRY"), true);
 });
 
 test("18. an emergency adjustment and a late kitchen row are linked without double counting", async () => {
@@ -1245,6 +1437,36 @@ test("the env-hashed demo PIN is a signed session that another server accepts", 
   }
 });
 
+test("PNYS demo PIN creates only a test staff shift over the cloned inventory", async () => {
+  const now = new Date("2026-11-13T10:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({
+    sku: "240",
+    sku_sort: "000240",
+    name: "Test product",
+    category: "OTHER",
+    default_price_cents: 500,
+    image_url: null,
+    setb_active: true,
+    synced_at: now.toISOString(),
+    created_at: now.toISOString(),
+  });
+  db.state.store_products.push({ store_code: "PNYS", sku: "240", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "240", qty: 12, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+
+  const login = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.9.9.5"));
+  const state = await runStore(PNYS_STORE, () => svc.state(login.token));
+
+  assert.equal(state.shift?.pos_id, "DEMO1");
+  assert.equal(state.shift?.status, "ACTIVE");
+  assert.equal(db.state.balances.find((row) => row.sku === "240")?.qty, 12);
+  assert.equal(db.state.products.length, 1);
+  assert.equal(db.state.shifts.filter((row) => row.sccx_shift_id === "demo-shift-pnys").length, 1);
+  assert.equal(db.state.staff.filter((row) => row.staff_uid === "staff-demo-pnys").length, 1);
+});
+
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {
   const db = new MemoryDb();
   const now = new Date("2026-11-03T15:00:00.000Z");
@@ -1384,6 +1606,225 @@ test("the env-hashed kitchen PIN opens only the kitchen login", async () => {
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => locker.kitchenLogin("0000", "10.7.1.1"), "BAD_PIN");
   await rejects(() => locker.kitchenLogin("0000", "10.7.1.2"), "LOCKED");
   await rejects(() => locker.kitchenLogin(TEST_KITCHEN_PIN, "10.7.1.3"), "LOCKED");
+});
+
+test("PNYS Kitchen queues an idempotent pending refill and staff confirmation adds stock once", async () => {
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.1");
+  const before = qty(db, "240");
+  const command = { key: "kitchen-pending-240", lines: [{ sku: "240", qty: 4 }] };
+  const sent = await svc.queueKitchenRefill(kitchen.token, command);
+  const replayed = await svc.queueKitchenRefill(kitchen.token, command);
+  assert.equal(replayed.replay, true);
+  assert.equal(replayed.lines[0]?.kitchen_row_id, sent.lines[0]?.kitchen_row_id);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === command.key).length, 1);
+  const pending = db.state.incoming.find((row) => row.batch_id === command.key)!;
+  assert.equal(pending.status, "PENDING_CONFIRM");
+  assert.equal(pending.qty_received, null);
+  assert.equal(qty(db, "240"), before);
+  const kitchenView = await svc.kitchenState(kitchen.token);
+  assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before), true);
+  assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
+
+  const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
+  await svc.confirmIncoming(staff.token, { key: "staff-receives-240", lines: [{ kitchen_row_id: pending.kitchen_row_id, qty_received: 4 }] });
+  assert.equal(qty(db, "240"), before + 4);
+  assert.equal(db.state.incoming.find((row) => row.kitchen_row_id === pending.kitchen_row_id)?.status, "CONFIRMED");
+});
+
+test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled scan, history and staff handoff", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(app, /data-testid="kitchen-login"/);
+  assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
+  assert.match(app, /Zero on-hand SKUs remain searchable and can be added/);
+  assert.match(app, /Search SKU, name or size/);
+  assert.match(app, /className=\{styles\.scan\} disabled>SCAN/);
+  assert.match(app, /data-testid="kitchen-history"/);
+  assert.match(app, /pending\. Store staff must open Refill and confirm/);
+  assert.match(css, /position: fixed/);
+  assert.match(css, /overflow-y: auto/);
+  assert.match(css, /@media\(max-width:390px\)/);
+  assert.match(service, /async kitchenState\(token: string\)/);
+  assert.match(service, /async queueKitchenRefill/);
+  assert.match(service, /status: "PENDING_CONFIRM"/);
+  assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
+});
+
+test("the env-hashed Master PIN opens the read-only Manager session only", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  await rejects(() => svc.managerLogin(TEST_DEMO_PIN, "10.7.3.1"), "BAD_PIN");
+  await rejects(() => svc.managerLogin(TEST_KITCHEN_PIN, "10.7.3.2"), "BAD_PIN");
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.3.3");
+  const view = await svc.managerState(manager.token);
+  assert.equal(view.authenticated, true);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.products.some((row) => row.sku === "240"), true);
+  await rejects(() => svc.state(manager.token), "NO_SESSION");
+  await rejects(() => svc.kitchenState(manager.token), "NO_SESSION");
+  await rejects(() => svc.managerState("wrong-token"), "ADMIN_ONLY");
+  await rejects(() => svc.login(TEST_KITCHEN_PIN, "10.7.3.4"), "BAD_PIN");
+});
+
+test("PNYS Manager read model reports live shift, sales, stock, refills, closings and audit without changing operational state", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.audit.push({ id: "manager-audit", action: "TEST_EVENT", ref_type: "shift", ref_id: "demo", actor: "tester", detail: {}, created_at: now.toISOString() });
+  db.state.incoming.push({ kitchen_row_id: "manager-refill", batch_id: "manager-batch", store_code: "PNY01", sku: "240", qty_sent: 2, kind: "REFILL", kitchen_created_at: now.toISOString(), imported_at: now.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: now.toISOString() });
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.4.1");
+  const view = await svc.managerState(manager.token);
+  assert.ok(view.live_shift);
+  assert.ok(view.today);
+  assert.ok(Array.isArray(view.products));
+  assert.equal(view.refills.some((row) => row.kitchen_row_id === "manager-refill" && row.status === "PENDING_CONFIRM"), true);
+  assert.ok(Array.isArray(view.closings));
+  assert.equal(view.audit_log.some((row) => row.id === "manager-audit"), true);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings }), before);
+});
+
+test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only dashboard screens", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
+  const login = app.slice(app.indexOf("if (!view.authenticated)"), app.indexOf("const stock"));
+  assert.match(login, /data-testid="manager-login"/);
+  assert.doesNotMatch(login, /<nav|href=|manager-actions/);
+  for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
+  assert.match(app, /Price, stock and expense changes stay locked/);
+  assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
+  assert.match(css, /position:\s*fixed/);
+  assert.match(css, /overflow-y:\s*auto/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+});
+
+test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push(
+    { sku: "188", thc_flag: true, sku_sort: 188, name: "Pink Animal", category: "FLOWER", default_price_cents: 2000, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+    { sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 250, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+  );
+  for (const sku of ["188", "710"]) {
+    db.state.store_products.push({ store_code: "PNYS", sku, enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+    db.state.balances.push({ store_code: "PNYS", sku, qty: 4, created_at: now.toISOString(), updated_at: now.toISOString() });
+  }
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.5.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.5.2"));
+  const defaultView = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(defaultView.products.some((row) => row.sku === "188"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).weed_mode.current, "WEED");
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "no-confirm", weed_in_store: false, confirm: false })), "CONFIRM_REQUIRED");
+
+  const protectedBefore = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts });
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "pnys-no-weed", weed_in_store: false, confirm: true }));
+  assert.equal(changed.from, "WEED");
+  assert.equal(changed.to, "NO_WEED");
+  assert.ok(changed.backup_id);
+  const backupIndex = db.state.audit.findIndex((row) => row.id === changed.backup_id && row.action === "WEED_MODE_BACKUP");
+  const changeIndex = db.state.audit.findIndex((row) => row.action === "WEED_MODE_CHANGED" && row.detail.backup_id === changed.backup_id);
+  assert.ok(backupIndex >= 0 && changeIndex > backupIndex);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts }), protectedBefore);
+
+  const noWeed = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "blocked-thc", lines: [{ sku: "188", qty: 1 }] })), "THC_HIDDEN");
+  const menuOff = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOff.items.some((row) => row.sku === "188"), false);
+  assert.equal(menuOff.items.some((row) => row.sku === "710"), true);
+
+  const undone = await runStore(PNYS_STORE, () => svc.managerUndoWeedMode(manager.token, { key: "undo-no-weed", backup_id: String(changed.backup_id), confirm: true }));
+  assert.equal(undone.to, "WEED");
+  assert.equal(db.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === changed.backup_id), true);
+  const restored = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(restored.products.some((row) => row.sku === "188"), true);
+  const menuOn = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOn.items.some((row) => row.sku === "188"), true);
+});
+
+test("PNYS mode controls remain Manager-only and proof screens cover sell, closing and customer menu in both modes", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const proof = readFileSync("app/pos/mode-preview/ModeProof.tsx", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(manager, /Confirm exact change/);
+  assert.match(manager, /undo backup and audit entry will be written first/i);
+  assert.match(manager, /api\/pos\/manager\/weed/);
+  assert.match(pos, /storeCode === "PNY01" && view\.weed_gate/);
+  assert.match(service, /WEED_MODE_BACKUP/);
+  assert.match(service, /WEED_MODE_CHANGED/);
+  assert.match(service, /WEED_MODE_UNDONE/);
+  assert.match(proof, /surface === "closing" \? allProducts : visible/);
+  assert.match(proof, /surface === "menu"/);
+  assert.match(proof, /noWeed \? allProducts\.filter/);
+});
+
+test("PNYS customers, CASL history, visits and coupons are server-side, PIN-gated and redemption-safe", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T16:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({ sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 2500, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() });
+  db.state.store_products.push({ store_code: "PNYS", sku: "710", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "710", qty: 6, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.6.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.6.2"));
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-no-confirm", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: false })), "CONFIRM_REQUIRED");
+  const created = await runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-create", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: true }));
+  assert.equal(created.coupon.code, "WELCOME10");
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATE_BACKUP" && row.ref_id === created.coupon.id), true);
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATED" && row.ref_id === created.coupon.id), true);
+
+  const quote = await runStore(PNYS_STORE, () => svc.couponQuote(staff.token, { lines: [{ sku: "710", qty: 2 }], coupon_code: "welcome10", customer_phone: "416-555-0124" }));
+  assert.equal(quote.total_cents, 4000);
+  const sale = await runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "customer-sale", lines: [{ sku: "710", qty: 2 }], payment_method: "CASH", customer: { phone: "416-555-0124", name: "Sample Customer", email: "sample@example.com", consent_type: "EXPRESS", consented_at: now.toISOString(), consent_source: "IN_STORE" }, coupon_code: "WELCOME10" }));
+  assert.equal(sale.subtotal_cents, 5000);
+  assert.equal(sale.discount_cents, 1000);
+  assert.equal(sale.total_cents, 4000);
+  assert.equal(db.state.customers?.length, 1);
+  assert.equal(db.state.customer_consents?.[0]?.consent_type, "EXPRESS");
+  assert.equal(db.state.customer_visits?.[0]?.sale_id, sale.sale_id);
+  assert.equal(db.state.customer_visits?.[0]?.spend_cents, 4000);
+  assert.equal(db.state.coupon_redemptions?.length, 1);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "coupon-reuse", lines: [{ sku: "710", qty: 1 }], customer: { phone: "4165550124" }, coupon_code: "WELCOME10" })), "COUPON_LIMIT");
+  assert.equal(db.state.balances.find((row) => row.sku === "710")?.qty, 4);
+
+  const staffView = await runStore(PNYS_STORE, () => svc.customerLookup(staff.token, "4165550124"));
+  assert.deepEqual(staffView, { found: true, customer: { name: "Sample Customer", phone_last4: "0124" } });
+  await rejects(() => runStore(PNYS_STORE, () => svc.customerLookup("wrong-token", "4165550124")), "NO_SESSION");
+  const managerView = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(managerView.customers[0]?.email, "sample@example.com");
+  assert.equal(managerView.customers[0]?.visit_count, 1);
+  assert.equal(managerView.customers[0]?.spend_cents, 4000);
+  assert.equal(managerView.coupons[0]?.redemption_count, 1);
+});
+
+test("PNYS customer data stays behind staff or Manager PIN routes and customer pages never import it", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const till = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const home = readFileSync("app/page.tsx", "utf8");
+  const menu = readFileSync("app/menu/page.tsx", "utf8");
+  const migration = readFileSync("supabase/migrations/20261114130000_pnys_customers_coupons.sql", "utf8");
+  assert.match(manager, /data-testid="manager-customers"/);
+  assert.match(manager, /Confirm exact coupon/);
+  assert.match(till, /Customer phone \(optional\)/);
+  assert.match(till, /nothing is auto-sent/i);
+  assert.doesNotMatch(`${home}\n${menu}`, /customer_consents|customer_visits|coupon_redemptions|api\/pos\/customers/);
+  assert.match(migration, /create table if not exists pos_hub\.customer_visit/);
+  assert.match(migration, /force row level security/);
 });
 
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
@@ -2820,7 +3261,8 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(closeUi, /data-testid="close-summary-done"/);
   assert.match(closeUi, /Done, I posted it/);
   assert.match(closeUi, /resumeSummary/);
-  assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
+  assert.match(closeUi, /resumeSummary \? "posted"/);
+  assert.match(closeUi, /step === "posted"[\s\S]*close-summary/);
   assert.match(pos, /closeHold/);
   assert.match(pos, /pos-close-hold/);
   assert.match(pos, /finishCloseSummary/);
@@ -2832,6 +3274,9 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(confirmEnd, /setCloseHold\(true\)[\s\S]*await post\(`\$\{storeApi\}\/shift\/end`/);
   assert.equal(pos.match(/localStorage\.removeItem\(`pny-close-hold:/g)?.length, 1);
   assert.doesNotMatch(pos.slice(pos.indexOf("useEffect(() =>"), pos.indexOf("const load = useCallback")), /localStorage\.removeItem/);
+  const finish = pos.slice(pos.indexOf("function finishCloseSummary"), pos.indexOf("async function saveVerifyLine"));
+  assert.match(finish, /setView\(\{ authenticated: false \}\)/);
+  assert.doesNotMatch(finish, /load\(/);
   assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
   assert.match(summaryUi, /TOTAL CASH COLLECTED/);
@@ -2842,6 +3287,53 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
   assert.match(summaryUi, /Opening differences are shown for review and are not included/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
+test("PNYS mobile close uses four shell steps and keeps persistence on the existing callbacks", () => {
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const countUi = readFileSync("app/pos/CountCard.tsx", "utf8");
+  const css = readFileSync("app/pos/till.module.css", "utf8");
+  const preview = readFileSync("app/pos/closing-summary-preview/ClosingFlowPreview.tsx", "utf8");
+  assert.match(closeUi, /count: \{ number: 1, title: "Closing stock count" \}/);
+  assert.match(closeUi, /cash: \{ number: 2, title: "Cash & deposit" \}/);
+  assert.match(closeUi, /review: \{ number: 3, title: "Shorts & refills" \}/);
+  assert.match(closeUi, /confirm: \{ number: 4, title: "Confirm & post" \}/);
+  assert.match(closeUi, /data-testid="close-fixed-top"/);
+  assert.match(closeUi, /data-testid="close-scroll-middle"/);
+  assert.match(closeUi, /data-testid="close-fixed-actions"/);
+  assert.match(css, /\.closeBody[\s\S]*overflow-y: auto/);
+  assert.match(css, /@media \(max-width: 390px\)/);
+  assert.match(closeUi, /className=\{styles\.scanDisabled\} disabled>SCAN/);
+  assert.match(closeUi, /step === "count" && countExpanded/);
+  assert.match(countUi, /!expanded \? <div className=\{styles\.countSplit\}/);
+  assert.match(countUi, /placeholder="Search SKU or name"/);
+  assert.match(countUi, /knownLines\.map/);
+  assert.match(closeUi, /Formula A · Opening float excluded/);
+  assert.match(closeUi, /Formula B · Opening float deducted/);
+  assert.match(closeUi, /Neither one is selected/);
+  assert.match(closeUi, /await onSaveDeposit\(depositCents, floatCents\)/);
+  assert.match(closeUi, /await onConfirm\(depositCents, floatCents, finalDepositCode\)/);
+  assert.match(preview, /counted_qty: 0/);
+  assert.match(preview, /scanCatalog=\{\[\]\}/);
+});
+
+test("staff variance lines retain dollar values without revealing expected stock", () => {
+  const blind = blindStaffState({
+    stock_check: {
+      opening: { offCount: 1, lines: [{ sku: "1001", text: "#1001", off: -2, cents: -2000, expected: 7 }] },
+      closing: { offCount: 1, lines: [{ sku: "1002", text: "#1002", off: 1, cents: 500, expected: 2 }] },
+      refills: { count: 1, lines: [{ sku: "1003", text: "#1003", sent: 4, received: 3, diff: -1, cents: -800, expected: 4 }] },
+    },
+  });
+  assert.equal((blind.stock_check as { opening: { lines: { cents?: number }[] } }).opening.lines[0]?.cents, -2000);
+  assert.equal((blind.stock_check as { closing: { lines: { cents?: number }[] } }).closing.lines[0]?.cents, 500);
+  assert.equal((blind.stock_check as { refills: { lines: { cents?: number }[] } }).refills.lines[0]?.cents, -800);
+  assert.equal(JSON.stringify(blind).includes("expected"), false);
+});
+
+test("non-JSON till failures use a clear retry message", async () => {
+  const response = new Response("<html>gateway timeout</html>", { status: 504, headers: { "content-type": "text/html" } });
+  await assert.rejects(() => parseTillResponse(response), /The till could not be reached\. Try again\./);
 });
 
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
@@ -2953,6 +3445,30 @@ test("preview closing count can search and add known zero-quantity SKU 240", asy
   const after = await h.svc.state(h.token);
   assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
   await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
+});
+
+test("unusual closing counts require an explicit second confirmation", async () => {
+  const h = await readyTill({ "1001": 4 });
+  await h.svc.startClosingCount(h.token);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 }),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_CONFIRM_REQUIRED");
+      assert.deepEqual(error.details, { sku: "1001", counted_qty: 1001 });
+      return true;
+    },
+  );
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts.length ?? 0, 0);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 14 }),
+    (error: unknown) => error instanceof PosError && error.code === "COUNT_CONFIRM_REQUIRED",
+  );
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001, confirm_unusual: true });
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts[0]?.counted_qty, 1001);
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(pos, /COUNT_CONFIRM_REQUIRED/);
+  assert.match(pos, /confirm_unusual: true/);
 });
 
 test("close start timeout recovers by rereading committed server state", async () => {

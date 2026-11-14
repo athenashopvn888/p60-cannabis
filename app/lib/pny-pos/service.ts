@@ -3,6 +3,7 @@ import {
   DEMO_LABEL,
   VERIFY_RELEASE,
   FULL_SCAN_MS,
+  IDEMPOTENCY_TTL_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
   MAX_ORDER_LINES,
@@ -12,6 +13,7 @@ import {
   OUTBOX_ERROR_ATTEMPTS,
   OUTBOX_TAB_ORDER,
   PIN_REPLAY_TTL_MS,
+  PIN_FAILURE_WINDOW_MS,
   PIN_TTL_MS,
   SCCX_ACK_LATE_MS,
   SCHEMA_VERSION,
@@ -46,6 +48,7 @@ import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapsho
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
+import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -60,8 +63,6 @@ import type {
 } from "./types.ts";
 
 export const END_SHIFT_MESSAGE = "Summary will post to BOT HUB within 5 min.";
-const BACKOFF_MIN = [1, 2, 5, 10, 15];
-
 type Json = Record<string, unknown>;
 
 export type PosDeps = {
@@ -77,6 +78,31 @@ function iso(date: Date) {
 
 function audit(state: State, action: string, refType: string | null, refId: string | null, actor: string | null, detail: Json, at: string) {
   state.audit.push({ id: randomUUID(), action, ref_type: refType, ref_id: refId, actor, detail, created_at: at });
+}
+
+function customerPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  throw new PosError(400, "BAD_PHONE", "Enter a valid 10-digit customer phone number.");
+}
+
+function customerEmail(value?: string | null) {
+  const email = value?.trim().toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PosError(400, "BAD_EMAIL", "Enter a valid email or leave it blank.");
+  return email;
+}
+
+function couponCode(value: string) {
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{3,20}$/.test(code)) throw new PosError(400, "BAD_COUPON", "Coupon codes use 3-20 letters, numbers or dashes.");
+  return code;
+}
+
+function couponDiscount(total: number, coupon: NonNullable<State["coupons"]>[number]) {
+  if (total < coupon.min_spend_cents) throw new PosError(409, "COUPON_MINIMUM", `This coupon needs a minimum spend of ${formatMoney(coupon.min_spend_cents)}.`);
+  const raw = coupon.discount_type === "PERCENT" ? Math.floor(total * coupon.discount_value / 100) : coupon.discount_value;
+  return Math.max(0, Math.min(total, raw));
 }
 
 function tillCode() {
@@ -106,6 +132,8 @@ function nameLiveShift(state: State, at: string) {
     queued.status = "queued";
     queued.sent_at = null;
     queued.next_attempt_at = at;
+    queued.lease_id = null;
+    queued.lease_expires_at = null;
   }
   audit(state, "DISPLAY_NAME", "staff", TONIGHT_NAME_MARK, staff.staff_uid, { from: previous, to: TONIGHT_DISPLAY_NAME }, at);
 }
@@ -120,6 +148,9 @@ function enqueue(state: State, tab: string, rowId: string, payload: Record<strin
     existing.attempts = 0;
     existing.last_error = null;
     existing.next_attempt_at = at;
+    existing.lease_id = null;
+    existing.lease_expires_at = null;
+    existing.last_attempt_at = null;
     return;
   }
   state.outbox.push({
@@ -315,7 +346,23 @@ function requestHash(body: Json) {
   return sha256(stableStringify(copy));
 }
 
+function purgeExpiredIdempotency(state: State, now: Date) {
+  const nowMs = now.getTime();
+  state.idempotency = state.idempotency.filter((row) => {
+    const explicit = row.purge_at ? Date.parse(row.purge_at) : NaN;
+    const fallback = Date.parse(row.created_at) + IDEMPOTENCY_TTL_MS;
+    if (Number.isFinite(explicit) && explicit <= nowMs && row.response_json?.startsWith("v1.")) {
+      row.response_json = null;
+      row.purge_at = iso(new Date(fallback));
+      return fallback > nowMs;
+    }
+    const expires = Number.isFinite(explicit) ? explicit : fallback;
+    return !Number.isFinite(expires) || expires > nowMs;
+  });
+}
+
 function remember(state: State, scope: string, key: string, body: Json, result: Json, now: Date, secret: string, encrypt = false) {
+  purgeExpiredIdempotency(state, now);
   const publicBody = { ...result };
   delete publicBody.pin;
   state.idempotency.push({
@@ -325,19 +372,19 @@ function remember(state: State, scope: string, key: string, body: Json, result: 
     response_json: encrypt ? encryptJson(result, secret) : JSON.stringify(result),
     public_json: publicBody,
     status_code: 200,
-    purge_at: encrypt ? iso(new Date(now.getTime() + PIN_REPLAY_TTL_MS)) : null,
+    purge_at: iso(new Date(now.getTime() + (encrypt ? PIN_REPLAY_TTL_MS : IDEMPOTENCY_TTL_MS))),
     created_at: iso(now),
   });
 }
 
 function replay(state: State, scope: string, key: string, body: Json, now: Date, secret: string): Json | null {
   if (!key) throw new PosError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+  purgeExpiredIdempotency(state, now);
   const existing = state.idempotency.find((row) => row.scope === scope && row.key === key);
   if (!existing) return null;
   if (existing.request_hash !== requestHash(body)) {
     throw new PosError(409, "IDEMPOTENCY_CONFLICT", "This idempotency key was already used with a different request.");
   }
-  if (existing.purge_at && Date.parse(existing.purge_at) <= now.getTime()) existing.response_json = null;
   if (!existing.response_json) {
     return { ...(existing.public_json as Json), ok: true, replay: true, pin: null, pin_purged: true };
   }
@@ -537,8 +584,9 @@ function weedAnswerRequired(shift: ShiftRow) {
   return shift.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store == null;
 }
 
-function noWeedShift(shift: ShiftRow | undefined) {
-  return shift?.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store === false;
+function noWeedShift(state: State, shift: ShiftRow | undefined) {
+  if (shift?.store_code === "PNYS") return state.stores.find((row) => row.code === "PNYS")?.weed_in_store === false;
+  return shift?.weed_gate_required === true && shift.weed_in_store === false;
 }
 
 function thcForState(state: State, sku: string) {
@@ -547,7 +595,7 @@ function thcForState(state: State, sku: string) {
 }
 
 function visibleForShift(state: State, shift: ShiftRow | undefined, sku: string) {
-  return !noWeedShift(shift) || !thcForState(state, sku);
+  return !noWeedShift(state, shift) || !thcForState(state, sku);
 }
 
 function requireWeedAnswer(shift: ShiftRow) {
@@ -560,7 +608,7 @@ function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) 
   for (const balance of state.balances) if (balance.qty > 0 && balanceForStore(balance)) skus.add(balance.sku);
   for (const row of incoming) if (!row.store_code || row.store_code === tillCode()) skus.add(row.sku);
   return [...skus]
-    .filter((sku) => visibleForShift(state, shift, sku))
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => ({
       sku,
@@ -593,7 +641,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...addedSkus,
   ]);
   return [...skus]
-    .filter((sku) => visibleForShift(state, shift, sku))
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => {
       const received = receivedQty(sku);
@@ -962,7 +1010,7 @@ function refillIssues(state: State, shiftId: string, raw?: Map<string, number>) 
 
 function previousClosing(state: State, shift: ShiftRow) {
   const previous = state.shifts
-    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at && row.ended_at <= shift.started_at)
     .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
   if (!previous) return null;
   return state.closings.find((row) => row.shift_id === previous.id) ?? null;
@@ -1398,6 +1446,8 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
+  private managerFails = 0;
+  private managerLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
@@ -1562,6 +1612,7 @@ export class PosService {
 
   private reopenDemoShift(state: State, now: Date) {
     if (tillCode() === "PNY02") return this.reopenPny2Demo(state, now);
+    if (tillCode() === "PNYS") return this.reopenPnysDemo(state, now);
     const shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-1")
       ?? state.shifts.find((row) => row.store_code === tillCode());
     if (!shift) return null;
@@ -1572,6 +1623,64 @@ export class PosService {
       shift.end_reason = null;
       shift.pin_failed_attempts = 0;
       if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+    }
+    if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+      shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
+    }
+    return shift;
+  }
+
+  /** Preview-only PNYS test staff/shift. Catalog and balances stay the cloned PNYS data. */
+  private reopenPnysDemo(state: State, now: Date) {
+    const at = iso(now);
+    let staff = state.staff.find((row) => row.staff_uid === "staff-demo-pnys");
+    if (!staff) {
+      staff = {
+        staff_uid: "staff-demo-pnys",
+        sccx_id: "demo-sccx-pnys",
+        pos_id: "DEMO1",
+        display_name: "Demo Budtender",
+        active: true,
+        updated_at: at,
+        created_at: at,
+      };
+      state.staff.push(staff);
+    }
+
+    let shift = state.shifts.find((row) => row.store_code === "PNYS" && row.sccx_shift_id === "demo-shift-pnys");
+    if (!shift) {
+      const store = state.stores.find((row) => row.code === "PNYS");
+      const letter = TICKET_LETTERS[(store?.ticket_letter_seq ?? 0) % TICKET_LETTERS.length];
+      if (store) store.ticket_letter_seq += 1;
+      shift = {
+        id: randomUUID(),
+        sccx_shift_id: "demo-shift-pnys",
+        staff_uid: staff.staff_uid,
+        store_code: "PNYS",
+        ticket_letter: letter,
+        ticket_seq: 0,
+        pin_hash: this.deps.demo?.pinHash ?? null,
+        pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        pin_failed_attempts: 0,
+        status: "ACTIVE",
+        started_at: at,
+        ended_at: null,
+        end_reason: null,
+        opening_confirmed_at: at,
+        refill_confirmed_at: at,
+        created_at: at,
+      };
+      state.shifts.push(shift);
+    }
+
+    if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
+      shift.status = "ACTIVE";
+      shift.started_at = at;
+      shift.ended_at = null;
+      shift.end_reason = null;
+      shift.pin_failed_attempts = 0;
+      shift.opening_confirmed_at = shift.opening_confirmed_at ?? at;
+      shift.refill_confirmed_at = shift.refill_confirmed_at ?? at;
     }
     if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
       shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
@@ -1687,11 +1796,11 @@ export class PosService {
 
   /** Read-only. A one-store till with no approved opening stock is waiting, never a demo. */
   async publicStatus() {
-    const peek = (this.db as { peek?: () => Promise<State> }).peek;
-    if (!peek) return { waiting_for_opening: false };
-    const state = await peek();
+    if (!this.db.peek) return { waiting_for_opening: false };
+    const state = await this.db.peek();
     const open = state.shifts.some((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
-    return { waiting_for_opening: !state.opening_stock_at && !open };
+    const cloneReady = this.db.isReady ? await this.db.isReady() : false;
+    return { waiting_for_opening: !state.opening_stock_at && !cloneReady && !open };
   }
 
   async startShift(input: { key: string; store?: string; staff_ref?: string; pos_id?: string; shift_id?: string }) {
@@ -1900,7 +2009,7 @@ export class PosService {
   }
 
   async login(pin: string, ip: string) {
-    this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    this.hit(`login:${ip || "unknown"}`, 8, PIN_FAILURE_WINDOW_MS);
     if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
     if (specialPinMatches("kitchen", pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const demoPin = this.demoPinAllowed() && specialPinMatches("demo", pin);
@@ -1967,16 +2076,26 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
+      const failureActor = `pin:${sha256(ip || "unknown").slice(0, 16)}`;
+      const recentFailures = tx.state.audit.filter((row) =>
+        row.action === "PIN_LOGIN_FAILED"
+        && row.ref_id === shift.id
+        && row.actor === failureActor
+        && now.getTime() - Date.parse(row.created_at) < PIN_FAILURE_WINDOW_MS,
+      ).length;
+      if (!master && recentFailures >= MAX_PIN_FAILURES) {
+        return { ok: false as const, status: 429, code: "RATE_LIMITED", message: "Too many wrong PINs. Wait 15 minutes and try again." };
+      }
       if (!master && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
-        if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
-        const locked = shift.status === "LOCKED";
+        audit(tx.state, "PIN_LOGIN_FAILED", "shift", shift.id, failureActor, { attempt: recentFailures + 1 }, at);
+        const cooledDown = recentFailures + 1 >= MAX_PIN_FAILURES;
         return {
           ok: false as const,
-          status: locked ? 423 : 401,
-          code: locked ? "LOCKED" : "BAD_PIN",
-          message: locked
-            ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
+          status: cooledDown ? 429 : 401,
+          code: cooledDown ? "RATE_LIMITED" : "BAD_PIN",
+          message: cooledDown
+            ? "Too many wrong PINs. Wait 15 minutes and try again."
             : "That PIN is not correct.",
         };
       }
@@ -2040,6 +2159,32 @@ export class PosService {
     }
     if (!result.ok) throw new PosError(result.status, result.code, result.message);
     this.kitchenFails = 0;
+    return result;
+  }
+
+  async managerLogin(pin: string, ip: string) {
+    this.hit(`manager:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid Manager PIN.");
+    if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      if (!specialPinMatches("master", pin)) return { ok: false as const };
+      const token = newToken();
+      tx.state.admin_sessions.push({
+        id: randomUUID(),
+        token_hash: sha256(token),
+        expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        created_at: iso(now),
+      });
+      return { ok: true as const, token };
+    });
+    if (!result.ok) {
+      this.managerFails += 1;
+      if (this.managerFails >= MAX_PIN_FAILURES) this.managerLocked = true;
+      if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+      throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    }
+    this.managerFails = 0;
     return result;
   }
 
@@ -2133,6 +2278,10 @@ export class PosService {
         seen.add(extra.sku);
         products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
+      const scanProducts = products.map((product) => ({
+        sku: product.sku,
+        thc_hidden: !visibleForShift(tx.state, shift, product.sku),
+      }));
       products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
         .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
@@ -2161,7 +2310,7 @@ export class PosService {
       const phase = weedAnswerRequired(shift) ? "weed" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
-        .filter((row) => row.status === "queued")
+        .filter((row) => row.status !== "sent")
         .map((row) => Date.parse(row.created_at))
         .sort((a, b) => a - b)[0];
       return {
@@ -2203,6 +2352,7 @@ export class PosService {
           .map((row) => ({ id: row.id, deposit_code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
         categories: inStockCategories(products),
         products,
+        scan_products: scanProducts,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
         opening_lines: openingLines.map((line) => ({
           ...line,
@@ -2266,6 +2416,325 @@ export class PosService {
         prices_include_tax: false,
         end_shift_message: END_SHIFT_MESSAGE,
       };
+  }
+
+  /** Read-only Kitchen dashboard data. This never advances or rewrites till state. */
+  async kitchenState(token: string) {
+    const state = await this.readState();
+    this.session(state, token, this.now(), "kitchen");
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .filter((product) => state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled))
+      .map((product) => ({
+        sku: product.sku,
+        name: product.name,
+        category: product.category,
+        size: sizeLabel(product.sku, product.category, product.name),
+        on_hand: qtyOf(state, product.sku),
+      }))
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const history = [...state.incoming]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        size: sizeLabel(row.sku, state.products.find((product) => product.sku === row.sku)?.category, productName(state, row.sku)),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        created_at: row.created_at,
+      }));
+    return { authenticated: true as const, store_code: tillCode(), products, history };
+  }
+
+  /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
+  async managerState(token: string) {
+    const state = await this.readState();
+    const now = this.now();
+    requireAdmin(state, token, now);
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const isToday = (value: string) => new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value)) === day;
+    const liveShift = [...state.shifts]
+      .filter((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+    const todaySales = state.sales
+      .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .flatMap((product) => {
+        const storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
+        if (!storeProduct?.enabled) return [];
+        return [{
+          sku: product.sku,
+          name: product.name,
+          category: product.category,
+          size: sizeLabel(product.sku, product.category, product.name),
+          on_hand: qtyOf(state, product.sku),
+          price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
+          enabled: storeProduct.enabled,
+        }];
+      })
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const refills = [...state.incoming]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        kitchen_sent_at: row.kitchen_created_at ?? row.created_at,
+        staff_confirmed_at: row.confirmed_at,
+      }));
+    const closings = [...state.closings]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((closing) => {
+        const shift = state.shifts.find((row) => row.id === closing.shift_id);
+        const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+        return {
+          shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+          staff_name: staff?.display_name ?? "Staff",
+          ended_at: shift?.ended_at ?? closing.created_at,
+          sales_total_cents: closing.sales_total_cents,
+          deposited_cents: closing.deposited_cents,
+          final_deposit_cents: closing.final_deposit_cents ?? 0,
+          shortage_cents: closing.shortage_cents ?? 0,
+          overage_cents: closing.overage_cents ?? 0,
+          no_count: closing.no_count,
+        };
+      });
+    const auditLog = [...state.audit]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        actor: row.actor,
+        ref_type: row.ref_type,
+        ref_id: row.ref_id,
+        detail: row.detail,
+        created_at: row.created_at,
+      }));
+    const customers = [...(state.customers ?? [])]
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map((customer) => {
+        const visits = (state.customer_visits ?? []).filter((row) => row.customer_id === customer.id);
+        const consent = [...(state.customer_consents ?? [])]
+          .filter((row) => row.customer_id === customer.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        return {
+          id: customer.id,
+          name: customer.display_name,
+          phone: customer.phone_e164,
+          email: customer.email,
+          consent: consent ? { type: consent.consent_type, date: consent.consented_at, source: consent.source, unsubscribed_at: consent.unsubscribed_at } : null,
+          visit_count: visits.length,
+          spend_cents: visits.reduce((sum, row) => sum + row.spend_cents, 0),
+          last_visit_at: visits.sort((a, b) => b.visited_at.localeCompare(a.visited_at))[0]?.visited_at ?? null,
+        };
+      });
+    const coupons = [...(state.coupons ?? [])]
+      .filter((row) => row.store_code === tillCode())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
+    const store = state.stores.find((row) => row.code === tillCode());
+    const latestBackup = [...state.audit]
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === tillCode())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
+    return {
+      authenticated: true as const,
+      store_code: tillCode(),
+      live_shift: liveShift ? {
+        shift_id: liveShift.sccx_shift_id,
+        status: liveShift.status,
+        staff_name: state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff",
+        started_at: liveShift.started_at,
+      } : null,
+      today: {
+        date: day,
+        sale_count: todaySales.length,
+        sales_total_cents: todaySales.reduce((sum, row) => sum + row.total_cents, 0),
+        cash_cents: todaySales.filter((row) => row.payment_method === "CASH").reduce((sum, row) => sum + row.total_cents, 0),
+        debit_cents: todaySales.filter((row) => row.payment_method === "DEBIT").reduce((sum, row) => sum + row.total_cents, 0),
+      },
+      products,
+      refills,
+      closings,
+      audit_log: auditLog,
+      customers,
+      coupons,
+      weed_mode: {
+        current: store?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
+        shift_id: liveShift?.sccx_shift_id ?? null,
+        can_change: true,
+        thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
+        undo_backup_id: latestBackup?.id ?? null,
+      },
+      write_actions: { enabled: false as const, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+    };
+  }
+
+  async managerSetWeedMode(adminToken: string, input: { key: string; weed_in_store: boolean; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_mode", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact WEED mode change before saving.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
+      const store = tx.state.stores.find((row) => row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "PNYS store settings are unavailable.");
+      const current = store.weed_in_store !== false;
+      if (current === input.weed_in_store) {
+        const unchanged = { ok: true as const, changed: false as const, weed_in_store: current, shift_id: shift?.sccx_shift_id ?? null, backup_id: null };
+        remember(tx.state, "manager_weed_mode", input.key, body, unchanged, now, this.deps.secrets.session);
+        return unchanged;
+      }
+      const protectedBefore = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      const backupId = randomUUID();
+      tx.state.audit.push({ id: backupId, action: "WEED_MODE_BACKUP", ref_type: "store", ref_id: store.code, actor: "MANAGER", detail: {
+        backup_id: backupId,
+        shift_id: shift?.sccx_shift_id ?? null,
+        previous_weed_in_store: store.weed_in_store ?? true,
+        target: input.weed_in_store ? "WEED" : "NO_WEED",
+      }, created_at: at });
+      const from = current ? "WEED" : "NO_WEED";
+      const to = input.weed_in_store ? "WEED" : "NO_WEED";
+      store.weed_in_store = input.weed_in_store;
+      audit(tx.state, "WEED_MODE_CHANGED", "store", store.code, "MANAGER", { backup_id: backupId, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
+      const protectedAfter = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "WEED mode must not change operational data.");
+      const changed = { ok: true as const, changed: true as const, weed_in_store: input.weed_in_store, shift_id: shift?.sccx_shift_id ?? null, backup_id: backupId, from, to };
+      remember(tx.state, "manager_weed_mode", input.key, body, changed, now, this.deps.secrets.session);
+      return changed;
+    });
+    this.bumpMenu();
+    return result;
+  }
+
+  async managerUndoWeedMode(adminToken: string, input: { key: string; backup_id: string; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_undo", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact undo before saving.");
+      const backup = tx.state.audit.find((row) => row.id === input.backup_id && row.action === "WEED_MODE_BACKUP");
+      if (!backup) throw new PosError(404, "BACKUP", "The WEED mode backup was not found.");
+      if (tx.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === backup.id)) throw new PosError(409, "UNDO_USED", "That backup was already restored.");
+      const store = tx.state.stores.find((row) => row.code === backup.ref_id && row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "The backed-up PNYS store is unavailable.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
+      const protectedBefore = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      const from = store.weed_in_store === false ? "NO_WEED" : "WEED";
+      const previous = backup.detail.previous_weed_in_store;
+      store.weed_in_store = previous == null ? true : Boolean(previous);
+      const to = store.weed_in_store === false ? "NO_WEED" : "WEED";
+      audit(tx.state, "WEED_MODE_UNDONE", "store", store.code, "MANAGER", { backup_id: backup.id, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
+      const protectedAfter = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "Undo must not change operational data.");
+      const restored = { ok: true as const, changed: true as const, weed_in_store: store.weed_in_store !== false, shift_id: shift?.sccx_shift_id ?? null, backup_id: backup.id, from, to };
+      remember(tx.state, "manager_weed_undo", input.key, body, restored, now, this.deps.secrets.session);
+      return restored;
+    });
+    this.bumpMenu();
+    return result;
+  }
+
+  async managerCreateCoupon(adminToken: string, input: { key: string; code: string; label: string; discount_type: "FIXED" | "PERCENT"; discount_value: number; min_spend_cents: number; max_redemptions_per_customer: number; confirm: boolean }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_coupon_create", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Coupon Manager is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact coupon before saving.");
+      const code = couponCode(input.code);
+      const label = input.label.trim();
+      if (!label || label.length > 80) throw new PosError(400, "BAD_LABEL", "Enter a coupon label up to 80 characters.");
+      if (input.discount_type !== "FIXED" && input.discount_type !== "PERCENT") throw new PosError(400, "BAD_DISCOUNT", "Choose fixed dollars or percent.");
+      const value = Math.round(input.discount_value);
+      if (value <= 0 || (input.discount_type === "PERCENT" && value > 100) || (input.discount_type === "FIXED" && value > 100000)) throw new PosError(400, "BAD_DISCOUNT", "Enter a valid coupon discount.");
+      const minimum = Math.max(0, Math.round(input.min_spend_cents));
+      const limit = Math.round(input.max_redemptions_per_customer);
+      if (limit < 1 || limit > 99) throw new PosError(400, "BAD_LIMIT", "Redemption limit must be between 1 and 99.");
+      if ((tx.state.coupons ?? []).some((row) => row.code === code)) throw new PosError(409, "COUPON_EXISTS", "That coupon code already exists.");
+      const id = randomUUID();
+      audit(tx.state, "COUPON_CREATE_BACKUP", "coupon", id, "MANAGER", { previous: null, exact_change: { store_code: tillCode(), code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true } }, at);
+      const coupon = { id, store_code: tillCode(), code, label, active: true, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, created_by: "MANAGER", created_at: at, updated_at: at } as const;
+      (tx.state.coupons ??= []).push(coupon);
+      audit(tx.state, "COUPON_CREATED", "coupon", id, "MANAGER", { code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true }, at);
+      const result = { ok: true as const, coupon: { ...coupon, redemption_count: 0 } };
+      remember(tx.state, "manager_coupon_create", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    });
+  }
+
+  async customerLookup(token: string, phoneInput: string) {
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.store_code !== tillCode()) throw new PosError(403, "STORE", "Customer lookup is limited to this store.");
+    const phone = customerPhone(phoneInput);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === phone);
+    if (!customer) return { found: false as const };
+    return { found: true as const, customer: { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } };
+  }
+
+  async couponQuote(token: string, input: { lines: { sku: string; qty: number }[]; coupon_code: string; customer_phone: string }) {
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Coupons need an active shift.");
+    const normalizedPhone = customerPhone(input.customer_phone);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === normalizedPhone);
+    const coupon = (state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code) && row.active);
+    if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+    const used = customer ? (state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon.id && row.customer_id === customer.id).length : 0;
+    if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+    const total = mergeLines(input.lines).reduce((sum, line) => sum + priceOf(state, line.sku, raw, flowers, items, masters).cents * line.qty, 0);
+    const discount = couponDiscount(total, coupon);
+    return { ok: true as const, code: coupon.code, label: coupon.label, subtotal_cents: total, discount_cents: discount, total_cents: total - discount };
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
@@ -2415,7 +2884,57 @@ export class PosService {
     return result;
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
+  /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
+  async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_queue_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      this.session(tx.state, token, now, "kitchen");
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
+      const at = iso(now);
+      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
+        const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === line.sku && item.enabled);
+        if (!product || !storeProduct) throw new PosError(404, "SKU", "That SKU is not enabled for this store.");
+        const kitchenRowId = randomUUID();
+        tx.state.incoming.push({
+          kitchen_row_id: kitchenRowId,
+          batch_id: input.key,
+          store_code: tillCode(),
+          sku: line.sku,
+          qty_sent: line.qty,
+          kind: "REFILL",
+          kitchen_created_at: at,
+          imported_at: at,
+          status: "PENDING_CONFIRM",
+          qty_received: null,
+          variance_reason: null,
+          confirmed_shift_id: null,
+          confirmed_at: null,
+          linked_ledger_id: null,
+          created_at: at,
+        });
+        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM" });
+      }
+      const resultBody = { ok: true, batch_id: input.key, lines: created };
+      remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    });
+  }
+
+  async cashout(token: string, input: {
+    key: string;
+    lines: { sku: string; qty: number; unit_price_cents?: number }[];
+    ticket_id?: string | null;
+    payment_method?: string | null;
+    customer?: { phone: string; name?: string; email?: string; consent_type?: "EXPRESS" | "IMPLIED"; consented_at?: string; consent_source?: string; unsubscribe?: boolean } | null;
+    coupon_code?: string | null;
+  }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
     const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const result = await this.db.transaction(async (tx) => {
@@ -2443,13 +2962,49 @@ export class PosService {
         if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket is not open.");
       }
       const lines = mergeLines(input.lines);
-      if (noWeedShift(shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
         throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable on a NO WEED shift.");
       }
       const priced = lines.map((line) => {
         const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
+      const subtotal = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      let customer = null as NonNullable<State["customers"]>[number] | null;
+      if (input.customer?.phone?.trim()) {
+        const phone = customerPhone(input.customer.phone);
+        customer = (tx.state.customers ?? []).find((row) => row.phone_e164 === phone) ?? null;
+        const name = input.customer.name?.trim() || customer?.display_name || "";
+        if (!customer && !name) throw new PosError(400, "CUSTOMER_NAME", "Enter the customer name for a new phone number.");
+        const email = customerEmail(input.customer.email ?? customer?.email);
+        if (!customer) {
+          customer = { id: randomUUID(), phone_e164: phone, display_name: name, email, created_store_code: tillCode(), created_at: at, updated_at: at };
+          (tx.state.customers ??= []).push(customer);
+          audit(tx.state, "CUSTOMER_CREATED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), phone_last4: phone.slice(-4) }, at);
+        } else {
+          customer.display_name = name || customer.display_name;
+          customer.email = email;
+          customer.updated_at = at;
+        }
+        if (input.customer.unsubscribe) {
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type ?? "IMPLIED", consented_at: input.customer.consented_at || at, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: at, created_at: at });
+          audit(tx.state, "CUSTOMER_UNSUBSCRIBED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), source: input.customer.consent_source?.trim() || "IN_STORE" }, at);
+        } else if (input.customer.consent_type) {
+          const consentedAt = input.customer.consented_at ? new Date(input.customer.consented_at).toISOString() : at;
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: null, created_at: at });
+          audit(tx.state, "CUSTOMER_CONSENT_RECORDED", "customer", customer.id, staff.staff_uid, { type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode() }, at);
+        }
+      }
+      let coupon = null as NonNullable<State["coupons"]>[number] | null;
+      let discount = 0;
+      if (input.coupon_code?.trim()) {
+        if (!customer) throw new PosError(400, "CUSTOMER_REQUIRED", "A customer phone is required to redeem a coupon.");
+        coupon = (tx.state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code!) && row.active) ?? null;
+        if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+        const used = (tx.state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon!.id && row.customer_id === customer!.id).length;
+        if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+        discount = couponDiscount(subtotal, coupon);
+      }
       let stockout = false;
       const saleId = randomUUID();
       for (const line of priced) {
@@ -2458,7 +3013,7 @@ export class PosService {
         if (next === 0) stockout = true;
         ledger(tx.state, line.sku, -line.qty, "SALE", "sale", saleId, staff.staff_uid, null, shift.id, at);
       }
-      const total = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      const total = subtotal - discount;
       const taxIncluded = priced.some((line) => line.source !== "RAW_UNIT");
       const method = paymentOf(input.payment_method);
       const ref = nextOrderRef(tx.state);
@@ -2475,6 +3030,9 @@ export class PosService {
         void_reason: null,
         voided_by: null,
         created_at: at,
+        customer_id: customer?.id ?? null,
+        coupon_id: coupon?.id ?? null,
+        discount_cents: discount,
       });
       for (const line of priced) {
         tx.state.sale_lines.push({
@@ -2491,6 +3049,13 @@ export class PosService {
         const ticket = tx.state.tickets.find((row) => row.id === input.ticket_id);
         if (ticket) ticket.status = "CASHED_OUT";
       }
+      if (customer) {
+        (tx.state.customer_visits ??= []).push({ id: randomUUID(), customer_id: customer.id, store_code: tillCode(), sale_id: saleId, shift_id: shift.id, spend_cents: total, visited_at: at });
+      }
+      if (coupon && customer) {
+        (tx.state.coupon_redemptions ??= []).push({ id: randomUUID(), coupon_id: coupon.id, customer_id: customer.id, store_code: tillCode(), shift_id: shift.id, sale_id: saleId, discount_cents: discount, redeemed_at: at });
+        audit(tx.state, "COUPON_REDEEMED", "sale", saleId, staff.staff_uid, { coupon_id: coupon.id, code: coupon.code, customer_id: customer.id, discount_cents: discount, store_code: tillCode() }, at);
+      }
       const payload = salePayload(tx.state, saleId);
       if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
       const resultBody = {
@@ -2498,6 +3063,10 @@ export class PosService {
         sale_id: saleId,
         ref_no: ref,
         total_cents: total,
+        subtotal_cents: subtotal,
+        discount_cents: discount,
+        coupon_code: coupon?.code ?? null,
+        customer: customer ? { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } : null,
         prices_tax_included: taxIncluded,
         payment_method: method,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
@@ -3229,7 +3798,7 @@ export class PosService {
     })));
   }
 
-  async saveClosingCount(token: string, input: { sku: string; counted_qty: number }) {
+  async saveClosingCount(token: string, input: { sku: string; counted_qty: number; confirm_unusual?: boolean }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
@@ -3250,6 +3819,14 @@ export class PosService {
       if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
       const at = iso(this.now());
       const expected = expectedAtSubmit(tx.state, shift, sku, this.now().getTime());
+      const skuNumber = Number.parseInt(sku, 10);
+      const unusual = Math.abs(input.counted_qty - expected) >= 10 || (Number.isFinite(skuNumber) && input.counted_qty === skuNumber);
+      if (unusual && !input.confirm_unusual) {
+        throw new PosError(409, "COUNT_CONFIRM_REQUIRED", "This count is unusual. Check the bag and confirm the number before saving.", {
+          sku,
+          counted_qty: input.counted_qty,
+        });
+      }
       const existing = draft.counts.find((row) => row.sku === sku);
       if (existing) {
         existing.counted_qty = input.counted_qty;
@@ -3602,10 +4179,68 @@ export class PosService {
     }
   }
 
+  async outboxStatus() {
+    const now = this.now();
+    const state = await this.readState();
+    const pending = state.outbox.filter((row) => row.status !== "sent");
+    const oldest = pending.map((row) => Date.parse(row.created_at)).filter(Number.isFinite).sort((a, b) => a - b)[0];
+    const failures = pending
+      .filter((row) => row.status === "error" || Boolean(row.last_error))
+      .sort((a, b) => (b.last_attempt_at ?? b.created_at).localeCompare(a.last_attempt_at ?? a.created_at))
+      .slice(0, 20)
+      .map((row) => ({
+        id: row.id,
+        tab: row.tab,
+        row_id: row.row_id,
+        status: row.status,
+        attempts: row.attempts,
+        last_error: row.last_error,
+        last_attempt_at: row.last_attempt_at ?? null,
+        next_attempt_at: row.next_attempt_at,
+      }));
+    return {
+      queued: pending.filter((row) => row.status === "queued").length,
+      sending: pending.filter((row) => row.status === "sending").length,
+      errors: pending.filter((row) => row.status === "error").length,
+      oldest_pending_at: oldest == null ? null : iso(new Date(oldest)),
+      delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
+      alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
+      failures,
+    };
+  }
+
   async drainOutbox() {
     const now = this.now();
-    const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime()));
-    if (batch.length === 0) return { ok: true, sent: 0 };
+    const leaseId = randomUUID();
+    const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
+    const batch = await this.db.transaction(async (tx) => {
+      const at = iso(now);
+      for (const row of tx.state.outbox) {
+        if (row.status !== "sending") continue;
+        const expires = Date.parse(row.lease_expires_at ?? row.next_attempt_at);
+        if (Number.isFinite(expires) && expires > now.getTime()) continue;
+        const expiredLease = row.lease_id ?? "unknown";
+        row.status = "queued";
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        row.next_attempt_at = at;
+        row.last_error = "Previous outbox worker lease expired before acknowledgement.";
+        audit(tx.state, "OUTBOX_LEASE_EXPIRED", "sheet_outbox", row.id, "cron", { row_id: row.row_id, tab: row.tab, lease_id: expiredLease }, at);
+      }
+      const due = tx.state.outbox
+        .filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .slice(0, OUTBOX_BATCH_SIZE);
+      for (const row of due) {
+        row.status = "sending";
+        row.lease_id = leaseId;
+        row.lease_expires_at = leaseExpiresAt;
+        row.next_attempt_at = leaseExpiresAt;
+        row.last_attempt_at = at;
+      }
+      return structuredClone(due);
+    });
+    if (batch.length === 0) return { ok: true, sent: 0, ...(await this.outboxStatus()) };
     const groups = new Map<string, typeof batch>();
     for (const row of batch) {
       const list = groups.get(row.tab) ?? [];
@@ -3613,38 +4248,93 @@ export class PosService {
       groups.set(row.tab, list);
     }
     const tabs = [...OUTBOX_TAB_ORDER.filter((tab) => groups.has(tab)), ...[...groups.keys()].filter((tab) => !OUTBOX_TAB_ORDER.includes(tab as (typeof OUTBOX_TAB_ORDER)[number]))];
-    try {
-      for (const tab of tabs) {
-        const rows = groups.get(tab) ?? [];
-        if (rows.length) await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+    let sent = 0;
+    for (const tab of tabs) {
+      const rows = groups.get(tab) ?? [];
+      if (!rows.length) continue;
+      try {
+        await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
+        const acknowledged = await this.db.transaction(async (tx) => {
+          const at = iso(this.now());
+          let count = 0;
+          for (const row of rows) {
+            const current = tx.state.outbox.find((item) => item.id === row.id);
+            if (!current || current.status !== "sending" || current.lease_id !== leaseId) continue;
+            current.status = "sent";
+            current.sent_at = at;
+            current.last_error = null;
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            count += 1;
+          }
+          return count;
+        });
+        sent += acknowledged;
+      } catch (error) {
+        const message = outboxErrorMessage(error);
+        const failedIds = new Set(rows.map((row) => row.id));
+        await this.db.transaction(async (tx) => {
+          const failedAt = this.now();
+          const at = iso(failedAt);
+          let holdUntil = at;
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId && failedIds.has(row.id))) {
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.attempts += 1;
+            current.last_error = message;
+            current.last_attempt_at = at;
+            current.next_attempt_at = iso(new Date(failedAt.getTime() + outboxBackoffMs(current.attempts)));
+            if (current.next_attempt_at > holdUntil) holdUntil = current.next_attempt_at;
+            current.status = current.attempts >= OUTBOX_ERROR_ATTEMPTS ? "error" : "queued";
+            audit(tx.state, current.status === "error" ? "OUTBOX_DEAD" : "OUTBOX_RETRY_SCHEDULED", "sheet_outbox", current.id, "cron", {
+              row_id: current.row_id,
+              tab: current.tab,
+              attempts: current.attempts,
+              next_attempt_at: current.next_attempt_at,
+            }, at);
+          }
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId)) {
+            current.status = "queued";
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.next_attempt_at = holdUntil;
+          }
+        });
+        return {
+          ok: false,
+          sent,
+          failed: rows.length,
+          sheet_down: error instanceof SheetUnavailable,
+          error: message,
+          ...(await this.outboxStatus()),
+        };
       }
-      await this.db.transaction(async (tx) => {
-        const at = iso(this.now());
-        for (const row of batch) {
-          const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status !== "queued") continue;
-          current.status = "sent";
-          current.sent_at = at;
-          current.last_error = null;
-        }
-      });
-      return { ok: true, sent: batch.length };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Sheet write failed";
-      await this.db.transaction(async (tx) => {
-        for (const row of batch) {
-          const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status === "sent") continue;
-          current.attempts += 1;
-          current.last_error = message;
-          const delay = BACKOFF_MIN[Math.min(current.attempts, BACKOFF_MIN.length) - 1] * 60 * 1000;
-          current.next_attempt_at = iso(new Date(this.now().getTime() + delay));
-          if (current.attempts >= OUTBOX_ERROR_ATTEMPTS) current.status = "error";
-        }
-      });
-      if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
-      return { ok: false, error: message };
     }
+    return { ok: true, sent, ...(await this.outboxStatus()) };
+  }
+
+  async retryOutboxFailures(adminToken: string, rowIds: string[] = []) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      requireAdmin(tx.state, adminToken, now);
+      const at = iso(now);
+      const wanted = new Set(rowIds.map((value) => value.trim()).filter(Boolean));
+      const recovered: string[] = [];
+      for (const row of tx.state.outbox) {
+        const expiredSending = row.status === "sending" && Date.parse(row.lease_expires_at ?? row.next_attempt_at) <= now.getTime();
+        if (row.status !== "error" && !expiredSending) continue;
+        if (wanted.size > 0 && !wanted.has(row.id) && !wanted.has(row.row_id)) continue;
+        row.status = "queued";
+        row.attempts = 0;
+        row.last_error = null;
+        row.next_attempt_at = at;
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        recovered.push(row.row_id);
+      }
+      audit(tx.state, "OUTBOX_MANUAL_RETRY", "sheet_outbox", null, "admin", { recovered }, at);
+      return { ok: true, recovered: recovered.length, row_ids: recovered };
+    });
   }
 
   async menu() {
@@ -3666,7 +4356,7 @@ export class PosService {
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
-          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
+          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0 || !visibleForShift(tx.state, shift, product.sku)) return [];
           const pack = cigarettePackCents(product.sku, product.category, product.name);
           const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
@@ -3689,7 +4379,7 @@ export class PosService {
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
       const seen = new Set(items.map((item) => item.sku));
       for (const extra of [...stockedCatalogRows(tx.state, itemCatalog), ...stockedMasterRows(tx.state, masters, flowers, itemCatalog)]) {
-        if (seen.has(extra.sku) || extra.qty <= 0) continue;
+        if (seen.has(extra.sku) || extra.qty <= 0 || !visibleForShift(tx.state, shift, extra.sku)) continue;
         seen.add(extra.sku);
         const carton = notes.get(extra.sku);
         items.push({
@@ -3732,6 +4422,9 @@ export class PosService {
       const pending = tx.state.tickets.filter((ticket) => ticket.shift_id === shift.id && ticket.status === "PENDING").length;
       if (pending >= MAX_PENDING_TICKETS) throw new PosError(429, "TICKET_LIMIT", "The till queue is full. Please see staff.");
       const lines = mergeLines(input.lines);
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+        throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable while PNYS is in NO WEED mode.");
+      }
       for (const line of lines) {
         try {
           priceOf(tx.state, line.sku, raw, flowers, items, masters);
@@ -4344,7 +5037,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       requireAdmin(tx.state, adminToken, now);
-      const oldest = tx.state.outbox.filter((row) => row.status === "queued").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
+      const oldest = tx.state.outbox.filter((row) => row.status !== "sent").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
       const closings = tx.state.closings.flatMap((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         if (!shift?.ended_at) return [];
@@ -4366,7 +5059,17 @@ export class PosService {
         sheet_sync_delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
         sheet_alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
         sccx_not_acked: closings.some((row) => row.late),
-        outbox: tx.state.outbox.map((row) => ({ id: row.id, tab: row.tab, row_id: row.row_id, status: row.status, attempts: row.attempts, last_error: row.last_error })),
+        outbox: tx.state.outbox.map((row) => ({
+          id: row.id,
+          tab: row.tab,
+          row_id: row.row_id,
+          status: row.status,
+          attempts: row.attempts,
+          last_error: row.last_error,
+          last_attempt_at: row.last_attempt_at ?? null,
+          next_attempt_at: row.next_attempt_at,
+          lease_expires_at: row.lease_expires_at ?? null,
+        })),
         closings,
         shifts: tx.state.shifts.map((shift) => ({
           id: shift.id,

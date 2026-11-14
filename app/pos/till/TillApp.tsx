@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
 import { pos2RouteFromLocation } from "../posPath";
-import { readTillState } from "../softState";
+import { parseTillResponse, readTillState } from "../softState";
 import { usePosPoll } from "../usePosPoll";
 import DepositSlip from "../DepositSlip";
 import VerifyBanner, { useVerifyOpen } from "../VerifyBanner";
@@ -29,14 +29,7 @@ async function post(url: string, body: unknown, key?: string) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
-  const data = await response.json();
-  if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
-    failure.code = typeof data.code === "string" ? data.code : undefined;
-    failure.details = data;
-    throw failure;
-  }
-  return data;
+  return parseTillResponse(response);
 }
 
 export default function TillApp({
@@ -55,9 +48,7 @@ export default function TillApp({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
-  const commandKeysRef = useRef<DurableCommandKeys | null>(null);
-  if (!commandKeysRef.current) commandKeysRef.current = new DurableCommandKeys();
-  const commandKeys = commandKeysRef.current;
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const forced = pos2RouteFromLocation();
   const storeApi = forced?.apiBase ?? apiBase;
   const storeHome = forced?.homeHref ?? homeHref;
@@ -191,7 +182,6 @@ export default function TillApp({
           <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
-          <Link className={styles.backLink} href={storeHome} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
