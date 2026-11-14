@@ -1420,6 +1420,8 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
+  private managerFails = 0;
+  private managerLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
@@ -2134,6 +2136,32 @@ export class PosService {
     return result;
   }
 
+  async managerLogin(pin: string, ip: string) {
+    this.hit(`manager:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid Manager PIN.");
+    if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      if (!specialPinMatches("master", pin)) return { ok: false as const };
+      const token = newToken();
+      tx.state.admin_sessions.push({
+        id: randomUUID(),
+        token_hash: sha256(token),
+        expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        created_at: iso(now),
+      });
+      return { ok: true as const, token };
+    });
+    if (!result.ok) {
+      this.managerFails += 1;
+      if (this.managerFails >= MAX_PIN_FAILURES) this.managerLocked = true;
+      if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+      throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    }
+    this.managerFails = 0;
+    return result;
+  }
+
   async logout(token: string) {
     await this.db.transaction(async (tx) => {
       const session = tx.state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at);
@@ -2394,6 +2422,113 @@ export class PosService {
         created_at: row.created_at,
       }));
     return { authenticated: true as const, store_code: tillCode(), products, history };
+  }
+
+  /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
+  async managerState(token: string) {
+    const state = await this.readState();
+    const now = this.now();
+    requireAdmin(state, token, now);
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const isToday = (value: string) => new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value)) === day;
+    const liveShift = [...state.shifts]
+      .filter((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+    const todaySales = state.sales
+      .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .flatMap((product) => {
+        const storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
+        if (!storeProduct?.enabled) return [];
+        return [{
+          sku: product.sku,
+          name: product.name,
+          category: product.category,
+          size: sizeLabel(product.sku, product.category, product.name),
+          on_hand: qtyOf(state, product.sku),
+          price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
+          enabled: storeProduct.enabled,
+        }];
+      })
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const refills = [...state.incoming]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        kitchen_sent_at: row.kitchen_created_at ?? row.created_at,
+        staff_confirmed_at: row.confirmed_at,
+      }));
+    const closings = [...state.closings]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((closing) => {
+        const shift = state.shifts.find((row) => row.id === closing.shift_id);
+        const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+        return {
+          shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+          staff_name: staff?.display_name ?? "Staff",
+          ended_at: shift?.ended_at ?? closing.created_at,
+          sales_total_cents: closing.sales_total_cents,
+          deposited_cents: closing.deposited_cents,
+          final_deposit_cents: closing.final_deposit_cents ?? 0,
+          shortage_cents: closing.shortage_cents ?? 0,
+          overage_cents: closing.overage_cents ?? 0,
+          no_count: closing.no_count,
+        };
+      });
+    const auditLog = [...state.audit]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        actor: row.actor,
+        ref_type: row.ref_type,
+        ref_id: row.ref_id,
+        detail: row.detail,
+        created_at: row.created_at,
+      }));
+    return {
+      authenticated: true as const,
+      store_code: tillCode(),
+      live_shift: liveShift ? {
+        shift_id: liveShift.sccx_shift_id,
+        status: liveShift.status,
+        staff_name: state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff",
+        started_at: liveShift.started_at,
+      } : null,
+      today: {
+        date: day,
+        sale_count: todaySales.length,
+        sales_total_cents: todaySales.reduce((sum, row) => sum + row.total_cents, 0),
+        cash_cents: todaySales.filter((row) => row.payment_method === "CASH").reduce((sum, row) => sum + row.total_cents, 0),
+        debit_cents: todaySales.filter((row) => row.payment_method === "DEBIT").reduce((sum, row) => sum + row.total_cents, 0),
+      },
+      products,
+      refills,
+      closings,
+      audit_log: auditLog,
+      write_actions: { enabled: false as const, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+    };
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {

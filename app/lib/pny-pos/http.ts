@@ -8,6 +8,7 @@ import { currentStore } from "./storeContext.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
 export const KITCHEN_COOKIE = "pny_kitchen_session";
+export const MANAGER_COOKIE = "pny_manager_session";
 export const ADMIN_COOKIE = "pny_pos_admin";
 export const DEMO_JOURNAL_COOKIE = "pny_pos_demo";
 export const DEMO_DRAFT_COOKIE = "pny_pos_draft";
@@ -116,6 +117,10 @@ export async function staffToken() {
 
 export async function kitchenToken() {
   return (await cookies()).get(KITCHEN_COOKIE)?.value ?? "";
+}
+
+export async function managerToken() {
+  return (await cookies()).get(MANAGER_COOKIE)?.value ?? "";
 }
 
 export async function adminToken() {

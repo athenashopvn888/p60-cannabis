@@ -1655,6 +1655,58 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
 });
 
+test("the env-hashed Master PIN opens the read-only Manager session only", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  await rejects(() => svc.managerLogin(TEST_DEMO_PIN, "10.7.3.1"), "BAD_PIN");
+  await rejects(() => svc.managerLogin(TEST_KITCHEN_PIN, "10.7.3.2"), "BAD_PIN");
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.3.3");
+  const view = await svc.managerState(manager.token);
+  assert.equal(view.authenticated, true);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.products.some((row) => row.sku === "240"), true);
+  await rejects(() => svc.state(manager.token), "NO_SESSION");
+  await rejects(() => svc.kitchenState(manager.token), "NO_SESSION");
+  await rejects(() => svc.managerState("wrong-token"), "ADMIN_ONLY");
+  await rejects(() => svc.login(TEST_KITCHEN_PIN, "10.7.3.4"), "BAD_PIN");
+});
+
+test("PNYS Manager read model reports live shift, sales, stock, refills, closings and audit without changing operational state", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.audit.push({ id: "manager-audit", action: "TEST_EVENT", ref_type: "shift", ref_id: "demo", actor: "tester", detail: {}, created_at: now.toISOString() });
+  db.state.incoming.push({ kitchen_row_id: "manager-refill", batch_id: "manager-batch", store_code: "PNY01", sku: "240", qty_sent: 2, kind: "REFILL", kitchen_created_at: now.toISOString(), imported_at: now.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: now.toISOString() });
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.4.1");
+  const view = await svc.managerState(manager.token);
+  assert.ok(view.live_shift);
+  assert.ok(view.today);
+  assert.ok(Array.isArray(view.products));
+  assert.equal(view.refills.some((row) => row.kitchen_row_id === "manager-refill" && row.status === "PENDING_CONFIRM"), true);
+  assert.ok(Array.isArray(view.closings));
+  assert.equal(view.audit_log.some((row) => row.id === "manager-audit"), true);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings }), before);
+});
+
+test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only dashboard screens", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
+  const login = app.slice(app.indexOf("if (!view.authenticated)"), app.indexOf("const stock"));
+  assert.match(login, /data-testid="manager-login"/);
+  assert.doesNotMatch(login, /<nav|href=|manager-actions/);
+  for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
+  assert.match(app, /Price, stock and expense changes are locked/);
+  assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
+  assert.match(css, /position:fixed/);
+  assert.match(css, /overflow-y:auto/);
+  assert.match(css, /@media\(max-width:390px\)/);
+});
+
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
   assert.deepEqual(lineVariance({ expected_qty: 3, counted_qty: 1, price_cents: 1000 }), {
     variance_qty: -2,
