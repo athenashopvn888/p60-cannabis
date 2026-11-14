@@ -1772,6 +1772,61 @@ test("PNYS mode controls remain Manager-only and proof screens cover sell, closi
   assert.match(proof, /noWeed \? allProducts\.filter/);
 });
 
+test("PNYS customers, CASL history, visits and coupons are server-side, PIN-gated and redemption-safe", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T16:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({ sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 2500, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() });
+  db.state.store_products.push({ store_code: "PNYS", sku: "710", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "710", qty: 6, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.6.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.6.2"));
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-no-confirm", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: false })), "CONFIRM_REQUIRED");
+  const created = await runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-create", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: true }));
+  assert.equal(created.coupon.code, "WELCOME10");
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATE_BACKUP" && row.ref_id === created.coupon.id), true);
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATED" && row.ref_id === created.coupon.id), true);
+
+  const quote = await runStore(PNYS_STORE, () => svc.couponQuote(staff.token, { lines: [{ sku: "710", qty: 2 }], coupon_code: "welcome10", customer_phone: "416-555-0124" }));
+  assert.equal(quote.total_cents, 4000);
+  const sale = await runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "customer-sale", lines: [{ sku: "710", qty: 2 }], payment_method: "CASH", customer: { phone: "416-555-0124", name: "Sample Customer", email: "sample@example.com", consent_type: "EXPRESS", consented_at: now.toISOString(), consent_source: "IN_STORE" }, coupon_code: "WELCOME10" }));
+  assert.equal(sale.subtotal_cents, 5000);
+  assert.equal(sale.discount_cents, 1000);
+  assert.equal(sale.total_cents, 4000);
+  assert.equal(db.state.customers?.length, 1);
+  assert.equal(db.state.customer_consents?.[0]?.consent_type, "EXPRESS");
+  assert.equal(db.state.customer_visits?.[0]?.sale_id, sale.sale_id);
+  assert.equal(db.state.customer_visits?.[0]?.spend_cents, 4000);
+  assert.equal(db.state.coupon_redemptions?.length, 1);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "coupon-reuse", lines: [{ sku: "710", qty: 1 }], customer: { phone: "4165550124" }, coupon_code: "WELCOME10" })), "COUPON_LIMIT");
+  assert.equal(db.state.balances.find((row) => row.sku === "710")?.qty, 4);
+
+  const staffView = await runStore(PNYS_STORE, () => svc.customerLookup(staff.token, "4165550124"));
+  assert.deepEqual(staffView, { found: true, customer: { name: "Sample Customer", phone_last4: "0124" } });
+  await rejects(() => runStore(PNYS_STORE, () => svc.customerLookup("wrong-token", "4165550124")), "NO_SESSION");
+  const managerView = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(managerView.customers[0]?.email, "sample@example.com");
+  assert.equal(managerView.customers[0]?.visit_count, 1);
+  assert.equal(managerView.customers[0]?.spend_cents, 4000);
+  assert.equal(managerView.coupons[0]?.redemption_count, 1);
+});
+
+test("PNYS customer data stays behind staff or Manager PIN routes and customer pages never import it", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const till = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const home = readFileSync("app/page.tsx", "utf8");
+  const menu = readFileSync("app/menu/page.tsx", "utf8");
+  const migration = readFileSync("supabase/migrations/20261114130000_pnys_customers_coupons.sql", "utf8");
+  assert.match(manager, /data-testid="manager-customers"/);
+  assert.match(manager, /Confirm exact coupon/);
+  assert.match(till, /Customer phone \(optional\)/);
+  assert.match(till, /nothing is auto-sent/i);
+  assert.doesNotMatch(`${home}\n${menu}`, /customer_consents|customer_visits|coupon_redemptions|api\/pos\/customers/);
+  assert.match(migration, /create table if not exists pos_hub\.customer_visit/);
+  assert.match(migration, /force row level security/);
+});
+
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
   assert.deepEqual(lineVariance({ expected_qty: 3, counted_qty: 1, price_cents: 1000 }), {
     variance_qty: -2,

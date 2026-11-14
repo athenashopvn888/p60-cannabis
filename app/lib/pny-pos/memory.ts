@@ -36,6 +36,11 @@ export function emptyState(now = new Date().toISOString()): State {
     cursors: [],
     audit: [],
     admin_sessions: [],
+    customers: [],
+    customer_consents: [],
+    customer_visits: [],
+    coupons: [],
+    coupon_redemptions: [],
     deposit_seq: 0,
   };
 }

@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./manager.module.css";
 
-type Screen = "overview" | "stock" | "refills" | "closings" | "audit";
+type Screen = "overview" | "stock" | "refills" | "closings" | "customers" | "audit";
 type Product = { sku: string; name: string; category: string; size: string; on_hand: number; price_cents: number; enabled: boolean };
 type Refill = { kitchen_row_id: string; batch_id: string; sku: string; name: string; qty_sent: number; qty_received: number | null; status: string; kitchen_sent_at: string; staff_confirmed_at: string | null };
 type Closing = { shift_id: string; staff_name: string; ended_at: string; sales_total_cents: number; deposited_cents: number; final_deposit_cents: number; shortage_cents: number; overage_cents: number; no_count: boolean };
 type Audit = { id: string; action: string; actor: string | null; ref_type: string | null; ref_id: string | null; created_at: string };
+type Customer = { id: string; name: string; phone: string; email: string | null; consent: { type: "EXPRESS" | "IMPLIED"; date: string; source: string; unsubscribed_at: string | null } | null; visit_count: number; spend_cents: number; last_visit_at: string | null };
+type Coupon = { id: string; code: string; label: string; active: boolean; discount_type: "FIXED" | "PERCENT"; discount_value: number; min_spend_cents: number; max_redemptions_per_customer: number; redemption_count: number };
 type ManagerView = {
   authenticated: boolean;
   store_code?: string;
@@ -18,6 +20,8 @@ type ManagerView = {
   refills?: Refill[];
   closings?: Closing[];
   audit_log?: Audit[];
+  customers?: Customer[];
+  coupons?: Coupon[];
   weed_mode?: { current: "WEED" | "NO_WEED"; shift_id: string | null; can_change: boolean; thc_sku_count: number; undo_backup_id: string | null };
   write_actions?: { enabled: false; reason: string };
 };
@@ -44,11 +48,16 @@ const previewView: ManagerView = {
     { id: "a1", action: "REFILL_CONFIRMED", actor: "demo-staff", ref_type: "incoming", ref_id: "PNYS-K-040", created_at: "2026-11-13T20:37:00.000Z" },
     { id: "a2", action: "CLOSING_POSTED", actor: "demo-staff", ref_type: "shift", ref_id: "PNYS-1113-B", created_at: "2026-11-13T23:55:00.000Z" },
   ],
+  customers: [
+    { id: "c1", name: "Sample Customer", phone: "+14165550124", email: "sample@example.com", consent: { type: "EXPRESS", date: "2026-11-13T20:00:00.000Z", source: "IN_STORE", unsubscribed_at: null }, visit_count: 4, spend_cents: 28600, last_visit_at: "2026-11-14T02:10:00.000Z" },
+    { id: "c2", name: "Preview Guest", phone: "+16475550987", email: null, consent: { type: "IMPLIED", date: "2026-11-12T19:00:00.000Z", source: "IN_STORE", unsubscribed_at: "2026-11-14T03:00:00.000Z" }, visit_count: 2, spend_cents: 9400, last_visit_at: "2026-11-13T22:00:00.000Z" },
+  ],
+  coupons: [{ id: "cp1", code: "WELCOME10", label: "$10 welcome coupon", active: true, discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, redemption_count: 3 }],
   write_actions: { enabled: false, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
   weed_mode: { current: "WEED", shift_id: "PNYS-1114-A", can_change: true, thc_sku_count: 219, undo_backup_id: null },
 };
 
-const labels: Record<Screen, string> = { overview: "Overview", stock: "Stock on hand", refills: "Refill history", closings: "Closing reports", audit: "Audit log" };
+const labels: Record<Screen, string> = { overview: "Overview", stock: "Stock on hand", refills: "Refill history", closings: "Closing reports", customers: "Customers", audit: "Audit log" };
 const money = (cents = 0) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 const stamp = (value?: string | null) => value ? new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value)) : "—";
 
@@ -68,6 +77,8 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   const [error, setError] = useState("");
   const [weedTarget, setWeedTarget] = useState<boolean | null>(null);
   const [undoOpen, setUndoOpen] = useState(false);
+  const [couponDraft, setCouponDraft] = useState({ code: "", label: "", discount_type: "FIXED" as "FIXED" | "PERCENT", discount_value: "10", min_spend: "50", limit: "1" });
+  const [couponConfirm, setCouponConfirm] = useState(false);
   const commands = useMemo(() => new DurableCommandKeys(), []);
 
   async function load() {
@@ -130,6 +141,21 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
     finally { setBusy(false); }
   }
 
+  async function createCoupon() {
+    const body = { code: couponDraft.code.trim().toUpperCase(), label: couponDraft.label.trim(), discount_type: couponDraft.discount_type, discount_value: couponDraft.discount_type === "FIXED" ? Math.round(Number(couponDraft.discount_value) * 100) : Math.round(Number(couponDraft.discount_value)), min_spend_cents: Math.round(Number(couponDraft.min_spend) * 100), max_redemptions_per_customer: Math.round(Number(couponDraft.limit)), confirm: true };
+    if (isPreview) {
+      setView((current) => ({ ...current, coupons: [{ id: "preview-new", ...body, active: true, redemption_count: 0 }, ...(current.coupons ?? [])] }));
+      setCouponConfirm(false); return;
+    }
+    const key = commands.key("manager-coupon-create", body);
+    setBusy(true); setError("");
+    try {
+      await readJson(await fetch("/api/pos/manager/coupons", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": key }, credentials: "same-origin", body: JSON.stringify({ ...body, request_id: key }) }));
+      commands.complete("manager-coupon-create", key); setCouponConfirm(false); setCouponDraft({ code: "", label: "", discount_type: "FIXED", discount_value: "10", min_spend: "50", limit: "1" }); await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Coupon was not created."); }
+    finally { setBusy(false); }
+  }
+
   if (!view.authenticated) return <main className={styles.login} data-testid="manager-login">
     <section className={styles.loginCard}>
       <div className={styles.test}>TEST STORE</div><h1>PNYS Manager</h1><p>Enter the Manager PIN.</p>
@@ -153,11 +179,13 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
       {screen === "stock" ? <section data-testid="manager-stock"><label htmlFor="manager-stock-search">Search SKU, name or size</label><input id="manager-stock-search" className={styles.search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock"/><div className={styles.list}>{stock.map((row) => <article key={row.sku}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>{money(row.price_cents)}</small></div><strong className={row.on_hand === 0 ? styles.zero : ""}>{row.on_hand}</strong></article>)}</div></section> : null}
       {screen === "refills" ? <section data-testid="manager-refills"><h1>Kitchen → staff</h1><div className={styles.list}>{(view.refills ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.name}</strong><span>Kitchen sent {row.qty_sent} · {stamp(row.kitchen_sent_at)}</span><small>{row.staff_confirmed_at ? `Staff confirmed ${row.qty_received ?? 0} · ${stamp(row.staff_confirmed_at)}` : "Waiting for staff confirmation"}</small></div><span className={row.staff_confirmed_at ? styles.good : styles.wait}>{row.staff_confirmed_at ? "CONFIRMED" : "PENDING"}</span></article>)}</div></section> : null}
       {screen === "closings" ? <section data-testid="manager-closings"><h1>Closing reports</h1><div className={styles.reportList}>{(view.closings ?? []).map((row) => <article key={row.shift_id}><header><strong>{row.shift_id}</strong><span>{row.staff_name} · {stamp(row.ended_at)}</span></header><div><span>Sales <strong>{money(row.sales_total_cents)}</strong></span><span>Deposits <strong>{money(row.deposited_cents)}</strong></span><span>Short <strong className={styles.bad}>{money(row.shortage_cents)}</strong></span><span>Over <strong className={styles.good}>{money(row.overage_cents)}</strong></span></div></article>)}</div></section> : null}
+      {screen === "customers" ? <section data-testid="manager-customers"><h1>Customer database</h1><p className={styles.privacy}>Manager PIN only · Nothing is sent automatically.</p><div className={styles.customerList}>{(view.customers ?? []).map((row) => <article key={row.id}><header><strong>{row.name}</strong><span>{row.phone}</span></header><small>{row.email || "No email"}</small><div><span>{row.visit_count} visits</span><strong>{money(row.spend_cents)}</strong><span>{row.consent ? `${row.consent.type} · ${stamp(row.consent.date)}` : "No CASL record"}</span><span className={row.consent?.unsubscribed_at ? styles.bad : styles.good}>{row.consent?.unsubscribed_at ? "UNSUBSCRIBED" : "Subscribed"}</span></div></article>)}</div><h1>Coupons</h1><div className={styles.couponForm}><input aria-label="Coupon code" placeholder="CODE" value={couponDraft.code} onChange={(event) => setCouponDraft((row) => ({ ...row, code: event.target.value.toUpperCase() }))}/><input aria-label="Coupon label" placeholder="Coupon label" value={couponDraft.label} onChange={(event) => setCouponDraft((row) => ({ ...row, label: event.target.value }))}/><select aria-label="Discount type" value={couponDraft.discount_type} onChange={(event) => setCouponDraft((row) => ({ ...row, discount_type: event.target.value as "FIXED" | "PERCENT" }))}><option value="FIXED">Fixed $</option><option value="PERCENT">Percent %</option></select><input aria-label="Discount value" inputMode="decimal" value={couponDraft.discount_value} onChange={(event) => setCouponDraft((row) => ({ ...row, discount_value: event.target.value }))}/><input aria-label="Minimum spend" inputMode="decimal" placeholder="Minimum spend" value={couponDraft.min_spend} onChange={(event) => setCouponDraft((row) => ({ ...row, min_spend: event.target.value }))}/><input aria-label="Per customer limit" inputMode="numeric" value={couponDraft.limit} onChange={(event) => setCouponDraft((row) => ({ ...row, limit: event.target.value }))}/><button type="button" disabled={!couponDraft.code.trim() || !couponDraft.label.trim()} onClick={() => setCouponConfirm(true)}>Review coupon</button></div><div className={styles.couponList}>{(view.coupons ?? []).map((row) => <article key={row.id}><strong>{row.code}</strong><span>{row.label}</span><small>{row.discount_type === "FIXED" ? money(row.discount_value) : `${row.discount_value}%`} · min {money(row.min_spend_cents)} · {row.max_redemptions_per_customer} per customer · {row.redemption_count} used</small></article>)}</div></section> : null}
       {screen === "audit" ? <section data-testid="manager-audit"><h1>Audit log</h1><div className={styles.audit}>{(view.audit_log ?? []).map((row) => <article key={row.id}><strong>{row.action}</strong><span>{row.actor ?? "System"} · {stamp(row.created_at)}</span><small>{row.ref_type ?? "event"}{row.ref_id ? ` · ${row.ref_id}` : ""}</small></article>)}</div></section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     {weedTarget != null ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-weed-confirm"><section><h2>Confirm exact change</h2><p><strong>PNYS · {view.weed_mode?.shift_id}</strong></p><div className={styles.change}><span>{view.weed_mode?.current}</span><b>→</b><span>{weedTarget ? "WEED" : "NO WEED"}</span></div><p>{weedTarget ? "THC SKUs will show again using their saved stock." : "THC SKUs will be hidden on sell and customer menu. Closing count will still include them."}</p><p>An undo backup and audit entry will be written first. Stock quantities will not change.</p>{error ? <p className={styles.error}>{error}</p> : null}<div><button type="button" onClick={() => setWeedTarget(null)}>Cancel</button><button type="button" disabled={busy} onClick={() => void saveWeedMode()}>Confirm and save</button></div></section></div> : null}
     {undoOpen ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-weed-undo"><section><h2>Undo last mode change?</h2><p>The audited backup will restore the prior WEED mode for shift <strong>{view.weed_mode?.shift_id}</strong>.</p><div><button type="button" onClick={() => setUndoOpen(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void undoWeedMode()}>Confirm undo</button></div></section></div> : null}
-    <footer className={styles.bottom} data-testid="manager-actions">{(["overview","stock","refills","closings","audit"] as Screen[]).map((item) => <button type="button" key={item} className={screen === item ? styles.active : ""} onClick={() => setScreen(item)}>{item === "overview" ? "Home" : item === "closings" ? "Closes" : item[0]!.toUpperCase() + item.slice(1)}</button>)}</footer>
+    {couponConfirm ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-coupon-confirm"><section><h2>Confirm exact coupon</h2><p><strong>PNYS · {couponDraft.code.trim().toUpperCase()}</strong></p><div className={styles.change}><span>{couponDraft.discount_type === "FIXED" ? `$${couponDraft.discount_value}` : `${couponDraft.discount_value}%`}</span><b>·</b><span>Min ${couponDraft.min_spend}</span></div><p>{couponDraft.label}</p><p>Limit: {couponDraft.limit} redemption(s) per customer. Creating this writes an audit entry. Nothing is sent to customers.</p>{error ? <p className={styles.error}>{error}</p> : null}<div><button type="button" onClick={() => setCouponConfirm(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void createCoupon()}>Confirm and create</button></div></section></div> : null}
+    <footer className={styles.bottom} data-testid="manager-actions">{(["overview","stock","refills","closings","customers","audit"] as Screen[]).map((item) => <button type="button" key={item} className={screen === item ? styles.active : ""} onClick={() => setScreen(item)}>{item === "overview" ? "Home" : item === "closings" ? "Closes" : item === "customers" ? "Customers" : item[0]!.toUpperCase() + item.slice(1)}</button>)}</footer>
   </main>;
 }

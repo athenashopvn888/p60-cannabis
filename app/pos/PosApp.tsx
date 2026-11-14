@@ -154,6 +154,13 @@ export default function PosApp({
   const [copied, setCopied] = useState(false);
   const [refillOpen, setRefillOpen] = useState(false);
   const [refNo, setRefNo] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerConsent, setCustomerConsent] = useState<"" | "EXPRESS" | "IMPLIED">("");
+  const [customerMatch, setCustomerMatch] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [couponQuote, setCouponQuote] = useState<{ label: string; discount_cents: number; total_cents: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
@@ -265,13 +272,20 @@ export default function PosApp({
     setBusy(true);
     try {
       const lines = Object.entries(cart).map(([sku, qty]) => ({ sku, qty }));
-      const body = { lines, ticket_id: activeTicket?.id ?? null, payment_method: method };
+      const body = {
+        lines,
+        ticket_id: activeTicket?.id ?? null,
+        payment_method: method,
+        customer: customerPhone.trim() ? { phone: customerPhone, name: customerName, email: customerEmail, consent_type: customerConsent || undefined, consented_at: customerConsent ? new Date().toISOString() : undefined, consent_source: customerConsent ? "IN_STORE" : undefined } : null,
+        coupon_code: couponCode.trim() || null,
+      };
       const key = commandKeys.key("cashout", body);
       const result = await post(`${storeApi}/cashout`, body, key);
       commandKeys.complete("cashout", key);
       setRefNo(String(result.ref_no));
       setCart({});
       setActiveTicket(null);
+      setCustomerPhone(""); setCustomerName(""); setCustomerEmail(""); setCustomerConsent(""); setCustomerMatch(""); setCouponCode(""); setCouponQuote(null);
       setSheet("done");
       await load();
     } catch (err) {
@@ -279,6 +293,28 @@ export default function PosApp({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function findCustomer() {
+    setBusy(true); setError(""); setCustomerMatch(""); setCouponQuote(null);
+    try {
+      const result = await post(`${storeApi}/customers/lookup`, { phone: customerPhone });
+      if (result.found && result.customer) {
+        const match = result.customer as { name?: string; phone_last4?: string };
+        setCustomerName(String(match.name ?? ""));
+        setCustomerMatch(`${String(match.name ?? "Customer")} · •••• ${String(match.phone_last4 ?? "")}`);
+      } else setCustomerMatch("New customer — enter a name to save at checkout.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Customer lookup failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function applyCoupon() {
+    setBusy(true); setError(""); setCouponQuote(null);
+    try {
+      const result = await post(`${storeApi}/customers/coupon-quote`, { lines: Object.entries(cart).map(([sku, qty]) => ({ sku, qty })), customer_phone: customerPhone, coupon_code: couponCode });
+      setCouponQuote({ label: String(result.label ?? result.code ?? "Coupon"), discount_cents: Number(result.discount_cents), total_cents: Number(result.total_cents) });
+    } catch (err) { setError(err instanceof Error ? err.message : "Coupon could not be applied."); }
+    finally { setBusy(false); }
   }
 
   function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; endedAt?: string; finalDepositCode?: string | null }) {
@@ -975,6 +1011,16 @@ export default function PosApp({
               <>
                 <h2>Cashout {formatMoney(total)}</h2>
                 <p>Pick Cash or Debit. Debit is recorded only. No card is charged.</p>
+                <label htmlFor="customer-phone">Customer phone (optional)</label>
+                <div className={styles.pay}><input id="customer-phone" className={styles.field} inputMode="tel" value={customerPhone} onChange={(event) => { setCustomerPhone(event.target.value); setCustomerMatch(""); setCouponQuote(null); }} placeholder="416 555 1234"/><button className={styles.secondary} type="button" disabled={busy || !customerPhone.trim()} onClick={() => void findCustomer()}>Find</button></div>
+                {customerMatch ? <p data-testid="customer-match">{customerMatch}</p> : null}
+                {customerPhone.trim() ? <>
+                  <label htmlFor="customer-name">Name</label><input id="customer-name" className={styles.field} value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Customer name"/>
+                  <label htmlFor="customer-email">Email (optional)</label><input id="customer-email" className={styles.field} inputMode="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="name@example.com"/>
+                  <label htmlFor="customer-consent">CASL consent (nothing is auto-sent)</label><select id="customer-consent" className={styles.field} value={customerConsent} onChange={(event) => setCustomerConsent(event.target.value as "" | "EXPRESS" | "IMPLIED")}><option value="">Not recorded</option><option value="EXPRESS">Express</option><option value="IMPLIED">Implied</option></select>
+                  <label htmlFor="coupon-code">Coupon code</label><div className={styles.pay}><input id="coupon-code" className={styles.field} value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase()); setCouponQuote(null); }} placeholder="SAVE10"/><button className={styles.secondary} type="button" disabled={busy || !couponCode.trim()} onClick={() => void applyCoupon()}>Apply</button></div>
+                  {couponQuote ? <p data-testid="coupon-quote"><strong>{couponQuote.label}</strong> · −{formatMoney(couponQuote.discount_cents)} · New total {formatMoney(couponQuote.total_cents)}</p> : null}
+                </> : null}
                 {activeTicket ? <p>Ticket {activeTicket.code} will be marked paid.</p> : null}
                 {Object.entries(cart).map(([sku, qty]) => {
                   const product = products.find((item) => item.sku === sku);

@@ -80,6 +80,31 @@ function audit(state: State, action: string, refType: string | null, refId: stri
   state.audit.push({ id: randomUUID(), action, ref_type: refType, ref_id: refId, actor, detail, created_at: at });
 }
 
+function customerPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  throw new PosError(400, "BAD_PHONE", "Enter a valid 10-digit customer phone number.");
+}
+
+function customerEmail(value?: string | null) {
+  const email = value?.trim().toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PosError(400, "BAD_EMAIL", "Enter a valid email or leave it blank.");
+  return email;
+}
+
+function couponCode(value: string) {
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{3,20}$/.test(code)) throw new PosError(400, "BAD_COUPON", "Coupon codes use 3-20 letters, numbers or dashes.");
+  return code;
+}
+
+function couponDiscount(total: number, coupon: NonNullable<State["coupons"]>[number]) {
+  if (total < coupon.min_spend_cents) throw new PosError(409, "COUPON_MINIMUM", `This coupon needs a minimum spend of ${formatMoney(coupon.min_spend_cents)}.`);
+  const raw = coupon.discount_type === "PERCENT" ? Math.floor(total * coupon.discount_value / 100) : coupon.discount_value;
+  return Math.max(0, Math.min(total, raw));
+}
+
 function tillCode() {
   return currentStore().code;
 }
@@ -2507,6 +2532,28 @@ export class PosService {
         detail: row.detail,
         created_at: row.created_at,
       }));
+    const customers = [...(state.customers ?? [])]
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map((customer) => {
+        const visits = (state.customer_visits ?? []).filter((row) => row.customer_id === customer.id);
+        const consent = [...(state.customer_consents ?? [])]
+          .filter((row) => row.customer_id === customer.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        return {
+          id: customer.id,
+          name: customer.display_name,
+          phone: customer.phone_e164,
+          email: customer.email,
+          consent: consent ? { type: consent.consent_type, date: consent.consented_at, source: consent.source, unsubscribed_at: consent.unsubscribed_at } : null,
+          visit_count: visits.length,
+          spend_cents: visits.reduce((sum, row) => sum + row.spend_cents, 0),
+          last_visit_at: visits.sort((a, b) => b.visited_at.localeCompare(a.visited_at))[0]?.visited_at ?? null,
+        };
+      });
+    const coupons = [...(state.coupons ?? [])]
+      .filter((row) => row.store_code === tillCode())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
     const latestBackup = [...state.audit]
       .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_id === liveShift?.id)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -2531,6 +2578,8 @@ export class PosService {
       refills,
       closings,
       audit_log: auditLog,
+      customers,
+      coupons,
       weed_mode: {
         current: liveShift?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
         shift_id: liveShift?.sccx_shift_id ?? null,
@@ -2634,6 +2683,63 @@ export class PosService {
     });
     this.bumpMenu();
     return result;
+  }
+
+  async managerCreateCoupon(adminToken: string, input: { key: string; code: string; label: string; discount_type: "FIXED" | "PERCENT"; discount_value: number; min_spend_cents: number; max_redemptions_per_customer: number; confirm: boolean }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_coupon_create", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Coupon Manager is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact coupon before saving.");
+      const code = couponCode(input.code);
+      const label = input.label.trim();
+      if (!label || label.length > 80) throw new PosError(400, "BAD_LABEL", "Enter a coupon label up to 80 characters.");
+      if (input.discount_type !== "FIXED" && input.discount_type !== "PERCENT") throw new PosError(400, "BAD_DISCOUNT", "Choose fixed dollars or percent.");
+      const value = Math.round(input.discount_value);
+      if (value <= 0 || (input.discount_type === "PERCENT" && value > 100) || (input.discount_type === "FIXED" && value > 100000)) throw new PosError(400, "BAD_DISCOUNT", "Enter a valid coupon discount.");
+      const minimum = Math.max(0, Math.round(input.min_spend_cents));
+      const limit = Math.round(input.max_redemptions_per_customer);
+      if (limit < 1 || limit > 99) throw new PosError(400, "BAD_LIMIT", "Redemption limit must be between 1 and 99.");
+      if ((tx.state.coupons ?? []).some((row) => row.code === code)) throw new PosError(409, "COUPON_EXISTS", "That coupon code already exists.");
+      const id = randomUUID();
+      audit(tx.state, "COUPON_CREATE_BACKUP", "coupon", id, "MANAGER", { previous: null, exact_change: { store_code: tillCode(), code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true } }, at);
+      const coupon = { id, store_code: tillCode(), code, label, active: true, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, created_by: "MANAGER", created_at: at, updated_at: at } as const;
+      (tx.state.coupons ??= []).push(coupon);
+      audit(tx.state, "COUPON_CREATED", "coupon", id, "MANAGER", { code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true }, at);
+      const result = { ok: true as const, coupon: { ...coupon, redemption_count: 0 } };
+      remember(tx.state, "manager_coupon_create", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    });
+  }
+
+  async customerLookup(token: string, phoneInput: string) {
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.store_code !== tillCode()) throw new PosError(403, "STORE", "Customer lookup is limited to this store.");
+    const phone = customerPhone(phoneInput);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === phone);
+    if (!customer) return { found: false as const };
+    return { found: true as const, customer: { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } };
+  }
+
+  async couponQuote(token: string, input: { lines: { sku: string; qty: number }[]; coupon_code: string; customer_phone: string }) {
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Coupons need an active shift.");
+    const normalizedPhone = customerPhone(input.customer_phone);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === normalizedPhone);
+    const coupon = (state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code) && row.active);
+    if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+    const used = customer ? (state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon.id && row.customer_id === customer.id).length : 0;
+    if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+    const total = mergeLines(input.lines).reduce((sum, line) => sum + priceOf(state, line.sku, raw, flowers, items, masters).cents * line.qty, 0);
+    const discount = couponDiscount(total, coupon);
+    return { ok: true as const, code: coupon.code, label: coupon.label, subtotal_cents: total, discount_cents: discount, total_cents: total - discount };
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
@@ -2826,7 +2932,14 @@ export class PosService {
     });
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
+  async cashout(token: string, input: {
+    key: string;
+    lines: { sku: string; qty: number; unit_price_cents?: number }[];
+    ticket_id?: string | null;
+    payment_method?: string | null;
+    customer?: { phone: string; name?: string; email?: string; consent_type?: "EXPRESS" | "IMPLIED"; consented_at?: string; consent_source?: string; unsubscribe?: boolean } | null;
+    coupon_code?: string | null;
+  }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
     const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const result = await this.db.transaction(async (tx) => {
@@ -2861,6 +2974,42 @@ export class PosService {
         const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
+      const subtotal = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      let customer = null as NonNullable<State["customers"]>[number] | null;
+      if (input.customer?.phone?.trim()) {
+        const phone = customerPhone(input.customer.phone);
+        customer = (tx.state.customers ?? []).find((row) => row.phone_e164 === phone) ?? null;
+        const name = input.customer.name?.trim() || customer?.display_name || "";
+        if (!customer && !name) throw new PosError(400, "CUSTOMER_NAME", "Enter the customer name for a new phone number.");
+        const email = customerEmail(input.customer.email ?? customer?.email);
+        if (!customer) {
+          customer = { id: randomUUID(), phone_e164: phone, display_name: name, email, created_store_code: tillCode(), created_at: at, updated_at: at };
+          (tx.state.customers ??= []).push(customer);
+          audit(tx.state, "CUSTOMER_CREATED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), phone_last4: phone.slice(-4) }, at);
+        } else {
+          customer.display_name = name || customer.display_name;
+          customer.email = email;
+          customer.updated_at = at;
+        }
+        if (input.customer.unsubscribe) {
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type ?? "IMPLIED", consented_at: input.customer.consented_at || at, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: at, created_at: at });
+          audit(tx.state, "CUSTOMER_UNSUBSCRIBED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), source: input.customer.consent_source?.trim() || "IN_STORE" }, at);
+        } else if (input.customer.consent_type) {
+          const consentedAt = input.customer.consented_at ? new Date(input.customer.consented_at).toISOString() : at;
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: null, created_at: at });
+          audit(tx.state, "CUSTOMER_CONSENT_RECORDED", "customer", customer.id, staff.staff_uid, { type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode() }, at);
+        }
+      }
+      let coupon = null as NonNullable<State["coupons"]>[number] | null;
+      let discount = 0;
+      if (input.coupon_code?.trim()) {
+        if (!customer) throw new PosError(400, "CUSTOMER_REQUIRED", "A customer phone is required to redeem a coupon.");
+        coupon = (tx.state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code!) && row.active) ?? null;
+        if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+        const used = (tx.state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon!.id && row.customer_id === customer!.id).length;
+        if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+        discount = couponDiscount(subtotal, coupon);
+      }
       let stockout = false;
       const saleId = randomUUID();
       for (const line of priced) {
@@ -2869,7 +3018,7 @@ export class PosService {
         if (next === 0) stockout = true;
         ledger(tx.state, line.sku, -line.qty, "SALE", "sale", saleId, staff.staff_uid, null, shift.id, at);
       }
-      const total = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      const total = subtotal - discount;
       const taxIncluded = priced.some((line) => line.source !== "RAW_UNIT");
       const method = paymentOf(input.payment_method);
       const ref = nextOrderRef(tx.state);
@@ -2886,6 +3035,9 @@ export class PosService {
         void_reason: null,
         voided_by: null,
         created_at: at,
+        customer_id: customer?.id ?? null,
+        coupon_id: coupon?.id ?? null,
+        discount_cents: discount,
       });
       for (const line of priced) {
         tx.state.sale_lines.push({
@@ -2902,6 +3054,13 @@ export class PosService {
         const ticket = tx.state.tickets.find((row) => row.id === input.ticket_id);
         if (ticket) ticket.status = "CASHED_OUT";
       }
+      if (customer) {
+        (tx.state.customer_visits ??= []).push({ id: randomUUID(), customer_id: customer.id, store_code: tillCode(), sale_id: saleId, shift_id: shift.id, spend_cents: total, visited_at: at });
+      }
+      if (coupon && customer) {
+        (tx.state.coupon_redemptions ??= []).push({ id: randomUUID(), coupon_id: coupon.id, customer_id: customer.id, store_code: tillCode(), shift_id: shift.id, sale_id: saleId, discount_cents: discount, redeemed_at: at });
+        audit(tx.state, "COUPON_REDEEMED", "sale", saleId, staff.staff_uid, { coupon_id: coupon.id, code: coupon.code, customer_id: customer.id, discount_cents: discount, store_code: tillCode() }, at);
+      }
       const payload = salePayload(tx.state, saleId);
       if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
       const resultBody = {
@@ -2909,6 +3068,10 @@ export class PosService {
         sale_id: saleId,
         ref_no: ref,
         total_cents: total,
+        subtotal_cents: subtotal,
+        discount_cents: discount,
+        coupon_code: coupon?.code ?? null,
+        customer: customer ? { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } : null,
         prices_tax_included: taxIncluded,
         payment_method: method,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
