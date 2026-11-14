@@ -5,6 +5,7 @@ import Link from "next/link";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, formatMoney, layoutCategoryChips, posDefaultCategory, sortCategories } from "../lib/pny-pos/money";
 import CloseShift, { type CloseLine } from "./CloseShift";
+import OpeningFloatCheck from "./OpeningFloatCheck";
 import { floatPhrase } from "../lib/pny-pos/tillLedger";
 import { filterSellProducts } from "./posSearch";
 import { pos2RouteFromLocation } from "./posPath";
@@ -47,6 +48,7 @@ type CloseSnapshot = {
   stockCheck: View["stock_check"];
   floatExpectedCents: number | null;
   floatFoundCents: number | null;
+  floatAdjustment: { expectedCents: number; countedCents: number; differenceCents: number; staff: string; time: string } | null;
   deadline: string | null;
   initialStep: "count" | "deposit";
   weedInStore: boolean | null;
@@ -79,7 +81,7 @@ type View = {
   opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
   float_cents?: number | null;
-  float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null };
+  float_check?: { required: boolean; done: boolean; expected_cents: number; found_cents: number | null; difference_cents?: number | null; adjusted_by?: string | null; adjusted_at?: string | null };
   categories?: string[];
   products?: Product[];
   scan_products?: ScanCatalogItem[];
@@ -333,6 +335,13 @@ export default function PosApp({
       stockCheck: view.stock_check,
       floatExpectedCents: view.float_check?.found_cents == null ? null : view.float_check.expected_cents,
       floatFoundCents: view.float_check?.found_cents ?? null,
+      floatAdjustment: view.float_check?.found_cents != null && view.float_check.difference_cents && view.float_check.adjusted_by && view.float_check.adjusted_at ? {
+        expectedCents: view.float_check.expected_cents,
+        countedCents: view.float_check.found_cents,
+        differenceCents: view.float_check.difference_cents,
+        staff: view.float_check.adjusted_by,
+        time: view.float_check.adjusted_at,
+      } : null,
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
       weedInStore: view.shift?.weed_in_store ?? null,
@@ -510,13 +519,12 @@ export default function PosApp({
     await load();
   }
 
-  async function saveFloat() {
+  async function saveFloat(foundCents: number, confirmAdjustment: boolean) {
     if (view?.master) return;
     setError("");
     setBusy(true);
     try {
-      const found = Math.round(Number(floatFound || 0) * 100);
-      await post(`${storeApi}/shift/float`, { found_cents: Number.isFinite(found) ? found : 0 });
+      await post(`${storeApi}/shift/float`, { found_cents: foundCents, confirm_adjustment: confirmAdjustment });
       setFloatFound("");
       await load();
     } catch (err) {
@@ -703,6 +711,7 @@ export default function PosApp({
           stockCheck={closeSnap.stockCheck}
           floatExpectedCents={closeSnap.floatExpectedCents}
           floatFoundCents={closeSnap.floatFoundCents}
+          floatAdjustment={closeSnap.floatAdjustment}
           deadline={null}
           initialStep="deposit"
           resumeSummary={closeSnap.resumeSummary ?? { depositCents: 0, floatCents: 0 }}
@@ -711,7 +720,7 @@ export default function PosApp({
     );
   }
 
-  if (view.weed_gate?.required && !view.master) {
+  if (view.weed_gate?.required && !view.master && !(view.float_check?.required && view.float_check.found_cents == null)) {
     return <WeedShiftGate staffName={view.shift?.staff_name ?? "Staff"} busy={busy} error={error} onAnswer={(answer) => void answerWeed(answer)} />;
   }
 
@@ -749,17 +758,14 @@ export default function PosApp({
           ) : null}
         </div>
       </header>
-      {view.float_check?.required && view.float_check.found_cents == null && !view.master ? (
-        <div className={styles.ruleScrim} role="dialog" aria-modal="true" data-testid="float-verify">
-          <form className={styles.ruleSheet} onSubmit={(event) => { event.preventDefault(); void saveFloat(); }}>
-            <h2>Float in the till</h2>
-            <p>The last close left {formatMoney(view.float_check.expected_cents)}. Count the cash still in the drawer.</p>
-            <input className={styles.field} inputMode="decimal" aria-label="Float found" data-testid="float-found-input" value={floatFound} onChange={(event) => setFloatFound(event.target.value)} placeholder="0.00" />
-            {error ? <p className={styles.error}>{error}</p> : null}
-            <button className={styles.primary} type="submit" disabled={busy}>Save float</button>
-          </form>
-        </div>
-      ) : null}
+      {view.float_check?.required && view.float_check.found_cents == null && !view.master ? <OpeningFloatCheck
+        expectedCents={view.float_check.expected_cents}
+        value={floatFound}
+        busy={busy}
+        error={error}
+        onChange={setFloatFound}
+        onSave={saveFloat}
+      /> : null}
       {showGaps && view?.verify ? (
         <section className={styles.gapPanel} data-testid="staff-gaps">
           <div className={styles.gapScroll}>
@@ -966,6 +972,13 @@ export default function PosApp({
           stockCheck={closeSnap?.stockCheck ?? view.stock_check}
           floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
+          floatAdjustment={closeSnap?.floatAdjustment ?? (view.float_check?.found_cents != null && view.float_check.difference_cents && view.float_check.adjusted_by && view.float_check.adjusted_at ? {
+            expectedCents: view.float_check.expected_cents,
+            countedCents: view.float_check.found_cents,
+            differenceCents: view.float_check.difference_cents,
+            staff: view.float_check.adjusted_by,
+            time: view.float_check.adjusted_at,
+          } : null)}
           deadline={verifyOpen ? (closeSnap?.deadline ?? view.verify?.deadline_at ?? null) : null}
           initialStep={closeSnap?.initialStep ?? (view.closing?.submitted ? "deposit" : "count")}
           scanCatalog={view.scan_products ?? []}

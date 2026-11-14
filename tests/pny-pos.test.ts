@@ -3551,11 +3551,17 @@ test("the float is stored on the close and does not change the deposit", async (
   assert.equal(open.float_check.required, true);
   assert.equal(open.float_check.expected_cents, 500);
   assert.equal(open.float_check.done, false);
-  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400 });
+  await assert.rejects(() => h.svc.saveOpeningFloat(next.token, { found_cents: 400 }), (error: unknown) => error instanceof PosError && error.code === "FLOAT_ADJUST_CONFIRM_REQUIRED");
+  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400, confirm_adjustment: true });
   assert.equal(checked.gap_cents, -100);
   const verified = await h.svc.state(next.token);
   assert.equal(verified.float_check.done, true);
   assert.equal(verified.float_check.found_cents, 400);
+  assert.equal(verified.float_check.difference_cents, -100);
+  assert.equal(verified.float_check.adjusted_by, "Bea");
+  assert.ok(verified.float_check.adjusted_at);
+  const floatAudit = h.db.state.audit.find((row) => row.action === "OPENING_FLOAT_ADJUSTED");
+  assert.equal(floatAudit?.detail?.difference_cents, -100);
   assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
 });
 

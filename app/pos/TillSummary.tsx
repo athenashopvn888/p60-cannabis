@@ -72,6 +72,7 @@ export default function TillSummary({
   closeLines,
   floatExpectedCents,
   floatFoundCents,
+  floatAdjustment,
 }: {
   weedInStore?: boolean | null;
   storeLabel: string;
@@ -89,6 +90,7 @@ export default function TillSummary({
   closeLines: AdjustLine[];
   floatExpectedCents?: number | null;
   floatFoundCents?: number | null;
+  floatAdjustment?: { expectedCents: number; countedCents: number; differenceCents: number; staff: string; time: string } | null;
 }) {
   const floatKnown = floatExpectedCents != null && floatFoundCents != null;
   const floatGap = floatKnown ? floatGapCents(floatExpectedCents, floatFoundCents) : 0;
@@ -146,6 +148,11 @@ export default function TillSummary({
 
       <section className={styles.stockBlue} data-testid="opening-stock-check">
         <h3>Opening Verify</h3>
+        {floatAdjustment ? <div data-testid="opening-float-adjustment">
+          <strong>Opening cash adjustment</strong>
+          <p>{formatMoney(floatAdjustment.expectedCents)} previous close → {formatMoney(floatAdjustment.countedCents)} opening count ({floatAdjustment.differenceCents > 0 ? "+" : "−"}{formatMoney(Math.abs(floatAdjustment.differenceCents))})</p>
+          <small>Recorded by {floatAdjustment.staff} · {closeDate(floatAdjustment.time)} {closeTime(floatAdjustment.time)}</small>
+        </div> : null}
         {floatLabel ? (
           <p data-testid="float-variance">Float {floatLabel.word} {formatMoney(floatLabel.cents)} (expected {formatMoney(floatExpectedCents ?? 0)}, counted {formatMoney(floatFoundCents ?? 0)})</p>
         ) : null}

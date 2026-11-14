@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const since = params.get("since");
     const limit = Number(params.get("limit") ?? "50");
     const service = await getService();
+    await service.assertIntegrationOwner("SCCX_FEED");
     return json(await service.salesFeed(since, limit));
   } catch (error) {
     return toResponse(error);

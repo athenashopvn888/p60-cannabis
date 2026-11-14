@@ -49,6 +49,7 @@ import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
+import type { IntegrationChannel, IntegrationLease } from "./controls.ts";
 import type { SheetClient } from "./sheets.ts";
 import type {
   ClosingLine,
@@ -1019,12 +1020,15 @@ function previousClosing(state: State, shift: ShiftRow) {
 function floatCheck(state: State, shift: ShiftRow) {
   const previous = previousClosing(state, shift);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
-  if (!previous) return { required: false, done: true, expected_cents: 0, found_cents: null as number | null };
+  if (!previous) return { required: false, done: true, expected_cents: 0, found_cents: null as number | null, difference_cents: null as number | null, adjusted_by: null as string | null, adjusted_at: null as string | null };
   return {
     required: true,
     done: draft?.float_found_cents != null,
     expected_cents: previous.float_cents ?? 0,
     found_cents: draft?.float_found_cents ?? null,
+    difference_cents: draft?.float_difference_cents ?? null,
+    adjusted_by: draft?.float_adjusted_by ?? null,
+    adjusted_at: draft?.float_adjusted_at ?? null,
   };
 }
 
@@ -1066,6 +1070,9 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
     `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
     `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
+    closing.opening_float_counted_cents != null
+      ? `Opening cash: ${formatMoney(closing.opening_float_counted_cents)} · Previous close: ${formatMoney(closing.opening_float_expected_cents ?? 0)} · Adjustment: ${formatMoney(closing.opening_float_difference_cents ?? 0)}${closing.opening_float_adjusted_by ? ` by ${closing.opening_float_adjusted_by}` : ""}`
+      : "",
     `Left: ${shown}${more}`,
     closing.close_label ? `Close: ${closing.close_label}` : "",
     closing.no_count ? "No count taken" : "",
@@ -1078,6 +1085,7 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
   const shortage = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
   const overage = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
   const base = {
     shift_id: shift.id,
     sales_total_cents: totals.sales_total_cents,
@@ -1089,6 +1097,11 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     deposited_cents: totals.deposited_cents,
     final_deposit_cents: finalDepositCents,
     float_cents: floatCents,
+    opening_float_expected_cents: draft?.float_expected_cents ?? null,
+    opening_float_counted_cents: draft?.float_found_cents ?? null,
+    opening_float_difference_cents: draft?.float_difference_cents ?? null,
+    opening_float_adjusted_by: draft?.float_adjusted_by ?? null,
+    opening_float_adjusted_at: draft?.float_adjusted_at ?? null,
     shortage_cents: shortage,
     overage_cents: overage,
     balance_cents: closingBalance({
@@ -1472,6 +1485,23 @@ export class PosService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  async assertIntegrationOwner(channel: IntegrationChannel) {
+    if (!this.db.assertIntegrationOwner) {
+      return { channel, owner_store_code: tillCode(), generation: 1, cutover_id: "LEGACY" } satisfies IntegrationLease;
+    }
+    return this.db.assertIntegrationOwner(channel);
+  }
+
+  async integrationEventDelivered(channel: IntegrationChannel, cutoverId: string, eventId: string) {
+    if (!this.db.deliveredIntegrationEvents) return false;
+    return (await this.db.deliveredIntegrationEvents(channel, cutoverId, [eventId])).has(eventId);
+  }
+
+  async recordIntegrationDelivery(lease: IntegrationLease, eventId: string, receipt: Record<string, unknown> = {}) {
+    if (!this.db.recordIntegrationDelivery) return true;
+    return this.db.recordIntegrationDelivery(lease, eventId, receipt);
   }
 
   /**
@@ -3886,9 +3916,10 @@ export class PosService {
     });
   }
 
-  async saveOpeningFloat(token: string, input: { found_cents: number }) {
+  async saveOpeningFloat(token: string, input: { found_cents: number; confirm_adjustment?: boolean }) {
     return this.db.transaction(async (tx) => {
-      const { shift, session } = this.session(tx.state, token, this.now());
+      const now = this.now();
+      const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot check the float.");
       const found = roundCents(input.found_cents);
@@ -3896,11 +3927,35 @@ export class PosService {
       const previous = previousClosing(tx.state, shift);
       if (!previous) throw new PosError(409, "NO_FLOAT", "There is no previous close to check.");
       const expected = previous.float_cents ?? 0;
-      const draft = ensureDraft(tx.state, shift.id, this.now());
+      const difference = found - expected;
+      if (difference !== 0 && !input.confirm_adjustment) {
+        throw new PosError(409, "FLOAT_ADJUST_CONFIRM_REQUIRED", "The opening cash does not match the previous close. Confirm the adjustment.", {
+          expected_cents: expected,
+          found_cents: found,
+          difference_cents: difference,
+        });
+      }
+      const draft = ensureDraft(tx.state, shift.id, now);
+      if (draft.float_found_cents != null) {
+        if (draft.float_found_cents === found) return { ok: true, replay: true, expected_cents: expected, found_cents: found, gap_cents: difference };
+        throw new PosError(409, "FLOAT_ALREADY_CONFIRMED", "Opening cash was already confirmed for this shift.");
+      }
+      const at = iso(now);
       draft.float_found_cents = found;
       draft.float_expected_cents = expected;
-      draft.updated_at = iso(this.now());
-      return { ok: true, expected_cents: expected, found_cents: found, gap_cents: found - expected };
+      draft.float_difference_cents = difference;
+      draft.float_adjusted_by = difference === 0 ? null : staff.display_name || staff.pos_id || staff.staff_uid;
+      draft.float_adjusted_at = difference === 0 ? null : at;
+      draft.updated_at = at;
+      audit(tx.state, difference === 0 ? "OPENING_FLOAT_CONFIRMED" : "OPENING_FLOAT_ADJUSTED", "shift", shift.id, staff.staff_uid, {
+        previous_closing_cash_cents: expected,
+        opening_count_cents: found,
+        difference_cents: difference,
+        adjusted_amount_cents: found,
+        staff_name: staff.display_name,
+        recorded_at: at,
+      }, at);
+      return { ok: true, expected_cents: expected, found_cents: found, gap_cents: difference };
     });
   }
 
@@ -4210,6 +4265,7 @@ export class PosService {
   }
 
   async drainOutbox() {
+    let owner = await this.assertIntegrationOwner("SHEET_OUTBOX");
     const now = this.now();
     const leaseId = randomUUID();
     const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
@@ -4241,8 +4297,26 @@ export class PosService {
       return structuredClone(due);
     });
     if (batch.length === 0) return { ok: true, sent: 0, ...(await this.outboxStatus()) };
+    owner = await this.assertIntegrationOwner("SHEET_OUTBOX");
+    const delivered = this.db.deliveredIntegrationEvents
+      ? await this.db.deliveredIntegrationEvents("SHEET_OUTBOX", owner.cutover_id, batch.map((row) => row.row_id))
+      : new Set<string>();
+    if (delivered.size) {
+      await this.db.transaction(async (tx) => {
+        for (const row of tx.state.outbox) {
+          if (row.status !== "sending" || row.lease_id !== leaseId || !delivered.has(row.row_id)) continue;
+          row.status = "sent";
+          row.sent_at ??= iso(this.now());
+          row.last_error = null;
+          row.lease_id = null;
+          row.lease_expires_at = null;
+        }
+      });
+    }
+    const unsentBatch = batch.filter((row) => !delivered.has(row.row_id));
+    if (unsentBatch.length === 0) return { ok: true, sent: 0, replayed: delivered.size, ...(await this.outboxStatus()) };
     const groups = new Map<string, typeof batch>();
-    for (const row of batch) {
+    for (const row of unsentBatch) {
       const list = groups.get(row.tab) ?? [];
       list.push(row);
       groups.set(row.tab, list);
@@ -4254,6 +4328,7 @@ export class PosService {
       if (!rows.length) continue;
       try {
         await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
+        for (const row of rows) await this.recordIntegrationDelivery(owner, row.row_id, { tab: row.tab });
         const acknowledged = await this.db.transaction(async (tx) => {
           const at = iso(this.now());
           let count = 0;

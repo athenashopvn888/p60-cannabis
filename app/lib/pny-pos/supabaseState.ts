@@ -1,5 +1,7 @@
 import { Pool, type PoolClient } from "pg";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
+import { deploymentGeneration, maintenanceMode } from "./controls.ts";
+import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
 import type { StoreCode } from "./storeProfile.ts";
 
@@ -76,6 +78,66 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
   });
   let tail: Promise<void> = Promise.resolve();
   const db: PosDb & { peek(): Promise<State> } = {
+    async assertIntegrationOwner(channel) {
+      if (schema !== "pnys_pos") {
+        return { channel, owner_store_code: store, generation: deploymentGeneration(), cutover_id: "LEGACY" };
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("set role pnys_app");
+        const result = await client.query(
+          "select channel,owner_store_code,generation,cutover_id from pos_hub.integration_owner where channel=$1 and enabled=true",
+          [channel],
+        );
+        const row = result.rows[0];
+        if (!row || row.owner_store_code !== store || Number(row.generation) !== deploymentGeneration()) {
+          throw new PosError(423, "INTEGRATION_NOT_OWNER", `${channel} is owned by another deployment.`);
+        }
+        return { channel, owner_store_code: row.owner_store_code, generation: Number(row.generation), cutover_id: row.cutover_id };
+      } finally {
+        await client.query("reset role").catch(() => undefined);
+        client.release();
+      }
+    },
+    async deliveredIntegrationEvents(channel, cutoverId, eventIds) {
+      if (schema !== "pnys_pos" || eventIds.length === 0) return new Set<string>();
+      const client = await pool.connect();
+      try {
+        await client.query("set role pnys_app");
+        const result = await client.query(
+          "select event_id from pos_hub.integration_delivery where channel=$1 and cutover_id=$2 and event_id=any($3::text[])",
+          [channel, cutoverId, eventIds],
+        );
+        return new Set(result.rows.map((row) => String(row.event_id)));
+      } finally {
+        await client.query("reset role").catch(() => undefined);
+        client.release();
+      }
+    },
+    async recordIntegrationDelivery(lease, eventId, receipt = {}) {
+      if (schema !== "pnys_pos") return true;
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("set local role pnys_app");
+        const owner = await client.query(
+          "select 1 from pos_hub.integration_owner where channel=$1 and owner_store_code=$2 and generation=$3 and cutover_id=$4 and enabled=true",
+          [lease.channel, store, lease.generation, lease.cutover_id],
+        );
+        if (owner.rowCount !== 1) throw new PosError(423, "INTEGRATION_NOT_OWNER", `${lease.channel} ownership changed before delivery acknowledgement.`);
+        const saved = await client.query(
+          "insert into pos_hub.integration_delivery(channel,cutover_id,event_id,owner_store_code,generation,receipt) values($1,$2,$3,$4,$5,$6::jsonb) on conflict(channel,cutover_id,event_id) do nothing returning id",
+          [lease.channel, lease.cutover_id, eventId, store, lease.generation, JSON.stringify(receipt)],
+        );
+        await client.query("commit");
+        return saved.rowCount === 1;
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
     async isReady() {
       if (schema !== "pnys_pos") return true;
       const client = await pool.connect();
@@ -116,7 +178,10 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
       const client = await pool.connect();
       try {
         await client.query("begin");
-        if (schema === "pnys_pos") await client.query("set local role pnys_app");
+        if (schema === "pnys_pos") {
+          await client.query("set local role pnys_app");
+          await client.query("select set_config('app.store_code',$1,true),set_config('app.generation',$2,true)", [store, String(deploymentGeneration())]);
+        }
         // Serialize mutations across serverless instances. Idempotency records, stock,
         // sales, and refills commit together under this store-row lock.
         const loaded = await client.query(`select version, doc from ${schema}.live_state where store_code = $1 for update`, [store]);
@@ -129,6 +194,13 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
         if (after === before) {
           await client.query("commit");
           return result;
+        }
+        if (schema === "pnys_pos") {
+          const runtime = await client.query("select write_mode,generation from pos_hub.store_runtime where store_code=$1", [store]);
+          const row = runtime.rows[0];
+          if (!row || row.write_mode !== "ACTIVE") throw new PosError(423, "STORE_WRITE_BLOCKED", `Store writes are ${row?.write_mode ?? "UNCONFIGURED"}.`);
+          if (Number(row.generation) !== deploymentGeneration()) throw new PosError(423, "STALE_DEPLOYMENT", "This deployment generation cannot write.");
+          if (maintenanceMode()) throw new PosError(423, "MAINTENANCE_MODE", "TEMPORARILY PAUSED — DO NOT TRADE");
         }
         if (schema === "pnys_pos") await projectHub(client, snapshot);
         const saved = await client.query(

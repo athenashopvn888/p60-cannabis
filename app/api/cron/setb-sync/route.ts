@@ -8,6 +8,7 @@ export async function GET(request: Request) {
   if (process.env.INTEGRATIONS_ENABLED === "0" || process.env.SETB_SYNC_ENABLED === "0") return json({ ok: true, disabled: true });
   try {
     const service = await cronOk(request);
+    await service.assertIntegrationOwner("SETB_SYNC");
     const url = defaultSetbProductsUrl();
     const headers: Record<string, string> = {};
     if (process.env.SETB_SYNC_SECRET) headers.authorization = `Bearer ${process.env.SETB_SYNC_SECRET}`;

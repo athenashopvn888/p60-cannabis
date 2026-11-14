@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   if (process.env.INTEGRATIONS_ENABLED === "0") return json({ ok: true, disabled: true });
   try {
     const service = await cronOk(request);
+    await service.assertIntegrationOwner("STOCK_SNAPSHOT");
     return json(await service.snapshotStock());
   } catch (error) {
     return toResponse(error);

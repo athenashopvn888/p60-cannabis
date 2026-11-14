@@ -284,6 +284,11 @@ export type ClosingRow = {
   final_deposit_cents?: number;
   /** Cash left in the drawer after the final deposit. Missing means 0. */
   float_cents?: number;
+  opening_float_expected_cents?: number | null;
+  opening_float_counted_cents?: number | null;
+  opening_float_difference_cents?: number | null;
+  opening_float_adjusted_by?: string | null;
+  opening_float_adjusted_at?: string | null;
   shortage_cents?: number;
   overage_cents?: number;
   balance_cents?: number;
@@ -325,6 +330,9 @@ export type ClosingDraftRow = {
   /** Cash counted at the next opening, compared with the previous close. */
   float_found_cents?: number | null;
   float_expected_cents?: number | null;
+  float_difference_cents?: number | null;
+  float_adjusted_by?: string | null;
+  float_adjusted_at?: string | null;
   updated_at: string;
 };
 

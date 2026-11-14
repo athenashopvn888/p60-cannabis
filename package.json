@@ -20,7 +20,8 @@
     "test:weed-v21": "node --test tests/weed-v21.test.mjs",
     "test:pny-pos": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/pny-pos.test.ts",
     "test:pnys-foundation": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/pnys-foundation.test.ts",
-    "test:pnys-release3": "npx tsx scripts/pnys-release3-dry-run.ts && node --experimental-strip-types --test tests/pnys-release3.test.ts"
+    "test:pnys-release3": "npx tsx scripts/pnys-release3-dry-run.ts && node --experimental-strip-types --test tests/pnys-release3.test.ts",
+    "test:pnys-release4-prep": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/pnys-release4-prep.test.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
