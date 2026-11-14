@@ -144,6 +144,8 @@ test("scanner keeps native and free fallback decoding and is wired to all count/
   assert.match(scanner, /adaptiveThreshold/);
   assert.match(scanner, /facingMode:\s*\{ ideal:\s*"environment"/);
   assert.match(scanner, /focusMode:\s*"continuous"/);
+  assert.match(scanner, /NEXT_PUBLIC_PNYS_SCAN_ENABLED === "1"/);
+  assert.match(scanner, /disabled=\{!scannerEnabled\}/);
   assert.match(scanner, /THC hidden this shift/);
   assert.match(pos, /data-testid="scan-button"|<ProductScanner/);
   assert.match(count, /<ProductScanner/);

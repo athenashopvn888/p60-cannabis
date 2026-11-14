@@ -1,4 +1,5 @@
 .scanButton { min-height: 52px; min-width: 92px; border: 0; border-radius: 14px; background: #0f766e; color: #fff; font: 900 17px/1 system-ui, sans-serif; letter-spacing: .05em; }
+.scanButton:disabled { background: #94a3b8; color: #e2e8f0; cursor: not-allowed; opacity: .78; box-shadow: none; }
 .scrim { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 12px; background: rgb(15 23 42 / 82%); }
 .panel { width: min(100%, 480px); padding: 14px; border-radius: 18px; background: #fff; color: #0f172a; box-shadow: 0 20px 60px rgb(0 0 0 / 35%); }
 .heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

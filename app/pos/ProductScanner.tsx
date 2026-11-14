@@ -7,6 +7,7 @@ import styles from "./ProductScanner.module.css";
 type ScannerControls = { stop: () => void };
 type NativeDetector = { detect: (source: HTMLVideoElement) => Promise<{ rawValue?: string }[]> };
 type NativeDetectorConstructor = new (options?: { formats?: string[] }) => NativeDetector;
+const scannerEnabled = process.env.NEXT_PUBLIC_PNYS_SCAN_ENABLED === "1";
 
 function adaptiveThreshold(source: ImageData, windowSize = 31, offset = -5) {
   const { width, height, data } = source;
@@ -91,7 +92,7 @@ export default function ProductScanner({
   }, [catalog, onMatch]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !scannerEnabled) return;
     const video = videoRef.current;
     if (!video) return;
     let cancelled = false;
@@ -214,7 +215,15 @@ export default function ProductScanner({
 
   return (
     <>
-      <button className={styles.scanButton} type="button" data-testid="scan-button" onClick={() => { lastAcceptedRef.current = { raw: "", at: 0 }; setMessage(""); setDecodedRaw(""); setFailure(false); setOpen(true); }}>
+      <button
+        className={styles.scanButton}
+        type="button"
+        data-testid="scan-button"
+        disabled={!scannerEnabled}
+        aria-label={scannerEnabled ? label : `${label} — coming later`}
+        title={scannerEnabled ? undefined : "Coming after the core POS is complete"}
+        onClick={() => { lastAcceptedRef.current = { raw: "", at: 0 }; setMessage(""); setDecodedRaw(""); setFailure(false); setOpen(true); }}
+      >
         {label}
       </button>
       {open ? (
