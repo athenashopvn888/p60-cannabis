@@ -2364,6 +2364,38 @@ export class PosService {
       };
   }
 
+  /** Read-only Kitchen dashboard data. This never advances or rewrites till state. */
+  async kitchenState(token: string) {
+    const state = await this.readState();
+    this.session(state, token, this.now(), "kitchen");
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .filter((product) => state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled))
+      .map((product) => ({
+        sku: product.sku,
+        name: product.name,
+        category: product.category,
+        size: sizeLabel(product.sku, product.category, product.name),
+        on_hand: qtyOf(state, product.sku),
+      }))
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const history = [...state.incoming]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        size: sizeLabel(row.sku, state.products.find((product) => product.sku === row.sku)?.category, productName(state, row.sku)),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        created_at: row.created_at,
+      }));
+    return { authenticated: true as const, store_code: tillCode(), products, history };
+  }
+
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
@@ -2509,6 +2541,49 @@ export class PosService {
     });
     this.bumpMenu();
     return result;
+  }
+
+  /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
+  async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_queue_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      this.session(tx.state, token, now, "kitchen");
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
+      const at = iso(now);
+      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
+        const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === line.sku && item.enabled);
+        if (!product || !storeProduct) throw new PosError(404, "SKU", "That SKU is not enabled for this store.");
+        const kitchenRowId = randomUUID();
+        tx.state.incoming.push({
+          kitchen_row_id: kitchenRowId,
+          batch_id: input.key,
+          store_code: tillCode(),
+          sku: line.sku,
+          qty_sent: line.qty,
+          kind: "REFILL",
+          kitchen_created_at: at,
+          imported_at: at,
+          status: "PENDING_CONFIRM",
+          qty_received: null,
+          variance_reason: null,
+          confirmed_shift_id: null,
+          confirmed_at: null,
+          linked_ledger_id: null,
+          created_at: at,
+        });
+        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM" });
+      }
+      const resultBody = { ok: true, batch_id: input.key, lines: created };
+      remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    });
   }
 
   async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {

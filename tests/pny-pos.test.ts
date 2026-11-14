@@ -1608,6 +1608,53 @@ test("the env-hashed kitchen PIN opens only the kitchen login", async () => {
   await rejects(() => locker.kitchenLogin(TEST_KITCHEN_PIN, "10.7.1.3"), "LOCKED");
 });
 
+test("PNYS Kitchen queues an idempotent pending refill and staff confirmation adds stock once", async () => {
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.1");
+  const before = qty(db, "240");
+  const command = { key: "kitchen-pending-240", lines: [{ sku: "240", qty: 4 }] };
+  const sent = await svc.queueKitchenRefill(kitchen.token, command);
+  const replayed = await svc.queueKitchenRefill(kitchen.token, command);
+  assert.equal(replayed.replay, true);
+  assert.equal(replayed.lines[0]?.kitchen_row_id, sent.lines[0]?.kitchen_row_id);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === command.key).length, 1);
+  const pending = db.state.incoming.find((row) => row.batch_id === command.key)!;
+  assert.equal(pending.status, "PENDING_CONFIRM");
+  assert.equal(pending.qty_received, null);
+  assert.equal(qty(db, "240"), before);
+  const kitchenView = await svc.kitchenState(kitchen.token);
+  assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before), true);
+  assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
+
+  const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
+  await svc.confirmIncoming(staff.token, { key: "staff-receives-240", lines: [{ kitchen_row_id: pending.kitchen_row_id, qty_received: 4 }] });
+  assert.equal(qty(db, "240"), before + 4);
+  assert.equal(db.state.incoming.find((row) => row.kitchen_row_id === pending.kitchen_row_id)?.status, "CONFIRMED");
+});
+
+test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled scan, history and staff handoff", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(app, /data-testid="kitchen-login"/);
+  assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
+  assert.match(app, /Zero on-hand SKUs remain searchable and can be added/);
+  assert.match(app, /Search SKU, name or size/);
+  assert.match(app, /className=\{styles\.scan\} disabled>SCAN/);
+  assert.match(app, /data-testid="kitchen-history"/);
+  assert.match(app, /pending\. Store staff must open Refill and confirm/);
+  assert.match(css, /position: fixed/);
+  assert.match(css, /overflow-y: auto/);
+  assert.match(css, /@media\(max-width:390px\)/);
+  assert.match(service, /async kitchenState\(token: string\)/);
+  assert.match(service, /async queueKitchenRefill/);
+  assert.match(service, /status: "PENDING_CONFIRM"/);
+  assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
+});
+
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
   assert.deepEqual(lineVariance({ expected_qty: 3, counted_qty: 1, price_cents: 1000 }), {
     variance_qty: -2,
