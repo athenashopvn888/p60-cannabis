@@ -16,6 +16,7 @@ const PREFIX = "DRY-R3B";
 const SHIFT_ID = `${PREFIX}-SHIFT`;
 const CUSTOMER_EMAIL = "dry-r3b@example.invalid";
 const COUPON_CODE = `${PREFIX}-10`;
+const BACKUP_ID = "d3b00000-0000-4000-8000-000000000001";
 const NOW = new Date("2026-11-14T16:00:00.000Z");
 const PRIVATE_DIR = resolve("artifacts/pnys-release3b");
 const REPORT_DIR = resolve("reports/pnys-release3b");
@@ -32,8 +33,8 @@ export const CLEANUP_SQL_TEXT = [
   "delete from pnys_pos.deposit where store_code='PNYS' and id like 'DRY-R3B-%';",
   "delete from pnys_pos.closing where store_code='PNYS' and shift_id='DRY-R3B-SHIFT';",
   "delete from pnys_pos.shift where store_code='PNYS' and id='DRY-R3B-SHIFT';",
-  "update pnys_pos.live_state state set doc=backup.doc,version=backup.version,updated_at=backup.updated_at from pnys_pos.release3b_backup backup where state.store_code='PNYS' and backup.run_id='DRY-R3B-20261114';",
-  "drop table pnys_pos.release3b_backup;",
+  "update pnys_pos.live_state state set doc=backup.old_value,version=(backup.new_value->>'version')::bigint,updated_at=(backup.new_value->>'updated_at')::timestamptz from pos_hub.policy_audit backup where state.store_code='PNYS' and backup.id='d3b00000-0000-4000-8000-000000000001'::uuid and backup.policy_key='DRY_R3B_BACKUP';",
+  "delete from pos_hub.policy_audit where id='d3b00000-0000-4000-8000-000000000001'::uuid and policy_key='DRY_R3B_BACKUP';",
   "commit;",
 ].join("\n");
 
@@ -82,6 +83,7 @@ async function counts(client: PoolClient) {
     'hub_visit',(select count(*) from pos_hub.customer_visit),
     'hub_coupon',(select count(*) from pos_hub.coupon),
     'hub_redemption',(select count(*) from pos_hub.coupon_redemption)
+    ,'hub_policy_audit',(select count(*) from pos_hub.policy_audit)
   ) as counts`);
   return result.rows[0].counts as Record<string, number>;
 }
@@ -140,17 +142,9 @@ export async function runRelease3b(env: Record<string, string>, writeArtifacts =
     const preDoc = loaded.rows[0].doc as State;
     backup = { version: Number(loaded.rows[0].version), updated_at: loaded.rows[0].updated_at, doc: preDoc, counts: await counts(client), balances: balanceProof(preDoc), doc_checksum: sha(preDoc) };
     if (await dryRowCount(client) !== 0) throw new Error("Fail closed: pre-existing DRY-R3B rows found.");
-    if ((await client.query("select to_regclass('pnys_pos.release3b_backup') as table_name")).rows[0].table_name) throw new Error("Fail closed: a prior Release 3b backup table exists.");
-    await client.query(`create table pnys_pos.release3b_backup (
-      run_id text primary key check (run_id = 'DRY-R3B-20261114'), version bigint not null,
-      updated_at timestamptz not null, doc jsonb not null, table_counts jsonb not null,
-      balance_proof jsonb not null, created_at timestamptz not null default now()
-    )`);
-    await client.query(`insert into pnys_pos.release3b_backup(run_id,version,updated_at,doc,table_counts,balance_proof)
-    values('DRY-R3B-20261114',$1,$2,$3::jsonb,$4::jsonb,$5::jsonb)`, [backup.version, backup.updated_at, JSON.stringify(backup.doc), JSON.stringify(backup.counts), JSON.stringify(backup.balances)]);
-    await client.query(`revoke all on pnys_pos.release3b_backup from public;
-    alter table pnys_pos.release3b_backup enable row level security;
-    alter table pnys_pos.release3b_backup force row level security;`);
+    if (Number((await client.query("select count(*) as count from pos_hub.policy_audit where id=$1::uuid or policy_key='DRY_R3B_BACKUP'", [BACKUP_ID])).rows[0].count) !== 0) throw new Error("Fail closed: a prior Release 3b backup row exists.");
+    await client.query(`insert into pos_hub.policy_audit(id,store_code,policy_key,old_value,new_value,changed_by,changed_at)
+      values($1::uuid,'PNYS','DRY_R3B_BACKUP',$2::jsonb,$3::jsonb,'RELEASE3B_RUNNER',now())`, [BACKUP_ID, JSON.stringify(backup.doc), JSON.stringify({ version: backup.version, updated_at: backup.updated_at, counts: backup.counts, balances: backup.balances })]);
     if (writeArtifacts) {
       await mkdir(PRIVATE_DIR, { recursive: true });
       await writeFile(resolve(PRIVATE_DIR, "private-backup.json"), JSON.stringify(backup));

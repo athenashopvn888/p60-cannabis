@@ -21,13 +21,16 @@ delete from pnys_pos.closing where store_code = 'PNYS' and shift_id = 'DRY-R3B-S
 delete from pnys_pos.shift where store_code = 'PNYS' and id = 'DRY-R3B-SHIFT';
 
 update pnys_pos.live_state state
-set doc = backup.doc,
-    version = backup.version,
-    updated_at = backup.updated_at
-from pnys_pos.release3b_backup backup
+set doc = backup.old_value,
+    version = (backup.new_value->>'version')::bigint,
+    updated_at = (backup.new_value->>'updated_at')::timestamptz
+from pos_hub.policy_audit backup
 where state.store_code = 'PNYS'
-  and backup.run_id = 'DRY-R3B-20261114';
+  and backup.id = 'd3b00000-0000-4000-8000-000000000001'::uuid
+  and backup.policy_key = 'DRY_R3B_BACKUP';
 
-drop table pnys_pos.release3b_backup;
+delete from pos_hub.policy_audit
+where id = 'd3b00000-0000-4000-8000-000000000001'::uuid
+  and policy_key = 'DRY_R3B_BACKUP';
 
 commit;
