@@ -2643,17 +2643,16 @@ export class PosService {
   async stockFeed() {
     return this.db.transaction(async (tx) => {
       const before = JSON.stringify(tx.state);
-      const products = tx.state.products
-        .filter((product) => product.setb_active)
-        .flatMap((product) => {
-          const storeProduct = tx.state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
-          if (!storeProduct?.enabled) return [];
-          return [{
-            sku: product.sku,
-            name: product.name,
-            category: product.category,
-            on_hand: qtyOf(tx.state, product.sku),
-          }];
+      const products = tx.state.balances
+        .filter((balance) => balanceForStore(balance))
+        .map((balance) => {
+          const product = tx.state.products.find((row) => row.sku === balance.sku);
+          return {
+            sku: balance.sku,
+            name: product?.name ?? "",
+            category: product?.category ?? "",
+            on_hand: balance.qty,
+          };
         })
         .sort((left, right) => skuSortKey(left.sku) - skuSortKey(right.sku) || left.sku.localeCompare(right.sku));
       if (JSON.stringify(tx.state) !== before) throw new PosError(500, "FEED_WRITE", "The stock feed must not change the till.");

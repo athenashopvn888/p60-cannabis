@@ -969,6 +969,24 @@ test("the stock feed returns authoritative enabled balances without changing the
   assert.equal(JSON.stringify(h.db.state), before);
 });
 
+test("the stock feed includes balances whose catalog row is missing", async () => {
+  const h = await readyTill({ "1001": 2 });
+  h.db.state.balances.push({
+    sku: "656",
+    qty: 4,
+    created_at: h.clock.t.toISOString(),
+    updated_at: h.clock.t.toISOString(),
+  });
+
+  const feed = await h.svc.stockFeed();
+  assert.deepEqual(feed.products.find((row) => row.sku === "656"), {
+    sku: "656",
+    name: "",
+    category: "",
+    on_hand: 4,
+  });
+});
+
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
   const h = await readyTill({ "1001": 2 });
   const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
