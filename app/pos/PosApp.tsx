@@ -238,7 +238,7 @@ export default function PosApp({
         const response = await fetch("/api/pos/kitchen/pny01-shadow", { cache: "no-store", credentials: "same-origin" });
         const data = await response.json() as { authenticated?: boolean; products?: Product[] };
         if (response.ok && data.authenticated) products = data.products ?? [];
-        else setError("Open this test POS from a signed-in Kitchen session to load the PNY01 catalog.");
+        else setError("The refreshed PNY01 stock snapshot is unavailable.");
       } catch {
         setError("The read-only PNY01 catalog is temporarily unavailable.");
       }

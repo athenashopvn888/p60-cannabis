@@ -1750,10 +1750,10 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   assert.match(app, /PNY01 Live Catalog · Test Receiver/);
   assert.match(app, /pnys-pny01-shadow-batches/);
   assert.match(app, /PNY01 TEST RECEIVER/);
-  assert.match(route, /https:\/\/pny1-pos\.vercel\.app\/api\/menu/);
-  assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
+  assert.match(route, /await \(await getService\(\)\)\.menu\(\)/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
-  assert.match(route, /stock_precision: "UNAVAILABLE"/);
+  assert.match(route, /source: "PNYS refreshed PNY01 stock snapshot"/);
+  assert.match(route, /stock_precision: "BLIND_STAFF_VIEW"/);
   assert.match(route, /price_cents: Number\(row\.price_cents/);
   assert.match(route, /image_url: row\.image_url/);
   assert.match(receiverPage, /<PosApp shadowPny01/);
