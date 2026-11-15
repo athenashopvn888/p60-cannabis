@@ -519,6 +519,22 @@ test("13a. forced refresh rescans POS_Refills behind the legacy-tab cursor exact
   assert.equal(qty(h.db, "1015"), 0);
 });
 
+test("13aa. canonical Kitchen rows reopen stale cancelled mirrors without touching stock", async () => {
+  const h = await readyTill({ "1001": 0, "1002": 0 });
+  const id = crypto.randomUUID();
+  const active = { row_id: id, batch_id: "randy", store_code: "PNY01", kind: "REFILL", sku: "655", qty: "2", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE" };
+  h.sheet.tabs.K_Allocations = [active];
+  h.sheet.tabs.POS_Refills = [{ ...active, kitchen_status: "CANCELLED" }];
+  h.db.state.incoming.push({ kitchen_row_id: id, batch_id: "randy", store_code: "PNY01", sku: "655", qty_sent: 2, kind: "REFILL", kitchen_created_at: active.created_at, imported_at: active.created_at, status: "CANCELLED_BY_KITCHEN", qty_received: 0, variance_reason: null, confirmed_shift_id: null, confirmed_at: active.created_at, linked_ledger_id: null, created_at: active.created_at });
+
+  const result = await h.svc.refreshIncoming({ force: true });
+
+  assert.equal(result.imported, 0);
+  assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === id)?.status, "PENDING_CONFIRM");
+  assert.equal(qty(h.db, "655"), 0);
+  assert.equal(h.db.state.ledger.filter((row) => row.sku === "655").length, 0);
+});
+
 test("13b. Kitchen can refill a zero-stock flower from the full Flowers catalog", async () => {
   const h = await readyTill({ "1001": 0, "1002": 0 });
   h.sheet.grids.Flowers_Raw = [
