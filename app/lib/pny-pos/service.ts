@@ -3497,7 +3497,9 @@ export class PosService {
         maxRow = Math.max(maxRow, sheetRow);
         if ((row.store_code ?? "").trim() !== tillCode()) continue;
         const problem = this.kitchenProblem(state, row, flowers);
+        const recent = Boolean(row.created_at && now.getTime() - Date.parse(row.created_at) < 24 * 60 * 60 * 1000);
         if (problem) {
+          if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=rejected reason=${problem}`);
           const badId = row.row_id && isUuid(row.row_id) ? `R-${row.row_id}` : `R-BAD-${sheetRow}`;
           enqueue(state, "S_Receipts", badId, {
             row_id: badId,
@@ -3520,6 +3522,7 @@ export class PosService {
           if (!ensurePublishedFlowerProduct(state, row.sku, flowers, at)) ensureQuotedProduct(state, row.sku, at);
         }
         const existing = state.incoming.find((item) => item.kitchen_row_id === row.row_id);
+        if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=${existing?.status ?? "new"}`);
         const qty = Number(row.qty);
         const kitchenStatus = (row.kitchen_status ?? "ACTIVE").toUpperCase();
         if (!existing) {
