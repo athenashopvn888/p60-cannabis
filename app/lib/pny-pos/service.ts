@@ -2661,12 +2661,12 @@ export class PosService {
    * a sheet write or rewrites live_state.
    */
   async stockFeed() {
-    return this.db.transaction(async (tx) => {
-      const before = JSON.stringify(tx.state);
-      const products = tx.state.balances
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const products = state.balances
         .filter((balance) => balanceForStore(balance))
         .map((balance) => {
-          const product = tx.state.products.find((row) => row.sku === balance.sku);
+          const product = state.products.find((row) => row.sku === balance.sku);
           return {
             sku: balance.sku,
             name: product?.name ?? "",
@@ -2675,10 +2675,8 @@ export class PosService {
           };
         })
         .sort((left, right) => skuSortKey(left.sku) - skuSortKey(right.sku) || left.sku.localeCompare(right.sku));
-      if (JSON.stringify(tx.state) !== before) throw new PosError(500, "FEED_WRITE", "The stock feed must not change the till.");
-      const activeShift = tx.state.shifts.some((shift) => shift.store_code === tillCode() && shift.status === "ACTIVE");
-      return { ok: true as const, store_code: tillCode(), generated_at: iso(this.now()), active_shift: activeShift, products };
-    });
+    const activeShift = state.shifts.some((shift) => shift.store_code === tillCode() && shift.status === "ACTIVE");
+    return { ok: true as const, store_code: tillCode(), generated_at: iso(this.now()), active_shift: activeShift, products };
   }
 
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
