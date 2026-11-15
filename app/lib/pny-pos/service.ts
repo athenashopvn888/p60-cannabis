@@ -3460,10 +3460,16 @@ export class PosService {
       const [legacy, refills] = await Promise.all([readTab("K_Allocations"), readTab("POS_Refills")]);
       legacyCount = legacy.length;
       refillCount = refills.length;
-      rows = [
-        ...legacy,
-        ...refills.filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED"),
-      ];
+      const byId = new Map<string, SheetRow>();
+      const withoutId: SheetRow[] = [];
+      const add = (row: SheetRow) => row.row_id ? byId.set(row.row_id, row) : withoutId.push(row);
+      refills
+        .filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED")
+        .forEach(add);
+      // K_Allocations is Kitchen's canonical row. It must win over a stale
+      // mirrored POS_Refills copy carrying the same row_id.
+      legacy.forEach(add);
+      rows = [...byId.values(), ...withoutId];
     } catch (error) {
       if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
       throw error;
@@ -3556,6 +3562,12 @@ export class PosService {
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, existing, at);
         } else if (kitchenStatus === "CANCELLED") {
           this.applyCancel(state, existing, at);
+        } else if (existing.status === "CANCELLED_BY_KITCHEN") {
+          existing.status = "PENDING_CONFIRM";
+          existing.qty_received = null;
+          existing.confirmed_at = null;
+          enqueue(state, "S_Receipts", `R-${existing.kitchen_row_id}`, receiptPayload(existing, "", ""), at);
+          audit(state, "KITCHEN_ROW_REOPENED", "incoming", existing.kitchen_row_id, "system", { source: "K_Allocations" }, at);
         }
       }
       cursor.last_row_number = Math.max(cursor.last_row_number, maxRow);
