@@ -3465,10 +3465,10 @@ export class PosService {
       throw error;
     }
     const flowers = await this.flowerIndex().catch(() => new Map());
-    return this.importRows(rows, flowers);
+    return this.importRows(rows, flowers, Boolean(opts.force));
   }
 
-  private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null) {
+  private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null, forceFull = false) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -3478,7 +3478,10 @@ export class PosService {
         cursor = { tab: "K_Allocations", last_row_number: 0, last_polled_at: null, last_ok_at: null, last_full_scan_at: null };
         state.cursors.push(cursor);
       }
-      const full = !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
+      // K_Allocations and POS_Refills have independent sheet row numbers. A
+      // forced refresh (the cron/recovery path) must therefore rescan all rows
+      // instead of applying K_Allocations' cursor to POS_Refills.
+      const full = forceFull || !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
       const minRow = full ? 0 : Math.max(0, cursor.last_row_number - IMPORT_OVERLAP_ROWS);
       let imported = 0;
       let maxRow = cursor.last_row_number;
