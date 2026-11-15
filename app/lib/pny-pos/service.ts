@@ -2741,6 +2741,7 @@ export class PosService {
           name: product.name,
           category: product.category,
           size: sizeLabel(product.sku, product.category, product.name),
+          price_cents: sellingPriceCents(state, product.sku),
           on_hand: onHand,
           sold_24h: sold,
           pending_qty: pendingQty,

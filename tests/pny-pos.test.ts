@@ -1699,7 +1699,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /data-testid="kitchen-login"/);
   assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
   assert.match(app, /Search SKU, name or size/);
-  assert.match(app, /htmlFor="kitchen-store">Store/);
+  assert.match(app, /htmlFor="kitchen-store">\{text\.store\}/);
   assert.match(app, /className=\{styles\.storeSelect\}/);
   assert.match(app, /aria-label="SKU sections"/);
   assert.match(app, /\{start\}–\{start \+ 99\}/);
@@ -1714,7 +1714,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /Zero stock/);
   assert.match(app, /Pending refill/);
   assert.match(app, /Sold 24h × 2 − On hand − Pending/);
-  assert.match(app, /REFILL LIST · \{totalUnits\}/);
+  assert.match(app, /\{text\.refillList\} · \{totalUnits\}/);
   assert.doesNotMatch(app, />Review · \{totalUnits\}</);
   assert.match(app, /data-testid="kitchen-confirm"/);
   assert.match(app, /total units/);
@@ -1737,9 +1737,25 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
 test("Kitchen suggestions are hints and only touched quantities enter the refill batch", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   assert.match(app, /qty\[product\.sku\] \?\? ""/);
-  assert.match(app, /Use suggested \{product\.suggested_refill_qty\}/);
+  assert.match(app, /\{text\.useSuggested\} \{product\.suggested_refill_qty\}/);
   assert.doesNotMatch(app, /qty\[product\.sku\] \?\? String\(product\.suggested_refill_qty/);
-  assert.match(app, /Store approval required/);
+  assert.match(app, /approval: "Store approval required"/);
+});
+
+test("Kitchen defaults to Vietnamese, can switch to English, searches every SKU section, and shows stock/refill totals", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(app, /useState<Language>\("vi"\)/);
+  assert.match(app, />VN<\/button>.*>ENG<\/button>/s);
+  assert.match(app, /pnys-kitchen-language/);
+  assert.match(app, /if \(!search && skuRange !== "all"\)/);
+  assert.match(app, /totalStockValueCents/);
+  assert.match(app, /refillValueCents/);
+  assert.match(app, /text\.totalStock/);
+  assert.match(app, /text\.refillTotal/);
+  assert.match(css, /\.topStats/);
+  assert.match(service, /price_cents: sellingPriceCents\(state, product\.sku\)/);
 });
 
 test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolated browser test receipt", () => {
