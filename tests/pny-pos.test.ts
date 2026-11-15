@@ -1756,12 +1756,11 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   assert.match(app, /status: batch\.status === "PENDING" \? "PENDING_CONFIRM" : batch\.status/);
   assert.match(app, /window\.addEventListener\("pageshow", refresh\)/);
   assert.match(app, /PNY01 TEST RECEIVER/);
-  assert.match(route, /await \(await getService\(\)\)\.menu\(\)/);
+  assert.match(route, /const token = await kitchenToken\(\)/);
+  assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
   assert.match(route, /source: "PNYS refreshed PNY01 stock snapshot"/);
-  assert.match(route, /stock_precision: "BLIND_STAFF_VIEW"/);
-  assert.match(route, /price_cents: Number\(row\.price_cents/);
-  assert.match(route, /image_url: row\.image_url/);
+  assert.match(route, /stock_precision: "EXACT_TEST_MIRROR"/);
   assert.match(receiverPage, /<PosApp shadowPny01/);
   assert.match(receiver, /PNY01_SHADOW_KEY/);
   assert.match(receiver, /pny01ShadowView/);
