@@ -1703,10 +1703,13 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /className=\{styles\.storeSelect\}/);
   assert.match(app, /aria-label="SKU sections"/);
   assert.match(app, /\{start\}–\{start \+ 99\}/);
+  assert.match(app, /Math\.max\(1000,/);
   assert.match(app, /changeSort\("sku"\)/);
   assert.match(app, /changeSort\("on_hand"\)/);
   assert.match(app, /changeSort\("sold_24h"\)/);
   assert.match(app, /changeSort\("pending_qty"\)/);
+  assert.match(app, /aria-label="Mobile sort"/);
+  assert.match(css, /\.mobileSort\{display:grid/);
   assert.match(app, /Low stock/);
   assert.match(app, /Zero stock/);
   assert.match(app, /Pending refill/);

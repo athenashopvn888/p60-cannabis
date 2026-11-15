@@ -86,7 +86,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   }), [allProducts, qty]);
   const totalUnits = refillLines.reduce((sum, line) => sum + line.qty, 0);
   const skuRanges = useMemo(() => {
-    const highest = Math.max(100, ...allProducts.map((product) => Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10)).filter(Number.isFinite));
+    const highest = Math.max(1000, ...allProducts.map((product) => Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10)).filter(Number.isFinite));
     const last = Math.max(100, Math.floor(highest / 100) * 100);
     return Array.from({ length: (last - 100) / 100 + 1 }, (_, index) => 100 + index * 100);
   }, [allProducts]);
@@ -175,6 +175,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
         <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>All</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
+        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>Sort by</strong><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel("On hand", "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel("Sold", "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel("Pending", "pending_qty")}</button></div>
         <p className={styles.formula}><strong>Suggested refill</strong> = max(0, Sold 24h × 2 − On hand − Pending). Suggestions are hints and are never added until you tap Use suggested.</p>
         <div className={styles.legend}><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel("On hand", "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel("Sold 24h", "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel("Pending", "pending_qty")}</button><span>Refill</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
