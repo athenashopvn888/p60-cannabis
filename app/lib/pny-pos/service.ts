@@ -1250,6 +1250,26 @@ function ensureQuotedProduct(state: State, sku: string, at: string) {
   }
 }
 
+function ensurePublishedFlowerProduct(state: State, sku: string, flowers: FlowerIndex | null, at: string) {
+  if (state.products.some((row) => row.sku === sku)) return true;
+  const parsed = parseFlowerSku(sku);
+  const record = parsed ? flowers?.get(parsed.base) : null;
+  const cents = flowerPriceCents(flowers, sku);
+  if (!parsed || !record || cents == null || cents <= 0) return false;
+  state.products.push({
+    sku,
+    sku_sort: skuSortKey(sku),
+    name: record.strain ? `${record.strain} ${parsed.size}` : sku,
+    category: record.tier || "Flower",
+    default_price_cents: cents,
+    image_url: record.image,
+    setb_active: true,
+    synced_at: at,
+    created_at: at,
+  });
+  return true;
+}
+
 function mergeLines(lines: { sku?: string; qty?: number }[]) {
   if (lines.length > MAX_ORDER_LINES) throw new PosError(400, "TOO_MANY_LINES", "An order can have at most 10 lines.");
   const map = new Map<string, number>();
@@ -3459,10 +3479,11 @@ export class PosService {
       if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
       throw error;
     }
-    return this.importRows(rows);
+    const flowers = await this.flowerIndex().catch(() => new Map());
+    return this.importRows(rows, flowers);
   }
 
-  private async importRows(rows: SheetRow[]) {
+  private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -3481,7 +3502,7 @@ export class PosService {
         if (sheetRow < minRow) continue;
         maxRow = Math.max(maxRow, sheetRow);
         if ((row.store_code ?? "").trim() !== tillCode()) continue;
-        const problem = this.kitchenProblem(state, row);
+        const problem = this.kitchenProblem(state, row, flowers);
         if (problem) {
           const badId = row.row_id && isUuid(row.row_id) ? `R-${row.row_id}` : `R-BAD-${sheetRow}`;
           enqueue(state, "S_Receipts", badId, {
@@ -3500,6 +3521,9 @@ export class PosService {
           }, at);
           audit(state, "ROW_REJECTED", "sheet", row.row_id || String(sheetRow), "system", { reason: problem }, at);
           continue;
+        }
+        if (!state.products.some((product) => product.sku === row.sku)) {
+          if (!ensurePublishedFlowerProduct(state, row.sku, flowers, at)) ensureQuotedProduct(state, row.sku, at);
         }
         const existing = state.incoming.find((item) => item.kitchen_row_id === row.row_id);
         const qty = Number(row.qty);
@@ -3545,9 +3569,12 @@ export class PosService {
     });
   }
 
-  private kitchenProblem(state: State, row: SheetRow) {
+  private kitchenProblem(state: State, row: SheetRow, flowers: FlowerIndex | null = null) {
     if (!row.row_id || !isUuid(row.row_id)) return "row_id must be a UUID";
-    if (!state.products.some((product) => product.sku === row.sku)) return "SKU does not exist";
+    const known = state.products.some((product) => product.sku === row.sku)
+      || flowerPriceCents(flowers, row.sku) != null
+      || quoteForSku(row.sku) != null;
+    if (!known) return "SKU does not exist";
     if (!/^[1-9]\d*$/.test(row.qty ?? "")) return "qty must be an integer greater than 0";
     const kind = (row.kind ?? "ALLOCATION").toUpperCase();
     if (kind !== "ALLOCATION" && kind !== "REFILL") return "kind must be ALLOCATION or REFILL";

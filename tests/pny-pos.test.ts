@@ -478,6 +478,27 @@ test("13. re-importing a row and double-confirming add stock once", async () => 
   assert.equal(h.db.state.ledger.filter((row) => row.movement_type === "INCOMING_CONFIRM").length, 1);
 });
 
+test("13b. Kitchen can refill a zero-stock flower from the full Flowers catalog", async () => {
+  const h = await readyTill({ "1001": 0, "1002": 0 });
+  h.sheet.grids.Flowers_Raw = [
+    ["SKU", "Strain", "Tier", "Type", "THC", "Price_3G", "Price_5G", "Price_14G", "Price_28G", "ImageURL"],
+    ["396", "KHALIFA KUSH (AAA+ ON SALE)", "BUDGET", "IH SALE", "31%", "20|10", "30|20", "", "", "https://example.com/396.webp"],
+  ];
+  const rowId = crypto.randomUUID();
+  h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "khalifa", store_code: "PNY01", kind: "REFILL", sku: "396-3g", qty: "2", created_at: "2026-11-03T15:00:00+07:00", kitchen_status: "ACTIVE" }];
+
+  const imported = await h.svc.refreshIncoming({ force: true });
+  assert.equal(imported.imported, 1);
+  assert.equal(qty(h.db, "396-3g"), 0);
+  const product = h.db.state.products.find((row) => row.sku === "396-3g");
+  assert.equal(product?.name, "KHALIFA KUSH 3g");
+  assert.equal(product?.default_price_cents, 1000);
+
+  await h.svc.confirmIncoming(h.token, { key: "receive-khalifa", lines: [{ kitchen_row_id: rowId, qty_received: 2 }] });
+  assert.equal(qty(h.db, "396-3g"), 2);
+  assert.equal(h.db.state.ledger.filter((row) => row.sku === "396-3g" && row.movement_type === "INCOMING_CONFIRM").length, 1);
+});
+
 test("14. a partial receipt needs a reason and the receipt shows the variance", async () => {
   const h = await readyTill({ "1001": 0, "1002": 0 });
   const rowId = crypto.randomUUID();
