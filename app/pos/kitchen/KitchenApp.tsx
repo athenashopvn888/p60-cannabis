@@ -47,11 +47,11 @@ const copy = {
 } as const;
 
 const previewProducts: Product[] = [
-  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, enabled: true },
-  { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
-  { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
-  { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
-  { sku: "656", name: "Knock Out MW", category: "EDIBLES", size: "each", on_hand: 0, sold_24h: 0, pending_qty: 0, suggested_refill_qty: 0, enabled: false, approval_required: true },
+  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", price_cents: 500, on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, enabled: true },
+  { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", price_cents: 4000, on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
+  { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", price_cents: 3000, on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
+  { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", price_cents: 250, on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
+  { sku: "656", name: "Knock Out MW", category: "EDIBLES", size: "each", price_cents: 3500, on_hand: 0, sold_24h: 0, pending_qty: 0, suggested_refill_qty: 0, enabled: false, approval_required: true },
 ];
 const previewHistory: HistoryRow[] = [
   { kitchen_row_id: "preview-pending", batch_id: "PNYS-PREVIEW", sku: "396-3g", name: "Preview Flower", size: "3g", qty_sent: 4, qty_received: null, status: "PENDING_CONFIRM", created_at: "2026-11-14T02:30:00.000Z" },
