@@ -1742,6 +1742,22 @@ test("Kitchen suggestions are hints and only touched quantities enter the refill
   assert.match(app, /Store approval required/);
 });
 
+test("PNY01 Kitchen bridge is read-only and accepts only an isolated browser test receipt", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const route = readFileSync("app/api/pos/kitchen/pny01-shadow/route.ts", "utf8");
+  const receiver = readFileSync("app/pos/pny01-refill-preview/Pny01RefillTest.tsx", "utf8");
+  assert.match(app, /PNY01 Live Catalog · Test Receiver/);
+  assert.match(app, /pnys-pny01-shadow-batches/);
+  assert.match(app, /PNY01 TEST RECEIVER/);
+  assert.match(route, /https:\/\/pny1-pos\.vercel\.app\/api\/menu/);
+  assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
+  assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
+  assert.match(route, /stock_precision: "UNAVAILABLE"/);
+  assert.match(receiver, /localStorage/);
+  assert.match(receiver, /A reason is required when received is different from sent/);
+  assert.match(receiver, /never writes to pny_pos or live PNY01 stock/);
+});
+
 test("real Kitchen PIN signs in outside demo without opening or changing a staff shift", { concurrency: false }, async () => {
   const saved = process.env.PNY_KITCHEN_PIN_HASH;
   process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);

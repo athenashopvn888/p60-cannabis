@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./kitchen.module.css";
 
-type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; pending_qty: number; suggested_refill_qty: number; enabled?: boolean; approval_required?: boolean };
+type Product = { sku: string; name: string; category: string; size: string; on_hand: number | null; sold_24h: number | null; pending_qty: number; suggested_refill_qty: number; availability?: string; enabled?: boolean; approval_required?: boolean };
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
 type KitchenView = { authenticated: boolean; store_code?: string; stores?: { code: string; name: string }[]; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
@@ -12,6 +12,8 @@ type Filter = "all" | "low" | "zero" | "pending";
 type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
 type SortDirection = "asc" | "desc";
 type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
+type ShadowBatch = { id: string; store_code: "PNY01_TEST"; sender: string; sent_at: string; status: "PENDING"; lines: RefillLine[] };
+const SHADOW_KEY = "pnys-pny01-shadow-batches";
 
 const previewProducts: Product[] = [
   { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, enabled: true },
@@ -104,7 +106,12 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   }).sort((left, right) => {
     const direction = sortDirection === "asc" ? 1 : -1;
     if (sortKey === "sku") return direction * left.sku.localeCompare(right.sku, "en", { numeric: true });
-    return direction * (left[sortKey] - right[sortKey] || left.sku.localeCompare(right.sku, "en", { numeric: true }));
+    const leftValue = left[sortKey];
+    const rightValue = right[sortKey];
+    if (leftValue == null && rightValue == null) return left.sku.localeCompare(right.sku, "en", { numeric: true });
+    if (leftValue == null) return 1;
+    if (rightValue == null) return -1;
+    return direction * (leftValue - rightValue || left.sku.localeCompare(right.sku, "en", { numeric: true }));
   });
 
   function changeSort(next: SortKey) {
@@ -114,6 +121,21 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
 
   function sortLabel(label: string, key: SortKey) {
     return `${label}${sortKey === key ? sortDirection === "asc" ? " ↑" : " ↓" : ""}`;
+  }
+
+  async function chooseStore(code: string) {
+    setBusy(true); setError(""); setQty({}); setSkuRange("all");
+    try {
+      if (code === "PNY01_TEST") {
+        const next = await readJson(await fetch("/api/pos/kitchen/pny01-shadow", { cache: "no-store", credentials: "same-origin" })) as unknown as KitchenView;
+        setView((current) => ({ ...current, ...next, stores: current.stores }));
+        setSelectedStore(code);
+      } else {
+        await load();
+        setSelectedStore(code);
+      }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load that store."); }
+    finally { setBusy(false); }
   }
 
   async function signIn() {
@@ -137,6 +159,12 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
 
   async function sendRefill() {
     if (!refillLines.length) { setError("Enter a quantity for at least one SKU."); setScreen("refill"); return; }
+    if (selectedStore === "PNY01_TEST") {
+      const batch: ShadowBatch = { id: `PNY01-TEST-${Date.now()}`, store_code: "PNY01_TEST", sender: "Kitchen", sent_at: new Date().toISOString(), status: "PENDING", lines: refillLines };
+      const existing = (() => { try { return JSON.parse(localStorage.getItem(SHADOW_KEY) || "[]") as ShadowBatch[]; } catch { return []; } })();
+      localStorage.setItem(SHADOW_KEY, JSON.stringify([...existing, batch]));
+      setSentLines(refillLines); setQty({}); setScreen("sent"); return;
+    }
     if (isPreview) { setSentLines(refillLines); setScreen("sent"); return; }
     const body = { lines: refillLines.map(({ sku, qty: amount }) => ({ sku, qty: amount })) };
     const key = commands.key("kitchen-refill", body);
@@ -169,8 +197,8 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">
         <label className={styles.storeLabel} htmlFor="kitchen-store">Store</label>
-        <select id="kitchen-store" className={styles.storeSelect} value={selectedStore} onChange={(event) => setSelectedStore(event.target.value)}>
-          {(view.stores ?? [{ code: view.store_code ?? "PNYS", name: view.store_code ?? "PNYS" }]).map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
+        <select id="kitchen-store" className={styles.storeSelect} value={selectedStore} disabled={busy} onChange={(event) => void chooseStore(event.target.value)}>
+          {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Live Catalog · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
         </select>
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
@@ -180,8 +208,8 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
         <div className={styles.legend}><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel("On hand", "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel("Sold 24h", "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel("Pending", "pending_qty")}</button><span>Refill</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
           <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>Store approval required</em> : null}</div>
-          <span className={styles.metric}><small>On hand</small><strong>{product.on_hand}</strong></span>
-          <span className={styles.metric}><small>Sold 24h</small><strong>{product.sold_24h}</strong></span>
+          <span className={styles.metric}><small>On hand</small><strong>{product.on_hand ?? "—"}</strong>{product.on_hand == null ? <small>{product.availability ?? "UNAVAILABLE"}</small> : null}</span>
+          <span className={styles.metric}><small>Sold 24h</small><strong>{product.sold_24h ?? "—"}</strong></span>
           <span className={styles.metric}><small>Pending</small><strong>{product.pending_qty}</strong></span>
           <label className={styles.qty}><small>Refill qty</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? ""} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/>{product.suggested_refill_qty > 0 ? <button type="button" onClick={() => setQty((current) => ({ ...current, [product.sku]: String(product.suggested_refill_qty) }))}>Use suggested {product.suggested_refill_qty}</button> : <small>Suggested 0</small>}</label>
         </article>)}</div>
@@ -189,7 +217,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       </section> : null}
       {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>Confirm refill batch</h1><p>Review every quantity before sending. Stock will not change until store staff confirms receipt.</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span>{line.approval_required ? <em>Store approval required</em> : null}</div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} SKUs</span><strong>{batchTotal} total units</strong></div></section> : null}
       {screen === "history" ? <section data-testid="kitchen-history"><h1>Refill history</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>Batch {row.batch_id} · sent by {row.sent_by ?? "Kitchen"}{row.sent_at_toronto ? ` · ${row.sent_at_toronto} Toronto` : ""}</small>{row.variance_reason ? <small>Reason: {row.variance_reason}</small> : null}</div><div><strong>{row.qty_sent} sent{row.qty_received == null ? "" : ` · ${row.qty_received} received`}</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? "Waiting for staff" : row.status}</span></div></article>)}</div></section> : null}
-      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>Refill sent to PNYS</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} total units</strong><p>Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.</p><button type="button" onClick={() => setScreen("history")}>View refill history</button></section> : null}
+      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>Refill sent to {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : "PNYS"}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} total units</strong><p>Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.</p>{selectedStore === "PNY01_TEST" ? <a className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</a> : <button type="button" onClick={() => setScreen("history")}>View refill history</button>}</section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     <footer className={styles.bottom} data-testid="kitchen-actions">
