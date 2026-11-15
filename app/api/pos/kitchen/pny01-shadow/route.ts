@@ -17,11 +17,13 @@ export async function GET() {
     await (await getService()).kitchenState(token);
     const response = await fetch("https://pny1-pos.vercel.app/api/menu", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!response.ok) throw new Error("PNY01 public menu feed is unavailable.");
-    const body = await response.json() as { items?: Array<{ sku?: string; name?: string; category?: string; availability?: string }> };
+    const body = await response.json() as { items?: Array<{ sku?: string; name?: string; category?: string; price_cents?: number; image_url?: string | null; availability?: string }> };
     const products = (body.items ?? []).map((row) => ({
       sku: String(row.sku ?? "").trim(),
       name: String(row.name ?? "").trim(),
       category: String(row.category ?? "ITEMS").trim(),
+      price_cents: Number(row.price_cents ?? 0),
+      image_url: row.image_url ?? null,
       size: sizeFromSku(String(row.sku ?? "")),
       on_hand: null,
       sold_24h: null,

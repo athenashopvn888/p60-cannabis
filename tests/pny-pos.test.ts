@@ -1754,9 +1754,12 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
   assert.match(route, /stock_precision: "UNAVAILABLE"/);
+  assert.match(route, /price_cents: Number\(row\.price_cents/);
+  assert.match(route, /image_url: row\.image_url/);
   assert.match(receiverPage, /<PosApp shadowPny01/);
   assert.match(receiver, /PNY01_SHADOW_KEY/);
   assert.match(receiver, /pny01ShadowView/);
+  assert.match(receiver, /fetch\("\/api\/pos\/kitchen\/pny01-shadow"/);
   assert.match(receiver, /window\.localStorage\.setItem/);
   assert.match(receiver, /TEST RECEIVER — sales, deposits, closing and live stock are disabled/);
   assert.match(receiver, /<RefillList/);

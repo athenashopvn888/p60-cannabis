@@ -120,7 +120,7 @@ function torontoDate(value: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function pny01ShadowView(): View {
+function pny01ShadowView(products: Product[] = []): View {
   let batches: ShadowBatch[] = [];
   try { batches = JSON.parse(window.localStorage.getItem(PNY01_SHADOW_KEY) || "[]") as ShadowBatch[]; } catch { batches = []; }
   const incoming: PendingRefill[] = batches.filter((batch) => batch.status === "PENDING").flatMap((batch) => batch.lines.map((line) => ({
@@ -139,7 +139,7 @@ function pny01ShadowView(): View {
     authenticated: true, demo: true, demo_label: "PNY01 TEST POS · ISOLATED · NO LIVE STOCK", phase: "sell", can_sell: false,
     shift: { staff_name: "Test Staff", pos_id: "PNY01-TEST", status: "ACTIVE", ticket_letter: "T", started_at: new Date().toISOString() },
     totals: { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: 0, deposited_cents: 0, sale_count: 0 },
-    categories: [], products: [], incoming, tickets: [], pending_count: 0,
+    categories: sortCategories([...new Set(products.map((product) => product.category))]), products, incoming, tickets: [], pending_count: 0,
   };
 }
 
@@ -232,7 +232,19 @@ export default function PosApp({
   }, [storeLabel]);
 
   const load = useCallback(async () => {
-    if (shadowPny01) { setView(pny01ShadowView()); return; }
+    if (shadowPny01) {
+      let products: Product[] = [];
+      try {
+        const response = await fetch("/api/pos/kitchen/pny01-shadow", { cache: "no-store", credentials: "same-origin" });
+        const data = await response.json() as { authenticated?: boolean; products?: Product[] };
+        if (response.ok && data.authenticated) products = data.products ?? [];
+        else setError("Open this test POS from a signed-in Kitchen session to load the PNY01 catalog.");
+      } catch {
+        setError("The read-only PNY01 catalog is temporarily unavailable.");
+      }
+      setView(pny01ShadowView(products));
+      return;
+    }
     const result = await readTillState(storeApi);
     if (result.keep) {
       setError(result.message);
