@@ -33,6 +33,7 @@ export function emptyState(now = new Date().toISOString()): State {
     sale_lines: [],
     deposits: [],
     closings: [],
+    closing_versions: [],
     closing_drafts: [],
     idempotency: [],
     outbox: [],
@@ -49,7 +50,7 @@ export function emptyState(now = new Date().toISOString()): State {
 }
 
 export type Tx = { state: State };
-export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION";
+export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION" | "CLOSE_REDO";
 export type TransactionOptions = { kind?: TransactionKind };
 
 /**
@@ -76,6 +77,22 @@ export function isAuthSessionOnlyChange(before: State, after: State) {
   return JSON.stringify(normalized) === JSON.stringify(before);
 }
 
+/** A frozen preview may replace one completed close, but never sales or refills. */
+export function isCloseRedoOnlyChange(before: State, after: State) {
+  const normalized = structuredClone(after) as State;
+  normalized.sessions = structuredClone(before.sessions);
+  normalized.audit = structuredClone(before.audit);
+  normalized.idempotency = structuredClone(before.idempotency);
+  normalized.closings = structuredClone(before.closings);
+  normalized.closing_versions = structuredClone(before.closing_versions);
+  normalized.counts = structuredClone(before.counts);
+  normalized.count_lines = structuredClone(before.count_lines);
+  normalized.balances = structuredClone(before.balances);
+  normalized.ledger = structuredClone(before.ledger);
+  normalized.deposits = structuredClone(before.deposits);
+  return JSON.stringify(normalized) === JSON.stringify(before);
+}
+
 export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>, options?: TransactionOptions): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
@@ -97,6 +114,7 @@ export class MemoryDb implements PosDb {
   integrationOwners = new Map<IntegrationChannel, IntegrationLease>();
   integrationDeliveries = new Set<string>();
   allowFrozenPreviewAuth = false;
+  allowFrozenPreviewCloseRedo = false;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state?: State) {
@@ -145,7 +163,11 @@ export class MemoryDb implements PosDb {
           && this.allowFrozenPreviewAuth
           && options.kind === "AUTH_SESSION"
           && isAuthSessionOnlyChange(this.state, snapshot);
-        if (!frozenPreviewAuth) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
+        const frozenPreviewCloseRedo = this.writeMode === "FROZEN"
+          && this.allowFrozenPreviewCloseRedo
+          && options.kind === "CLOSE_REDO"
+          && isCloseRedoOnlyChange(this.state, snapshot);
+        if (!frozenPreviewAuth && !frozenPreviewCloseRedo) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
       }
       this.state = snapshot;
       try {

@@ -64,6 +64,7 @@ import type {
 } from "./types.ts";
 
 export const END_SHIFT_MESSAGE = "Summary will post to BOT HUB within 5 min.";
+const POST_CLOSE_ACCESS_MS = 2 * 60 * 60 * 1000;
 type Json = Record<string, unknown>;
 
 export type PosDeps = {
@@ -1136,6 +1137,10 @@ function finishShift(state: State, shift: ShiftRow, reason: string, at: string, 
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
+  if (tillCode() === "PNYS" && reason === "POS_END" && shift.pin_hash) {
+    shift.closing_access_pin_hash = shift.pin_hash;
+    shift.closing_access_expires_at = iso(new Date(Date.parse(at) + POST_CLOSE_ACCESS_MS));
+  }
   shift.pin_hash = null;
   shift.pin_expires_at = at;
   revokeSessions(state, shift.id, at);
@@ -1262,6 +1267,13 @@ function openShifts(state: State) {
   return state.shifts.filter((shift) => shift.store_code === tillCode() && shift.status !== "ENDED");
 }
 
+function postCloseAccessError(state: State, shift: ShiftRow, now: Date) {
+  if (shift.status !== "ENDED" || !shift.ended_at) return "This closing is not available.";
+  if (!shift.closing_access_expires_at || Date.parse(shift.closing_access_expires_at) <= now.getTime()) return "The redo window has expired.";
+  const laterShift = state.shifts.some((row) => row.store_code === shift.store_code && Date.parse(row.started_at) > Date.parse(shift.ended_at!));
+  return laterShift ? "The next shift has opened." : null;
+}
+
 function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string; gate?: "pos" | "kitchen" | "any" }) {
   const want = opts?.gate ?? "pos";
   if (opts?.demo && token.startsWith("v1.")) {
@@ -1290,8 +1302,12 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
   const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
   if (session) {
     const shift = state.shifts.find((row) => row.id === session.shift_id);
-    if (!shift || shift.store_code !== tillCode() || (!session.master && shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+    if (!shift || shift.store_code !== tillCode() || (!session.master && !session.closing_only && shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
       throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
+    }
+    if (session.closing_only) {
+      const blocked = postCloseAccessError(state, shift, now);
+      if (blocked) throw new PosError(401, blocked.startsWith("The next") ? "NEXT_SHIFT_OPEN" : "CLOSE_WINDOW_EXPIRED", blocked);
     }
     const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
     if (!staff || (!session.master && !staff.active)) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
@@ -1640,7 +1656,7 @@ export class PosService {
   private session(state: State, token: string, now: Date, gate: "pos" | "kitchen" | "any" = "pos") {
     this.ensurePny2(state, iso(now));
     const current = requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
-    if (!current.session.master && !weedAnswerRequired(current.shift)) {
+    if (!current.session.master && !current.session.closing_only && !weedAnswerRequired(current.shift)) {
       nameLiveShift(state, iso(now));
       openTillWithoutCount(current.shift, iso(now));
     }
@@ -2108,6 +2124,27 @@ export class PosService {
           return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
         }
       }
+      if (!shift && !master && tillCode() === "PNYS") {
+        const candidates = tx.state.shifts
+          .filter((row) => row.store_code === tillCode() && row.status === "ENDED" && row.closing_access_pin_hash)
+          .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""));
+        const closed = candidates.find((row) => !postCloseAccessError(tx.state, row, now) && verifyPin(pin, row.closing_access_pin_hash!));
+        if (closed?.closing_access_expires_at) {
+          const token = newToken();
+          tx.state.sessions.push({
+            id: randomUUID(),
+            shift_id: closed.id,
+            token_hash: sha256(token),
+            expires_at: closed.closing_access_expires_at,
+            revoked_at: null,
+            created_at: at,
+            closing_only: true,
+          });
+          const staff = tx.state.staff.find((row) => row.staff_uid === closed.staff_uid);
+          audit(tx.state, "POST_CLOSE_LOGIN", "shift", closed.id, closed.staff_uid, { expires_at: closed.closing_access_expires_at }, at);
+          return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "", closing_only: true };
+        }
+      }
       if (!shift) return { ok: false as const, status: 401, code: "NO_SHIFT", message: "No shift is active." };
       if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
@@ -2291,6 +2328,33 @@ export class PosService {
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff, session } = this.session(tx.state, token, now, gate);
+      if (session.closing_only) {
+        const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+        if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+        return {
+          ok: true,
+          closing_only: true,
+          phase: "closed",
+          shift: {
+            id: shift.id,
+            sccx_shift_id: shift.sccx_shift_id,
+            staff_name: staff.display_name,
+            pos_id: staff.pos_id,
+            started_at: shift.started_at,
+            ended_at: shift.ended_at,
+            status: shift.status,
+          },
+          post_close: {
+            expires_at: shift.closing_access_expires_at,
+            version: closing.version ?? 1,
+            reclosed: Boolean(closing.reclosed_at),
+            closing,
+            deposits: tx.state.deposits
+              .filter((row) => row.shift_id === shift.id)
+              .map((row) => ({ code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
+          },
+        };
+      }
       const master = Boolean(session.master);
       if (!master && !weedAnswerRequired(shift)) {
         nameLiveShift(tx.state, iso(now));
@@ -2457,6 +2521,107 @@ export class PosService {
       };
   }
 
+  async startClosingRedo(token: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      if (!session.closing_only) throw new PosError(403, "CLOSING_ONLY", "This action is only available after your shift closes.");
+      const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+      if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+      audit(tx.state, "CLOSING_REDO_OPENED", "shift", shift.id, staff.staff_uid, { version: closing.version ?? 1 }, at);
+      return {
+        ok: true,
+        version: closing.version ?? 1,
+        counts: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, counted_qty: line.left })),
+        final_deposit_cents: closing.final_deposit_cents ?? 0,
+        float_cents: closing.float_cents ?? 0,
+      };
+    }, { kind: "CLOSE_REDO" });
+  }
+
+  async submitClosingRedo(token: string, input: { key: string; counts: { sku: string; counted_qty: number }[]; final_deposit_cents: number; float_cents: number }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      if (!session.closing_only) throw new PosError(403, "CLOSING_ONLY", "This action is only available after your shift closes.");
+      const replayed = replay(tx.state, "closing_redo", input.key, body, now, this.deps.secrets.session);
+      if (replayed) return replayed;
+      const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+      if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+      const bySku = new Map(input.counts.map((row) => [row.sku.trim(), row.counted_qty]));
+      if (bySku.size !== closing.closing_lines.length || closing.closing_lines.some((line) => !bySku.has(line.sku))) {
+        throw new PosError(400, "COUNT_INCOMPLETE", "Every closing SKU must be included.");
+      }
+      const finalDeposit = roundCents(input.final_deposit_cents);
+      const floatCents = roundCents(input.float_cents);
+      if (!Number.isFinite(finalDeposit) || finalDeposit < 0 || !Number.isFinite(floatCents) || floatCents < 0) {
+        throw new PosError(400, "BAD_AMOUNT", "Deposit and till cash must be valid amounts.");
+      }
+      const before = structuredClone(closing) as ClosingRow;
+      const oldVersion = closing.version ?? 1;
+      tx.state.closing_versions ??= [];
+      if (!tx.state.closing_versions.some((row) => row.shift_id === shift.id && row.version === oldVersion)) {
+        tx.state.closing_versions.push({ id: randomUUID(), shift_id: shift.id, version: oldVersion, closing: before, actor: staff.staff_uid, created_at: at });
+      }
+
+      const countId = randomUUID();
+      const newLines = closing.closing_lines.map((line) => {
+        const counted = bySku.get(line.sku)!;
+        if (!Number.isInteger(counted) || counted < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
+        const expected = line.expected_qty ?? line.system_qty;
+        const variance = lineVariance({ expected_qty: expected, counted_qty: counted, price_cents: line.price_cents ?? 0 });
+        const delta = counted - line.left;
+        tx.state.count_lines.push({ id: randomUUID(), count_id: countId, sku: line.sku, system_qty: line.left, counted_qty: counted, variance_reason: "Re-closed by staff" });
+        if (delta !== 0) {
+          const next = balanceAdd(tx.state, line.sku, delta, at, true);
+          if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Count would take stock below zero.");
+          ledger(tx.state, line.sku, delta, "ADJUSTMENT", "closing_redo", `${shift.id}:v${oldVersion + 1}`, staff.staff_uid, "Re-closed by staff", shift.id, at);
+        }
+        return { ...line, left: counted, system_qty: line.left, variance_qty: variance.variance_qty, shortage_cents: variance.shortage_cents, overage_cents: variance.overage_cents };
+      });
+      tx.state.counts.push({ id: countId, shift_id: shift.id, kind: "CLOSING", confirmed_at: at, created_at: at });
+
+      const finalRowIndex = tx.state.deposits.findIndex((row) => row.shift_id === shift.id && row.note === "final deposit");
+      if (finalRowIndex >= 0 && finalDeposit === 0) tx.state.deposits.splice(finalRowIndex, 1);
+      else if (finalRowIndex >= 0) tx.state.deposits[finalRowIndex]!.amount_cents = finalDeposit;
+      else if (finalDeposit > 0) tx.state.deposits.push({
+        id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit,
+        note: "final deposit", deposit_code: issueDepositCode(tx.state), created_at: at,
+      });
+
+      const totals = shiftTotals(tx.state, shift.id);
+      const shortage = newLines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
+      const overage = newLines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+      Object.assign(closing, {
+        cash_on_hand_cents: totals.cash_on_hand_cents,
+        deposited_cents: totals.deposited_cents,
+        final_deposit_cents: finalDeposit,
+        float_cents: floatCents,
+        shortage_cents: shortage,
+        overage_cents: overage,
+        balance_cents: closingBalance({ cash_sales_cents: totals.cash_sales_cents, shortage_cents: shortage, overage_cents: overage, deposited_cents: totals.deposited_cents }),
+        closing_lines: newLines,
+        version: oldVersion + 1,
+        reclosed_at: at,
+        reclosed_by: staff.staff_uid,
+      });
+      closing.summary_text = `${summaryText(shift, staff.pos_id, closing)}\nRe-closed · version ${closing.version}`;
+      tx.state.closing_versions.push({ id: randomUUID(), shift_id: shift.id, version: closing.version!, closing: structuredClone(closing), actor: staff.staff_uid, created_at: at });
+      audit(tx.state, "CLOSING_REPLACED", "shift", shift.id, staff.staff_uid, {
+        from_version: oldVersion,
+        to_version: closing.version,
+        before: { counts: before.closing_lines.map((line) => ({ sku: line.sku, qty: line.left })), final_deposit_cents: before.final_deposit_cents ?? 0, float_cents: before.float_cents ?? 0 },
+        after: { counts: newLines.map((line) => ({ sku: line.sku, qty: line.left })), final_deposit_cents: finalDeposit, float_cents: floatCents },
+      }, at);
+      const result = { ok: true, closing, version: closing.version, reclosed: true };
+      remember(tx.state, "closing_redo", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    }, { kind: "CLOSE_REDO" });
+  }
+
   /** Read-only Kitchen dashboard data. This never advances or rewrites till state. */
   async kitchenState(token: string) {
     const state = await this.readState();
@@ -2582,6 +2747,12 @@ export class PosService {
           shortage_cents: closing.shortage_cents ?? 0,
           overage_cents: closing.overage_cents ?? 0,
           no_count: closing.no_count,
+          version: closing.version ?? 1,
+          reclosed_at: closing.reclosed_at ?? null,
+          versions: (state.closing_versions ?? [])
+            .filter((row) => row.shift_id === closing.shift_id)
+            .sort((a, b) => a.version - b.version)
+            .map((row) => ({ version: row.version, actor: row.actor, created_at: row.created_at })),
         };
       });
     const auditLog = [...state.audit]

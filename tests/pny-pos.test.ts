@@ -1467,6 +1467,66 @@ test("PNYS demo PIN creates only a test staff shift over the cloned inventory", 
   assert.equal(db.state.staff.filter((row) => row.staff_uid === "staff-demo-pnys").length, 1);
 });
 
+test("PNYS post-close PIN is closing-only, versions a redo, and applies stock difference once", async () => {
+  await runStore(PNYS_STORE, async () => {
+    const h = harness(new Date("2026-11-15T08:00:00.000Z"));
+    h.db.state.stores[0]!.code = "PNYS";
+    h.db.state.stores[0]!.name = "PNYS";
+    await h.svc.syncSetb([{ sku: "240", name: "Preview Product", category: "ADD ONS", price_cents: 500, active: true }]);
+    const admin = await h.svc.adminLogin(secrets.admin);
+    await h.svc.openingBalance(admin.token, { key: "pnys-close-opening", sku: "240", qty: 2 });
+    await h.svc.importRoster({ key: "pnys-close-roster", staff: [{ staff_uid: "staff-close", sccx_id: "close", pos_id: "C1", display_name: "Close Staff", active: true }] });
+    const started = await h.svc.startShift({ key: "pnys-close-start", store: "PNYS", staff_ref: "staff-close", pos_id: "C1", shift_id: "pnys-close-1" });
+    const active = await h.svc.login(String(started.pin), "10.0.0.40");
+    await h.svc.state(active.token);
+    await h.svc.startClosingCount(active.token);
+    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
+    await h.svc.submitClosingCount(active.token);
+    await h.svc.endShiftFromPos(active.token, { key: "pnys-close-end", lines: [{ sku: "240", counted_qty: 1 }], final_deposit_cents: 0, float_cents: 1000 });
+    assert.equal(qty(h.db, "240"), 1);
+    assert.equal(h.db.state.shifts[0]?.pin_hash, null);
+    assert.ok(h.db.state.shifts[0]?.closing_access_pin_hash);
+
+    h.db.writeMode = "FROZEN";
+    h.db.allowFrozenPreviewAuth = true;
+    h.db.allowFrozenPreviewCloseRedo = true;
+    const closed = await h.svc.login(String(started.pin), "10.0.0.40");
+    const own = await h.svc.state(closed.token);
+    assert.equal(own.closing_only, true);
+    assert.equal(own.post_close.closing.closing_lines[0].left, 1);
+    await rejects(() => h.svc.cashout(closed.token, { key: "blocked-sale", payment_method: "CASH", lines: [{ sku: "240", qty: 1 }] }), "SHIFT_NOT_ACTIVE");
+
+    const draft = await h.svc.startClosingRedo(closed.token);
+    assert.deepEqual(draft.counts.map((row) => [row.sku, row.counted_qty]), [["240", 1]]);
+    const body = { key: "pnys-redo-v2", counts: [{ sku: "240", counted_qty: 0 }], final_deposit_cents: 0, float_cents: 900 };
+    const replaced = await h.svc.submitClosingRedo(closed.token, body);
+    const replayed = await h.svc.submitClosingRedo(closed.token, body);
+    assert.equal(replaced.version, 2);
+    assert.equal(replayed.version, 2);
+    assert.equal(qty(h.db, "240"), 0);
+    assert.equal(h.db.state.ledger.filter((row) => row.ref_type === "closing_redo").length, 1);
+    assert.deepEqual(h.db.state.closing_versions?.map((row) => row.version), [1, 2]);
+    assert.match(h.db.state.closings[0]!.summary_text, /Re-closed · version 2/);
+
+    h.clock.t = new Date("2026-11-15T10:00:01.000Z");
+    await rejects(() => h.svc.login(String(started.pin), "10.0.0.41"), "NO_SHIFT");
+
+    h.db.writeMode = "ACTIVE";
+    h.clock.t = new Date("2026-11-15T08:01:00.000Z");
+    await h.svc.startShift({ key: "pnys-next-start", store: "PNYS", staff_ref: "staff-close", pos_id: "C1", shift_id: "pnys-close-2" });
+    await rejects(() => h.svc.state(closed.token), "NEXT_SHIFT_OPEN");
+  });
+});
+
+test("post-close mobile UI exposes only summary, redo warning, entry and re-closed report", () => {
+  const source = readFileSync(join(process.cwd(), "app/pos/PostCloseClosing.tsx"), "utf8");
+  assert.match(source, /This login can only see your own closing/);
+  assert.match(source, /Redo this close\?/);
+  assert.match(source, /No sales or refills are available during redo/);
+  assert.match(source, /RE-CLOSED · VERSION/);
+  assert.doesNotMatch(source, /href=.*(?:kitchen|manager|till)/i);
+});
+
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {
   const db = new MemoryDb();
   const now = new Date("2026-11-03T15:00:00.000Z");

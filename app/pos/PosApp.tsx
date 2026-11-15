@@ -21,6 +21,7 @@ import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import WeedShiftGate from "./WeedShiftGate";
 import WeedToggle from "./WeedToggle";
 import ProductScanner from "./ProductScanner";
+import PostCloseClosing, { type PostCloseView } from "./PostCloseClosing";
 import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
 
 type VerifyLine = { sku: string; text: string; name: string; price_cents: number; counted_qty: number | null; locked?: boolean };
@@ -72,7 +73,7 @@ type View = {
   master?: boolean;
   can_sell?: boolean;
   block?: string | null;
-  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; started_at: string; weed_in_store?: boolean | null };
+  shift?: { staff_name: string; pos_id: string; status: string; ticket_letter: string; started_at: string; sccx_shift_id?: string; ended_at?: string | null; weed_in_store?: boolean | null };
   weed_gate?: { required: boolean; answer: boolean | null; answered_at: string | null };
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
   deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
@@ -108,6 +109,8 @@ type View = {
   };
   error?: string;
   code?: string;
+  closing_only?: boolean;
+  post_close?: PostCloseView["post_close"];
 };
 
 async function post(url: string, body: unknown, key?: string, signal?: AbortSignal) {
@@ -657,6 +660,10 @@ export default function PosApp({
   }
 
   if (!view) return <main className={styles.shell}>Loading till…</main>;
+
+  if (view.authenticated && view.closing_only && view.post_close && view.shift) {
+    return <PostCloseClosing view={{ shift: view.shift, post_close: view.post_close }} apiBase={storeApi}/>;
+  }
 
   if (!view.authenticated && !(sheet === "close" && closeHold && closeSnap)) {
     const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "⌫"];

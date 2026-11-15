@@ -81,6 +81,9 @@ export type ShiftRow = {
   pin_hash: string | null;
   pin_expires_at: string | null;
   pin_failed_attempts: number;
+  /** Hash-only, time-limited access to this staff member's own completed close. */
+  closing_access_pin_hash?: string | null;
+  closing_access_expires_at?: string | null;
   status: ShiftStatus;
   started_at: string;
   ended_at: string | null;
@@ -106,6 +109,7 @@ export type SessionRow = {
   revoked_at: string | null;
   created_at: string;
   master?: boolean;
+  closing_only?: boolean;
 };
 
 export type IncomingRow = {
@@ -303,6 +307,18 @@ export type ClosingRow = {
   created_at: string;
   /** Master plus close date, such as PNY-1104-1105. Missing on closings saved before labels. */
   close_label?: string;
+  version?: number;
+  reclosed_at?: string | null;
+  reclosed_by?: string | null;
+};
+
+export type ClosingVersionRow = {
+  id: string;
+  shift_id: string;
+  version: number;
+  closing: ClosingRow;
+  actor: string;
+  created_at: string;
 };
 
 export type ClosingDraftRow = {
@@ -407,6 +423,7 @@ export type State = {
   sale_lines: SaleLineRow[];
   deposits: DepositRow[];
   closings: ClosingRow[];
+  closing_versions?: ClosingVersionRow[];
   closing_drafts: ClosingDraftRow[];
   idempotency: IdemRow[];
   outbox: OutboxRow[];
