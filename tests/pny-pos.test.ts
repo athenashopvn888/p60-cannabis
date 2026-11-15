@@ -990,6 +990,18 @@ test("the stock feed returns authoritative enabled balances without changing the
   assert.equal(JSON.stringify(h.db.state), before);
 });
 
+test("the production stock feed uses the read-only snapshot path", async () => {
+  const h = await readyTill({ "1001": 4 });
+  const state = structuredClone(h.db.state);
+  (h.db as typeof h.db & { peek: () => Promise<typeof state> }).peek = async () => state;
+  h.db.transaction = async () => {
+    throw new Error("stock feed must not open a write transaction");
+  };
+
+  const feed = await h.svc.stockFeed();
+  assert.equal(feed.products.find((row) => row.sku === "1001")?.on_hand, 4);
+});
+
 test("the stock feed includes balances whose catalog row is missing", async () => {
   const h = await readyTill({ "1001": 2 });
   h.db.state.balances.push({
