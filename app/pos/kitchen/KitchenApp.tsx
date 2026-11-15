@@ -12,7 +12,9 @@ type Filter = "all" | "low" | "zero" | "pending";
 type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
 type SortDirection = "asc" | "desc";
 type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
-type ShadowBatch = { id: string; store_code: "PNY01_TEST"; sender: string; sent_at: string; status: "PENDING"; lines: RefillLine[] };
+type ShadowReceiptLine = { sku: string; name: string; qty_sent: number; qty_received: number; variance: number; reason?: string | null };
+type ShadowReceipt = { received_by: string; received_at_toronto: string; lines: ShadowReceiptLine[] };
+type ShadowBatch = { id: string; store_code: "PNY01_TEST"; sender: string; sent_at: string; status: "PENDING" | "CONFIRMED" | "PARTIAL" | "REJECTED"; lines: RefillLine[]; receipt?: ShadowReceipt };
 const SHADOW_KEY = "pnys-pny01-shadow-batches";
 
 const previewProducts: Product[] = [
@@ -39,6 +41,44 @@ function screenTitle(screen: Screen) {
   if (screen === "confirm") return "Confirm batch";
   if (screen === "history") return "Refill history";
   return "Sent to store";
+}
+
+function readShadowBatches() {
+  try { return JSON.parse(localStorage.getItem(SHADOW_KEY) || "[]") as ShadowBatch[]; }
+  catch { return [] as ShadowBatch[]; }
+}
+
+function withShadowReceipts(next: KitchenView): KitchenView {
+  const batches = readShadowBatches();
+  const receivedBySku = new Map<string, number>();
+  for (const batch of batches) for (const line of batch.receipt?.lines ?? []) {
+    receivedBySku.set(line.sku, (receivedBySku.get(line.sku) ?? 0) + line.qty_received);
+  }
+  const products = (next.products ?? []).map((product) => ({
+    ...product,
+    on_hand: product.on_hand == null ? null : product.on_hand + (receivedBySku.get(product.sku) ?? 0),
+  }));
+  const history = batches.flatMap((batch) => batch.lines.map((line) => {
+    const received = batch.receipt?.lines.find((row) => row.sku === line.sku);
+    return {
+      kitchen_row_id: `${batch.id}:${line.sku}`,
+      batch_id: batch.id,
+      sku: line.sku,
+      name: line.name,
+      size: line.size,
+      qty_sent: line.qty,
+      qty_received: received?.qty_received ?? null,
+      status: batch.status === "PENDING" ? "PENDING_CONFIRM" : batch.status,
+      variance_reason: received?.reason ?? null,
+      sent_by: batch.sender,
+      received_by: batch.receipt?.received_by ?? null,
+      created_at: batch.sent_at,
+      sent_at_toronto: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", dateStyle: "medium", timeStyle: "short" }).format(new Date(batch.sent_at)),
+      received_at_toronto: batch.receipt?.received_at_toronto ?? null,
+      approval_required: line.approval_required,
+    } satisfies HistoryRow;
+  }));
+  return { ...next, products, history };
 }
 
 export default function KitchenApp({ preview }: { preview?: "login" | Screen }) {
@@ -88,6 +128,20 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreview, view.authenticated, selectedStore]);
 
+  useEffect(() => {
+    if (isPreview || !view.authenticated || selectedStore !== "PNY01_TEST") return;
+    const refresh = () => { void loadShadowStore(); };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreview, view.authenticated, selectedStore]);
+
   const allProducts = view.products ?? noProducts;
   const refillLines = useMemo(() => allProducts.flatMap((product) => {
     const raw = qty[product.sku] ?? "";
@@ -131,13 +185,17 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     return `${label}${sortKey === key ? sortDirection === "asc" ? " ↑" : " ↓" : ""}`;
   }
 
+  async function loadShadowStore() {
+    const next = await readJson(await fetch("/api/pos/kitchen/pny01-shadow", { cache: "no-store", credentials: "same-origin" })) as unknown as KitchenView;
+    setView((current) => ({ ...current, ...withShadowReceipts(next), stores: current.stores }));
+    setSelectedStore("PNY01_TEST");
+  }
+
   async function chooseStore(code: string) {
     setBusy(true); setError(""); setQty({}); setSkuRange("all");
     try {
       if (code === "PNY01_TEST") {
-        const next = await readJson(await fetch("/api/pos/kitchen/pny01-shadow", { cache: "no-store", credentials: "same-origin" })) as unknown as KitchenView;
-        setView((current) => ({ ...current, ...next, stores: current.stores }));
-        setSelectedStore(code);
+        await loadShadowStore();
       } else {
         await load();
         setSelectedStore(code);
@@ -169,7 +227,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     if (!refillLines.length) { setError("Enter a quantity for at least one SKU."); setScreen("refill"); return; }
     if (selectedStore === "PNY01_TEST") {
       const batch: ShadowBatch = { id: `PNY01-TEST-${Date.now()}`, store_code: "PNY01_TEST", sender: "Kitchen", sent_at: new Date().toISOString(), status: "PENDING", lines: refillLines };
-      const existing = (() => { try { return JSON.parse(localStorage.getItem(SHADOW_KEY) || "[]") as ShadowBatch[]; } catch { return []; } })();
+      const existing = readShadowBatches();
       localStorage.setItem(SHADOW_KEY, JSON.stringify([...existing, batch]));
       setSentLines(refillLines); setQty({}); setScreen("sent"); return;
     }

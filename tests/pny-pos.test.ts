@@ -1751,6 +1751,10 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   assert.match(app, /get\("store"\) !== "PNY01_TEST"/);
   assert.match(app, /void chooseStore\("PNY01_TEST"\)/);
   assert.match(app, /pnys-pny01-shadow-batches/);
+  assert.match(app, /function withShadowReceipts/);
+  assert.match(app, /product\.on_hand \+ \(receivedBySku\.get\(product\.sku\) \?\? 0\)/);
+  assert.match(app, /status: batch\.status === "PENDING" \? "PENDING_CONFIRM" : batch\.status/);
+  assert.match(app, /window\.addEventListener\("pageshow", refresh\)/);
   assert.match(app, /PNY01 TEST RECEIVER/);
   assert.match(route, /await \(await getService\(\)\)\.menu\(\)/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
