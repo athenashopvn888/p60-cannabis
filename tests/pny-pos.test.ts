@@ -1699,6 +1699,14 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /data-testid="kitchen-login"/);
   assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
   assert.match(app, /Search SKU, name or size/);
+  assert.match(app, /htmlFor="kitchen-store">Store/);
+  assert.match(app, /className=\{styles\.storeSelect\}/);
+  assert.match(app, /aria-label="SKU sections"/);
+  assert.match(app, /\{start\}–\{start \+ 99\}/);
+  assert.match(app, /changeSort\("sku"\)/);
+  assert.match(app, /changeSort\("on_hand"\)/);
+  assert.match(app, /changeSort\("sold_24h"\)/);
+  assert.match(app, /changeSort\("pending_qty"\)/);
   assert.match(app, /Low stock/);
   assert.match(app, /Zero stock/);
   assert.match(app, /Pending refill/);
@@ -1715,6 +1723,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(css, /overflow-y: auto/);
   assert.match(css, /@media\(max-width:390px\)/);
   assert.match(service, /async kitchenState\(token: string\)/);
+  assert.match(service, /stores: \[\{ code: tillCode\(\), name:/);
   assert.match(service, /suggested_refill_qty/);
   assert.match(service, /24 \* 60 \* 60 \* 1000/);
   assert.match(service, /async queueKitchenRefill/);

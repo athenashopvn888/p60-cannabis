@@ -2780,7 +2780,15 @@ export class PosService {
         sent_at_toronto: torontoDateTime(row.sent_at),
         received_at_toronto: torontoDateTime(row.received_at),
       }));
-    return { authenticated: true as const, store_code: tillCode(), products, history, receipts };
+    const currentStore = state.stores.find((row) => row.code === tillCode());
+    return {
+      authenticated: true as const,
+      store_code: tillCode(),
+      stores: [{ code: tillCode(), name: currentStore?.name || tillCode() }],
+      products,
+      history,
+      receipts,
+    };
   }
 
   /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */

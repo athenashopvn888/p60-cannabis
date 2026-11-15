@@ -6,9 +6,11 @@ import styles from "./kitchen.module.css";
 
 type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; pending_qty: number; suggested_refill_qty: number; enabled?: boolean; approval_required?: boolean };
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
-type KitchenView = { authenticated: boolean; store_code?: string; products?: Product[]; history?: HistoryRow[] };
+type KitchenView = { authenticated: boolean; store_code?: string; stores?: { code: string; name: string }[]; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
 type Filter = "all" | "low" | "zero" | "pending";
+type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
+type SortDirection = "asc" | "desc";
 type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
 
 const previewProducts: Product[] = [
@@ -40,11 +42,15 @@ function screenTitle(screen: Screen) {
 export default function KitchenApp({ preview }: { preview?: "login" | Screen }) {
   const isPreview = Boolean(preview);
   const initialScreen = preview && preview !== "login" ? preview : "refill";
-  const [view, setView] = useState<KitchenView>(() => preview === "login" ? { authenticated: false } : isPreview ? { authenticated: true, store_code: "PNYS", products: previewProducts, history: previewHistory } : { authenticated: false });
+  const [view, setView] = useState<KitchenView>(() => preview === "login" ? { authenticated: false } : isPreview ? { authenticated: true, store_code: "PNYS", stores: [{ code: "PNYS", name: "PNYS Test Store" }], products: previewProducts, history: previewHistory } : { authenticated: false });
   const [pin, setPin] = useState("");
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [selectedStore, setSelectedStore] = useState("PNYS");
+  const [skuRange, setSkuRange] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("sku");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [qty, setQty] = useState<Record<string, string>>(() => preview === "sent" ? { "240": "6", "261-14g": "3" } : ({} as Record<string, string>));
   const [sentLines, setSentLines] = useState<RefillLine[]>(() => preview === "sent" ? [
     { sku: "240", name: "Preview Product", size: "each", qty: 6 },
@@ -57,7 +63,9 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   async function load() {
     const response = await fetch("/api/pos/kitchen/state", { cache: "no-store", credentials: "same-origin" });
     if (response.status === 401) { setView({ authenticated: false }); return; }
-    setView(await readJson(response) as unknown as KitchenView);
+    const next = await readJson(response) as unknown as KitchenView;
+    setView(next);
+    setSelectedStore(next.store_code ?? "PNYS");
   }
 
   useEffect(() => {
@@ -77,14 +85,35 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     return amount > 0 ? [{ sku: product.sku, name: product.name, size: product.size, qty: amount, approval_required: product.approval_required }] : [];
   }), [allProducts, qty]);
   const totalUnits = refillLines.reduce((sum, line) => sum + line.qty, 0);
+  const skuRanges = useMemo(() => [...new Set(allProducts.map((product) => {
+    const base = Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10);
+    return Number.isFinite(base) ? Math.floor(base / 100) * 100 : null;
+  }).filter((value): value is number => value !== null))].sort((a, b) => a - b), [allProducts]);
   const products = allProducts.filter((product) => {
     const matchesQuery = `${product.sku} ${product.name} ${product.size}`.toLowerCase().includes(query.trim().toLowerCase());
     if (!matchesQuery) return false;
+    if (skuRange !== "all") {
+      const base = Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10);
+      if (!Number.isFinite(base) || Math.floor(base / 100) * 100 !== Number(skuRange)) return false;
+    }
     if (filter === "low") return product.suggested_refill_qty > 0;
     if (filter === "zero") return product.on_hand === 0;
     if (filter === "pending") return product.pending_qty > 0;
     return true;
+  }).sort((left, right) => {
+    const direction = sortDirection === "asc" ? 1 : -1;
+    if (sortKey === "sku") return direction * left.sku.localeCompare(right.sku, "en", { numeric: true });
+    return direction * (left[sortKey] - right[sortKey] || left.sku.localeCompare(right.sku, "en", { numeric: true }));
   });
+
+  function changeSort(next: SortKey) {
+    if (sortKey === next) setSortDirection((current) => current === "asc" ? "desc" : "asc");
+    else { setSortKey(next); setSortDirection("asc"); }
+  }
+
+  function sortLabel(label: string, key: SortKey) {
+    return `${label}${sortKey === key ? sortDirection === "asc" ? " ↑" : " ↓" : ""}`;
+  }
 
   async function signIn() {
     setBusy(true); setError("");
@@ -138,10 +167,15 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     </header>
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">
+        <label className={styles.storeLabel} htmlFor="kitchen-store">Store</label>
+        <select id="kitchen-store" className={styles.storeSelect} value={selectedStore} onChange={(event) => setSelectedStore(event.target.value)}>
+          {(view.stores ?? [{ code: view.store_code ?? "PNYS", name: view.store_code ?? "PNYS" }]).map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
+        </select>
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
+        <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>All</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
         <p className={styles.formula}><strong>Suggested refill</strong> = max(0, Sold 24h × 2 − On hand − Pending). Suggestions are hints and are never added until you tap Use suggested.</p>
-        <div className={styles.legend}><span>SKU</span><span>On hand</span><span>Sold 24h</span><span>Pending</span><span>Refill</span></div>
+        <div className={styles.legend}><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel("On hand", "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel("Sold 24h", "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel("Pending", "pending_qty")}</button><span>Refill</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
           <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>Store approval required</em> : null}</div>
           <span className={styles.metric}><small>On hand</small><strong>{product.on_hand}</strong></span>
