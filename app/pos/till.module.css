@@ -1125,17 +1125,83 @@
   background: #fff;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
 }
 
+.closeTop {
+  flex: 0 0 auto;
+  min-height: calc(62px + env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+  background: #111827;
+  color: #fff;
+}
+
+.closeTop > div:nth-child(2) { text-align: center; }
+.closeTop small { display: block; margin-top: 2px; color: #d1d5db; }
+.closeTest { justify-self: end; color: #fbbf24; font-size: 12px; }
+
 .closeBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   width: min(100%, 900px);
   margin: 0 auto;
   box-sizing: border-box;
-  padding: 18px 16px 30px;
+  padding: 18px 16px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.closeActions {
+  flex: 0 0 auto;
+  min-height: calc(76px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid #d1d5db;
+  background: #fff;
+  box-shadow: 0 -8px 24px rgb(0 0 0 / 10%);
+}
+
+.closeActions button {
+  flex: 1 1 0;
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.closeBack { background: #e7e5e4; color: #1c1917; }
+.closeNext, .closePost { background: #166534; color: #fff; }
+.scanDisabled, .scanDisabled:disabled { background: #9ca3af; color: #f3f4f6; opacity: 1; }
+.closeActions button:disabled:not(.scanDisabled) { opacity: .55; }
+
+.floatCompare { margin: 16px 0; padding: 14px; border: 2px solid #2563eb; border-radius: 16px; background: #eff6ff; }
+.floatCompare h3, .floatCompare p { margin: 0 0 8px; }
+.floatCards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.floatCards article { display: grid; gap: 8px; min-width: 0; padding: 12px; border-radius: 12px; background: #fff; }
+.floatCards span { font-size: 20px; font-weight: 900; }
+.floatCards small { color: #57534e; line-height: 1.3; }
+
+@media (max-width: 390px) {
+  .closeTop { grid-template-columns: minmax(0, 1fr) auto; font-size: 12px; }
+  .closeTop > div:nth-child(2) { text-align: right; }
+  .closeTest { grid-column: 1 / -1; justify-self: center; margin-top: -4px; }
+  .closeBody { padding: 14px 12px 20px; }
+  .closeActions { gap: 6px; padding-inline: 6px; }
+  .closeActions button { min-height: 50px; font-size: 14px; }
+  .floatCards { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .floatCards article { padding: 9px; }
+  .floatCards span { font-size: 17px; }
 }
 
 .closeBody form > .primary,
@@ -1375,8 +1441,24 @@
 
 .countRuleRow {
   display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-end;
   padding: 2px 8px 0;
+}
+
+@media (max-width: 480px) {
+  .footerBar .clearCart,
+  .footerBar .cash {
+    min-width: 72px;
+    padding-inline: 7px;
+    font-size: 13px;
+  }
+
+  .footerBar .cartValue {
+    padding-inline: 3px;
+    font-size: 22px;
+  }
 }
 
 .countRuleBtn {
@@ -1567,6 +1649,13 @@
   font-size: 20px;
   font-weight: 800;
   text-align: right;
+}
+
+.countListRow .countSearch {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 110px;
+  text-align: left;
 }
 
 .countNext,

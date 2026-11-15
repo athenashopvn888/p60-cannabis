@@ -1,46 +1,9 @@
-import { currentStore } from "../../lib/pny-pos/storeContext";
-import TillSummary from "../TillSummary";
-import styles from "../till.module.css";
+import ClosingFlowPreview from "./ClosingFlowPreview";
 
 export const dynamic = "force-dynamic";
 
-export default function ClosingSummaryPreviewPage() {
-  const store = currentStore();
-  return (
-    <main className={styles.close} data-testid="closing-summary-preview">
-      <div className={styles.closeBody}>
-        <div className={styles.demo}>PREVIEW · SAMPLE VALUES · NO LIVE DATA</div>
-        <div className={styles.accountantBanner} role="status">
-          TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT
-        </div>
-        <TillSummary
-          storeLabel={store.code}
-          staffName="Preview Staff"
-          startedAt="2026-11-10T15:00:00.000Z"
-          endedAt="2026-11-10T23:30:00.000Z"
-          closeLabel="PNY-1110-1830"
-          weedInStore={true}
-          deposits={[
-            { code: `${store.depositPrefix}0041`, amountCents: 50000 },
-            { code: `${store.depositPrefix}0042`, amountCents: 21000 },
-          ]}
-          expenseCents={0}
-          cashSalesCents={69000}
-          depositedCents={71000}
-          floatCents={5000}
-          openLines={[
-            { sku: "1015", text: "1015 pack", units: -2, cents: -500 },
-            { sku: "709", text: "709 each", units: 7, cents: 3500 },
-          ]}
-          refillLines={[]}
-          closeLines={[
-            { sku: "170-3g", text: "#170 3g", units: -1, cents: -1000 },
-            { sku: "188", text: "#188 pack", units: 1, cents: 500 },
-          ]}
-        />
-        <p data-testid="shift-locked">Shift closed</p>
-        <button className={styles.primary} type="button" data-testid="close-summary-done">Done, I posted it</button>
-      </div>
-    </main>
-  );
+export default async function ClosingSummaryPreviewPage({ searchParams }: { searchParams: Promise<{ step?: string; expanded?: string }> }) {
+  const query = await searchParams;
+  const step = query.step === "cash" || query.step === "review" || query.step === "confirm" ? query.step : "count";
+  return <ClosingFlowPreview step={step} expanded={step === "count" && query.expanded === "1"} />;
 }

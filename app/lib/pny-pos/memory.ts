@@ -10,6 +10,7 @@ export function emptyState(now = new Date().toISOString()): State {
         active: true,
         timezone: STORE_TZ,
         prices_tax_included: true,
+        weed_in_store: true,
         ticket_letter_seq: 0,
         created_at: now,
       },
@@ -36,6 +37,11 @@ export function emptyState(now = new Date().toISOString()): State {
     cursors: [],
     audit: [],
     admin_sessions: [],
+    customers: [],
+    customer_consents: [],
+    customer_visits: [],
+    coupons: [],
+    coupon_redemptions: [],
     deposit_seq: 0,
   };
 }
@@ -46,6 +52,8 @@ export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
   peek?: () => Promise<State>;
+  /** Read-only deployment readiness signal, independent of mutable till state. */
+  isReady?: () => Promise<boolean>;
   /** Best-effort hook after a commit. Must not throw into the sale. */
   onCommit?: (state: State) => void;
 }

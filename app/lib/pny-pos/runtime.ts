@@ -100,6 +100,11 @@ async function boot() {
         }
       });
       deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
+    } else if (code === "PNYS" && process.env.VERCEL_ENV !== "production" && demoPinHash) {
+      // PNYS previews use the cloned catalog/stock, not the destructive demo seed.
+      // Supplying the preview-only demo hash enables an isolated test shift; a
+      // missing hash or a production deployment remains fail-closed.
+      deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
     }
     return new PosService(db, deps);
   }

@@ -10,6 +10,8 @@ export type StoreRow = {
   active: boolean;
   timezone: string;
   prices_tax_included: boolean;
+  /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
+  weed_in_store?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
@@ -172,6 +174,66 @@ export type SaleRow = {
   void_reason: string | null;
   voided_by: string | null;
   created_at: string;
+  customer_id?: string | null;
+  coupon_id?: string | null;
+  discount_cents?: number;
+};
+
+export type CustomerRow = {
+  id: string;
+  phone_e164: string;
+  display_name: string;
+  email: string | null;
+  created_store_code: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerConsentRow = {
+  id: string;
+  customer_id: string;
+  consent_type: "EXPRESS" | "IMPLIED";
+  consented_at: string;
+  source: string;
+  store_code: string;
+  unsubscribed_at: string | null;
+  created_at: string;
+};
+
+export type CustomerVisitRow = {
+  id: string;
+  customer_id: string;
+  store_code: string;
+  sale_id: string;
+  shift_id: string;
+  spend_cents: number;
+  visited_at: string;
+};
+
+export type CouponRow = {
+  id: string;
+  store_code: string;
+  code: string;
+  label: string;
+  active: boolean;
+  discount_type: "FIXED" | "PERCENT";
+  discount_value: number;
+  min_spend_cents: number;
+  max_redemptions_per_customer: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CouponRedemptionRow = {
+  id: string;
+  coupon_id: string;
+  customer_id: string | null;
+  store_code: string;
+  shift_id: string;
+  sale_id: string;
+  discount_cents: number;
+  redeemed_at: string;
 };
 
 export type SaleLineRow = {
@@ -286,8 +348,12 @@ export type OutboxRow = {
   attempts: number;
   last_error: string | null;
   next_attempt_at: string;
-  status: "queued" | "sent" | "error";
+  status: "queued" | "sending" | "sent" | "error";
   created_at: string;
+  /** Internal worker lease fields live in live_state and are never sent to Sheets. */
+  lease_id?: string | null;
+  lease_expires_at?: string | null;
+  last_attempt_at?: string | null;
 };
 
 export type CursorRow = {
@@ -339,6 +405,12 @@ export type State = {
   cursors: CursorRow[];
   audit: AuditRow[];
   admin_sessions: AdminSessionRow[];
+  /** Central customer records are persisted in pos_hub and hydrated into this transaction snapshot. */
+  customers?: CustomerRow[];
+  customer_consents?: CustomerConsentRow[];
+  customer_visits?: CustomerVisitRow[];
+  coupons?: CouponRow[];
+  coupon_redemptions?: CouponRedemptionRow[];
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;
