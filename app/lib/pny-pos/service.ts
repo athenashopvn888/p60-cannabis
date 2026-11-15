@@ -2752,7 +2752,16 @@ export class PosService {
           versions: (state.closing_versions ?? [])
             .filter((row) => row.shift_id === closing.shift_id)
             .sort((a, b) => a.version - b.version)
-            .map((row) => ({ version: row.version, actor: row.actor, created_at: row.created_at })),
+            .map((row) => ({
+              version: row.version,
+              actor: row.actor,
+              created_at: row.created_at,
+              final_deposit_cents: row.closing.final_deposit_cents ?? 0,
+              float_cents: row.closing.float_cents ?? 0,
+              shortage_cents: row.closing.shortage_cents ?? 0,
+              overage_cents: row.closing.overage_cents ?? 0,
+              counts: row.closing.closing_lines.map((line) => ({ sku: line.sku, counted_qty: line.left })),
+            })),
         };
       });
     const auditLog = [...state.audit]
