@@ -16,6 +16,8 @@ export type StoreRow = {
 
 export type ProductRow = {
   sku: string;
+  /** Stored per-SKU classification. Missing legacy values use the safe catalog default. */
+  thc_flag?: boolean;
   sku_sort: number;
   name: string;
   category: string;
@@ -83,6 +85,11 @@ export type ShiftRow = {
   end_reason: string | null;
   opening_confirmed_at: string | null;
   refill_confirmed_at: string | null;
+  /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
+  weed_gate_required?: boolean;
+  weed_in_store?: boolean | null;
+  weed_answered_at?: string | null;
+  weed_answered_by?: string | null;
   /** Staff verify window start. Missing until the first staff PIN login of this release. */
   verify_opened_at?: string | null;
   verify_release?: string | null;
@@ -213,6 +220,8 @@ export type ClosingRow = {
   cash_on_hand_cents: number;
   deposited_cents: number;
   final_deposit_cents?: number;
+  /** Cash left in the drawer after the final deposit. Missing means 0. */
+  float_cents?: number;
   shortage_cents?: number;
   overage_cents?: number;
   balance_cents?: number;
@@ -249,6 +258,11 @@ export type ClosingDraftRow = {
   closing_submitted_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
+  /** Cash left in the drawer when this shift closes. Not a deposit. */
+  float_cents?: number | null;
+  /** Cash counted at the next opening, compared with the previous close. */
+  float_found_cents?: number | null;
+  float_expected_cents?: number | null;
   updated_at: string;
 };
 
@@ -330,6 +344,8 @@ export type State = {
   deposit_seq_pny02?: number;
   /** One master stock id per store. Missing until the first close after labels shipped. */
   stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
+  /** Set when the approved opening stock is copied in. Missing means the till is waiting. */
+  opening_stock_at?: string | null;
 };
 
 /** Sheet cells are strings. `_sheet_row` is the 1-based sheet row, also stored as text so it fits the cell map. */

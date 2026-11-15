@@ -158,6 +158,10 @@ export class GoogleSheet implements SheetClient {
     this.privateKey = privateKey;
   }
 
+  private refuseWrite() {
+    if (process.env.PNY_SHEET_READ_ONLY === "1") throw new SheetUnavailable("The sheet is read only.");
+  }
+
   private async accessToken() {
     const now = Math.floor(Date.now() / 1000);
     if (this.token && this.token.exp - 60 > now) return this.token.token;
@@ -204,6 +208,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async ensureTabs(specs: SheetTabSpec[]) {
+    this.refuseWrite();
     const meta = await this.sheetsFetch("?fields=sheets.properties.title");
     const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
     const have = new Set(sheets.map((sheet) => sheet.properties?.title ?? ""));
@@ -317,6 +322,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
+    this.refuseWrite();
     if (!sheetWriteAllowed(tab) || rows.length === 0) return;
     const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
     const values = (raw.values as string[][] | undefined) ?? [];
@@ -360,6 +366,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async deleteRows(tab: string, rowIds: string[]) {
+    this.refuseWrite();
     if (!sheetWriteAllowed(tab)) return;
     const want = new Set(rowIds.map((id) => id.trim()).filter(Boolean));
     if (want.size === 0) return;
@@ -447,6 +454,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async appendStockLabels(rows: StockLabelRow[]) {
+    this.refuseWrite();
     if (!this.configured || rows.length === 0) return;
     const existing = await this.readStockLabels();
     const have = new Set(existing.map((row) => row.store));
@@ -475,6 +483,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async appendStockHistory(rows: StockHistoryRow[]) {
+    this.refuseWrite();
     if (!this.configured || rows.length === 0) return;
     const config = await this.loadHistoryConfig();
     for (const plan of planHistoryWrites(rows, config)) {
@@ -484,6 +493,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async appendRows(tab: string, rows: Record<string, string>[], idHeader: string) {
+    this.refuseWrite();
     if (rows.length === 0) return;
     if (tab !== "Items_raw_price" && !sheetWriteAllowed(tab)) return;
     const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);

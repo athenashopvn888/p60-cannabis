@@ -14,6 +14,7 @@ import { POST as count } from "../../pos/shift/count/route";
 import { POST as countSubmit } from "../../pos/shift/count-submit/route";
 import { POST as endShift } from "../../pos/shift/end/route";
 import { POST as finalDeposit } from "../../pos/shift/final-deposit/route";
+import { POST as openingFloat } from "../../pos/shift/float/route";
 import { GET as state } from "../../pos/state/route";
 import { GET as summary } from "../../pos/summary/route";
 import { POST as cancelTicket } from "../../pos/tickets/[id]/cancel/route";
@@ -21,6 +22,7 @@ import { POST as openTicket } from "../../pos/tickets/[id]/open/route";
 import { POST as unlock } from "../../pos/till/unlock/route";
 import { POST as startingStock } from "../stock/starting/route";
 import { json } from "@/app/lib/pny-pos/http";
+import { singleStoreSite } from "@/app/lib/pny-pos/singleStore";
 import { runStore } from "@/app/lib/pny-pos/storeContext";
 import { PNY02_STORE } from "@/app/lib/pny-pos/storeProfile";
 
@@ -45,6 +47,7 @@ const postRoutes: Record<string, Handler> = {
   "shift/count-submit": countSubmit as Handler,
   "shift/end": endShift as Handler,
   "shift/final-deposit": finalDeposit as Handler,
+  "shift/float": openingFloat as Handler,
   "counts/opening": opening as Handler,
   "counts/opening-line": openingLine as Handler,
   "counts/opening-submit": openingSubmit as Handler,
@@ -62,6 +65,7 @@ function ticketRoute(slug: string): { handler: Handler; id: string } | null {
 }
 
 async function dispatch(method: "GET" | "POST", request: Request, slug: string) {
+  if (singleStoreSite()) return json({ ok: false, error: "This site runs one store." }, 404);
   const ticket = method === "POST" ? ticketRoute(slug) : null;
   const handler = ticket?.handler ?? (method === "GET" ? getRoutes[slug] : postRoutes[slug]);
   if (!handler) return json({ ok: false, error: "Not found." }, 404);

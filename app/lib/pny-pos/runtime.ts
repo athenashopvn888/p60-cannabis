@@ -3,8 +3,10 @@ import { MemoryDb } from "./memory.ts";
 import { applyDemoSeed } from "./seed.ts";
 import { PosService, type PosDeps } from "./service.ts";
 import { SheetDb } from "./sheetStore.ts";
+import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
-import type { Secrets } from "./types.ts";
+import { createSupabaseStateDb } from "./supabaseState.ts";
+import type { State, Secrets } from "./types.ts";
 
 const DEMO_SECRETS: Secrets = {
   shift: "demo-shift-secret-placeholder",
@@ -29,8 +31,16 @@ export function sheetConfigured() {
  * Preview builds have no PNY sheet env. A Neon connection string is not read.
  * Set PNY_POS_DEMO=0 to force the empty unconfigured till.
  */
+export function stateBackend(): "sheet" | "supabase" {
+  const value = process.env.POS_STATE_BACKEND?.trim().toLowerCase() || "sheet";
+  if (value === "sheet" || value === "supabase") return value;
+  throw new Error("POS_STATE_BACKEND must be sheet or supabase");
+}
+
 export function demoMode() {
+  if (lockedStore()) return false;
   if (process.env.PNY_POS_DEMO === "0") return false;
+  if (stateBackend() === "supabase") return !sheetConfigured();
   if (sheetConfigured()) return false;
   return true;
 }
@@ -52,10 +62,39 @@ export function loadSecrets(): Secrets {
   };
 }
 
+function tagDemoStore(state: State, code: "PNY01" | "PNY02") {
+  for (const row of state.shifts) row.store_code = code;
+  for (const row of state.balances) row.store_code = code;
+  for (const row of state.incoming) row.store_code = code;
+  for (const row of state.store_products) row.store_code = code;
+  for (const row of state.stores) row.code = code;
+  for (const row of state.ledger) row.store_code = code;
+  for (const sale of state.sales) {
+    if (code === "PNY02") sale.ref_no = sale.ref_no.replace(/^PNY01-/, "PNY02-");
+  }
+}
+
 async function boot() {
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
   const deps: PosDeps = { sheet, secrets, demo: null };
+  const locked = lockedStore();
+  if (locked || stateBackend() === "supabase") {
+    const url = process.env.POS_SUPABASE_DB_URL?.trim() ?? "";
+    if (!url) throw new Error("POS_SUPABASE_DB_URL is required when STORE_CODE or POS_STATE_BACKEND=supabase is set");
+    const code = locked?.code ?? "PNY01";
+    const db = createSupabaseStateDb(url, code);
+    if (demoMode()) {
+      await db.transaction(async (tx) => {
+        if (tx.state.shifts.length === 0 && tx.state.products.length === 0) {
+          applyDemoSeed(tx.state, new Date());
+          tagDemoStore(tx.state, code);
+        }
+      });
+      deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
+    }
+    return new PosService(db, deps);
+  }
   if (sheet.configured) return new PosService(new SheetDb(sheet), deps);
   const db = new MemoryDb();
   if (demoMode()) {

@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
+import { pos2RouteFromLocation } from "../posPath";
+import { readTillState } from "../softState";
 import { usePosPoll } from "../usePosPoll";
 import DepositSlip from "../DepositSlip";
 import VerifyBanner, { useVerifyOpen } from "../VerifyBanner";
@@ -51,13 +53,21 @@ export default function TillApp({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
+  const forced = pos2RouteFromLocation();
+  const storeApi = forced?.apiBase ?? apiBase;
+  const storeHome = forced?.homeHref ?? homeHref;
 
   const load = useCallback(async () => {
-    const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
-    const data = (await response.json()) as View;
+    const result = await readTillState(storeApi);
+    if (result.keep) {
+      setError(result.message);
+      setView((current) => current ?? { authenticated: false });
+      return;
+    }
+    const data = result.data as View;
     setView(data);
     if (!data.authenticated && data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
-  }, [apiBase]);
+  }, [storeApi]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -66,9 +76,9 @@ export default function TillApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/login`, { pin });
+      await post(`${storeApi}/login`, { pin });
       setPin("");
-      const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch(`${storeApi}/state`, { cache: "no-store", credentials: "same-origin" });
       const data = (await response.json()) as View;
       setView(data);
       setViewOnly(Boolean(data.master));
@@ -85,7 +95,7 @@ export default function TillApp({
     setError("");
     setBusy(true);
     try {
-      const result = await post(`${apiBase}/till/unlock`, { pin });
+      const result = await post(`${storeApi}/till/unlock`, { pin });
       setPin("");
       setViewOnly(Boolean(result.view_only));
       setUnlocked(true);
@@ -102,7 +112,7 @@ export default function TillApp({
     const cents = Math.round(Number(deposit) * 100);
     setBusy(true);
     try {
-      const saved = await post(`${apiBase}/deposits`, { amount_cents: cents }, crypto.randomUUID());
+      const saved = await post(`${storeApi}/deposits`, { amount_cents: cents }, crypto.randomUUID());
       setDeposit("");
       setOpen(false);
       if (typeof saved.deposit_code === "string") setSlipCode(saved.deposit_code);
@@ -166,7 +176,7 @@ export default function TillApp({
           <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length !== 4 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
-          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
+          <Link className={styles.backLink} href={storeHome} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
@@ -176,11 +186,11 @@ export default function TillApp({
     <main className={styles.shell} data-testid="pos-till">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       {verifyOpen && view.verify?.deadline_at ? (
-        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = homeHref; }} />
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = storeHome; }} />
       ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
-          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref}>Back</Link>
+          <Link className={styles.backLink} href={storeHome}>Back</Link>
           <div className={styles.brand}>Till · {view.shift?.staff_name}{viewOnly ? " · Master view" : ""}</div>
         </div>
       </header>
