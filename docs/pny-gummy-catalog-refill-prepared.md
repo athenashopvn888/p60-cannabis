@@ -53,6 +53,15 @@ COMMIT;
 
 The full old documents, versions, timestamps, and checksums are saved in `pos_hub.policy_audit` before either live-state update. Any error rolls the whole transaction back.
 
+Before the PNY01 production build is promoted, duplicate the complete `Items_raw_price` tab as the hidden backup `Items_raw_price_backup_2026-11-15_656657`. Then append exactly these two rows using the existing column order:
+
+| SKU | Category | Name | Unit_Price | Source_Row |
+| --- | --- | --- | ---: | ---: |
+| 656 | EDIBLES | KNOCK OUT GUMMIES 3000MG | 35 | 64 |
+| 657 | EDIBLES | KNOCK OUT GUMMIES 5000MG | 50 | 64 |
+
+Do not alter the existing 655 row. The sheet undo is to restore `Items_raw_price` exactly from that hidden backup; the database undo below restores both live-state documents.
+
 ## Undo
 
 `supabase/undo/20261115180000_pny_gummy_catalog_refill.undo.sql` restores both exact pre-change documents only if neither store has an open shift and each version is exactly one above its backup version. Otherwise it stops without a partial restore.
