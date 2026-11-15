@@ -35,8 +35,17 @@ import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/p
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { startClosingWithRecovery } from "../app/pos/closeStart.ts";
+import { transactionPoolConnectionString } from "../app/lib/pny-pos/supabaseState.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
+
+test("Supabase serverless connections use transaction pooling", () => {
+  assert.equal(
+    transactionPoolConnectionString("postgresql://user:pass@aws-0-ca-central-1.pooler.supabase.com:5432/postgres"),
+    "postgresql://user:pass@aws-0-ca-central-1.pooler.supabase.com:6543/postgres",
+  );
+  assert.equal(transactionPoolConnectionString("postgresql://user:pass@db.example.com:5432/postgres"), "postgresql://user:pass@db.example.com:5432/postgres");
+});
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",

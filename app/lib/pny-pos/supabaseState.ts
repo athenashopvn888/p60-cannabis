@@ -51,14 +51,22 @@ async function project(client: PoolClient, store: StoreCode, state: State) {
   }
 }
 
+export function transactionPoolConnectionString(connectionString: string) {
+  const url = new URL(connectionString);
+  if (url.hostname.endsWith(".pooler.supabase.com") && (url.port === "" || url.port === "5432")) {
+    url.port = "6543";
+  }
+  return url.toString();
+}
+
 export function createSupabaseStateDb(connectionString: string, store: StoreCode): PosDb {
   const pool = new Pool({
-    connectionString,
+    connectionString: transactionPoolConnectionString(connectionString),
     // Vercel can start several function instances at once while the database
     // session pool is limited to 15 clients. Transactions are already
     // serialized per instance, so a single short-lived connection is enough.
     max: 1,
-    idleTimeoutMillis: 5_000,
+    idleTimeoutMillis: 1_000,
     connectionTimeoutMillis: 5_000,
     allowExitOnIdle: true,
     ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? undefined : { rejectUnauthorized: false },
