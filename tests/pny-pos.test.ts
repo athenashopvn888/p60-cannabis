@@ -10,6 +10,7 @@ import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
 import { applyDemoSeed } from "../app/lib/pny-pos/seed.ts";
 import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } from "../app/lib/pny-pos/setbFeed.ts";
+import { applyGummyCatalogRefill, gummyRecoveryBatch } from "../app/lib/pny-pos/gummyCatalogFix.ts";
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
@@ -3733,4 +3734,43 @@ test("PNY02 does not receive the PNY01 WEED gate", async () => {
   assert.equal(shift?.weed_gate_required, undefined);
   assert.equal(view.weed_gate.required, false);
   assert.equal(view.phase, "sell");
+});
+
+test("Knock Out combined source becomes three priced EDIBLES SKUs", () => {
+  const parsed = expandSetbItems([
+    ["S", "Category", "Name", "MG", "Price_EACH", "Status"],
+    ["655, 656, 657", "EDIBLES", "KNOCK OUT GUMMIES", "1500mg / 3000mg / 5000mg", "$25 / $35 / $50", "ACTIVE"],
+  ]).items;
+  assert.deepEqual(
+    parsed.filter((row) => ["655", "656", "657"].includes(row.sku)).map((row) => ({ sku: row.sku, name: row.name, category: row.category, cents: row.unitCents })),
+    [
+      { sku: "655", name: "KNOCK OUT GUMMIES 1500MG", category: "EDIBLES", cents: 2500 },
+      { sku: "656", name: "KNOCK OUT GUMMIES 3000MG", category: "EDIBLES", cents: 3500 },
+      { sku: "657", name: "KNOCK OUT GUMMIES 5000MG", category: "EDIBLES", cents: 5000 },
+    ],
+  );
+});
+
+test("Randy gummy recovery is between-shifts, four units, and idempotent per store", () => {
+  for (const store of ["PNY01", "PNYS"] as const) {
+    const state = emptyState("2026-11-15T03:00:00.000Z");
+    state.stores[0]!.code = store;
+    const first = applyGummyCatalogRefill(state, store, "2026-11-15T04:00:00.000Z");
+    assert.equal(first.changed, true);
+    assert.deepEqual(first.before, { "656": 0, "657": 0 });
+    assert.deepEqual(first.after, { "656": 2, "657": 2 });
+    assert.equal(first.batch_id, gummyRecoveryBatch(store));
+    assert.equal(state.incoming.filter((row) => row.batch_id === first.batch_id).length, 2);
+    assert.equal(state.ledger.filter((row) => row.reason === "Catalog recovery for Randy refill").reduce((sum, row) => sum + row.qty_delta, 0), 4);
+    assert.deepEqual(state.products.filter((row) => ["656", "657"].includes(row.sku)).map((row) => row.default_price_cents), [3500, 5000]);
+
+    const replay = applyGummyCatalogRefill(state, store, "2026-11-15T04:05:00.000Z");
+    assert.equal(replay.changed, false);
+    assert.deepEqual(replay.after, { "656": 2, "657": 2 });
+    assert.equal(state.incoming.filter((row) => row.batch_id === first.batch_id).length, 2);
+  }
+
+  const active = emptyState("2026-11-15T03:00:00.000Z");
+  active.shifts.push({ id: "active", sccx_shift_id: "active", staff_uid: "randy", store_code: "PNY01", ticket_letter: "A", ticket_seq: 0, pin_hash: null, pin_expires_at: null, pin_failed_attempts: 0, status: "ACTIVE", started_at: "2026-11-15T02:30:00.000Z", ended_at: null, end_reason: null, opening_confirmed_at: null, refill_confirmed_at: null, created_at: "2026-11-15T02:30:00.000Z" });
+  assert.throws(() => applyGummyCatalogRefill(active, "PNY01", "2026-11-15T04:00:00.000Z"), /PNY01_SHIFT_OPEN/);
 });
