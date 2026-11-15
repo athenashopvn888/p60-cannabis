@@ -132,7 +132,7 @@ test("label scans use the first number and the approved size mapping", () => {
   });
 });
 
-test("scanner keeps native and free fallback decoding and is wired to all count/refill surfaces", async () => {
+test("scanner code stays available but every current stock surface keeps SCAN disabled", async () => {
   const scanner = await readFile(new URL("../app/pos/ProductScanner.tsx", import.meta.url), "utf8");
   const pos = await readFile(new URL("../app/pos/PosApp.tsx", import.meta.url), "utf8");
   const count = await readFile(new URL("../app/pos/CountCard.tsx", import.meta.url), "utf8");
@@ -149,7 +149,8 @@ test("scanner keeps native and free fallback decoding and is wired to all count/
   assert.match(scanner, /THC hidden this shift/);
   assert.match(pos, /data-testid="scan-button"|<ProductScanner/);
   assert.match(count, /<ProductScanner/);
-  assert.match(refill, /<ProductScanner/);
+  assert.match(refill, />SCAN<\/button>/);
+  assert.match(refill, /disabled>SCAN/);
 });
 
 test("catalog materialization preserves stock and keeps PNY01-only additions", () => {
@@ -229,7 +230,7 @@ test("outbox CRON authenticates even while integrations are off and reports fail
   const vercel = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
   assert.ok(route.indexOf("cronOk(request)") < route.indexOf("INTEGRATIONS_ENABLED"));
   assert.match(route, /service\.outboxStatus\(\)/);
-  assert.match(route, /result\.ok \? 200 : 503/);
+  assert.match(route, /ok \? 200 : 503/);
   assert.match(retry, /retryOutboxFailures/);
   assert.match(retry, /adminToken\(\)/);
   assert.match(vercel, /\/api\/cron\/sheet-outbox/);

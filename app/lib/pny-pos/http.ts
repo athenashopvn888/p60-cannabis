@@ -95,6 +95,16 @@ export function receiptLines(body: Record<string, unknown>) {
   });
 }
 
+export function receiptBatch(body: Record<string, unknown>) {
+  const action = String(body.action ?? "ACCEPT").toUpperCase();
+  return {
+    batch_id: String(body.batch_id ?? "").trim() || undefined,
+    action: action === "REJECT" ? "REJECT" as const : "ACCEPT" as const,
+    reason: body.reason == null ? undefined : String(body.reason),
+    lines: receiptLines(body),
+  };
+}
+
 export function idempotencyKey(request: Request, body: Record<string, unknown>) {
   const header = request.headers.get("idempotency-key")?.trim() ?? "";
   const fromBody = typeof body.request_id === "string" ? body.request_id.trim() : typeof body.event_id === "string" ? body.event_id.trim() : "";

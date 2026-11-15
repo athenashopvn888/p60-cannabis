@@ -4,18 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./kitchen.module.css";
 
-type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; pending_qty: number; suggested_refill_qty: number };
-type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; created_at: string };
+type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; pending_qty: number; suggested_refill_qty: number; enabled?: boolean; approval_required?: boolean };
+type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
 type KitchenView = { authenticated: boolean; store_code?: string; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
 type Filter = "all" | "low" | "zero" | "pending";
-type RefillLine = { sku: string; name: string; size: string; qty: number };
+type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
 
 const previewProducts: Product[] = [
-  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6 },
+  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, enabled: true },
   { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
   { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
   { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
+  { sku: "656", name: "Knock Out MW", category: "EDIBLES", size: "each", on_hand: 0, sold_24h: 0, pending_qty: 0, suggested_refill_qty: 0, enabled: false, approval_required: true },
 ];
 const previewHistory: HistoryRow[] = [
   { kitchen_row_id: "preview-pending", batch_id: "PNYS-PREVIEW", sku: "396-3g", name: "Preview Flower", size: "3g", qty_sent: 4, qty_received: null, status: "PENDING_CONFIRM", created_at: "2026-11-14T02:30:00.000Z" },
@@ -71,9 +72,9 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
 
   const allProducts = view.products ?? noProducts;
   const refillLines = useMemo(() => allProducts.flatMap((product) => {
-    const raw = qty[product.sku] ?? String(product.suggested_refill_qty || "");
+    const raw = qty[product.sku] ?? "";
     const amount = /^\d+$/.test(raw) ? Number(raw) : 0;
-    return amount > 0 ? [{ sku: product.sku, name: product.name, size: product.size, qty: amount }] : [];
+    return amount > 0 ? [{ sku: product.sku, name: product.name, size: product.size, qty: amount, approval_required: product.approval_required }] : [];
   }), [allProducts, qty]);
   const totalUnits = refillLines.reduce((sum, line) => sum + line.qty, 0);
   const products = allProducts.filter((product) => {
@@ -139,19 +140,19 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       {screen === "refill" ? <section data-testid="kitchen-refill">
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
-        <p className={styles.formula}><strong>Suggested refill</strong> = max(0, Sold 24h × 2 − On hand − Pending). Every suggestion is editable.</p>
+        <p className={styles.formula}><strong>Suggested refill</strong> = max(0, Sold 24h × 2 − On hand − Pending). Suggestions are hints and are never added until you tap Use suggested.</p>
         <div className={styles.legend}><span>SKU</span><span>On hand</span><span>Sold 24h</span><span>Pending</span><span>Refill</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
-          <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span></div>
+          <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>Store approval required</em> : null}</div>
           <span className={styles.metric}><small>On hand</small><strong>{product.on_hand}</strong></span>
           <span className={styles.metric}><small>Sold 24h</small><strong>{product.sold_24h}</strong></span>
           <span className={styles.metric}><small>Pending</small><strong>{product.pending_qty}</strong></span>
-          <label className={styles.qty}><small>Suggested</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? String(product.suggested_refill_qty || "")} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))} /></label>
+          <label className={styles.qty}><small>Refill qty</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? ""} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/>{product.suggested_refill_qty > 0 ? <button type="button" onClick={() => setQty((current) => ({ ...current, [product.sku]: String(product.suggested_refill_qty) }))}>Use suggested {product.suggested_refill_qty}</button> : <small>Suggested 0</small>}</label>
         </article>)}</div>
         {!products.length ? <p className={styles.empty}>No SKUs match this filter.</p> : null}
       </section> : null}
-      {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>Confirm refill batch</h1><p>Review every quantity before sending. Stock will not change until store staff confirms receipt.</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span></div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} SKUs</span><strong>{batchTotal} total units</strong></div></section> : null}
-      {screen === "history" ? <section data-testid="kitchen-history"><h1>Refill history</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span></div><div><strong>{row.qty_sent} sent</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? "Waiting for staff" : row.status}</span></div></article>)}</div></section> : null}
+      {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>Confirm refill batch</h1><p>Review every quantity before sending. Stock will not change until store staff confirms receipt.</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span>{line.approval_required ? <em>Store approval required</em> : null}</div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} SKUs</span><strong>{batchTotal} total units</strong></div></section> : null}
+      {screen === "history" ? <section data-testid="kitchen-history"><h1>Refill history</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>Batch {row.batch_id} · sent by {row.sent_by ?? "Kitchen"}{row.sent_at_toronto ? ` · ${row.sent_at_toronto} Toronto` : ""}</small>{row.variance_reason ? <small>Reason: {row.variance_reason}</small> : null}</div><div><strong>{row.qty_sent} sent{row.qty_received == null ? "" : ` · ${row.qty_received} received`}</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? "Waiting for staff" : row.status}</span></div></article>)}</div></section> : null}
       {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>Refill sent to PNYS</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} total units</strong><p>Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.</p><button type="button" onClick={() => setScreen("history")}>View refill history</button></section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>

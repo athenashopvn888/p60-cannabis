@@ -25,6 +25,7 @@ export function emptyState(now = new Date().toISOString()): State {
     shifts: [],
     sessions: [],
     incoming: [],
+    refill_receipts: [],
     counts: [],
     count_lines: [],
     tickets: [],

@@ -23,6 +23,7 @@ function asState(doc: unknown): State {
   state.coupons ??= [];
   state.coupon_redemptions ??= [];
   state.closing_versions ??= [];
+  state.refill_receipts ??= [];
   return state;
 }
 

@@ -127,7 +127,34 @@ export type IncomingRow = {
   confirmed_shift_id: string | null;
   confirmed_at: string | null;
   linked_ledger_id: string | null;
+  /** Kitchen identity and approval state are captured per line for the receipt. */
+  sent_by?: string | null;
+  received_by?: string | null;
+  approval_required?: boolean;
   created_at: string;
+};
+
+export type RefillReceiptLine = {
+  kitchen_row_id: string;
+  sku: string;
+  name: string;
+  qty_sent: number;
+  qty_received: number;
+  variance: number;
+  reason: string | null;
+  approval_required: boolean;
+};
+
+export type RefillReceiptRow = {
+  id: string;
+  batch_id: string;
+  store_code: string;
+  status: "CONFIRMED" | "PARTIAL" | "REJECTED";
+  sent_by: string;
+  received_by: string;
+  sent_at: string;
+  received_at: string;
+  lines: RefillReceiptLine[];
 };
 
 export type CountRow = {
@@ -415,6 +442,7 @@ export type State = {
   shifts: ShiftRow[];
   sessions: SessionRow[];
   incoming: IncomingRow[];
+  refill_receipts?: RefillReceiptRow[];
   counts: CountRow[];
   count_lines: CountLineRow[];
   tickets: TicketRow[];

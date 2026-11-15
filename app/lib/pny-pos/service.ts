@@ -51,10 +51,12 @@ import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFl
 import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
 import type { IntegrationChannel, IntegrationLease } from "./controls.ts";
 import type { SheetClient } from "./sheets.ts";
+import type { SignalGateway } from "./signalGateway.ts";
 import type {
   ClosingLine,
   ClosingRow,
   IncomingRow,
+  RefillReceiptRow,
   MovementType,
   ProductRow,
   Secrets,
@@ -72,10 +74,23 @@ export type PosDeps = {
   sheet: SheetClient;
   secrets: Secrets;
   demo?: { pinHash: string | null; label: string } | null;
+  signal?: SignalGateway;
 };
 
 function iso(date: Date) {
   return date.toISOString();
+}
+
+function torontoDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value));
 }
 
 function audit(state: State, action: string, refType: string | null, refId: string | null, actor: string | null, detail: Json, at: string) {
@@ -1244,7 +1259,7 @@ function queueSnapshot(state: State, at: string) {
   }, at);
 }
 
-function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): Record<string, string> {
+function receiptPayload(state: State, row: IncomingRow, shiftSccx: string, staffPos: string): Record<string, string> {
   const received = row.qty_received;
   const status = row.status === "CANCELLED_BY_KITCHEN" ? "CANCEL_ACK" : row.status === "PENDING_CONFIRM" ? "IMPORTED" : row.status;
   return {
@@ -1252,6 +1267,7 @@ function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): 
     kitchen_row_id: row.kitchen_row_id,
     store_code: tillCode(),
     sku: row.sku,
+    name: productName(state, row.sku),
     qty_sent: String(row.qty_sent),
     qty_received: received == null ? "" : String(received),
     variance: received == null ? "" : String(received - row.qty_sent),
@@ -1259,8 +1275,33 @@ function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): 
     status,
     shift_id: shiftSccx,
     staff_pos_id: staffPos,
+    sent_by: row.sent_by ?? "Kitchen",
+    received_by: row.received_by ?? staffPos,
+    sent_at: row.kitchen_created_at ?? row.created_at,
     confirmed_at: row.confirmed_at ?? "",
   };
+}
+
+function enqueueSignalNotice(state: State, eventId: string, eventType: "KITCHEN_SENT" | "KITCHEN_RECEIPT", batchId: string, message: string, at: string) {
+  enqueue(state, "SIGNAL_GROUP", eventId, {
+    event_id: eventId,
+    event_type: eventType,
+    store_code: tillCode(),
+    batch_id: batchId,
+    message,
+    dry_run: process.env.VERCEL_ENV === "production" ? "false" : "true",
+  }, at);
+}
+
+function kitchenSentMessage(batchId: string, sentBy: string, sentAt: string, lines: { sku: string; name: string; qty: number; approval_required?: boolean }[]) {
+  const detail = lines.map((line) => `${line.sku} ${line.name} ×${line.qty}${line.approval_required ? " · approval required" : ""}`).join("\n");
+  const total = lines.reduce((sum, line) => sum + line.qty, 0);
+  return `KITCHEN SENT\nStore: ${tillCode()}\nBatch: ${batchId}\nSent by: ${sentBy}\nSent: ${torontoDateTime(sentAt)} Toronto\n${detail}\nTotal: ${total} units`;
+}
+
+function kitchenReceiptMessage(receipt: RefillReceiptRow) {
+  const detail = receipt.lines.map((line) => `${line.sku} ${line.name} · sent ${line.qty_sent} · received ${line.qty_received} · variance ${line.variance}${line.reason ? ` · ${line.reason}` : ""}`).join("\n");
+  return `KITCHEN REFILL ${receipt.status}\nStore: ${receipt.store_code}\nBatch: ${receipt.batch_id}\nSent by: ${receipt.sent_by}\nReceived by: ${receipt.received_by}\nSent: ${torontoDateTime(receipt.sent_at)} Toronto\nReceived: ${torontoDateTime(receipt.received_at)} Toronto\n${detail}`;
 }
 
 function openShifts(state: State) {
@@ -1276,7 +1317,7 @@ function postCloseAccessError(state: State, shift: ShiftRow, now: Date) {
 
 function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string; gate?: "pos" | "kitchen" | "any" }) {
   const want = opts?.gate ?? "pos";
-  if (opts?.demo && token.startsWith("v1.")) {
+  if (opts && token.startsWith("v1.")) {
     const ticket = readStaffSession(token, opts.secret, now.getTime());
     if (!ticket || ticket.store !== tillCode()) {
       throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
@@ -1285,6 +1326,42 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
     if (want !== "any" && gate !== want) {
       throw new PosError(401, "SESSION_REJECTED", "This sign-in is for a different screen.");
     }
+    if (ticket.kind === "kitchen") {
+      const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
+      if (!session) throw new PosError(401, "NO_SESSION", "Sign in with the kitchen PIN.");
+      const at = iso(now);
+      return {
+        session,
+        shift: {
+          id: "KITCHEN",
+          sccx_shift_id: "KITCHEN",
+          staff_uid: ticket.staff,
+          store_code: tillCode(),
+          ticket_letter: "K",
+          ticket_seq: 0,
+          pin_hash: null,
+          pin_expires_at: session.expires_at,
+          pin_failed_attempts: 0,
+          status: "ACTIVE",
+          started_at: session.created_at,
+          ended_at: null,
+          end_reason: null,
+          opening_confirmed_at: at,
+          refill_confirmed_at: null,
+          created_at: session.created_at,
+        } as ShiftRow,
+        staff: {
+          staff_uid: ticket.staff,
+          sccx_id: "KITCHEN",
+          pos_id: "KITCHEN",
+          display_name: "Kitchen",
+          active: true,
+          updated_at: session.created_at,
+          created_at: session.created_at,
+        },
+      };
+    }
+    if (!opts.demo) throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
     const shift = state.shifts.find((row) => row.sccx_shift_id === ticket.shift || row.id === ticket.shift);
     if (!shift || shift.store_code !== tillCode()) throw new PosError(401, "NO_SHIFT", "No demo shift is open on this server. Sign in again.");
     if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
@@ -2200,30 +2277,28 @@ export class PosService {
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
-      if (!(this.deps.demo && specialPinMatches("kitchen", pin))) return { ok: false as const, fail: true as const };
-      const shift = this.reopenDemoShift(tx.state, now);
-      if (!shift?.pin_expires_at) {
-        return { ok: false as const, fail: false as const, status: 401, code: "NO_SHIFT", message: "Demo kitchen is not seeded on this server. Reload and try again." };
-      }
+      if (!specialPinMatches("kitchen", pin)) return { ok: false as const, fail: true as const };
+      const expiresAt = iso(new Date(now.getTime() + PIN_TTL_MS));
       const token = signStaffSession({
         v: 1,
         store: tillCode(),
-        shift: shift.sccx_shift_id,
-        staff: shift.staff_uid,
-        exp: Math.floor(Date.parse(shift.pin_expires_at) / 1000),
-        demo: true,
+        shift: "KITCHEN",
+        staff: "KITCHEN",
+        exp: Math.floor(Date.parse(expiresAt) / 1000),
+        demo: Boolean(this.deps.demo),
+        kind: "kitchen",
         gate: "kitchen",
       }, this.deps.secrets.session);
       tx.state.sessions.push({
         id: randomUUID(),
-        shift_id: shift.id,
+        shift_id: "KITCHEN",
         token_hash: sha256(token),
-        expires_at: shift.pin_expires_at,
+        expires_at: expiresAt,
         revoked_at: null,
         created_at: at,
       });
-      const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
-      return { ok: true as const, token, staff_name: staff?.display_name ?? "Demo Budtender" };
+      audit(tx.state, "KITCHEN_LOGIN", "store", tillCode(), "KITCHEN", { preview: process.env.VERCEL_ENV === "preview" }, at);
+      return { ok: true as const, token, staff_name: "Kitchen" };
     }, { kind: "AUTH_SESSION" });
     if (!result.ok && result.fail) {
       this.kitchenFails += 1;
@@ -2231,7 +2306,6 @@ export class PosService {
       if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
       throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     }
-    if (!result.ok) throw new PosError(result.status, result.code, result.message);
     this.kitchenFails = 0;
     return result;
   }
@@ -2385,11 +2459,24 @@ export class PosService {
       }));
       products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
-        .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
+        .filter((row) => row.store_code === tillCode() && row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
         .map((row) => {
           const product = tx.state.products.find((item) => item.sku === row.sku);
           const size = sizeLabel(row.sku, product?.category, product?.name);
-          return { kitchen_row_id: row.kitchen_row_id, sku: row.sku, text: staffSkuText(row.sku, size), qty_sent: row.qty_sent, kind: row.kind };
+          return {
+            kitchen_row_id: row.kitchen_row_id,
+            batch_id: row.batch_id,
+            store_code: row.store_code,
+            sku: row.sku,
+            text: staffSkuText(row.sku, size),
+            name: productName(tx.state, row.sku),
+            qty_sent: row.qty_sent,
+            kind: row.kind,
+            sent_by: row.sent_by ?? "Kitchen",
+            sent_at: row.kitchen_created_at ?? row.created_at,
+            sent_at_toronto: torontoDateTime(row.kitchen_created_at ?? row.created_at),
+            approval_required: Boolean(row.approval_required),
+          };
         })
         .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
@@ -2644,11 +2731,11 @@ export class PosService {
     }
     const products = state.products
       .filter((product) => product.setb_active)
-      .filter((product) => state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled))
       .map((product) => {
         const onHand = qtyOf(state, product.sku);
         const sold = sold24h.get(product.sku) ?? 0;
         const pendingQty = pending.get(product.sku) ?? 0;
+        const enabled = state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled);
         return {
           sku: product.sku,
           name: product.name,
@@ -2658,10 +2745,13 @@ export class PosService {
           sold_24h: sold,
           pending_qty: pendingQty,
           suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
+          enabled,
+          approval_required: !enabled,
         };
       })
       .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
     const history = [...state.incoming]
+      .filter((row) => row.store_code === tillCode())
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, 100)
       .map((row) => ({
@@ -2673,9 +2763,24 @@ export class PosService {
         qty_sent: row.qty_sent,
         qty_received: row.qty_received,
         status: row.status,
+        variance_reason: row.variance_reason,
+        sent_by: row.sent_by ?? "Kitchen",
+        received_by: row.received_by ?? null,
+        approval_required: Boolean(row.approval_required),
         created_at: row.created_at,
+        sent_at_toronto: torontoDateTime(row.kitchen_created_at ?? row.created_at),
+        received_at_toronto: row.confirmed_at ? torontoDateTime(row.confirmed_at) : null,
       }));
-    return { authenticated: true as const, store_code: tillCode(), products, history };
+    const receipts = [...(state.refill_receipts ?? [])]
+      .filter((row) => row.store_code === tillCode())
+      .sort((a, b) => b.received_at.localeCompare(a.received_at))
+      .slice(0, 50)
+      .map((row) => ({
+        ...row,
+        sent_at_toronto: torontoDateTime(row.sent_at),
+        received_at_toronto: torontoDateTime(row.received_at),
+      }));
+    return { authenticated: true as const, store_code: tillCode(), products, history, receipts };
   }
 
   /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
@@ -3032,7 +3137,13 @@ export class PosService {
     return result;
   }
 
-  async confirmIncoming(token: string, input: { key: string; lines: { kitchen_row_id: string; qty_received: number; variance_reason?: string }[] }) {
+  async confirmIncoming(token: string, input: {
+    key: string;
+    batch_id?: string;
+    action?: "ACCEPT" | "REJECT";
+    reason?: string;
+    lines: { kitchen_row_id: string; qty_received: number; variance_reason?: string }[];
+  }) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
@@ -3042,31 +3153,89 @@ export class PosService {
       denyMaster(session);
       requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
-      if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
+      const action = input.action === "REJECT" ? "REJECT" : "ACCEPT";
+      const batchRows = input.batch_id
+        ? tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === input.batch_id && row.status === "PENDING_CONFIRM")
+        : input.lines.flatMap((line) => {
+            const row = tx.state.incoming.find((item) => item.store_code === tillCode() && item.kitchen_row_id === line.kitchen_row_id && item.status === "PENDING_CONFIRM");
+            return row ? [row] : [];
+          });
+      if (batchRows.length === 0) throw new PosError(409, "ALREADY_CONFIRMED", "That refill batch is not waiting for this store.");
+      const batchId = input.batch_id ?? batchRows[0]!.batch_id;
+      if (batchRows.some((row) => row.batch_id !== batchId)) throw new PosError(400, "BATCH_REQUIRED", "Receive one refill batch at a time.");
+      if (action === "ACCEPT" && input.lines.length !== batchRows.length) throw new PosError(400, "INCOMPLETE_BATCH", "Enter the received quantity for every line in this batch.");
+      if (action === "REJECT" && !input.reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "Enter a reason for rejecting this batch.");
+      const submitted = new Map(input.lines.map((line) => [line.kitchen_row_id, line]));
       const at = iso(now);
-      for (const line of input.lines) {
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id);
-        if (!row || row.status !== "PENDING_CONFIRM") throw new PosError(409, "ALREADY_CONFIRMED", "That incoming row is not waiting.");
-        if (!Number.isInteger(line.qty_received) || line.qty_received < 0) throw new PosError(400, "BAD_QTY", "Received quantity must be a whole number.");
+      for (const row of batchRows) {
+        const line = submitted.get(row.kitchen_row_id);
+        const received = action === "REJECT" ? 0 : line?.qty_received;
+        if (!Number.isInteger(received) || Number(received) < 0) throw new PosError(400, "BAD_QTY", "Received quantity must be a whole number.");
+        const reason = action === "REJECT" ? input.reason?.trim() : line?.variance_reason?.trim();
+        if (received !== row.qty_sent && !reason) throw new PosError(400, "REASON_REQUIRED", `Enter a reason for the ${row.sku} quantity difference.`);
       }
-      for (const line of input.lines) {
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id)!;
-        row.qty_received = line.qty_received;
-        row.variance_reason = line.variance_reason?.trim() || null;
+      for (const row of batchRows) {
+        const line = submitted.get(row.kitchen_row_id);
+        const received = action === "REJECT" ? 0 : Number(line!.qty_received);
+        row.qty_received = received;
+        row.variance_reason = (action === "REJECT" ? input.reason : line?.variance_reason)?.trim() || null;
         row.confirmed_at = at;
         row.confirmed_shift_id = shift.id;
-        row.status = line.qty_received === 0 ? "REJECTED" : line.qty_received === row.qty_sent ? "CONFIRMED" : "PARTIAL";
-        if (line.qty_received > 0) {
-          const next = balanceAdd(tx.state, row.sku, line.qty_received, at, true);
+        row.received_by = staff.display_name || staff.pos_id;
+        row.status = received === 0 ? "REJECTED" : received === row.qty_sent ? "CONFIRMED" : "PARTIAL";
+        if (received > 0) {
+          if (row.approval_required) {
+            const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === row.sku);
+            if (storeProduct) {
+              storeProduct.enabled = true;
+              storeProduct.updated_at = at;
+            } else {
+              tx.state.store_products.push({ store_code: tillCode(), sku: row.sku, enabled: true, price_override_cents: null, created_at: at, updated_at: at });
+            }
+            audit(tx.state, "STORE_SKU_APPROVED_FROM_REFILL", "product", row.sku, staff.staff_uid, { batch_id: batchId }, at);
+          }
+          const next = balanceAdd(tx.state, row.sku, received, at, true);
           if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive stock.");
-          const entry = ledger(tx.state, row.sku, line.qty_received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
+          const entry = ledger(tx.state, row.sku, received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
           row.linked_ledger_id = entry.id;
           ensureQuotedProduct(tx.state, row.sku, at);
         }
-        enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
+        enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(tx.state, row, shift.sccx_shift_id, staff.pos_id), at);
       }
-      if (!tx.state.incoming.some((row) => row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
-      const resultBody = { ok: true };
+      if (!tx.state.incoming.some((row) => row.store_code === tillCode() && row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
+      const receipt: RefillReceiptRow = {
+        id: randomUUID(),
+        batch_id: batchId,
+        store_code: tillCode(),
+        status: batchRows.every((row) => row.status === "REJECTED") ? "REJECTED" : batchRows.every((row) => row.status === "CONFIRMED") ? "CONFIRMED" : "PARTIAL",
+        sent_by: batchRows[0]?.sent_by ?? "Kitchen",
+        received_by: staff.display_name || staff.pos_id,
+        sent_at: batchRows.map((row) => row.kitchen_created_at ?? row.created_at).sort()[0] ?? at,
+        received_at: at,
+        lines: batchRows.map((row) => ({
+          kitchen_row_id: row.kitchen_row_id,
+          sku: row.sku,
+          name: productName(tx.state, row.sku),
+          qty_sent: row.qty_sent,
+          qty_received: row.qty_received ?? 0,
+          variance: (row.qty_received ?? 0) - row.qty_sent,
+          reason: row.variance_reason,
+          approval_required: Boolean(row.approval_required),
+        })),
+      };
+      tx.state.refill_receipts ??= [];
+      tx.state.refill_receipts.push(receipt);
+      enqueueSignalNotice(tx.state, `SIG-KRECEIPT-${batchId}`, "KITCHEN_RECEIPT", batchId, kitchenReceiptMessage(receipt), at);
+      audit(tx.state, "KITCHEN_REFILL_RECEIVED", "incoming_batch", batchId, staff.staff_uid, { status: receipt.status, line_count: receipt.lines.length }, at);
+      const resultBody = {
+        ok: true,
+        receipt: {
+          ...receipt,
+          sent_at_toronto: torontoDateTime(receipt.sent_at),
+          received_at_toronto: torontoDateTime(receipt.received_at),
+          signal_notice: process.env.VERCEL_ENV === "production" ? "QUEUED" : "DRY_RUN",
+        },
+      };
       remember(tx.state, "incoming_confirm", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
     });
@@ -3075,56 +3244,9 @@ export class PosService {
   }
 
   async sendRefill(token: string, input: { key: string; kind?: "ALLOCATION" | "REFILL"; lines: { sku: string; qty: number }[] }) {
-    const body = input as unknown as Json;
-    const kind = input.kind === "ALLOCATION" ? "ALLOCATION" : "REFILL";
-    const result = await this.db.transaction(async (tx) => {
-      const now = this.now();
-      const seen = replay(tx.state, "kitchen_refill", input.key, body, now, this.deps.secrets.session);
-      if (seen) return seen;
-      const { shift, staff, session } = this.session(tx.state, token, now, "any");
-      denyMaster(session);
-      if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the original stock first.");
-      const lines = input.lines.filter((line) => line.qty > 0);
-      if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
-      const at = iso(now);
-      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
-      for (const line of lines) {
-        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
-        const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
-        if (!product) throw new PosError(404, "SKU", "That SKU is not in the PNY catalog.");
-        const kitchenRowId = randomUUID();
-        tx.state.incoming.push({
-          kitchen_row_id: kitchenRowId,
-          batch_id: input.key,
-          store_code: tillCode(),
-          sku: line.sku,
-          qty_sent: line.qty,
-          kind,
-          kitchen_created_at: at,
-          imported_at: at,
-          status: "CONFIRMED",
-          qty_received: line.qty,
-          variance_reason: null,
-          confirmed_shift_id: shift.id,
-          confirmed_at: at,
-          linked_ledger_id: null,
-          created_at: at,
-        });
-        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
-        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive the refill.");
-        const entry = ledger(tx.state, line.sku, line.qty, "INCOMING_CONFIRM", "incoming", kitchenRowId, staff.staff_uid, null, shift.id, at);
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === kitchenRowId)!;
-        row.linked_ledger_id = entry.id;
-        enqueue(tx.state, "S_Receipts", `R-${kitchenRowId}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
-        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "CONFIRMED" });
-      }
-      shift.refill_confirmed_at = at;
-      const resultBody = { ok: true, lines: created };
-      remember(tx.state, "kitchen_refill", input.key, body, resultBody, now, this.deps.secrets.session);
-      return resultBody;
-    });
-    this.bumpMenu();
-    return result;
+    void token;
+    void input;
+    throw new PosError(410, "LEGACY_REFILL_DISABLED", "Use Kitchen send and store acceptance. Stock cannot be added directly.");
   }
 
   /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
@@ -3134,16 +3256,17 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "kitchen_queue_refill", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      this.session(tx.state, token, now, "kitchen");
+      const { staff } = this.session(tx.state, token, now, "kitchen");
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
       const at = iso(now);
-      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
+      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string; approval_required: boolean }[] = [];
       for (const line of lines) {
         if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
         const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
-        const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === line.sku && item.enabled);
-        if (!product || !storeProduct) throw new PosError(404, "SKU", "That SKU is not enabled for this store.");
+        const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === line.sku);
+        if (!product) throw new PosError(404, "SKU", "That SKU is not in the catalog.");
+        const approvalRequired = !storeProduct?.enabled;
         const kitchenRowId = randomUUID();
         tx.state.incoming.push({
           kitchen_row_id: kitchenRowId,
@@ -3160,10 +3283,15 @@ export class PosService {
           confirmed_shift_id: null,
           confirmed_at: null,
           linked_ledger_id: null,
+          sent_by: staff.display_name || "Kitchen",
+          received_by: null,
+          approval_required: approvalRequired,
           created_at: at,
         });
-        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM" });
+        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM", approval_required: approvalRequired });
       }
+      enqueueSignalNotice(tx.state, `SIG-KSEND-${input.key}`, "KITCHEN_SENT", input.key, kitchenSentMessage(input.key, staff.display_name || "Kitchen", at, created), at);
+      audit(tx.state, "KITCHEN_REFILL_SENT", "incoming_batch", input.key, staff.staff_uid, { line_count: created.length, total_units: created.reduce((sum, line) => sum + line.qty, 0) }, at);
       const resultBody = { ok: true, batch_id: input.key, lines: created };
       remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
@@ -4408,7 +4536,7 @@ export class PosService {
           };
           state.incoming.push(incoming);
           imported += 1;
-          enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(incoming, "", ""), at);
+          enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(state, incoming, "", ""), at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, incoming, at);
         } else if (qty !== existing.qty_sent) {
           audit(state, "QTY_CHANGED_AFTER_IMPORT", "incoming", existing.kitchen_row_id, "system", { sheet_qty: qty, imported_qty: existing.qty_sent }, at);
@@ -4439,7 +4567,7 @@ export class PosService {
       row.status = "CANCELLED_BY_KITCHEN";
       row.confirmed_at = at;
       row.qty_received = 0;
-      enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, "", ""), at);
+      enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(state, row, "", ""), at);
       return;
     }
     if (row.status === "CONFIRMED" || row.status === "PARTIAL") {
@@ -4450,7 +4578,8 @@ export class PosService {
   async outboxStatus() {
     const now = this.now();
     const state = await this.readState();
-    const pending = state.outbox.filter((row) => row.status !== "sent");
+    const pending = state.outbox.filter((row) => row.tab !== "SIGNAL_GROUP" && row.status !== "sent");
+    const signalPending = state.outbox.filter((row) => row.tab === "SIGNAL_GROUP" && row.status !== "sent");
     const oldest = pending.map((row) => Date.parse(row.created_at)).filter(Number.isFinite).sort((a, b) => a - b)[0];
     const failures = pending
       .filter((row) => row.status === "error" || Boolean(row.last_error))
@@ -4474,6 +4603,12 @@ export class PosService {
       delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
       alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
       failures,
+      signal: {
+        enabled: Boolean(this.deps.signal?.enabled),
+        dry_run: Boolean(this.deps.signal?.dryRun),
+        pending: signalPending.length,
+        errors: signalPending.filter((row) => row.status === "error").length,
+      },
     };
   }
 
@@ -4497,7 +4632,7 @@ export class PosService {
         audit(tx.state, "OUTBOX_LEASE_EXPIRED", "sheet_outbox", row.id, "cron", { row_id: row.row_id, tab: row.tab, lease_id: expiredLease }, at);
       }
       const due = tx.state.outbox
-        .filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .filter((row) => row.tab !== "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
         .sort((left, right) => left.created_at.localeCompare(right.created_at))
         .slice(0, OUTBOX_BATCH_SIZE);
       for (const row of due) {
@@ -4599,6 +4734,81 @@ export class PosService {
       }
     }
     return { ok: true, sent, ...(await this.outboxStatus()) };
+  }
+
+  /** Deliver Kitchen group notices through the owned SCCx Signal route exactly once. */
+  async drainSignalOutbox() {
+    const signal = this.deps.signal;
+    if (!signal?.enabled) return { ok: true, enabled: false, sent: 0, dry_run: Boolean(signal?.dryRun) };
+    let owner = await this.assertIntegrationOwner("SIGNAL");
+    const now = this.now();
+    const leaseId = randomUUID();
+    const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
+    const batch = await this.db.transaction(async (tx) => {
+      const at = iso(now);
+      for (const row of tx.state.outbox) {
+        if (row.tab !== "SIGNAL_GROUP" || row.status !== "sending") continue;
+        if (Date.parse(row.lease_expires_at ?? row.next_attempt_at) > now.getTime()) continue;
+        row.status = "queued";
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        row.next_attempt_at = at;
+      }
+      const due = tx.state.outbox
+        .filter((row) => row.tab === "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .slice(0, OUTBOX_BATCH_SIZE);
+      for (const row of due) {
+        row.status = "sending";
+        row.lease_id = leaseId;
+        row.lease_expires_at = leaseExpiresAt;
+        row.next_attempt_at = leaseExpiresAt;
+        row.last_attempt_at = at;
+      }
+      return structuredClone(due);
+    });
+    if (!batch.length) return { ok: true, enabled: true, sent: 0, dry_run: signal.dryRun };
+    owner = await this.assertIntegrationOwner("SIGNAL");
+    const delivered = this.db.deliveredIntegrationEvents
+      ? await this.db.deliveredIntegrationEvents("SIGNAL", owner.cutover_id, batch.map((row) => row.row_id))
+      : new Set<string>();
+    let sent = 0;
+    for (const row of batch) {
+      try {
+        let receipt: Record<string, unknown> = { status: "replayed" };
+        if (!delivered.has(row.row_id)) {
+          receipt = await signal.send({ event_id: row.row_id, message: row.payload.message ?? "" });
+          await this.recordIntegrationDelivery(owner, row.row_id, receipt);
+        }
+        await this.db.transaction(async (tx) => {
+          const current = tx.state.outbox.find((item) => item.id === row.id);
+          if (!current || current.status !== "sending" || current.lease_id !== leaseId) return;
+          current.status = "sent";
+          current.sent_at = iso(this.now());
+          current.last_error = null;
+          current.lease_id = null;
+          current.lease_expires_at = null;
+          audit(tx.state, signal.dryRun ? "SIGNAL_DRY_RUN" : "SIGNAL_SENT", "signal_outbox", current.row_id, "cron", { batch_id: current.payload.batch_id, status: receipt.status ?? "sent" }, current.sent_at);
+        });
+        sent += delivered.has(row.row_id) ? 0 : 1;
+      } catch (error) {
+        const message = outboxErrorMessage(error);
+        await this.db.transaction(async (tx) => {
+          const current = tx.state.outbox.find((item) => item.id === row.id);
+          if (!current || current.status !== "sending" || current.lease_id !== leaseId) return;
+          const failedAt = this.now();
+          current.status = current.attempts + 1 >= OUTBOX_ERROR_ATTEMPTS ? "error" : "queued";
+          current.attempts += 1;
+          current.last_error = message;
+          current.last_attempt_at = iso(failedAt);
+          current.next_attempt_at = iso(new Date(failedAt.getTime() + outboxBackoffMs(current.attempts)));
+          current.lease_id = null;
+          current.lease_expires_at = null;
+        });
+        return { ok: false, enabled: true, sent, failed: 1, dry_run: signal.dryRun, error: message };
+      }
+    }
+    return { ok: true, enabled: true, sent, replayed: delivered.size, dry_run: signal.dryRun };
   }
 
   async retryOutboxFailures(adminToken: string, rowIds: string[] = []) {
@@ -5314,7 +5524,7 @@ export class PosService {
         row.qty_received = Math.abs(entry.qty_delta);
         row.variance_reason = "LINKED_TO_ADJUSTMENT";
       }
-      enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, "", "admin"), at);
+      enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(tx.state, row, "", "admin"), at);
       const result = { ok: true, qty: qtyOf(tx.state, row.sku), unchanged: qtyOf(tx.state, row.sku) === before, status: row.status };
       remember(tx.state, "link_adjustment", input.key, body, result, now, this.deps.secrets.admin);
       return result;

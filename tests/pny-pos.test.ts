@@ -406,9 +406,11 @@ test("a retry after a service restart returns the durable receipt without anothe
 
 test("a simultaneous sale and refill serialize without losing either stock movement", async () => {
   const h = await readyTill({ "1001": 2, "1002": 0 });
+  const rowId = crypto.randomUUID();
+  h.db.state.incoming.push({ kitchen_row_id: rowId, batch_id: "race-refill", store_code: "PNY01", sku: "1001", qty_sent: 3, kind: "REFILL", kitchen_created_at: h.clock.t.toISOString(), imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() });
   await Promise.all([
     h.svc.cashout(h.token, { key: "race-sale", lines: [{ sku: "1001", qty: 1 }] }),
-    h.svc.sendRefill(h.token, { key: "race-refill", lines: [{ sku: "1001", qty: 3 }] }),
+    h.svc.confirmIncoming(h.token, { key: "race-receive", batch_id: "race-refill", action: "ACCEPT", lines: [{ kitchen_row_id: rowId, qty_received: 3 }] }),
   ]);
   assert.equal(qty(h.db, "1001"), 4);
   assert.equal(h.db.state.sales.filter((row) => row.status === "COMPLETED").length, 1);
@@ -573,12 +575,13 @@ test("14. a partial receipt needs a reason and the receipt shows the variance", 
   const rowId = crypto.randomUUID();
   h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "b9", store_code: "PNY01", kind: "ALLOCATION", sku: "1001", qty: "4", created_at: "2026-11-03T15:00:00+07:00", kitchen_status: "ACTIVE" }];
   await h.svc.refreshIncoming({ force: true });
-  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] });
+  await rejects(() => h.svc.confirmIncoming(h.token, { key: "partial-missing", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] }), "REASON_REQUIRED");
+  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1, variance_reason: "One bag damaged" }] });
   assert.equal(qty(h.db, "1001"), 1);
   const receipt = h.db.state.outbox.find((row) => row.row_id === `R-${rowId}`);
   assert.equal(receipt?.payload.status, "PARTIAL");
   assert.equal(receipt?.payload.variance, "-3");
-  assert.equal(receipt?.payload.variance_reason, "");
+  assert.equal(receipt?.payload.variance_reason, "One bag damaged");
 });
 
 test("15. a kitchen cancel before confirm is acknowledged and a cancel after confirm is ignored", async () => {
@@ -902,10 +905,11 @@ test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-
   assert.equal(qty(h.db, "1001"), 0);
 });
 
-test("23. shift, roster and closing code does not reference SOD", () => {
+test("23. shift, roster and closing code uses only the owned SCCx Signal gateway", () => {
   const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
-  assert.doesNotMatch(source, /\bSOD\b|\/api\/gateway\/send|signal-cli|SOD_/);
+  assert.doesNotMatch(source, /signal-cli|SOD_/);
+  assert.match(source, /\/api\/gateway\/send/);
   const sitemap = readFileSync("app/sitemap.ts", "utf8");
   assert.doesNotMatch(sitemap, /\/pos|\/menu|\/kitchen/);
   assert.equal(hideMobileBottomBar("/pos"), true);
@@ -1555,24 +1559,14 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(db.state.ledger.filter((row) => row.movement_type === "OPENING_BALANCE").every((row) => row.reason === "DEMO stock, not SETB on-hand"), true);
 });
 
-test("kitchen send adds allocation or refill stock once and does not write the public catalog", async () => {
+test("legacy sendRefill is locked and cannot add stock without store confirmation", async () => {
   const h = await readyTill({ "1001": 2, "1002": 1 });
   const before = qty(h.db, "1001");
   const refill = { key: "refill-1", kind: "REFILL" as const, lines: [{ sku: "1001", qty: 3 }, { sku: "1002", qty: 0 }] };
-  await h.svc.sendRefill(h.token, refill);
-  assert.equal(h.db.state.incoming.filter((row) => row.kind === "REFILL").length, 1);
-  assert.equal(qty(h.db, "1001"), before + 3);
+  await rejects(() => h.svc.sendRefill(h.token, refill), "LEGACY_REFILL_DISABLED");
+  assert.equal(h.db.state.incoming.length, 0);
+  assert.equal(qty(h.db, "1001"), before);
   assert.equal(qty(h.db, "1002"), 1);
-  assert.equal(h.db.state.incoming[0]?.kind, "REFILL");
-  assert.equal(h.db.state.incoming[0]?.status, "CONFIRMED");
-  await h.svc.sendRefill(h.token, refill);
-  assert.equal(qty(h.db, "1001"), before + 3);
-  await h.svc.sendRefill(h.token, { key: "alloc-1", kind: "ALLOCATION", lines: [{ sku: "1002", qty: 4 }] });
-  assert.equal(qty(h.db, "1002"), 5);
-  assert.equal(h.db.state.incoming.find((row) => row.sku === "1002")?.kind, "ALLOCATION");
-  const state = await h.svc.state(h.token);
-  assert.equal(state.receipts.length, 2);
-  await rejects(() => h.svc.sendRefill(h.token, { key: "empty", lines: [] }), "EMPTY");
   assert.equal(existsSync("app/api/kitchen/refill/route.ts"), false);
 });
 
@@ -1655,7 +1649,7 @@ test("the env-hashed kitchen PIN opens only the kitchen login", async () => {
   const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.0.3");
   assert.match(kitchen.token, /^v1\./);
   const view = await svc.state(kitchen.token, undefined, "kitchen");
-  assert.equal(view.shift?.pos_id, "DEMO1");
+  assert.equal(view.shift?.pos_id, "KITCHEN");
   await rejects(() => svc.state(kitchen.token), "SESSION_REJECTED");
   const pos = await svc.login(TEST_DEMO_PIN, "10.7.0.4");
   assert.equal((await svc.state(pos.token)).shift?.pos_id, "DEMO1");
@@ -1726,6 +1720,108 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(service, /async queueKitchenRefill/);
   assert.match(service, /status: "PENDING_CONFIRM"/);
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
+});
+
+test("Kitchen suggestions are hints and only touched quantities enter the refill batch", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  assert.match(app, /qty\[product\.sku\] \?\? ""/);
+  assert.match(app, /Use suggested \{product\.suggested_refill_qty\}/);
+  assert.doesNotMatch(app, /qty\[product\.sku\] \?\? String\(product\.suggested_refill_qty/);
+  assert.match(app, /Store approval required/);
+});
+
+test("real Kitchen PIN signs in outside demo without opening or changing a staff shift", { concurrency: false }, async () => {
+  const saved = process.env.PNY_KITCHEN_PIN_HASH;
+  process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+  try {
+    const h = await readyTill();
+    const before = structuredClone(h.db.state.shifts);
+    const svc = new PosService(h.db, { now: () => h.clock.t, sheet: h.sheet, secrets, demo: null });
+    const login = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.9.1");
+    const state = await svc.kitchenState(login.token);
+    assert.equal(state.authenticated, true);
+    assert.deepEqual(h.db.state.shifts, before);
+    assert.equal(h.db.state.audit.some((row) => row.action === "KITCHEN_LOGIN"), true);
+  } finally {
+    if (saved) process.env.PNY_KITCHEN_PIN_HASH = saved; else delete process.env.PNY_KITCHEN_PIN_HASH;
+  }
+});
+
+test("Kitchen batch accepts disabled SKUs, saves a partial receipt, and dry-runs each Signal notice exactly once", { concurrency: false }, async () => {
+  const saved = process.env.PNY_KITCHEN_PIN_HASH;
+  process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+  let signalCalls = 0;
+  try {
+    const h = await readyTill({ "1001": 2, "1002": 0 });
+    const at = h.clock.t.toISOString();
+    h.db.state.products.push(
+      { sku: "656", sku_sort: 656, name: "Knock Out MW", category: "EDIBLES", default_price_cents: 3500, image_url: null, setb_active: true, synced_at: at, created_at: at },
+      { sku: "668", sku_sort: 668, name: "red ROSE Grabba Shaker", category: "CIGARETTES", default_price_cents: 2000, image_url: null, setb_active: true, synced_at: at, created_at: at },
+    );
+    h.db.state.incoming.push({ kitchen_row_id: "other-store", batch_id: "OTHER-BATCH", store_code: "OTHER", sku: "1001", qty_sent: 9, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: at });
+    const svc = new PosService(h.db, {
+      now: () => h.clock.t,
+      sheet: h.sheet,
+      secrets,
+      demo: null,
+      signal: { enabled: true, dryRun: true, async send() { signalCalls += 1; return { ok: true, status: "dry-run" }; } },
+    });
+    const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.9.2");
+    const catalog = await svc.kitchenState(kitchen.token);
+    assert.equal(catalog.products.find((row) => row.sku === "656")?.approval_required, true);
+    assert.equal(catalog.history.some((row) => row.kitchen_row_id === "other-store"), false);
+
+    const command = { key: "DRY-KITCHEN-BATCH", lines: [{ sku: "656", qty: 2 }, { sku: "668", qty: 2 }] };
+    const queued = await svc.queueKitchenRefill(kitchen.token, command);
+    const replayed = await svc.queueKitchenRefill(kitchen.token, command);
+    assert.equal(replayed.lines[0]?.kitchen_row_id, queued.lines[0]?.kitchen_row_id);
+    assert.equal(h.db.state.incoming.filter((row) => row.batch_id === command.key).length, 2);
+    assert.equal(h.db.state.incoming.filter((row) => row.batch_id === command.key).every((row) => row.sent_by === "Kitchen" && row.approval_required), true);
+    assert.equal(qty(h.db, "656"), 0);
+
+    const [first, second] = h.db.state.incoming.filter((row) => row.batch_id === command.key);
+    const accepted = await svc.confirmIncoming(h.token, {
+      key: "DRY-KITCHEN-ACCEPT",
+      batch_id: command.key,
+      action: "ACCEPT",
+      lines: [
+        { kitchen_row_id: first!.kitchen_row_id, qty_received: 2 },
+        { kitchen_row_id: second!.kitchen_row_id, qty_received: 1, variance_reason: "One unit missing" },
+      ],
+    });
+    assert.equal(accepted.receipt.status, "PARTIAL");
+    assert.equal(accepted.receipt.lines.find((row) => row.sku === "668")?.variance, -1);
+    assert.equal(accepted.receipt.lines.find((row) => row.sku === "668")?.reason, "One unit missing");
+    assert.equal(accepted.receipt.sent_by, "Kitchen");
+    assert.match(accepted.receipt.sent_at_toronto, /2026/);
+    assert.equal(qty(h.db, "656"), 2);
+    assert.equal(qty(h.db, "668"), 1);
+    assert.equal(h.db.state.store_products.find((row) => row.sku === "656")?.enabled, true);
+    assert.equal(h.db.state.refill_receipts?.length, 1);
+    assert.equal(h.db.state.outbox.filter((row) => row.tab === "SIGNAL_GROUP").length, 2);
+
+    assert.equal((await svc.drainSignalOutbox()).sent, 2);
+    assert.equal((await svc.drainSignalOutbox()).sent, 0);
+    assert.equal(signalCalls, 2);
+    assert.equal((await svc.kitchenState(kitchen.token)).history.some((row) => row.batch_id === command.key && row.status === "PARTIAL"), true);
+  } finally {
+    if (saved) process.env.PNY_KITCHEN_PIN_HASH = saved; else delete process.env.PNY_KITCHEN_PIN_HASH;
+  }
+});
+
+test("store receiving requires variance reasons and can reject a whole Kitchen batch", async () => {
+  const h = await readyTill({ "1001": 0, "1002": 0 });
+  const at = h.clock.t.toISOString();
+  h.db.state.incoming.push(
+    { kitchen_row_id: "reject-1", batch_id: "REJECT-BATCH", store_code: "PNY01", sku: "1001", qty_sent: 2, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: "Kitchen", created_at: at },
+    { kitchen_row_id: "reject-2", batch_id: "REJECT-BATCH", store_code: "PNY01", sku: "1002", qty_sent: 1, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: "Kitchen", created_at: at },
+  );
+  await rejects(() => h.svc.confirmIncoming(h.token, { key: "reject-no-reason", batch_id: "REJECT-BATCH", action: "REJECT", lines: [] }), "REASON_REQUIRED");
+  const rejected = await h.svc.confirmIncoming(h.token, { key: "reject-ok", batch_id: "REJECT-BATCH", action: "REJECT", reason: "Wrong store delivery", lines: [] });
+  assert.equal(rejected.receipt.status, "REJECTED");
+  assert.equal(rejected.receipt.lines.every((row) => row.qty_received === 0 && row.reason === "Wrong store delivery"), true);
+  assert.equal(qty(h.db, "1001"), 0);
+  assert.equal(qty(h.db, "1002"), 0);
 });
 
 test("the env-hashed Master PIN opens the read-only Manager session only", async () => {
@@ -2925,7 +3021,7 @@ test("verify expected uses only received refills, and a short receipt is a refil
   await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 10 });
   const frozen = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
   assert.equal(frozen?.expected_qty, 10);
-  await h.svc.confirmIncoming(h.token, { key: "short-refill", lines: [{ kitchen_row_id: pending, qty_received: 2 }] });
+  await h.svc.confirmIncoming(h.token, { key: "short-refill", lines: [{ kitchen_row_id: pending, qty_received: 2, variance_reason: "Three units missing" }] });
   assert.equal(qty(h.db, "1001"), 12);
   assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === pending)?.qty_sent, 5);
   const view = await h.svc.state(h.token);

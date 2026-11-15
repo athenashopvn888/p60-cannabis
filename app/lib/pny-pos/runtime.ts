@@ -7,6 +7,7 @@ import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import { createSupabaseStateDb } from "./supabaseState.ts";
 import { specialPinHash } from "./pinAuth.ts";
+import { signalGatewayFromEnv } from "./signalGateway.ts";
 import type { State, Secrets } from "./types.ts";
 import type { StoreCode } from "./storeProfile.ts";
 
@@ -79,7 +80,7 @@ function tagDemoStore(state: State, code: StoreCode) {
 async function boot() {
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
-  const deps: PosDeps = { sheet, secrets, demo: null };
+  const deps: PosDeps = { sheet, secrets, demo: null, signal: signalGatewayFromEnv() };
   const demoPinHash = specialPinHash("demo");
   const locked = lockedStore();
   if (locked || stateBackend() === "supabase") {

@@ -388,6 +388,12 @@
   margin-top: 16px;
 }
 
+.refillBatch { margin-bottom: 16px; padding: 14px; border: 1px solid #d6d3d1; border-radius: 16px; background: #fff; }
+.refillBatch h2, .refillBatch p { margin: 0 0 6px; }
+.refillRow > div { display: grid; gap: 4px; }
+.refillRow small { display: block; color: #57534e; font-size: 13px; }
+.reasonInput { width: 100%; min-height: 44px; box-sizing: border-box; margin-top: 6px; border: 1px solid #a8a29e; border-radius: 9px; padding: 8px; font-size: 16px; }
+
 .refillBody .primary,
 .refillBody .secondary {
   width: 100%;
