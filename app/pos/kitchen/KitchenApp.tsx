@@ -85,10 +85,11 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     return amount > 0 ? [{ sku: product.sku, name: product.name, size: product.size, qty: amount, approval_required: product.approval_required }] : [];
   }), [allProducts, qty]);
   const totalUnits = refillLines.reduce((sum, line) => sum + line.qty, 0);
-  const skuRanges = useMemo(() => [...new Set(allProducts.map((product) => {
-    const base = Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10);
-    return Number.isFinite(base) ? Math.floor(base / 100) * 100 : null;
-  }).filter((value): value is number => value !== null))].sort((a, b) => a - b), [allProducts]);
+  const skuRanges = useMemo(() => {
+    const highest = Math.max(100, ...allProducts.map((product) => Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10)).filter(Number.isFinite));
+    const last = Math.max(100, Math.floor(highest / 100) * 100);
+    return Array.from({ length: (last - 100) / 100 + 1 }, (_, index) => 100 + index * 100);
+  }, [allProducts]);
   const products = allProducts.filter((product) => {
     const matchesQuery = `${product.sku} ${product.name} ${product.size}`.toLowerCase().includes(query.trim().toLowerCase());
     if (!matchesQuery) return false;
