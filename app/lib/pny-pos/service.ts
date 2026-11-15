@@ -3454,8 +3454,12 @@ export class PosService {
       }
     };
     let rows: SheetRow[] = [];
+    let legacyCount = 0;
+    let refillCount = 0;
     try {
       const [legacy, refills] = await Promise.all([readTab("K_Allocations"), readTab("POS_Refills")]);
+      legacyCount = legacy.length;
+      refillCount = refills.length;
       rows = [
         ...legacy,
         ...refills.filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED"),
@@ -3465,7 +3469,9 @@ export class PosService {
       throw error;
     }
     const flowers = await this.flowerIndex().catch(() => new Map());
-    return this.importRows(rows, flowers, Boolean(opts.force));
+    const result = await this.importRows(rows, flowers, Boolean(opts.force));
+    if (opts.force) console.info(`[sheet-import] legacy=${legacyCount} refills=${refillCount} imported=${result.imported} full=${result.full}`);
+    return result;
   }
 
   private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null, forceFull = false) {
