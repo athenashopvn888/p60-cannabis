@@ -487,6 +487,38 @@ test("13. re-importing a row and double-confirming add stock once", async () => 
   assert.equal(h.db.state.ledger.filter((row) => row.movement_type === "INCOMING_CONFIRM").length, 1);
 });
 
+test("13a. forced refresh rescans POS_Refills behind the legacy-tab cursor exactly once", async () => {
+  const h = await readyTill({ "1001": 0, "1002": 0 });
+  h.db.state.cursors.push({
+    tab: "K_Allocations",
+    last_row_number: 1000,
+    last_polled_at: h.clock.t.toISOString(),
+    last_ok_at: h.clock.t.toISOString(),
+    last_full_scan_at: h.clock.t.toISOString(),
+  });
+  const lines = [
+    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "488", qty: "20", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "200" },
+    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "655", qty: "2", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "201" },
+    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "1015", qty: "20", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "202" },
+  ];
+  h.sheet.tabs.POS_Refills = lines;
+
+  const first = await h.svc.refreshIncoming({ force: true });
+  const second = await h.svc.refreshIncoming({ force: true });
+
+  assert.equal(first.imported, 3);
+  assert.equal(first.full, true);
+  assert.equal(second.imported, 0);
+  assert.deepEqual(h.db.state.incoming.map((row) => [row.sku, row.qty_sent, row.status]), [
+    ["488", 20, "PENDING_CONFIRM"],
+    ["655", 2, "PENDING_CONFIRM"],
+    ["1015", 20, "PENDING_CONFIRM"],
+  ]);
+  assert.equal(qty(h.db, "488"), 0);
+  assert.equal(qty(h.db, "655"), 0);
+  assert.equal(qty(h.db, "1015"), 0);
+});
+
 test("13b. Kitchen can refill a zero-stock flower from the full Flowers catalog", async () => {
   const h = await readyTill({ "1001": 0, "1002": 0 });
   h.sheet.grids.Flowers_Raw = [
