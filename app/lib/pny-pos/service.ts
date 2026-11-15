@@ -2635,6 +2635,33 @@ export class PosService {
     });
   }
 
+  /**
+   * Read-only stock feed for trusted internal consumers such as Kitchen.
+   * This deliberately reads the authoritative till balances and never queues
+   * a sheet write or rewrites live_state.
+   */
+  async stockFeed() {
+    return this.db.transaction(async (tx) => {
+      const before = JSON.stringify(tx.state);
+      const products = tx.state.products
+        .filter((product) => product.setb_active)
+        .flatMap((product) => {
+          const storeProduct = tx.state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
+          if (!storeProduct?.enabled) return [];
+          return [{
+            sku: product.sku,
+            name: product.name,
+            category: product.category,
+            on_hand: qtyOf(tx.state, product.sku),
+          }];
+        })
+        .sort((left, right) => skuSortKey(left.sku) - skuSortKey(right.sku) || left.sku.localeCompare(right.sku));
+      if (JSON.stringify(tx.state) !== before) throw new PosError(500, "FEED_WRITE", "The stock feed must not change the till.");
+      const activeShift = tx.state.shifts.some((shift) => shift.store_code === tillCode() && shift.status === "ACTIVE");
+      return { ok: true as const, store_code: tillCode(), generated_at: iso(this.now()), active_shift: activeShift, products };
+    });
+  }
+
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
   async shiftSummary(token: string) {
     return this.db.transaction(async (tx) => {

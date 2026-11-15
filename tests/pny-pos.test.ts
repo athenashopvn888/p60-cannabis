@@ -954,6 +954,21 @@ test("the sales feed returns new sales once and does not change the till", async
   }
 });
 
+test("the stock feed returns authoritative enabled balances without changing the till", async () => {
+  const h = await readyTill({ "1001": 7, "1002": 0 });
+  const before = JSON.stringify(h.db.state);
+  const feed = await h.svc.stockFeed();
+
+  assert.equal(feed.ok, true);
+  assert.equal(feed.store_code, "PNY01");
+  assert.equal(feed.active_shift, true);
+  assert.deepEqual(feed.products.map((row) => ({ sku: row.sku, on_hand: row.on_hand })), [
+    { sku: "1001", on_hand: 7 },
+    { sku: "1002", on_hand: 0 },
+  ]);
+  assert.equal(JSON.stringify(h.db.state), before);
+});
+
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
   const h = await readyTill({ "1001": 2 });
   const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
