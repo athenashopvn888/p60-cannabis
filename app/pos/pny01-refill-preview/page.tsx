@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Pny01RefillTest from "./Pny01RefillTest";
+import PosApp from "../PosApp";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "PNY01 Test Refill Receiver", robots: { index: false, follow: false, nocache: true } };
-export default function Page() { return <Pny01RefillTest />; }
+export default function Page() { return <PosApp shadowPny01 label="PNY01 TEST" storeCode="PNY01_TEST" tillHref="#" menuUrl="#"/>; }

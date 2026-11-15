@@ -113,6 +113,36 @@ type View = {
   post_close?: PostCloseView["post_close"];
 };
 
+type ShadowBatch = { id: string; sender: string; sent_at: string; status: string; lines: { sku: string; name: string; size: string; qty: number }[]; receipt?: unknown };
+const PNY01_SHADOW_KEY = "pnys-pny01-shadow-batches";
+
+function torontoDate(value: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function pny01ShadowView(): View {
+  let batches: ShadowBatch[] = [];
+  try { batches = JSON.parse(window.localStorage.getItem(PNY01_SHADOW_KEY) || "[]") as ShadowBatch[]; } catch { batches = []; }
+  const incoming: PendingRefill[] = batches.filter((batch) => batch.status === "PENDING").flatMap((batch) => batch.lines.map((line) => ({
+    kitchen_row_id: `${batch.id}:${line.sku}`,
+    batch_id: batch.id,
+    store_code: "PNY01_TEST",
+    sku: line.sku,
+    text: `${line.sku} · ${line.size}`,
+    name: line.name,
+    qty_sent: line.qty,
+    sent_by: batch.sender,
+    sent_at: batch.sent_at,
+    sent_at_toronto: torontoDate(batch.sent_at),
+  })));
+  return {
+    authenticated: true, demo: true, demo_label: "PNY01 TEST POS · ISOLATED · NO LIVE STOCK", phase: "sell", can_sell: false,
+    shift: { staff_name: "Test Staff", pos_id: "PNY01-TEST", status: "ACTIVE", ticket_letter: "T", started_at: new Date().toISOString() },
+    totals: { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: 0, deposited_cents: 0, sale_count: 0 },
+    categories: [], products: [], incoming, tickets: [], pending_count: 0,
+  };
+}
+
 async function post(url: string, body: unknown, key?: string, signal?: AbortSignal) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
@@ -134,12 +164,14 @@ export default function PosApp({
   label = "PNY01",
   storeCode = "PNY01",
   menuUrl = CUSTOMER_MENU_URL,
+  shadowPny01 = false,
 }: {
   apiBase?: string;
   tillHref?: string;
   label?: string;
   storeCode?: string;
   menuUrl?: string;
+  shadowPny01?: boolean;
 } = {}) {
   const [view, setView] = useState<View | null>(null);
   const [pin, setPin] = useState("");
@@ -200,6 +232,7 @@ export default function PosApp({
   }, [storeLabel]);
 
   const load = useCallback(async () => {
+    if (shadowPny01) { setView(pny01ShadowView()); return; }
     const result = await readTillState(storeApi);
     if (result.keep) {
       setError(result.message);
@@ -214,7 +247,7 @@ export default function PosApp({
       setCart({});
       if (data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
     }
-  }, [storeApi]);
+  }, [shadowPny01, storeApi]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -651,6 +684,23 @@ export default function PosApp({
     setError("");
     setBusy(true);
     try {
+      if (shadowPny01) {
+        let batches: ShadowBatch[] = [];
+        try { batches = JSON.parse(window.localStorage.getItem(PNY01_SHADOW_KEY) || "[]") as ShadowBatch[]; } catch { batches = []; }
+        const batch = batches.find((row) => row.id === input.batch_id && row.status === "PENDING");
+        if (!batch) throw new Error("That test batch is no longer pending.");
+        const receivedAt = new Date().toISOString();
+        const receiptLines = batch.lines.map((line) => {
+          const submitted = input.lines.find((row) => row.kitchen_row_id === `${batch.id}:${line.sku}`);
+          const received = input.action === "REJECT" ? 0 : submitted?.qty_received ?? line.qty;
+          return { kitchen_row_id: `${batch.id}:${line.sku}`, sku: line.sku, name: line.name, qty_sent: line.qty, qty_received: received, variance: received - line.qty, reason: input.action === "REJECT" ? input.reason ?? "Rejected" : submitted?.variance_reason ?? null };
+        });
+        const status = input.action === "REJECT" ? "REJECTED" as const : receiptLines.some((line) => line.variance !== 0) ? "PARTIAL" as const : "CONFIRMED" as const;
+        const receipt: RefillReceipt = { batch_id: batch.id, status, sent_by: batch.sender, received_by: "PNY01 Test Staff", sent_at_toronto: torontoDate(batch.sent_at), received_at_toronto: torontoDate(receivedAt), signal_notice: "DRY_RUN", lines: receiptLines };
+        window.localStorage.setItem(PNY01_SHADOW_KEY, JSON.stringify(batches.map((row) => row.id === batch.id ? { ...row, status, receipt } : row)));
+        await load();
+        return receipt;
+      }
       const body = input;
       const key = commandKeys.key("incoming-confirm", body);
       const saved = await post(`${storeApi}/incoming/confirm`, body, key);
@@ -748,8 +798,8 @@ export default function PosApp({
           <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
           {view.phase === "sell" ? (
             <div className={styles.namePills}>
-              <button className={`${styles.cornerBtn} ${styles.namePill} ${tab === "tickets" ? styles.namePillOn : ""}`} type="button" data-testid="tickets-tab" onClick={() => setTab("tickets")}>Ticket {view.pending_count ?? 0}</button>
-              <button className={`${styles.cornerBtn} ${styles.menuQr}`} type="button" data-testid="customer-qr" onClick={() => setQrOpen(true)}>MENU QR</button>
+              <button className={`${styles.cornerBtn} ${styles.namePill} ${tab === "tickets" ? styles.namePillOn : ""}`} type="button" data-testid="tickets-tab" disabled={shadowPny01} onClick={() => setTab("tickets")}>Ticket {view.pending_count ?? 0}</button>
+              <button className={`${styles.cornerBtn} ${styles.menuQr}`} type="button" data-testid="customer-qr" disabled={shadowPny01} onClick={() => setQrOpen(true)}>MENU QR</button>
             </div>
           ) : null}
         </div>
@@ -764,12 +814,12 @@ export default function PosApp({
             </button>
           ) : null}
           {view.phase === "sell" ? (
-            <button className={styles.cornerBtn} type="button" data-testid="pos-summary" onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
+            <button className={styles.cornerBtn} type="button" data-testid="pos-summary" disabled={shadowPny01} onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
           ) : null}
-          <Link className={styles.tillLink} href={storeTill} data-testid="open-till">Till</Link>
-          <button className={styles.ghost} type="button" disabled={view.master} onClick={() => void openEnd()}>End Shift</button>
+          {shadowPny01 ? <span className={styles.tillLink}>Till</span> : <Link className={styles.tillLink} href={storeTill} data-testid="open-till">Till</Link>}
+          <button className={styles.ghost} type="button" disabled={view.master || shadowPny01} onClick={() => void openEnd()}>End Shift</button>
           {view.phase === "sell" ? (
-            <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master} onClick={openDeposit}>+Deposit</button>
+            <button className={styles.cornerBtn} type="button" data-testid="pos-deposit" disabled={view.master || shadowPny01} onClick={openDeposit}>+Deposit</button>
           ) : null}
         </div>
       </header>
@@ -806,6 +856,7 @@ export default function PosApp({
       ) : null}
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
       {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
+      {shadowPny01 ? <div className={styles.banner}>TEST RECEIVER — sales, deposits, closing and live stock are disabled. Open Refill to receive the Kitchen batch.</div> : null}
       {error && !sheet && !refillOpen ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
 
       {view.phase === "opening" ? (

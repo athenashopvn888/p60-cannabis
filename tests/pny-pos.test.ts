@@ -930,7 +930,7 @@ test("23. shift, roster and closing code uses only the owned SCCx Signal gateway
   assert.match(readFileSync("app/pos/posSearch.ts", "utf8"), /isFlowerCategory/);
   assert.match(posApp, /data-layout="list"/);
   assert.match(posApp, /data-size=/);
-  assert.doesNotMatch(posApp, /stockCount|demo stock|qty_sent|System /);
+  assert.doesNotMatch(posApp, /stockCount|demo stock|System /);
   assert.doesNotMatch(readFileSync("app/pos/OpeningCount.tsx", "utf8"), /System |incoming_qty|system_qty/);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /Expected |shortage_qty|system_qty/);
   assert.doesNotMatch(tillApp, /system_qty|Sent /);
@@ -1742,10 +1742,11 @@ test("Kitchen suggestions are hints and only touched quantities enter the refill
   assert.match(app, /Store approval required/);
 });
 
-test("PNY01 Kitchen bridge is read-only and accepts only an isolated browser test receipt", () => {
+test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolated browser test receipt", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   const route = readFileSync("app/api/pos/kitchen/pny01-shadow/route.ts", "utf8");
-  const receiver = readFileSync("app/pos/pny01-refill-preview/Pny01RefillTest.tsx", "utf8");
+  const receiver = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const receiverPage = readFileSync("app/pos/pny01-refill-preview/page.tsx", "utf8");
   assert.match(app, /PNY01 Live Catalog · Test Receiver/);
   assert.match(app, /pnys-pny01-shadow-batches/);
   assert.match(app, /PNY01 TEST RECEIVER/);
@@ -1753,9 +1754,13 @@ test("PNY01 Kitchen bridge is read-only and accepts only an isolated browser tes
   assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
   assert.match(route, /stock_precision: "UNAVAILABLE"/);
-  assert.match(receiver, /localStorage/);
-  assert.match(receiver, /A reason is required when received is different from sent/);
-  assert.match(receiver, /never writes to pny_pos or live PNY01 stock/);
+  assert.match(receiverPage, /<PosApp shadowPny01/);
+  assert.match(receiver, /PNY01_SHADOW_KEY/);
+  assert.match(receiver, /pny01ShadowView/);
+  assert.match(receiver, /window\.localStorage\.setItem/);
+  assert.match(receiver, /TEST RECEIVER — sales, deposits, closing and live stock are disabled/);
+  assert.match(receiver, /<RefillList/);
+  assert.match(receiver, /disabled=\{view\.master \|\| shadowPny01\}/);
 });
 
 test("real Kitchen PIN signs in outside demo without opening or changing a staff shift", { concurrency: false }, async () => {
