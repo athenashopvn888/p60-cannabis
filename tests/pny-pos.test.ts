@@ -1757,7 +1757,9 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   assert.match(app, /window\.addEventListener\("pageshow", refresh\)/);
   assert.match(app, /PNY01 TEST RECEIVER/);
   assert.match(route, /const token = await kitchenToken\(\)/);
-  assert.match(route, /await \(await getService\(\)\)\.kitchenState\(token\)/);
+  assert.match(route, /service\.kitchenState\(token\)/);
+  assert.match(route, /service\.menu\(\)/);
+  assert.match(route, /price_cents: prices\.get\(product\.sku\) \?\? 0/);
   assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
   assert.match(route, /source: "PNYS refreshed PNY01 stock snapshot"/);
   assert.match(route, /stock_precision: "EXACT_TEST_MIRROR"/);
