@@ -975,6 +975,19 @@ test("the sales feed returns new sales once and does not change the till", async
   }
 });
 
+test("the production sales feed uses the read-only snapshot path", async () => {
+  const h = await readyTill({ "1001": 4 });
+  const state = structuredClone(h.db.state);
+  (h.db as typeof h.db & { peek: () => Promise<typeof state> }).peek = async () => state;
+  h.db.transaction = async () => {
+    throw new Error("sales feed must not open a write transaction");
+  };
+
+  const feed = await h.svc.salesFeed(null);
+  assert.equal(feed.ok, true);
+  assert.equal(feed.bootstrap, true);
+});
+
 test("the stock feed returns authoritative enabled balances without changing the till", async () => {
   const h = await readyTill({ "1001": 7, "1002": 0 });
   const before = JSON.stringify(h.db.state);

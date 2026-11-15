@@ -2582,16 +2582,11 @@ export class PosService {
    */
   async salesFeed(since: string | null, limit = 50) {
     const pageSize = Math.min(50, Math.max(1, Math.trunc(limit) || 50));
-    return this.db.transaction(async (tx) => {
-      const before = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      const allRows = tx.state.sales
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+      const allRows = state.sales
         .filter((sale) => {
-          const shift = tx.state.shifts.find((row) => row.id === sale.shift_id);
+          const shift = state.shifts.find((row) => row.id === sale.shift_id);
           return !shift || shift.store_code === tillCode();
         })
         .map((sale, index) => ({ sale, index, cursor: `${sale.created_at}|${sale.id}` }))
@@ -2606,13 +2601,13 @@ export class PosService {
           ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize)
           : rows.filter((row) => row.cursor > cursor).slice(0, pageSize);
       const sales = selected.map(({ sale, index: saleIndex }) => {
-        const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
-        const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
-        const items = tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
-          const product = tx.state.products.find((row) => row.sku === line.sku);
+        const staff = state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        const ticket = sale.ticket_id ? state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+        const items = state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
+          const product = state.products.find((row) => row.sku === line.sku);
           return {
             sku: line.sku,
-            name: product?.name ?? productName(tx.state, line.sku),
+            name: product?.name ?? productName(state, line.sku),
             size: sizeLabel(line.sku, product?.category, product?.name),
             qty: line.qty,
             line_price_cents: line.line_total_cents,
@@ -2638,13 +2633,6 @@ export class PosService {
           store: tillCode(),
         };
       });
-      const after = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      if (after !== before) throw new PosError(500, "FEED_WRITE", "The sales feed must not change the till.");
       return {
         ok: true as const,
         store: tillCode(),
@@ -2652,7 +2640,6 @@ export class PosService {
         next_cursor: selected.at(-1)?.cursor ?? (cursor || latest),
         bootstrap: !cursor,
       };
-    });
   }
 
   /**
