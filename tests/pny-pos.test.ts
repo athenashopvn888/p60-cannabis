@@ -1844,6 +1844,21 @@ test("combined SETB rows split per SKU and a MANUAL price stays put", () => {
   assert.equal(priced.get("720")?.name, "Staff lighter");
 });
 
+test("Knock Out combined source becomes three exact PNY01 till SKUs", () => {
+  const parsed = expandSetbItems([
+    ["S", "Category", "Name", "MG", "Price_EACH", "Status"],
+    ["655, 656, 657", "EDIBLES", "KNOCK OUT GUMMIES", "1500mg / 3000mg / 5000mg", "$25 / $35 / $50", "ACTIVE"],
+  ]).items;
+  assert.deepEqual(
+    parsed.filter((row) => ["655", "656", "657"].includes(row.sku)).map((row) => ({ sku: row.sku, name: row.name, category: row.category, cents: row.unitCents })),
+    [
+      { sku: "655", name: "KNOCK OUT GUMMIES 1500MG", category: "EDIBLES", cents: 2500 },
+      { sku: "656", name: "KNOCK OUT GUMMIES 3000MG", category: "EDIBLES", cents: 3500 },
+      { sku: "657", name: "KNOCK OUT GUMMIES 5000MG", category: "EDIBLES", cents: 5000 },
+    ],
+  );
+});
+
 test("verify count order, size label, and the staff discrepancy row", () => {
   assert.equal(sizeLabel("200-5g", "AA"), "5g");
   assert.equal(sizeLabel("350-5g", "AAA+"), "6g");
