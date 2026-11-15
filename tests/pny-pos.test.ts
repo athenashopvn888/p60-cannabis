@@ -1747,7 +1747,9 @@ test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolate
   const route = readFileSync("app/api/pos/kitchen/pny01-shadow/route.ts", "utf8");
   const receiver = readFileSync("app/pos/PosApp.tsx", "utf8");
   const receiverPage = readFileSync("app/pos/pny01-refill-preview/page.tsx", "utf8");
-  assert.match(app, /PNY01 Live Catalog · Test Receiver/);
+  assert.match(app, /PNY01 Stock Snapshot · Test Receiver/);
+  assert.match(app, /get\("store"\) !== "PNY01_TEST"/);
+  assert.match(app, /void chooseStore\("PNY01_TEST"\)/);
   assert.match(app, /pnys-pny01-shadow-batches/);
   assert.match(app, /PNY01 TEST RECEIVER/);
   assert.match(route, /await \(await getService\(\)\)\.menu\(\)/);

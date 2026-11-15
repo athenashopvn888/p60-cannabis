@@ -80,6 +80,14 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     return () => controller.abort();
   }, [isPreview]);
 
+  useEffect(() => {
+    if (isPreview || !view.authenticated || selectedStore === "PNY01_TEST") return;
+    if (new URLSearchParams(window.location.search).get("store") !== "PNY01_TEST") return;
+    void chooseStore("PNY01_TEST");
+    // The query string is a one-time test-store handoff after Kitchen authentication.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreview, view.authenticated, selectedStore]);
+
   const allProducts = view.products ?? noProducts;
   const refillLines = useMemo(() => allProducts.flatMap((product) => {
     const raw = qty[product.sku] ?? "";
@@ -198,7 +206,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       {screen === "refill" ? <section data-testid="kitchen-refill">
         <label className={styles.storeLabel} htmlFor="kitchen-store">Store</label>
         <select id="kitchen-store" className={styles.storeSelect} value={selectedStore} disabled={busy} onChange={(event) => void chooseStore(event.target.value)}>
-          {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Live Catalog · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
+          {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Stock Snapshot · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
         </select>
         <label className={styles.searchLabel} htmlFor="kitchen-search">SKU, name or size</label><input id="kitchen-search" className={styles.search} placeholder="Search SKU, name or size" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "low" ? "Low stock" : value === "zero" ? "Zero stock" : "Pending refill"}</button>)}</div>
