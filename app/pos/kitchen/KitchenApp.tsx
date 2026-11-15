@@ -8,7 +8,6 @@ type Product = { sku: string; name: string; category: string; size: string; pric
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
 type KitchenView = { authenticated: boolean; store_code?: string; stores?: { code: string; name: string }[]; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
-type Filter = "all" | "low" | "zero" | "pending";
 type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
 type SortDirection = "asc" | "desc";
 type Language = "vi" | "en";
@@ -23,7 +22,7 @@ const copy = {
   vi: {
     enterPin: "Nhập mã PIN Kitchen.", signIn: "Đăng nhập", logout: "Đăng xuất", testStore: "CỬA HÀNG THỬ NGHIỆM",
     newRefill: "Tạo hàng bổ sung", confirmBatch: "Xác nhận lô hàng", refillHistory: "Lịch sử bổ sung", sentToStore: "Đã gửi đến cửa hàng",
-    store: "Cửa hàng", search: "Tìm SKU, tên hoặc kích cỡ", all: "Tất cả", low: "Sắp hết", zero: "Hết hàng", pendingFilter: "Đang chờ bổ sung",
+    store: "Cửa hàng", search: "Tìm SKU, tên hoặc kích cỡ", all: "Tất cả",
     sortBy: "Sắp xếp", onHand: "Tồn kho", sold: "Đã bán 24h", pending: "Đang chờ", refill: "Bổ sung", refillQty: "SL bổ sung",
     suggested: "Bổ sung đề xuất", formula: "= max(0, Đã bán 24h × 2 − Tồn kho − Đang chờ). Số đề xuất chỉ để tham khảo và không được thêm cho đến khi bấm Dùng đề xuất.",
     useSuggested: "Dùng đề xuất", suggestedZero: "Đề xuất 0", approval: "Cần cửa hàng duyệt", unavailable: "KHÔNG CÓ DỮ LIỆU", noMatch: "Không tìm thấy SKU phù hợp.",
@@ -35,7 +34,7 @@ const copy = {
   en: {
     enterPin: "Enter the Kitchen PIN.", signIn: "Sign in", logout: "Logout", testStore: "TEST STORE",
     newRefill: "New refill", confirmBatch: "Confirm batch", refillHistory: "Refill history", sentToStore: "Sent to store",
-    store: "Store", search: "Search SKU, name or size", all: "All", low: "Low stock", zero: "Zero stock", pendingFilter: "Pending refill",
+    store: "Store", search: "Search SKU, name or size", all: "All",
     sortBy: "Sort by", onHand: "On hand", sold: "Sold 24h", pending: "Pending", refill: "Refill", refillQty: "Refill qty",
     suggested: "Suggested refill", formula: "= max(0, Sold 24h × 2 − On hand − Pending). Suggestions are hints and are never added until you tap Use suggested.",
     useSuggested: "Use suggested", suggestedZero: "Suggested 0", approval: "Store approval required", unavailable: "UNAVAILABLE", noMatch: "No SKUs match this filter.",
@@ -117,7 +116,6 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   const [view, setView] = useState<KitchenView>(() => preview === "login" ? { authenticated: false } : isPreview ? { authenticated: true, store_code: "PNYS", stores: [{ code: "PNYS", name: "PNYS Test Store" }], products: previewProducts, history: previewHistory } : { authenticated: false });
   const [pin, setPin] = useState("");
   const [screen, setScreen] = useState<Screen>(initialScreen);
-  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [selectedStore, setSelectedStore] = useState("PNYS");
   const [skuRange, setSkuRange] = useState("all");
@@ -210,9 +208,6 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       const base = Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10);
       if (!Number.isFinite(base) || Math.floor(base / 100) * 100 !== Number(skuRange)) return false;
     }
-    if (filter === "low") return product.suggested_refill_qty > 0;
-    if (filter === "zero") return product.on_hand === 0;
-    if (filter === "pending") return product.pending_qty > 0;
     return true;
   }).sort((left, right) => {
     const direction = sortDirection === "asc" ? 1 : -1;
@@ -231,7 +226,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   }
 
   function sortLabel(label: string, key: SortKey) {
-    return `${label}${sortKey === key ? sortDirection === "asc" ? " ↑" : " ↓" : ""}`;
+    return <><span>{label}</span><b aria-hidden="true">{sortKey === key ? sortDirection === "asc" ? "▲" : "▼" : "↕"}</b></>;
   }
 
   async function loadShadowStore() {
@@ -312,16 +307,16 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     </header>
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">
-        <label className={styles.storeLabel} htmlFor="kitchen-store">{text.store}</label>
-        <select id="kitchen-store" className={styles.storeSelect} value={selectedStore} disabled={busy} onChange={(event) => void chooseStore(event.target.value)}>
-          {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Stock Snapshot · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
-        </select>
-        <label className={styles.searchLabel} htmlFor="kitchen-search">{text.search}</label><input id="kitchen-search" className={styles.search} placeholder={text.search} value={query} onChange={(event) => setQuery(event.target.value)} />
-        <div className={styles.filters} aria-label="Refill filters">{(["all","low","zero","pending"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? text.all : value === "low" ? text.low : value === "zero" ? text.zero : text.pendingFilter}</button>)}</div>
+        <div className={styles.controlsRow}>
+          <label className={styles.controlField} htmlFor="kitchen-store"><span>{text.store}</span><select id="kitchen-store" className={styles.storeSelect} value={selectedStore} disabled={busy} onChange={(event) => void chooseStore(event.target.value)}>
+            {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Stock Snapshot · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
+          </select></label>
+          <label className={styles.controlField} htmlFor="kitchen-search"><span>{text.search}</span><input id="kitchen-search" className={styles.search} placeholder={text.search} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        </div>
         <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>{text.all}</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
-        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
+        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
         <p className={styles.formula}><strong>{text.suggested}</strong> {text.formula}</p>
-        <div className={styles.legend}><button type="button" onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button type="button" onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button type="button" onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button type="button" onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
+        <div className={styles.legend}><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
           <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>{text.approval}</em> : null}</div>
           <span className={styles.metric}><small>{text.onHand}</small><strong>{product.on_hand ?? "—"}</strong>{product.on_hand == null ? <small>{product.availability ?? text.unavailable}</small> : null}</span>

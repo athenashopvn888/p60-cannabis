@@ -1699,7 +1699,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /data-testid="kitchen-login"/);
   assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
   assert.match(app, /Search SKU, name or size/);
-  assert.match(app, /htmlFor="kitchen-store">\{text\.store\}/);
+  assert.match(app, /htmlFor="kitchen-store"><span>\{text\.store\}<\/span>/);
   assert.match(app, /className=\{styles\.storeSelect\}/);
   assert.match(app, /aria-label="SKU sections"/);
   assert.match(app, /\{start\}–\{start \+ 99\}/);
@@ -1710,9 +1710,9 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /changeSort\("pending_qty"\)/);
   assert.match(app, /aria-label="Mobile sort"/);
   assert.match(css, /\.mobileSort\{display:grid/);
-  assert.match(app, /Low stock/);
-  assert.match(app, /Zero stock/);
-  assert.match(app, /Pending refill/);
+  assert.match(app, /className=\{styles\.controlsRow\}/);
+  assert.doesNotMatch(app, /aria-label="Refill filters"/);
+  assert.match(app, /"▲" : "▼" : "↕"/);
   assert.match(app, /Sold 24h × 2 − On hand − Pending/);
   assert.match(app, /\{text\.refillList\} · \{totalUnits\}/);
   assert.doesNotMatch(app, />Review · \{totalUnits\}</);
