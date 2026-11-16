@@ -1746,6 +1746,10 @@ test("Kitchen shows staff requests instead of suggested refill quantities", () =
   assert.match(app, /\{text\.useRequested\} \{product\.requested_qty\}/);
   assert.doesNotMatch(app, /text\.useSuggested|text\.suggestedZero/);
   assert.match(app, /approval: "Store approval required"/);
+  assert.match(app, /dashboard: "Dashboard"/);
+  assert.match(app, /dashboard: "Trang chính"/);
+  assert.match(app, /screen === "history".*text\.dashboard/s);
+  assert.doesNotMatch(app, /newRefillButton/);
 });
 
 test("PNYS staff stock request reaches Kitchen without changing on-hand", { concurrency: false }, async () => {

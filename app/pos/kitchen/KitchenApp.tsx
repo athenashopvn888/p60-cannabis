@@ -29,7 +29,7 @@ const copy = {
     confirmTitle: "Xác nhận lô bổ sung", confirmHelp: "Kiểm tra từng số lượng trước khi gửi. Tồn kho chỉ thay đổi sau khi nhân viên cửa hàng xác nhận đã nhận.",
     skus: "SKU", totalUnits: "tổng sản phẩm", history: "Lịch sử", waiting: "Chờ nhân viên xác nhận", batch: "Lô", sentBy: "gửi bởi", reason: "Lý do",
     sent: "đã gửi", received: "đã nhận", sentHeading: "Đã gửi hàng bổ sung đến", statusHelp: "Trạng thái: PENDING_CONFIRM. Nhân viên cửa hàng phải xác nhận số lượng đã nhận trước khi tồn kho thay đổi.",
-    newRefillButton: "Tạo bổ sung", back: "Quay lại", sendToStore: "Gửi đến cửa hàng", done: "Xong", refillList: "DANH SÁCH BỔ SUNG", totalStock: "TỔNG TỒN KHO", refillTotal: "BỔ SUNG", qtyShort: "SL",
+    dashboard: "Trang chính", back: "Quay lại", sendToStore: "Gửi đến cửa hàng", done: "Xong", refillList: "DANH SÁCH BỔ SUNG", totalStock: "TỔNG TỒN KHO", refillTotal: "BỔ SUNG", qtyShort: "SL",
   },
   en: {
     enterPin: "Enter the Kitchen PIN.", signIn: "Sign in", logout: "Logout", testStore: "TEST STORE",
@@ -40,7 +40,7 @@ const copy = {
     confirmTitle: "Confirm refill batch", confirmHelp: "Review every quantity before sending. Stock will not change until store staff confirms receipt.",
     skus: "SKUs", totalUnits: "total units", history: "History", waiting: "Waiting for staff", batch: "Batch", sentBy: "sent by", reason: "Reason",
     sent: "sent", received: "received", sentHeading: "Refill sent to", statusHelp: "Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.",
-    newRefillButton: "New refill", back: "Back", sendToStore: "Send to store", done: "Done", refillList: "REFILL LIST", totalStock: "TOTAL STOCK", refillTotal: "REFILL", qtyShort: "QTY",
+    dashboard: "Dashboard", back: "Back", sendToStore: "Send to store", done: "Done", refillList: "REFILL LIST", totalStock: "TOTAL STOCK", refillTotal: "REFILL", qtyShort: "QTY",
   },
 } as const;
 
@@ -334,7 +334,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     <footer className={styles.bottom} data-testid="kitchen-actions">
       {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>{text.history}</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>{text.refillList} · {totalUnits}</button></> : null}
       {screen === "confirm" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>{text.back}</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>{text.sendToStore} · {batchTotal}</button></> : null}
-      {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.newRefillButton}</button> : null}
+      {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.dashboard}</button> : null}
       {screen === "sent" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.done}</button> : null}
     </footer>
   </main>;
