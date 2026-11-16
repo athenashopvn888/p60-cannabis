@@ -2720,9 +2720,15 @@ export class PosService {
       .filter((sale) => state.shifts.some((shift) => shift.id === sale.shift_id && shift.store_code === tillCode()))
       .map((sale) => sale.id));
     const sold24h = new Map<string, number>();
+    const soldDay = new Map<string, number>();
+    const soldNight = new Map<string, number>();
     for (const line of state.sale_lines) {
       if (!saleIds.has(line.sale_id)) continue;
       sold24h.set(line.sku, (sold24h.get(line.sku) ?? 0) + line.qty);
+      const sale = state.sales.find((row) => row.id === line.sale_id);
+      const hour = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "2-digit", hourCycle: "h23" }).format(new Date(sale?.created_at ?? now)));
+      const bucket = hour >= 6 && hour < 18 ? soldDay : soldNight;
+      bucket.set(line.sku, (bucket.get(line.sku) ?? 0) + line.qty);
     }
     const pending = new Map<string, number>();
     for (const row of state.incoming) {
@@ -2749,6 +2755,8 @@ export class PosService {
           price_cents: sellingPriceCents(state, product.sku),
           on_hand: onHand,
           sold_24h: sold,
+          sold_day: soldDay.get(product.sku) ?? 0,
+          sold_night: soldNight.get(product.sku) ?? 0,
           pending_qty: pendingQty,
           suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
           requested_qty: requested.get(product.sku) ?? 0,

@@ -1684,6 +1684,8 @@ test("PNYS Kitchen queues an idempotent pending refill and staff confirmation ad
   assert.equal(qty(db, "240"), before);
   const kitchenView = await svc.kitchenState(kitchen.token);
   assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before && row.sold_24h === 3 && row.pending_qty === 4 && row.suggested_refill_qty === Math.max(0, 6 - before - 4)), true);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_day, 3);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_night, 0);
   assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
 
   const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
@@ -1708,10 +1710,11 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /Math\.max\(1000,/);
   assert.match(app, /changeSort\("sku"\)/);
   assert.match(app, /changeSort\("on_hand"\)/);
-  assert.match(app, /changeSort\("sold_24h"\)/);
+  assert.match(app, /changeSort\("sold_day"\)/);
+  assert.match(app, /changeSort\("sold_night"\)/);
   assert.match(app, /changeSort\("pending_qty"\)/);
   assert.match(app, /aria-label="Mobile sort"/);
-  assert.match(css, /\.mobileSort\{display:grid/);
+  assert.match(css, /\.mobileSort\s*\{[\s\S]*?display:\s*grid/);
   assert.match(app, /className=\{styles\.controlsRow\}/);
   assert.doesNotMatch(app, /aria-label="Refill filters"/);
   assert.match(app, /"▲" : "▼" : "↕"/);
@@ -1726,11 +1729,12 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /Status: PENDING_CONFIRM\. Store staff must confirm/);
   assert.match(css, /position: fixed/);
   assert.match(css, /overflow-y: auto/);
-  assert.match(css, /@media\(max-width:390px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
   assert.match(service, /async kitchenState\(token: string\)/);
   assert.match(service, /stores: \[\{ code: tillCode\(\), name:/);
   assert.match(service, /suggested_refill_qty/);
   assert.match(service, /24 \* 60 \* 60 \* 1000/);
+  assert.match(service, /timeZone: "America\/Toronto"/);
   assert.match(service, /async queueKitchenRefill/);
   assert.match(service, /status: "PENDING_CONFIRM"/);
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
