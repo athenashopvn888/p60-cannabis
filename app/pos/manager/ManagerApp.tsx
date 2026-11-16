@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./manager.module.css";
 
+const isTestStore = process.env.NEXT_PUBLIC_TEST_STORE === "1";
+const deploymentLabel = isTestStore ? "PNYS" : "PNY01";
+
 type Screen = "overview" | "stock" | "refills" | "closings" | "customers" | "audit";
 type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; refill_coming: number; price_cents: number; enabled: boolean };
 type Refill = { kitchen_row_id: string; batch_id: string; sku: string; name: string; qty_sent: number; qty_received: number | null; status: string; kitchen_sent_at: string; staff_confirmed_at: string | null; sent_by?: string; received_by?: string | null };
@@ -201,7 +204,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
 
   if (!view.authenticated) return <main className={styles.login} data-testid="manager-login">
     <section className={styles.loginCard}>
-      <div className={styles.test}>TEST STORE</div><h1>PNYS Manager</h1><p>Enter the Manager PIN.</p>
+      {isTestStore ? <div className={styles.test}>TEST STORE</div> : null}<h1>{deploymentLabel} Manager</h1><p>Enter the Manager PIN.</p>
       <div className={styles.pinDots} aria-label={`${pin.length} digits entered`}>{"●".repeat(pin.length) || "○ ○ ○ ○"}</div>
       <div className={styles.keypad}>{["1","2","3","4","5","6","7","8","9","Clear","0","⌫"].map((key) => <button key={key} type="button" onClick={() => setPin((value) => key === "Clear" ? "" : key === "⌫" ? value.slice(0, -1) : value.length < 6 ? value + key : value)}>{key}</button>)}</div>
       {error ? <p className={styles.error}>{error}</p> : null}
@@ -222,7 +225,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   const refillBatches = view.refill_batches?.length ? view.refill_batches : [...new Set((view.refills ?? []).map((row) => row.batch_id))].map((batchId) => { const lines = (view.refills ?? []).filter((row) => row.batch_id === batchId); return { batch_id: batchId, sent_at: lines[0]?.kitchen_sent_at ?? "", sent_by: lines[0]?.sent_by ?? "Kitchen", received_by: lines[0]?.received_by ?? null, status: lines.every((row) => row.staff_confirmed_at) ? "CONFIRMED" : "PENDING", lines }; });
   const refillBatch = refillBatches[Math.min(refillIndex, Math.max(0, refillBatches.length - 1))];
   return <main className={styles.shell} data-testid="manager-shell" data-manager-screen={screen}>
-    <header className={styles.top}><div><strong>{view.store_code ?? "PNYS"}</strong><span> · Manager</span></div><strong>{labels[screen]}</strong><strong className={styles.test}>TEST STORE</strong></header>
+    <header className={styles.top}><div><strong>{isTestStore ? (view.store_code ?? "PNYS") : "PNY01"}</strong><span> · Manager</span></div><strong>{labels[screen]}</strong>{isTestStore ? <strong className={styles.test}>TEST STORE</strong> : null}</header>
     <div className={styles.middle}>
       <aside className={styles.readOnly}>{view.read_only ? "LIVE READ-ONLY · PNY01 stock, sales, refills and closings. No Manager action can change the live till." : "CONTROLLED WRITES · Price, stock and expense changes stay locked. WEED mode uses exact confirmation plus an audited backup and undo."}</aside>
       <label className={styles.storePicker}>Store

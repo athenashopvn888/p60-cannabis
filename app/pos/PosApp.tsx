@@ -31,6 +31,8 @@ import { ProductPhoto } from "./ProductPhoto";
 import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 import styles from "./till.module.css";
 
+const isTestStore = process.env.NEXT_PUBLIC_TEST_STORE === "1";
+
 function rowsOf<T>(items: T[], size: number) {
   const rows: T[][] = [];
   for (let index = 0; index < items.length; index += size) rows.push(items.slice(index, index + size));
@@ -823,7 +825,7 @@ export default function PosApp({
   return (
     <main className={styles.shell} data-testid="pos-shell" data-pnys-shell={storeCode === "PNYS" ? "" : undefined}>
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
-      {storeCode === "PNYS" ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
+      {storeCode === "PNYS" && isTestStore ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
