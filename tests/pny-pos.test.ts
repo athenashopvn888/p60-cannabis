@@ -1773,6 +1773,18 @@ test("PNYS staff stock request reaches Kitchen without changing on-hand", { conc
   assert.equal(qty(db, "240"), before);
 });
 
+test("PNYS frozen preview database guard permits only the STOCK_REQUEST mutation class", () => {
+  const migration = readFileSync("supabase/migrations/20261116173000_pnys_frozen_preview_stock_request.sql", "utf8");
+  const undo = readFileSync("supabase/undo/20261116173000_pnys_frozen_preview_stock_request.undo.sql", "utf8");
+  const app = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(migration, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO','STOCK_REQUEST'\) and preview_test/);
+  assert.match(undo, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO'\) and preview_test/);
+  assert.doesNotMatch(undo, /'STOCK_REQUEST'/);
+  assert.match(app, /Request sent:/);
+  assert.match(app, /styles\.requestError/);
+  assert.match(app, /Sending…/);
+});
+
 test("Kitchen defaults to Vietnamese, can switch to English, searches every SKU section, and shows stock/refill totals", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");

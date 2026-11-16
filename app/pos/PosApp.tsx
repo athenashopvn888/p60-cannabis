@@ -202,6 +202,7 @@ export default function PosApp({
   const [couponCode, setCouponCode] = useState("");
   const [couponQuote, setCouponQuote] = useState<{ label: string; discount_cents: number; total_cents: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stockRequestStatus, setStockRequestStatus] = useState("");
   const [floatFound, setFloatFound] = useState("");
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
@@ -216,15 +217,16 @@ export default function PosApp({
 
   async function sendStockRequest() {
     const lines = Object.entries(requestQty).map(([sku, value]) => ({ sku, qty: Number(value) })).filter((line) => Number.isInteger(line.qty) && line.qty > 0);
-    if (!lines.length) { setError("Enter at least one requested quantity."); return; }
+    if (!lines.length) { setError("Enter at least one requested quantity."); setStockRequestStatus(""); return; }
     const body = { lines };
     const key = commandKeys.key("staff-stock-request", body);
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setStockRequestStatus("");
     try {
-      await post(`${storeApi}/stock-requests`, { ...body, request_id: key }, key);
+      const result = await post(`${storeApi}/stock-requests`, { ...body, request_id: key }, key) as { line_count: number; total_units: number };
       commandKeys.complete("staff-stock-request", key);
       setRequestQty({}); setRequestQuery(""); setRequestOpen(false);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Stock request was not sent."); }
+      setStockRequestStatus(`Request sent: ${result.line_count} SKU${result.line_count === 1 ? "" : "s"}, ${result.total_units} units.`);
+    } catch (cause) { setError(failureText(cause) || "Stock request was not sent."); }
     finally { setBusy(false); }
   }
 
@@ -887,7 +889,8 @@ export default function PosApp({
       {view.sheet_sync_delayed ? <div className={styles.delayed}>Sheet sync delayed</div> : null}
       {view.block === "WAITING_FOR_KITCHEN" ? <div className={styles.banner} data-testid="waiting-kitchen">No stock assigned yet — waiting for Kitchen</div> : null}
       {shadowPny01 ? <div className={styles.banner}>TEST RECEIVER — sales, deposits, closing and live stock are disabled. Open Refill to receive the Kitchen batch.</div> : null}
-      {error && !sheet && !refillOpen ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
+      {stockRequestStatus && !sheet && !refillOpen ? <p className={styles.requestSuccess} role="status">{stockRequestStatus}</p> : null}
+      {error && !sheet && !refillOpen && !requestOpen ? <p className={styles.error} style={{ padding: "0 12px" }}>{error}</p> : null}
 
       {view.phase === "opening" ? (
         <OpeningCount
@@ -900,7 +903,7 @@ export default function PosApp({
       ) : null}
 
       {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} scanCatalog={view.scan_products ?? []} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
-      {requestOpen ? <div className={styles.requestDialog} role="dialog" aria-modal="true" data-testid="stock-request-dialog"><section><header><div><h2>Request stock</h2><p>Kitchen will see the requested quantities. Stock does not change.</p></div><button type="button" onClick={() => setRequestOpen(false)}>×</button></header><input inputMode="numeric" placeholder="Search SKU or name" value={requestQuery} onChange={(event) => setRequestQuery(event.target.value)}/><div className={styles.requestList}>{(view.products ?? []).filter((product) => `${product.sku} ${product.name}`.toLowerCase().includes(requestQuery.trim().toLowerCase())).map((product) => <label key={product.sku}><span><strong>{product.sku}</strong>{product.name}</span><input inputMode="numeric" aria-label={`Request ${product.sku}`} value={requestQty[product.sku] ?? ""} onChange={(event) => setRequestQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/></label>)}</div><footer><button type="button" onClick={() => setRequestOpen(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void sendStockRequest()}>Send request</button></footer></section></div> : null}
+      {requestOpen ? <div className={styles.requestDialog} role="dialog" aria-modal="true" data-testid="stock-request-dialog"><section><header><div><h2>Request stock</h2><p>Kitchen will see the requested quantities. Stock does not change.</p></div><button type="button" onClick={() => setRequestOpen(false)}>×</button></header><input inputMode="numeric" placeholder="Search SKU or name" value={requestQuery} onChange={(event) => setRequestQuery(event.target.value)}/><div className={styles.requestList}>{(view.products ?? []).filter((product) => `${product.sku} ${product.name}`.toLowerCase().includes(requestQuery.trim().toLowerCase())).map((product) => <label key={product.sku}><span><strong>{product.sku}</strong>{product.name}</span><input inputMode="numeric" aria-label={`Request ${product.sku}`} value={requestQty[product.sku] ?? ""} onChange={(event) => setRequestQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/></label>)}</div>{error ? <p className={styles.requestError} role="alert">{error}</p> : null}<footer><button type="button" disabled={busy} onClick={() => setRequestOpen(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void sendStockRequest()}>{busy ? "Sending…" : "Send request"}</button></footer></section></div> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">
