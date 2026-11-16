@@ -67,13 +67,16 @@ export async function POST(request: Request) {
     await client.query("begin");
     const current = await client.query("select version,doc from pnys_pos.live_state where store_code='PNYS' for update");
     if (current.rowCount !== 1) throw new Error("PNYS live state is missing");
+    const currentDoc = current.rows[0].doc as Record<string, unknown>;
+    const currentAudit = Array.isArray(currentDoc.audit) ? currentDoc.audit as Array<Record<string, unknown>> : [];
+    if (currentAudit.some((row) => row.action === "PNYS_CUTOVER" && row.ref_id === body.cutover_id)) throw new Error("This cutover is already complete");
     const runtime = await client.query("select write_mode,generation,cutover_id from pos_hub.store_runtime where store_code='PNYS'");
     const owners = await client.query("select channel from pos_hub.integration_owner where owner_store_code='PNYS' and generation=2 and enabled=true and cutover_id=$1", [body.cutover_id]);
     if (runtime.rows[0]?.write_mode !== "ACTIVE" || Number(runtime.rows[0]?.generation) !== 2 || runtime.rows[0]?.cutover_id !== body.cutover_id) throw new Error("PNYS runtime was not armed for this cutover");
     if (owners.rowCount !== 7) throw new Error("PNYS does not own all seven integration channels");
 
     const now = new Date().toISOString();
-    const next = current.rows[0].doc as Record<string, unknown>;
+    const next = currentDoc;
     const existingStores = Array.isArray(next.stores) ? next.stores as Array<Record<string, unknown>> : [];
     next.stores = [{
       ...(existingStores.find((row) => row.code === "PNYS") ?? {}),
