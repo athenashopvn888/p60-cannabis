@@ -24,7 +24,7 @@ type ManagerView = {
   store_code?: string;
   stores?: ManagerStore[];
   read_only?: boolean;
-  data_source?: "LIVE_READ_ONLY" | "PNYS_PREVIEW";
+  data_source?: "LIVE" | "LIVE_READ_ONLY" | "PNYS_PREVIEW";
   live_shift?: { shift_id: string; status: string; staff_name: string; started_at: string } | null;
   today?: { date: string; sale_count: number; sales_total_cents: number; cash_cents: number; debit_cents: number };
   products?: Product[];
@@ -97,7 +97,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   const [showAllStock, setShowAllStock] = useState(false);
   const [stockIndex, setStockIndex] = useState(0);
   const [refillIndex, setRefillIndex] = useState(0);
-  const [selectedStore, setSelectedStore] = useState<"PNY01" | "PNYS">("PNYS");
+  const [selectedStore, setSelectedStore] = useState<"PNY01" | "PNYS">(isTestStore ? "PNYS" : "PNY01");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [weedTarget, setWeedTarget] = useState<boolean | null>(null);
@@ -119,9 +119,9 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   useEffect(() => {
     if (isPreview) return;
     const controller = new AbortController();
-    void fetch("/api/pos/manager/state?store=PNYS", { cache: "no-store", credentials: "same-origin", signal: controller.signal })
+    void fetch(`/api/pos/manager/state?store=${isTestStore ? "PNYS" : "PNY01"}`, { cache: "no-store", credentials: "same-origin", signal: controller.signal })
       .then(async (response) => response.status === 401 ? ({ authenticated: false } as ManagerView) : await readJson(response) as unknown as ManagerView)
-      .then(setView)
+      .then((next) => { setView(next); if (next.store_code) setSelectedStore(next.store_code === "PNY01" ? "PNY01" : "PNYS"); })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not load Manager."); });
     return () => controller.abort();
   }, [isPreview]);
@@ -232,7 +232,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
         <select value={selectedStore} disabled={busy} onChange={(event) => { const store = event.target.value === "PNY01" ? "PNY01" : "PNYS"; setSelectedStore(store); setQuery(""); setError(""); setBusy(true); void load(store).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load store.")).finally(() => setBusy(false)); }}>
           {(view.stores ?? [{ code: "PNY01", name: "PNY01 · P60 Cannabis" }, { code: "PNYS", name: "PNYS · Test Store" }]).map((store) => <option key={store.code} value={store.code}>{store.name}</option>)}
         </select>
-        <small>{view.data_source === "LIVE_READ_ONLY" ? "Live data · read-only" : "PNYS preview data"}</small>
+        <small>{view.data_source === "LIVE" ? "Live PNY01 data" : view.data_source === "LIVE_READ_ONLY" ? "Retained PNY01 data · read-only" : "PNYS preview data"}</small>
       </label>
       {screen === "overview" ? <section data-testid="manager-overview">
         <h1>Live shift</h1>{view.live_shift ? <article className={styles.shift}><div><span>Status</span><strong>{view.live_shift.status}</strong></div><div><span>Staff</span><strong>{view.live_shift.staff_name}</strong></div><div><span>Started</span><strong>{stamp(view.live_shift.started_at)}</strong></div><div><span>Shift</span><strong>{view.live_shift.shift_id}</strong></div></article> : <p className={styles.empty}>No shift active.</p>}
