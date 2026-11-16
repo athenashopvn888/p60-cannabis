@@ -13,6 +13,7 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
+import { forPny01Sccx } from "../app/lib/pny-pos/sccxFeedCompatibility.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
@@ -1221,6 +1222,17 @@ test("the sales feed returns new sales once and does not change the till", async
     if (savedToken == null) delete process.env.SALES_FEED_TOKEN;
     else process.env.SALES_FEED_TOKEN = savedToken;
   }
+});
+
+test("PNYS sales feed preserves the retained PNY01 SCCx contract", () => {
+  const payload = forPny01Sccx({
+    ok: true,
+    store: "PNYS",
+    sales: [{ id: "sale-1", store: "PNYS", order_no: "PNYS-00001" }],
+  });
+  assert.equal(payload.store, "PNY01");
+  assert.equal(payload.sales[0]?.store, "PNY01");
+  assert.equal(payload.sales[0]?.order_no, "PNYS-00001");
 });
 
 test("poll endpoints use detached reads instead of transactions", async () => {
