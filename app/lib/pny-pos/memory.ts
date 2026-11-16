@@ -57,6 +57,11 @@ export class MemoryDb implements PosDb {
     this.state = state ?? emptyState();
   }
 
+  /** Read the in-memory document without replacing it. */
+  peek() {
+    return Promise.resolve(structuredClone(this.state) as State);
+  }
+
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     const run = this.tail.then(async () => {
       const snapshot = structuredClone(this.state) as State;
