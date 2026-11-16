@@ -118,7 +118,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   const [pin, setPin] = useState("");
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [query, setQuery] = useState("");
-  const [selectedStore, setSelectedStore] = useState("PNYS");
+  const [selectedStore, setSelectedStore] = useState(isTestStore ? "PNYS" : "PNY01");
   const [skuRange, setSkuRange] = useState("all");
   const [requestedOnly, setRequestedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("sku");
@@ -145,8 +145,9 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     if (!isPreview) localStorage.setItem(LANGUAGE_KEY, next);
   }
 
-  async function load() {
-    const response = await fetch("/api/pos/kitchen/state", { cache: "no-store", credentials: "same-origin" });
+  async function load(storeCode?: string) {
+    const query = storeCode ? `?store=${encodeURIComponent(storeCode)}` : "";
+    const response = await fetch(`/api/pos/kitchen/state${query}`, { cache: "no-store", credentials: "same-origin" });
     if (response.status === 401) { setView({ authenticated: false }); return; }
     const next = await readJson(response) as unknown as KitchenView;
     setView(next);
@@ -243,8 +244,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       if (code === "PNY01_TEST") {
         await loadShadowStore();
       } else {
-        await load();
-        setSelectedStore(code);
+        await load(code);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load that store."); }
     finally { setBusy(false); }
@@ -278,7 +278,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       setSentLines(refillLines); setQty({}); setScreen("sent"); return;
     }
     if (isPreview) { setSentLines(refillLines); setScreen("sent"); return; }
-    const body = { lines: refillLines.map(({ sku, qty: amount }) => ({ sku, qty: amount })) };
+    const body = { store_code: selectedStore, lines: refillLines.map(({ sku, qty: amount }) => ({ sku, qty: amount })) };
     const key = commands.key("kitchen-refill", body);
     setBusy(true); setError("");
     try {
@@ -303,7 +303,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   const batchTotal = batchLines.reduce((sum, line) => sum + line.qty, 0);
   return <main className={styles.shell} data-testid="kitchen-shell" data-kitchen-screen={screen}>
     <header className={styles.top}>
-      <div><strong>{isTestStore ? (view.store_code ?? "PNYS") : "PNY01"}</strong><span> · Kitchen</span></div>
+      <div><strong>{selectedStore}</strong><span> · Kitchen</span></div>
       <div className={styles.topStats} aria-label={screenTitle(screen, language)}><span><small>{text.totalStock}</small><strong>{money(totalStockValueCents)}</strong><b>{text.qtyShort} {totalStockQty}</b></span><span><small>{text.refillTotal}</small><strong>{money(refillValueCents)}</strong><b>{text.qtyShort} {totalUnits}</b></span></div>
       <div className={styles.topActions}><div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>{isTestStore ? <strong className={styles.test}>{text.testStore}</strong> : null}<button type="button" onClick={() => void logout()}>{text.logout}</button></div>
     </header>
@@ -311,7 +311,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       {screen === "refill" ? <section data-testid="kitchen-refill">
         <div className={styles.controlsRow}>
           <label className={styles.controlField} htmlFor="kitchen-store"><span>{text.store}</span><select id="kitchen-store" className={styles.storeSelect} value={selectedStore} disabled={busy} onChange={(event) => void chooseStore(event.target.value)}>
-            {[...(view.stores ?? [{ code: "PNYS", name: "PNYS" }]).filter((store) => store.code !== "PNY01_TEST"), { code: "PNY01_TEST", name: "PNY01 Stock Snapshot · Test Receiver" }].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
+            {[...(view.stores ?? [{ code: "PNY01", name: "P60 Cannabis" }]).filter((store) => store.code !== "PNY01_TEST"), ...(isTestStore ? [{ code: "PNY01_TEST", name: "PNY01 Stock Snapshot · Test Receiver" }] : [])].map((store) => <option key={store.code} value={store.code}>{store.code} · {store.name}</option>)}
           </select></label>
           <label className={styles.controlField} htmlFor="kitchen-search"><span>{text.search}</span><input id="kitchen-search" className={styles.search} placeholder={text.search} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         </div>
@@ -330,7 +330,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       </section> : null}
       {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>{text.confirmTitle}</h1><p>{text.confirmHelp}</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span>{line.approval_required ? <em>{text.approval}</em> : null}</div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} {text.skus}</span><strong>{batchTotal} {text.totalUnits}</strong></div></section> : null}
       {screen === "history" ? <section data-testid="kitchen-history"><h1>{text.refillHistory}</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>{text.batch} {row.batch_id} · {text.sentBy} {row.sent_by ?? "Kitchen"}{row.sent_at_toronto ? ` · ${row.sent_at_toronto} Toronto` : ""}</small>{row.variance_reason ? <small>{text.reason}: {row.variance_reason}</small> : null}</div><div><strong>{row.qty_sent} {text.sent}{row.qty_received == null ? "" : ` · ${row.qty_received} ${text.received}`}</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? text.waiting : row.status}</span></div></article>)}</div></section> : null}
-      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>{text.sentHeading} {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : "PNYS"}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} {text.totalUnits}</strong><p>{text.statusHelp}</p>{selectedStore === "PNY01_TEST" ? <Link className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</Link> : <button type="button" onClick={() => setScreen("history")}>{text.refillHistory}</button>}</section> : null}
+      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>{text.sentHeading} {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : selectedStore}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} {text.totalUnits}</strong><p>{text.statusHelp}</p>{selectedStore === "PNY01_TEST" ? <Link className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</Link> : <button type="button" onClick={() => setScreen("history")}>{text.refillHistory}</button>}</section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     <footer className={styles.bottom} data-testid="kitchen-actions">

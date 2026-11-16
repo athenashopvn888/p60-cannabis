@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
-import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { emptyState, isKitchenRefillOnlyChange, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, signedMoney, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
@@ -29,7 +29,7 @@ import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
 import { depositCodeLabel, formatDepositCode, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
-import { PNY02_STORE, PNYS_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
+import { ACD01_STORE, PNY02_STORE, PNYS_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
@@ -4149,4 +4149,37 @@ test("PNY02 does not receive the PNY01 WEED gate", async () => {
   assert.equal(shift?.weed_gate_required, undefined);
   assert.equal(view.weed_gate.required, false);
   assert.equal(view.phase, "sell");
+});
+
+test("ACD01 has an isolated staff login route and appears in the central Kitchen selector", () => {
+  const profile = ACD01_STORE;
+  assert.equal(profile.code, "ACD01");
+  assert.equal(profile.apiBase, "/api/acd01/pos");
+  assert.equal(profile.sessionCookie, "acd01_pos_session");
+  const page = readFileSync(join(process.cwd(), "app/acd01/pos/page.tsx"), "utf8");
+  const api = readFileSync(join(process.cwd(), "app/api/acd01/pos/[[...slug]]/route.ts"), "utf8");
+  const kitchen = readFileSync(join(process.cwd(), "app/pos/kitchen/KitchenApp.tsx"), "utf8");
+  assert.match(page, /storeCode="ACD01"/);
+  assert.match(api, /runStore\(ACD01_STORE/);
+  assert.match(kitchen, /store_code: selectedStore/);
+  assert.match(kitchen, /selectedStore/);
+});
+
+test("frozen ACD01 accepts only a pending Kitchen refill and never changes on-hand", async () => {
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0]!, code: "ACD01", name: "Amesbury Cannabis Dispensary", opening_count_required: true };
+  db.state.products.push({ sku: "656", name: "KNOCK OUT MW 3000MG", category: "EDIBLES", default_price_cents: 3500, thc_flag: false, image_url: null, setb_active: true, created_at: "2026-11-16T00:00:00.000Z", updated_at: "2026-11-16T00:00:00.000Z" });
+  db.state.store_products.push({ store_code: "ACD01", sku: "656", enabled: false, price_override_cents: null, created_at: "2026-11-16T00:00:00.000Z", updated_at: "2026-11-16T00:00:00.000Z" });
+  db.writeMode = "FROZEN";
+  db.allowFrozenKitchenRefill = true;
+  const svc = new PosService(db, { now: () => new Date("2026-11-16T12:00:00.000Z"), sheet: new LocalSheet(), secrets, demo: null });
+  const before = structuredClone(db.state);
+  const result = await runStore(ACD01_STORE, () => svc.queueKitchenRefillTrusted({ key: "acd01-opening-656", lines: [{ sku: "656", qty: 2 }] }, { staff_uid: "KITCHEN", display_name: "Kitchen" }));
+  assert.equal(result.lines[0]?.status, "PENDING_CONFIRM");
+  assert.equal(db.state.incoming[0]?.store_code, "ACD01");
+  assert.equal(db.state.incoming[0]?.approval_required, true);
+  assert.equal(db.state.balances.length, 0);
+  assert.equal(isKitchenRefillOnlyChange(before, db.state), true);
+  db.allowFrozenKitchenRefill = false;
+  await rejects(() => runStore(ACD01_STORE, () => svc.queueKitchenRefillTrusted({ key: "acd01-blocked", lines: [{ sku: "656", qty: 1 }] }, { staff_uid: "KITCHEN", display_name: "Kitchen" })), "STORE_WRITE_BLOCKED");
 });

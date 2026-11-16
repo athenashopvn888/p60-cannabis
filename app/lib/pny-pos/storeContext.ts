@@ -6,7 +6,9 @@ const current = new AsyncLocalStorage<StoreProfile>();
 
 /** A one-store site ignores the other store. p60cannabis.com is unchanged when STORE_CODE is unset. */
 export function currentStore(): StoreProfile {
-  return lockedStore() ?? current.getStore() ?? PNY01_STORE;
+  // Explicit route scope wins so one central deployment can serve the isolated
+  // ACD01 till without changing the deployment's default PNY01/PNYS store.
+  return current.getStore() ?? lockedStore() ?? PNY01_STORE;
 }
 
 export function runStore<T>(store: StoreProfile, fn: () => T): T {
