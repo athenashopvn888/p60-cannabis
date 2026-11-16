@@ -38,3 +38,28 @@ export function exposeManagerStore<T extends Record<string, unknown>>(view: T, r
     data_source: "LIVE" as const,
   };
 }
+
+function combineRows<T extends Record<string, unknown>>(current: T[] | undefined, retained: T[] | undefined, key: keyof T) {
+  const rows = [...(current ?? []), ...(retained ?? [])];
+  return rows.filter((row, index) => rows.findIndex((candidate) => candidate[key] === row[key]) === index);
+}
+
+export function mergeRetainedManagerHistory<
+  T extends Record<string, unknown> & {
+    closings?: Record<string, unknown>[];
+    stock_snapshots?: Record<string, unknown>[];
+    refills?: Record<string, unknown>[];
+    refill_batches?: Record<string, unknown>[];
+    audit_log?: Record<string, unknown>[];
+  },
+>(current: T, retained: T) {
+  const retainedSnapshots = retained.stock_snapshots?.filter((row) => row.id !== "CURRENT");
+  return {
+    ...current,
+    closings: combineRows(current.closings, retained.closings, "shift_id"),
+    stock_snapshots: combineRows(current.stock_snapshots, retainedSnapshots, "id"),
+    refills: combineRows(current.refills, retained.refills, "kitchen_row_id"),
+    refill_batches: combineRows(current.refill_batches, retained.refill_batches, "batch_id"),
+    audit_log: combineRows(current.audit_log, retained.audit_log, "id"),
+  };
+}

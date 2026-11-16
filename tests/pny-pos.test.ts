@@ -14,7 +14,7 @@ import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { forPny01Sccx } from "../app/lib/pny-pos/sccxFeedCompatibility.ts";
-import { exposeManagerStore, resolveManagerStoreRoute } from "../app/lib/pny-pos/managerStoreView.ts";
+import { exposeManagerStore, mergeRetainedManagerHistory, resolveManagerStoreRoute } from "../app/lib/pny-pos/managerStoreView.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
@@ -2026,6 +2026,27 @@ test("live Manager exposes operational PNYS state as one writable PNY01 store", 
   assert.equal(preview.liveCutover, false);
 });
 
+test("live Manager keeps retained PNY01 closing and stock history after cutover", () => {
+  const current = {
+    closings: [{ shift_id: "PNYS-NEW", ended_at: "2026-11-16" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 71 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const retained = {
+    closings: [{ shift_id: "PNY-1104-1115", ended_at: "2026-11-15" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 0 }] }, { id: "PNY-1104-1115", rows: [{ sku: "240", on_hand: 72 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const merged = mergeRetainedManagerHistory(current, retained);
+  assert.deepEqual(merged.closings.map((row) => row.shift_id), ["PNYS-NEW", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots.map((row) => row.id), ["CURRENT", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots[0]?.rows, [{ sku: "240", on_hand: 71 }]);
+});
+
 test("Manager mobile UI has a nav-free PIN login and store-aware dashboard screens", () => {
   const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
   const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
@@ -2041,6 +2062,9 @@ test("Manager mobile UI has a nav-free PIN login and store-aware dashboard scree
   assert.match(app, /Show all available SKUs/);
   assert.match(app, /Refills by batch/);
   assert.match(app, /Refill coming/);
+  assert.match(app, /changeStockSort\("on_hand"\)/);
+  assert.match(app, /changeStockSort\("sold"\)/);
+  assert.match(app, /changeStockSort\("refill_coming"\)/);
   assert.match(app, /setStockIndex/);
   assert.match(app, /setRefillIndex/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
