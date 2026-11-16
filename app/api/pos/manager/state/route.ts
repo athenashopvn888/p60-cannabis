@@ -1,6 +1,6 @@
 import { json, managerToken, toResponse } from "@/app/lib/pny-pos/http";
 import { readManagerStoreSnapshot } from "@/app/lib/pny-pos/managerSnapshot";
-import { exposeManagerStore, resolveManagerStoreRoute } from "@/app/lib/pny-pos/managerStoreView";
+import { exposeManagerStore, mergeRetainedManagerHistory, resolveManagerStoreRoute } from "@/app/lib/pny-pos/managerStoreView";
 import { getService } from "@/app/lib/pny-pos/runtime";
 
 export const runtime = "nodejs";
@@ -15,12 +15,15 @@ export async function GET(request: Request) {
       vercelEnv: process.env.VERCEL_ENV,
       testStore: process.env.NEXT_PUBLIC_TEST_STORE,
     });
-    const view = await (await getService()).managerState(
+    const service = await getService();
+    const view = await service.managerState(
       token,
       route.internalStore,
       route.useRetainedSnapshot ? () => readManagerStoreSnapshot("PNY01") : undefined,
     );
-    return json(exposeManagerStore(view, route));
+    if (!route.liveCutover) return json(view);
+    const retained = await service.managerState(token, "PNY01", () => readManagerStoreSnapshot("PNY01"));
+    return json(exposeManagerStore(mergeRetainedManagerHistory(view, retained), route));
   } catch (error) {
     return toResponse(error);
   }
