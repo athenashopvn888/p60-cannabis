@@ -13,6 +13,8 @@ export function emptyState(now = new Date().toISOString()): State {
         timezone: STORE_TZ,
         prices_tax_included: true,
         weed_in_store: true,
+        opening_count_required: false,
+        closing_count_required: true,
         ticket_letter_seq: 0,
         created_at: now,
       },
@@ -26,6 +28,7 @@ export function emptyState(now = new Date().toISOString()): State {
     sessions: [],
     incoming: [],
     refill_receipts: [],
+    stock_requests: [],
     counts: [],
     count_lines: [],
     tickets: [],
@@ -51,7 +54,7 @@ export function emptyState(now = new Date().toISOString()): State {
 }
 
 export type Tx = { state: State };
-export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION" | "CLOSE_REDO";
+export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION" | "CLOSE_REDO" | "STOCK_REQUEST";
 export type TransactionOptions = { kind?: TransactionKind };
 
 /**
@@ -94,6 +97,15 @@ export function isCloseRedoOnlyChange(before: State, after: State) {
   return JSON.stringify(normalized) === JSON.stringify(before);
 }
 
+/** A frozen PNYS preview may record staff requests without moving stock. */
+export function isStockRequestOnlyChange(before: State, after: State) {
+  const normalized = structuredClone(after) as State;
+  normalized.stock_requests = structuredClone(before.stock_requests ?? []);
+  normalized.audit = structuredClone(before.audit);
+  normalized.idempotency = structuredClone(before.idempotency);
+  return JSON.stringify(normalized) === JSON.stringify(before);
+}
+
 export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>, options?: TransactionOptions): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
@@ -105,6 +117,7 @@ export interface PosDb {
   assertIntegrationOwner?: (channel: IntegrationChannel) => Promise<IntegrationLease>;
   deliveredIntegrationEvents?: (channel: IntegrationChannel, cutoverId: string, eventIds: string[]) => Promise<Set<string>>;
   recordIntegrationDelivery?: (lease: IntegrationLease, eventId: string, receipt?: Record<string, unknown>) => Promise<boolean>;
+  setOpeningCountPolicy?: (storeCode: string, required: boolean, actor: string, auditKey: string, changedAt: string) => Promise<{ changed: boolean; previous: boolean }>;
 }
 
 export class MemoryDb implements PosDb {
@@ -116,6 +129,7 @@ export class MemoryDb implements PosDb {
   integrationDeliveries = new Set<string>();
   allowFrozenPreviewAuth = false;
   allowFrozenPreviewCloseRedo = false;
+  allowFrozenPreviewStockRequest = false;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state?: State) {
@@ -154,6 +168,21 @@ export class MemoryDb implements PosDb {
     return true;
   }
 
+  async setOpeningCountPolicy(storeCode: string, required: boolean, actor: string, auditKey: string, changedAt: string) {
+    const store = this.state.stores.find((row) => row.code === storeCode);
+    if (!store) throw new PosError(409, "STORE", `${storeCode} store settings are unavailable.`);
+    const previous = store.opening_count_required === true;
+    if (previous === required) return { changed: false, previous };
+    store.opening_count_required = required;
+    store.closing_count_required = true;
+    if (!this.state.audit.some((row) => row.detail.audit_key === auditKey)) this.state.audit.push({
+      id: crypto.randomUUID(), action: "OPENING_COUNT_POLICY_CHANGED", ref_type: "store", ref_id: storeCode, actor,
+      detail: { audit_key: auditKey, from: previous ? "ON" : "OFF", to: required ? "ON" : "OFF", closing_count_required: true, applies_to: "NEXT_SHIFT" },
+      created_at: changedAt,
+    });
+    return { changed: true, previous };
+  }
+
   transaction<T>(fn: (tx: Tx) => Promise<T>, options: TransactionOptions = {}): Promise<T> {
     const run = this.tail.then(async () => {
       const snapshot = structuredClone(this.state) as State;
@@ -168,7 +197,11 @@ export class MemoryDb implements PosDb {
           && this.allowFrozenPreviewCloseRedo
           && options.kind === "CLOSE_REDO"
           && isCloseRedoOnlyChange(this.state, snapshot);
-        if (!frozenPreviewAuth && !frozenPreviewCloseRedo) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
+        const frozenPreviewStockRequest = this.writeMode === "FROZEN"
+          && this.allowFrozenPreviewStockRequest
+          && options.kind === "STOCK_REQUEST"
+          && isStockRequestOnlyChange(this.state, snapshot);
+        if (!frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
       }
       this.state = snapshot;
       try {

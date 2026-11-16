@@ -1399,15 +1399,21 @@ function requireAdmin(state: State, token: string, now: Date) {
   return session;
 }
 
-function sellingBlocked(_state: State, shift: ShiftRow) {
+function openingCountRequired(state: State, shift?: ShiftRow) {
+  if (shift?.opening_count_required != null) return shift.opening_count_required;
+  return state.stores.find((store) => store.code === (shift?.store_code ?? tillCode()))?.opening_count_required === true;
+}
+
+function sellingBlocked(state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
   if (weedAnswerRequired(shift)) return "WEED_ANSWER_REQUIRED";
+  if (openingCountRequired(state, shift) && !shift.opening_confirmed_at) return "OPENING_COUNT_REQUIRED";
   return null;
 }
 
-/** Selling does not wait on an opening count. Pending refills stay pending until staff receive them. */
-function openTillWithoutCount(shift: ShiftRow, at: string) {
-  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+/** Stores with opening count OFF open directly. Required counts remain blocking. */
+function openTillWithoutCount(state: State, shift: ShiftRow, at: string) {
+  if (!openingCountRequired(state, shift) && !shift.opening_confirmed_at) shift.opening_confirmed_at = at;
 }
 
 function ensureQuotedProduct(state: State, sku: string, at: string) {
@@ -1735,7 +1741,7 @@ export class PosService {
     const current = requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
     if (!current.session.master && !current.session.closing_only && !weedAnswerRequired(current.shift)) {
       nameLiveShift(state, iso(now));
-      openTillWithoutCount(current.shift, iso(now));
+      openTillWithoutCount(state, current.shift, iso(now));
     }
     return current;
   }
@@ -1959,6 +1965,7 @@ export class PosService {
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
       const pin = randomPin();
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: input.shift_id,
@@ -1973,7 +1980,8 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
         ...(tillCode() === "PNY01" ? {
           weed_gate_required: true,
@@ -2072,6 +2080,7 @@ export class PosService {
       if (!store) throw new PosError(404, "STORE", "Store is missing.");
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: sccxId,
@@ -2086,7 +2095,8 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
         ...(tillCode() === "PNY01" ? {
           weed_gate_required: true,
@@ -2376,7 +2386,7 @@ export class PosService {
       shift.weed_answered_by = actor;
       if (initialAnswer) {
         startStaffVerify(shift, at);
-        openTillWithoutCount(shift, at);
+        openTillWithoutCount(tx.state, shift, at);
       }
       audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, actor, {
         shift_id: shift.sccx_shift_id,
@@ -2432,7 +2442,7 @@ export class PosService {
       const master = Boolean(session.master);
       if (!master && !weedAnswerRequired(shift)) {
         nameLiveShift(tx.state, iso(now));
-        openTillWithoutCount(shift, iso(now));
+        openTillWithoutCount(tx.state, shift, iso(now));
       }
       const totals = shiftTotals(tx.state, shift.id);
       let products = tx.state.products
@@ -2495,7 +2505,7 @@ export class PosService {
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
       const openingLines = [...openingPlan(tx.state, raw, shift)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
-      const phase = weedAnswerRequired(shift) ? "weed" : shift.status === "CLOSING" ? "end" : "sell";
+      const phase = weedAnswerRequired(shift) ? "weed" : openingCountRequired(tx.state, shift) && !shift.opening_confirmed_at ? "opening" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status !== "sent")
@@ -2720,14 +2730,25 @@ export class PosService {
       .filter((sale) => state.shifts.some((shift) => shift.id === sale.shift_id && shift.store_code === tillCode()))
       .map((sale) => sale.id));
     const sold24h = new Map<string, number>();
+    const soldDay = new Map<string, number>();
+    const soldNight = new Map<string, number>();
     for (const line of state.sale_lines) {
       if (!saleIds.has(line.sale_id)) continue;
       sold24h.set(line.sku, (sold24h.get(line.sku) ?? 0) + line.qty);
+      const sale = state.sales.find((row) => row.id === line.sale_id);
+      const hour = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "2-digit", hourCycle: "h23" }).format(new Date(sale?.created_at ?? now)));
+      const bucket = hour >= 6 && hour < 18 ? soldDay : soldNight;
+      bucket.set(line.sku, (bucket.get(line.sku) ?? 0) + line.qty);
     }
     const pending = new Map<string, number>();
     for (const row of state.incoming) {
       if (row.store_code !== tillCode() || row.status !== "PENDING_CONFIRM") continue;
       pending.set(row.sku, (pending.get(row.sku) ?? 0) + row.qty_sent);
+    }
+    const requested = new Map<string, number>();
+    for (const row of state.stock_requests ?? []) {
+      if (row.store_code !== tillCode() || row.status !== "REQUESTED") continue;
+      requested.set(row.sku, (requested.get(row.sku) ?? 0) + row.qty);
     }
     const products = state.products
       .filter((product) => product.setb_active)
@@ -2744,8 +2765,11 @@ export class PosService {
           price_cents: sellingPriceCents(state, product.sku),
           on_hand: onHand,
           sold_24h: sold,
+          sold_day: soldDay.get(product.sku) ?? 0,
+          sold_night: soldNight.get(product.sku) ?? 0,
           pending_qty: pendingQty,
           suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
+          requested_qty: requested.get(product.sku) ?? 0,
           enabled,
           approval_required: !enabled,
         };
@@ -2793,10 +2817,23 @@ export class PosService {
   }
 
   /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
-  async managerState(token: string) {
-    const state = await this.readState();
+  async managerState(token: string, selectedStore = tillCode(), readSelectedStore?: () => Promise<State>) {
+    const localState = await this.readState();
     const now = this.now();
-    requireAdmin(state, token, now);
+    requireAdmin(localState, token, now);
+    const storeCode = selectedStore === "PNY01" ? "PNY01" : "PNYS";
+    const state = storeCode === tillCode()
+      ? localState
+      : readSelectedStore
+        ? await readSelectedStore()
+        : (() => { throw new PosError(503, "STORE_UNAVAILABLE", `${storeCode} read-only data is unavailable.`); })();
+    // Customers and coupons are central records. Keep the authenticated PNYS
+    // hub data even while the operational view is switched to PNY01.
+    state.customers = localState.customers ?? [];
+    state.customer_consents = localState.customer_consents ?? [];
+    state.customer_visits = localState.customer_visits ?? [];
+    state.coupons = localState.coupons ?? [];
+    state.coupon_redemptions = localState.coupon_redemptions ?? [];
     const day = new Intl.DateTimeFormat("en-CA", {
       timeZone: STORE_TZ,
       year: "numeric",
@@ -2810,15 +2847,23 @@ export class PosService {
       day: "2-digit",
     }).format(new Date(value)) === day;
     const liveShift = [...state.shifts]
-      .filter((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      .filter((row) => row.store_code === storeCode && (row.status === "ACTIVE" || row.status === "CLOSING"))
       .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
     const todaySales = state.sales
       .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const last24SaleIds = new Set(state.sales
+      .filter((row) => row.status === "COMPLETED" && Date.parse(row.created_at) >= now.getTime() - 24 * 60 * 60 * 1000)
+      .filter((row) => state.shifts.some((shift) => shift.id === row.shift_id && shift.store_code === storeCode))
+      .map((row) => row.id));
+    const sold24 = new Map<string, number>();
+    for (const line of state.sale_lines) if (last24SaleIds.has(line.sale_id)) sold24.set(line.sku, (sold24.get(line.sku) ?? 0) + line.qty);
+    const refillComing = new Map<string, number>();
+    for (const row of state.incoming) if (row.store_code === storeCode && row.status === "PENDING_CONFIRM") refillComing.set(row.sku, (refillComing.get(row.sku) ?? 0) + row.qty_sent);
     const products = state.products
       .filter((product) => product.setb_active)
       .flatMap((product) => {
-        const storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
+        const storeProduct = state.store_products.find((row) => row.store_code === storeCode && row.sku === product.sku);
         if (!storeProduct?.enabled) return [];
         return [{
           sku: product.sku,
@@ -2826,12 +2871,15 @@ export class PosService {
           category: product.category,
           size: sizeLabel(product.sku, product.category, product.name),
           on_hand: qtyOf(state, product.sku),
+          sold_24h: sold24.get(product.sku) ?? 0,
+          refill_coming: refillComing.get(product.sku) ?? 0,
           price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
           enabled: storeProduct.enabled,
         }];
       })
       .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
     const refills = [...state.incoming]
+      .filter((row) => row.store_code === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, 100)
       .map((row) => ({
@@ -2844,7 +2892,21 @@ export class PosService {
         status: row.status,
         kitchen_sent_at: row.kitchen_created_at ?? row.created_at,
         staff_confirmed_at: row.confirmed_at,
+        sent_by: row.sent_by ?? "Kitchen",
+        received_by: row.received_by ?? null,
       }));
+    const refillBatches = [...new Set(refills.map((row) => row.batch_id))].map((batchId) => {
+      const lines = refills.filter((row) => row.batch_id === batchId);
+      const first = lines[0]!;
+      return {
+        batch_id: batchId,
+        sent_at: first.kitchen_sent_at,
+        sent_by: first.sent_by,
+        received_by: lines.find((row) => row.received_by)?.received_by ?? null,
+        status: lines.every((row) => row.staff_confirmed_at) ? "CONFIRMED" : "PENDING",
+        lines,
+      };
+    }).sort((a, b) => b.sent_at.localeCompare(a.sent_at));
     const closings = [...state.closings]
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, 100)
@@ -2860,6 +2922,12 @@ export class PosService {
           final_deposit_cents: closing.final_deposit_cents ?? 0,
           shortage_cents: closing.shortage_cents ?? 0,
           overage_cents: closing.overage_cents ?? 0,
+          balance_cents: closing.balance_cents ?? closingBalance({
+            cash_sales_cents: closing.cash_sales_cents ?? closing.sales_total_cents - (closing.debit_sales_cents ?? 0),
+            shortage_cents: closing.shortage_cents ?? 0,
+            overage_cents: closing.overage_cents ?? 0,
+            deposited_cents: closing.deposited_cents,
+          }),
           no_count: closing.no_count,
           version: closing.version ?? 1,
           reclosed_at: closing.reclosed_at ?? null,
@@ -2874,6 +2942,12 @@ export class PosService {
               float_cents: row.closing.float_cents ?? 0,
               shortage_cents: row.closing.shortage_cents ?? 0,
               overage_cents: row.closing.overage_cents ?? 0,
+              balance_cents: row.closing.balance_cents ?? closingBalance({
+                cash_sales_cents: row.closing.cash_sales_cents ?? row.closing.sales_total_cents - (row.closing.debit_sales_cents ?? 0),
+                shortage_cents: row.closing.shortage_cents ?? 0,
+                overage_cents: row.closing.overage_cents ?? 0,
+                deposited_cents: row.closing.deposited_cents,
+              }),
               counts: row.closing.closing_lines.map((line) => ({ sku: line.sku, counted_qty: line.left })),
             })),
         };
@@ -2909,17 +2983,40 @@ export class PosService {
         };
       });
     const coupons = [...(state.coupons ?? [])]
-      .filter((row) => row.store_code === tillCode())
+      .filter((row) => row.store_code === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
-    const store = state.stores.find((row) => row.code === tillCode());
+    const stockSnapshots = [{
+      id: "CURRENT",
+      label: "Current stock",
+      at: now.toISOString(),
+      staff_name: liveShift ? state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff" : "No active shift",
+      rows: products.map((row) => ({ sku: row.sku, name: row.name, size: row.size, on_hand: row.on_hand, sold: row.sold_24h, refill_coming: row.refill_coming })),
+    }, ...state.closings.map((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+      return {
+        id: closing.shift_id,
+        label: shift?.sccx_shift_id ?? closing.shift_id,
+        at: shift?.ended_at ?? closing.created_at,
+        staff_name: staff?.display_name ?? "Staff",
+        rows: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, size: sizeLabel(line.sku, state.products.find((row) => row.sku === line.sku)?.category, line.name), on_hand: line.left, sold: line.sold_qty ?? 0, refill_coming: 0 })),
+      };
+    }).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 99)];
+    const store = state.stores.find((row) => row.code === storeCode);
     const latestBackup = [...state.audit]
-      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === tillCode())
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
     return {
       authenticated: true as const,
-      store_code: tillCode(),
+      store_code: storeCode,
+      stores: [
+        { code: "PNY01", name: "PNY01 · P60 Cannabis" },
+        { code: "PNYS", name: "PNYS · Test Store" },
+      ],
+      read_only: storeCode === "PNY01",
+      data_source: storeCode === "PNY01" ? "LIVE_READ_ONLY" as const : "PNYS_PREVIEW" as const,
       live_shift: liveShift ? {
         shift_id: liveShift.sccx_shift_id,
         status: liveShift.status,
@@ -2935,6 +3032,8 @@ export class PosService {
       },
       products,
       refills,
+      refill_batches: refillBatches,
+      stock_snapshots: stockSnapshots,
       closings,
       audit_log: auditLog,
       customers,
@@ -2942,11 +3041,38 @@ export class PosService {
       weed_mode: {
         current: store?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
         shift_id: liveShift?.sccx_shift_id ?? null,
-        can_change: true,
+        can_change: storeCode === "PNYS",
         thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
         undo_backup_id: latestBackup?.id ?? null,
       },
-      write_actions: { enabled: false as const, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+      opening_policy: {
+        opening_count_required: store?.opening_count_required === true,
+        closing_count_required: true as const,
+        can_change: storeCode === "PNYS",
+        applies_to: "NEXT_SHIFT" as const,
+      },
+      write_actions: { enabled: false as const, reason: storeCode === "PNY01"
+        ? "PNY01 is connected read-only. Price, stock, expense, mode and coupon changes are locked."
+        : "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+    };
+  }
+
+  async managerSetOpeningCountPolicy(adminToken: string, input: { key: string; opening_count_required: boolean; confirm: boolean }) {
+    const now = this.now();
+    const state = await this.readState();
+    requireAdmin(state, adminToken, now);
+    if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Opening count policy is enabled on PNYS preview only.");
+    if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact opening count change before saving.");
+    if (!this.db.setOpeningCountPolicy) throw new PosError(503, "POLICY_UNAVAILABLE", "Store policy storage is unavailable.");
+    const result = await this.db.setOpeningCountPolicy("PNYS", input.opening_count_required, "MANAGER", input.key, iso(now));
+    return {
+      ok: true as const,
+      changed: result.changed,
+      opening_count_required: input.opening_count_required,
+      closing_count_required: true as const,
+      from: result.previous ? "ON" as const : "OFF" as const,
+      to: input.opening_count_required ? "ON" as const : "OFF" as const,
+      applies_to: "NEXT_SHIFT" as const,
     };
   }
 
@@ -3258,6 +3384,32 @@ export class PosService {
     throw new PosError(410, "LEGACY_REFILL_DISABLED", "Use Kitchen send and store acceptance. Stock cannot be added directly.");
   }
 
+  /** Staff request stock for Kitchen. This never changes on-hand or creates a refill. */
+  async requestStock(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "stock_request", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Stock requests are enabled on PNYS preview only.");
+      const { shift, staff, session } = requireSession(tx.state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate: "pos" });
+      denyMaster(session);
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (!lines.length) throw new PosError(400, "EMPTY", "Enter at least one requested quantity.");
+      const at = iso(now);
+      tx.state.stock_requests ??= [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        if (!tx.state.products.some((row) => row.sku === line.sku && row.setb_active)) throw new PosError(404, "SKU", `SKU ${line.sku} is not in the catalog.`);
+        tx.state.stock_requests.push({ id: randomUUID(), store_code: tillCode(), shift_id: shift.id, staff_uid: staff.staff_uid, staff_name: staff.display_name, sku: line.sku, qty: line.qty, status: "REQUESTED", requested_at: at, sent_batch_id: null, sent_at: null });
+      }
+      audit(tx.state, "STOCK_REQUESTED", "shift", shift.id, staff.staff_uid, { lines }, at);
+      const result = { ok: true, requested_at: at, line_count: lines.length, total_units: lines.reduce((sum, line) => sum + line.qty, 0) };
+      remember(tx.state, "stock_request", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    }, { kind: "STOCK_REQUEST" });
+  }
+
   /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
   async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
     const body = input as unknown as Json;
@@ -3298,6 +3450,13 @@ export class PosService {
           created_at: at,
         });
         created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM", approval_required: approvalRequired });
+        for (const request of tx.state.stock_requests ?? []) {
+          if (request.store_code === tillCode() && request.sku === line.sku && request.status === "REQUESTED") {
+            request.status = "SENT";
+            request.sent_batch_id = input.key;
+            request.sent_at = at;
+          }
+        }
       }
       enqueueSignalNotice(tx.state, `SIG-KSEND-${input.key}`, "KITCHEN_SENT", input.key, kitchenSentMessage(input.key, staff.display_name || "Kitchen", at, created), at);
       audit(tx.state, "KITCHEN_REFILL_SENT", "incoming_batch", input.key, staff.staff_uid, { line_count: created.length, total_units: created.reduce((sum, line) => sum + line.qty, 0) }, at);
@@ -4856,7 +5015,7 @@ export class PosService {
       const shift = tx.state.shifts.find((row) => row.store_code === tillCode() && row.status === "ACTIVE");
       if (shift) {
         nameLiveShift(tx.state, now);
-        openTillWithoutCount(shift, now);
+        openTillWithoutCount(tx.state, shift, now);
       }
       const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products

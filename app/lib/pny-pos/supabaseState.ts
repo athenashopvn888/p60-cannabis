@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
+import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, isStockRequestOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
 import { deploymentGeneration, maintenanceMode } from "./controls.ts";
 import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
@@ -24,16 +24,18 @@ function asState(doc: unknown): State {
   state.coupon_redemptions ??= [];
   state.closing_versions ??= [];
   state.refill_receipts ??= [];
+  state.stock_requests ??= [];
   return state;
 }
 
 async function hydrateHub(client: PoolClient, state: State) {
-  const [customers, consents, visits, coupons, redemptions] = await Promise.all([
+  const [customers, consents, visits, coupons, redemptions, policies] = await Promise.all([
     client.query("select id::text, phone_e164, coalesce(display_name,'') as display_name, email, created_store_code, created_at::text, updated_at::text from pos_hub.customer order by created_at"),
     client.query("select id::text, customer_id::text, coalesce(consent_type, case when consented then 'EXPRESS' else 'IMPLIED' end) as consent_type, coalesce(consented_at, recorded_at)::text as consented_at, source, store_code, unsubscribed_at::text, recorded_at::text as created_at from pos_hub.customer_consent order by recorded_at"),
     client.query("select id::text, customer_id::text, store_code, sale_id, shift_id, spend_cents, visited_at::text from pos_hub.customer_visit order by visited_at"),
     client.query("select id::text, coalesce(store_code,'PNYS') as store_code, code, coalesce(label, code) as label, active, definition, created_by, created_at::text, created_at::text as updated_at from pos_hub.coupon order by created_at"),
     client.query("select id::text, coupon_id::text, customer_id::text, store_code, shift_id, sale_id, discount_cents, redeemed_at::text from pos_hub.coupon_redemption order by redeemed_at"),
+    client.query("select store_code, opening_count_required, closing_count_required from pos_hub.store_policy"),
   ]);
   state.customers = customers.rows;
   state.customer_consents = consents.rows;
@@ -47,6 +49,12 @@ async function hydrateHub(client: PoolClient, state: State) {
     created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at,
   }));
   state.coupon_redemptions = redemptions.rows;
+  for (const policy of policies.rows) {
+    const store = state.stores.find((row) => row.code === policy.store_code);
+    if (!store) continue;
+    store.opening_count_required = policy.opening_count_required === true;
+    store.closing_count_required = policy.closing_count_required !== false;
+  }
 }
 
 async function projectHub(client: PoolClient, state: State) {
@@ -80,6 +88,31 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
   });
   let tail: Promise<void> = Promise.resolve();
   const db: PosDb & { peek(): Promise<State> } = {
+    async setOpeningCountPolicy(storeCode, required, actor, auditKey, changedAt) {
+      if (schema !== "pnys_pos" || store !== "PNYS") throw new PosError(409, "STORE", "Opening count policy is enabled on PNYS preview only.");
+      if (process.env.VERCEL_ENV !== "preview" || process.env.TEST_STORE !== "1") throw new PosError(423, "STORE_WRITE_BLOCKED", "Store policy is preview-only.");
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("set local role pnys_app");
+        const runtime = await client.query("select write_mode from pos_hub.store_runtime where store_code=$1", [store]);
+        if (!runtime.rows[0] || !["ACTIVE", "FROZEN"].includes(runtime.rows[0].write_mode)) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store policy is unavailable.");
+        const current = await client.query("select opening_count_required from pos_hub.store_policy where store_code=$1 for update", [storeCode]);
+        if (!current.rows[0]) throw new PosError(409, "STORE", `${storeCode} store settings are unavailable.`);
+        const previous = current.rows[0].opening_count_required === true;
+        if (previous !== required) {
+          await client.query("update pos_hub.store_policy set opening_count_required=$2,closing_count_required=true,updated_by=$3,updated_at=$4::timestamptz where store_code=$1", [storeCode, required, actor, changedAt]);
+          await client.query("insert into pos_hub.policy_audit(id,store_code,policy_key,old_value,new_value,changed_by,changed_at) values(md5($1)::uuid,$2,'opening_count_required',$3::jsonb,$4::jsonb,$5,$6::timestamptz) on conflict(id) do nothing", [auditKey, storeCode, JSON.stringify({ opening_count_required: previous }), JSON.stringify({ opening_count_required: required, closing_count_required: true, applies_to: "NEXT_SHIFT" }), actor, changedAt]);
+        }
+        await client.query("commit");
+        return { changed: previous !== required, previous };
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
     async assertIntegrationOwner(channel) {
       if (schema !== "pnys_pos") {
         return { channel, owner_store_code: store, generation: deploymentGeneration(), cutover_id: "LEGACY" };
@@ -216,7 +249,13 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
             && process.env.VERCEL_ENV === "preview"
             && process.env.TEST_STORE === "1"
             && isCloseRedoOnlyChange(original, snapshot);
-          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo)) {
+          const frozenPreviewStockRequest = row?.write_mode === "FROZEN"
+            && kind === "STOCK_REQUEST"
+            && store === "PNYS"
+            && process.env.VERCEL_ENV === "preview"
+            && process.env.TEST_STORE === "1"
+            && isStockRequestOnlyChange(original, snapshot);
+          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest)) {
             throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
           }
           if (Number(row.generation) !== deploymentGeneration()) throw new PosError(423, "STALE_DEPLOYMENT", "This deployment generation cannot write.");

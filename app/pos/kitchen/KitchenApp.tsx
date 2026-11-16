@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./kitchen.module.css";
 
-type Product = { sku: string; name: string; category: string; size: string; price_cents?: number; on_hand: number | null; sold_24h: number | null; pending_qty: number; suggested_refill_qty: number; availability?: string; enabled?: boolean; approval_required?: boolean };
+type Product = { sku: string; name: string; category: string; size: string; price_cents?: number; on_hand: number | null; sold_24h: number | null; sold_day?: number; sold_night?: number; pending_qty: number; suggested_refill_qty: number; requested_qty?: number; availability?: string; enabled?: boolean; approval_required?: boolean };
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
 type KitchenView = { authenticated: boolean; store_code?: string; stores?: { code: string; name: string }[]; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
-type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
+type SortKey = "sku" | "on_hand" | "sold_day" | "sold_night" | "pending_qty";
 type SortDirection = "asc" | "desc";
 type Language = "vi" | "en";
 type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
@@ -17,36 +18,36 @@ type ShadowReceipt = { received_by: string; received_at_toronto: string; lines: 
 type ShadowBatch = { id: string; store_code: "PNY01_TEST"; sender: string; sent_at: string; status: "PENDING" | "CONFIRMED" | "PARTIAL" | "REJECTED"; lines: RefillLine[]; receipt?: ShadowReceipt };
 const SHADOW_KEY = "pnys-pny01-shadow-batches";
 const LANGUAGE_KEY = "pnys-kitchen-language";
+const isTestStore = process.env.NEXT_PUBLIC_TEST_STORE === "1";
+const deploymentLabel = isTestStore ? "PNYS" : "PNY01";
 
 const copy = {
   vi: {
     enterPin: "Nhập mã PIN Kitchen.", signIn: "Đăng nhập", logout: "Đăng xuất", testStore: "CỬA HÀNG THỬ NGHIỆM",
     newRefill: "Tạo hàng bổ sung", confirmBatch: "Xác nhận lô hàng", refillHistory: "Lịch sử bổ sung", sentToStore: "Đã gửi đến cửa hàng",
-    store: "Cửa hàng", search: "Tìm SKU, tên hoặc kích cỡ", all: "Tất cả",
-    sortBy: "Sắp xếp", onHand: "Tồn kho", sold: "Đã bán 24h", pending: "Đang chờ", refill: "Bổ sung", refillQty: "SL bổ sung",
-    suggested: "Bổ sung đề xuất", formula: "= max(0, Đã bán 24h × 2 − Tồn kho − Đang chờ). Số đề xuất chỉ để tham khảo và không được thêm cho đến khi bấm Dùng đề xuất.",
-    useSuggested: "Dùng đề xuất", suggestedZero: "Đề xuất 0", approval: "Cần cửa hàng duyệt", unavailable: "KHÔNG CÓ DỮ LIỆU", noMatch: "Không tìm thấy SKU phù hợp.",
+    store: "Cửa hàng", search: "Tìm SKU, tên hoặc kích cỡ", all: "Tất cả", requestedOnly: "Chỉ hàng được yêu cầu",
+    sortBy: "Sắp xếp", onHand: "Tồn kho", soldDay: "Bán ca ngày", soldNight: "Bán ca đêm", pending: "Đang chờ", refill: "Bổ sung", refillQty: "SL bổ sung",
+    useRequested: "Theo yêu cầu", requestedZero: "Chưa yêu cầu", approval: "Cần cửa hàng duyệt", unavailable: "KHÔNG CÓ DỮ LIỆU", noMatch: "Không tìm thấy SKU phù hợp.",
     confirmTitle: "Xác nhận lô bổ sung", confirmHelp: "Kiểm tra từng số lượng trước khi gửi. Tồn kho chỉ thay đổi sau khi nhân viên cửa hàng xác nhận đã nhận.",
     skus: "SKU", totalUnits: "tổng sản phẩm", history: "Lịch sử", waiting: "Chờ nhân viên xác nhận", batch: "Lô", sentBy: "gửi bởi", reason: "Lý do",
     sent: "đã gửi", received: "đã nhận", sentHeading: "Đã gửi hàng bổ sung đến", statusHelp: "Trạng thái: PENDING_CONFIRM. Nhân viên cửa hàng phải xác nhận số lượng đã nhận trước khi tồn kho thay đổi.",
-    newRefillButton: "Tạo bổ sung", back: "Quay lại", sendToStore: "Gửi đến cửa hàng", done: "Xong", refillList: "DANH SÁCH BỔ SUNG", totalStock: "TỔNG TỒN KHO", refillTotal: "BỔ SUNG", qtyShort: "SL",
+    dashboard: "Trang chính", back: "Quay lại", sendToStore: "Gửi đến cửa hàng", done: "Xong", refillList: "DANH SÁCH BỔ SUNG", totalStock: "TỔNG TỒN KHO", refillTotal: "BỔ SUNG", qtyShort: "SL",
   },
   en: {
     enterPin: "Enter the Kitchen PIN.", signIn: "Sign in", logout: "Logout", testStore: "TEST STORE",
     newRefill: "New refill", confirmBatch: "Confirm batch", refillHistory: "Refill history", sentToStore: "Sent to store",
-    store: "Store", search: "Search SKU, name or size", all: "All",
-    sortBy: "Sort by", onHand: "On hand", sold: "Sold 24h", pending: "Pending", refill: "Refill", refillQty: "Refill qty",
-    suggested: "Suggested refill", formula: "= max(0, Sold 24h × 2 − On hand − Pending). Suggestions are hints and are never added until you tap Use suggested.",
-    useSuggested: "Use suggested", suggestedZero: "Suggested 0", approval: "Store approval required", unavailable: "UNAVAILABLE", noMatch: "No SKUs match this filter.",
+    store: "Store", search: "Search SKU, name or size", all: "All", requestedOnly: "Requested only",
+    sortBy: "Sort by", onHand: "On hand", soldDay: "Sold Day", soldNight: "Sold Night", pending: "Pending", refill: "Refill", refillQty: "Refill qty",
+    useRequested: "Use request", requestedZero: "No request", approval: "Store approval required", unavailable: "UNAVAILABLE", noMatch: "No SKUs match this filter.",
     confirmTitle: "Confirm refill batch", confirmHelp: "Review every quantity before sending. Stock will not change until store staff confirms receipt.",
     skus: "SKUs", totalUnits: "total units", history: "History", waiting: "Waiting for staff", batch: "Batch", sentBy: "sent by", reason: "Reason",
     sent: "sent", received: "received", sentHeading: "Refill sent to", statusHelp: "Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.",
-    newRefillButton: "New refill", back: "Back", sendToStore: "Send to store", done: "Done", refillList: "REFILL LIST", totalStock: "TOTAL STOCK", refillTotal: "REFILL", qtyShort: "QTY",
+    dashboard: "Dashboard", back: "Back", sendToStore: "Send to store", done: "Done", refillList: "REFILL LIST", totalStock: "TOTAL STOCK", refillTotal: "REFILL", qtyShort: "QTY",
   },
 } as const;
 
 const previewProducts: Product[] = [
-  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", price_cents: 500, on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, enabled: true },
+  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", price_cents: 500, on_hand: 0, sold_24h: 3, sold_day: 2, sold_night: 1, pending_qty: 0, suggested_refill_qty: 6, requested_qty: 5, enabled: true },
   { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", price_cents: 4000, on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
   { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", price_cents: 3000, on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
   { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", price_cents: 250, on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
@@ -119,6 +120,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   const [query, setQuery] = useState("");
   const [selectedStore, setSelectedStore] = useState("PNYS");
   const [skuRange, setSkuRange] = useState("all");
+  const [requestedOnly, setRequestedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("sku");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [language, setLanguage] = useState<Language>("vi");
@@ -135,7 +137,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   useEffect(() => {
     if (isPreview) return;
     const saved = localStorage.getItem(LANGUAGE_KEY);
-    if (saved === "vi" || saved === "en") setLanguage(saved);
+    if (saved === "vi" || saved === "en") window.setTimeout(() => setLanguage(saved), 0);
   }, [isPreview]);
 
   function chooseLanguage(next: Language) {
@@ -180,7 +182,6 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       window.removeEventListener("pageshow", refresh);
       window.removeEventListener("storage", refresh);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPreview, view.authenticated, selectedStore]);
 
   const allProducts = view.products ?? noProducts;
@@ -204,6 +205,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     const search = query.trim().toLowerCase();
     const matchesQuery = `${product.sku} ${product.name} ${product.size}`.toLowerCase().includes(search);
     if (!matchesQuery) return false;
+    if (requestedOnly && (product.requested_qty ?? 0) <= 0) return false;
     if (!search && skuRange !== "all") {
       const base = Number.parseInt(product.sku.match(/^\d+/)?.[0] ?? "", 10);
       if (!Number.isFinite(base) || Math.floor(base / 100) * 100 !== Number(skuRange)) return false;
@@ -289,7 +291,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   if (!view.authenticated) return <main className={styles.login} data-testid="kitchen-login">
     <section className={styles.loginCard}>
       <div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>
-      <div className={styles.test}>{text.testStore}</div><h1>PNYS Kitchen</h1><p>{text.enterPin}</p>
+      {isTestStore ? <div className={styles.test}>{text.testStore}</div> : null}<h1>{deploymentLabel} Kitchen</h1><p>{text.enterPin}</p>
       <div className={styles.pinDots} aria-label={`${pin.length} digits entered`}>{"●".repeat(pin.length) || "○ ○ ○ ○"}</div>
       <div className={styles.keypad}>{["1","2","3","4","5","6","7","8","9","Clear","0","⌫"].map((key) => <button key={key} type="button" onClick={() => setPin((value) => key === "Clear" ? "" : key === "⌫" ? value.slice(0, -1) : value.length < 6 ? value + key : value)}>{key}</button>)}</div>
       {error ? <p className={styles.error}>{error}</p> : null}
@@ -301,9 +303,9 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   const batchTotal = batchLines.reduce((sum, line) => sum + line.qty, 0);
   return <main className={styles.shell} data-testid="kitchen-shell" data-kitchen-screen={screen}>
     <header className={styles.top}>
-      <div><strong>{view.store_code ?? "PNYS"}</strong><span> · Kitchen</span></div>
+      <div><strong>{isTestStore ? (view.store_code ?? "PNYS") : "PNY01"}</strong><span> · Kitchen</span></div>
       <div className={styles.topStats} aria-label={screenTitle(screen, language)}><span><small>{text.totalStock}</small><strong>{money(totalStockValueCents)}</strong><b>{text.qtyShort} {totalStockQty}</b></span><span><small>{text.refillTotal}</small><strong>{money(refillValueCents)}</strong><b>{text.qtyShort} {totalUnits}</b></span></div>
-      <div className={styles.topActions}><div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div><strong className={styles.test}>{text.testStore}</strong><button type="button" onClick={() => void logout()}>{text.logout}</button></div>
+      <div className={styles.topActions}><div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>{isTestStore ? <strong className={styles.test}>{text.testStore}</strong> : null}<button type="button" onClick={() => void logout()}>{text.logout}</button></div>
     </header>
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">
@@ -313,28 +315,28 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
           </select></label>
           <label className={styles.controlField} htmlFor="kitchen-search"><span>{text.search}</span><input id="kitchen-search" className={styles.search} placeholder={text.search} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         </div>
-        <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>{text.all}</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
-        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
-        <p className={styles.formula}><strong>{text.suggested}</strong> {text.formula}</p>
-        <div className={styles.legend}><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
+        <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>{text.all}</button><button type="button" className={styles.requestedOnly} aria-pressed={requestedOnly} onClick={() => setRequestedOnly((value) => !value)}>{text.requestedOnly}</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
+        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="day" type="button" aria-pressed={sortKey === "sold_day"} onClick={() => changeSort("sold_day")}>{sortLabel(text.soldDay, "sold_day")}</button><button data-column="night" type="button" aria-pressed={sortKey === "sold_night"} onClick={() => changeSort("sold_night")}>{sortLabel(text.soldNight, "sold_night")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
+        <div className={styles.legend}><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="day" type="button" aria-pressed={sortKey === "sold_day"} onClick={() => changeSort("sold_day")}>{sortLabel(text.soldDay, "sold_day")}</button><button data-column="night" type="button" aria-pressed={sortKey === "sold_night"} onClick={() => changeSort("sold_night")}>{sortLabel(text.soldNight, "sold_night")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
           <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>{text.approval}</em> : null}</div>
           <span className={styles.metric}><small>{text.onHand}</small><strong>{product.on_hand ?? "—"}</strong>{product.on_hand == null ? <small>{product.availability ?? text.unavailable}</small> : null}</span>
-          <span className={styles.metric}><small>{text.sold}</small><strong>{product.sold_24h ?? "—"}</strong></span>
+          <span className={styles.metric}><small>{text.soldDay}</small><strong>{product.sold_day ?? 0}</strong></span>
+          <span className={styles.metric}><small>{text.soldNight}</small><strong>{product.sold_night ?? 0}</strong></span>
           <span className={styles.metric}><small>{text.pending}</small><strong>{product.pending_qty}</strong></span>
-          <label className={styles.qty}><small>{text.refillQty}</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? ""} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/>{product.suggested_refill_qty > 0 ? <button type="button" onClick={() => setQty((current) => ({ ...current, [product.sku]: String(product.suggested_refill_qty) }))}>{text.useSuggested} {product.suggested_refill_qty}</button> : <small>{text.suggestedZero}</small>}</label>
+          <label className={styles.qty}><small>{text.refillQty}</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? ""} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/>{(product.requested_qty ?? 0) > 0 ? <button type="button" onClick={() => setQty((current) => ({ ...current, [product.sku]: String(product.requested_qty) }))}>{text.useRequested} {product.requested_qty}</button> : <small>{text.requestedZero}</small>}</label>
         </article>)}</div>
         {!products.length ? <p className={styles.empty}>{text.noMatch}</p> : null}
       </section> : null}
       {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>{text.confirmTitle}</h1><p>{text.confirmHelp}</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span>{line.approval_required ? <em>{text.approval}</em> : null}</div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} {text.skus}</span><strong>{batchTotal} {text.totalUnits}</strong></div></section> : null}
       {screen === "history" ? <section data-testid="kitchen-history"><h1>{text.refillHistory}</h1><div className={styles.history}>{(view.history ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>{text.batch} {row.batch_id} · {text.sentBy} {row.sent_by ?? "Kitchen"}{row.sent_at_toronto ? ` · ${row.sent_at_toronto} Toronto` : ""}</small>{row.variance_reason ? <small>{text.reason}: {row.variance_reason}</small> : null}</div><div><strong>{row.qty_sent} {text.sent}{row.qty_received == null ? "" : ` · ${row.qty_received} ${text.received}`}</strong><span className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? text.waiting : row.status}</span></div></article>)}</div></section> : null}
-      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>{text.sentHeading} {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : "PNYS"}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} {text.totalUnits}</strong><p>{text.statusHelp}</p>{selectedStore === "PNY01_TEST" ? <a className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</a> : <button type="button" onClick={() => setScreen("history")}>{text.refillHistory}</button>}</section> : null}
+      {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>{text.sentHeading} {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : "PNYS"}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} {text.totalUnits}</strong><p>{text.statusHelp}</p>{selectedStore === "PNY01_TEST" ? <Link className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</Link> : <button type="button" onClick={() => setScreen("history")}>{text.refillHistory}</button>}</section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
     </div>
     <footer className={styles.bottom} data-testid="kitchen-actions">
       {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>{text.history}</button><button type="button" className={styles.scan} disabled>SCAN</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>{text.refillList} · {totalUnits}</button></> : null}
       {screen === "confirm" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>{text.back}</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>{text.sendToStore} · {batchTotal}</button></> : null}
-      {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.newRefillButton}</button> : null}
+      {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.dashboard}</button> : null}
       {screen === "sent" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.done}</button> : null}
     </footer>
   </main>;

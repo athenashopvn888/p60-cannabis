@@ -13,6 +13,8 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
+import { forPny01Sccx } from "../app/lib/pny-pos/sccxFeedCompatibility.ts";
+import { exposeManagerStore, mergeRetainedManagerHistory, resolveManagerStoreRoute } from "../app/lib/pny-pos/managerStoreView.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
@@ -1223,6 +1225,17 @@ test("the sales feed returns new sales once and does not change the till", async
   }
 });
 
+test("PNYS sales feed preserves the retained PNY01 SCCx contract", () => {
+  const payload = forPny01Sccx({
+    ok: true,
+    store: "PNYS",
+    sales: [{ id: "sale-1", store: "PNYS", order_no: "PNYS-00001" }],
+  });
+  assert.equal(payload.store, "PNY01");
+  assert.equal(payload.sales[0]?.store, "PNY01");
+  assert.equal(payload.sales[0]?.order_no, "PNYS-00001");
+});
+
 test("poll endpoints use detached reads instead of transactions", async () => {
   const h = await readyTill({ "1001": 5, "1002": 5 });
   let transactions = 0;
@@ -1684,6 +1697,8 @@ test("PNYS Kitchen queues an idempotent pending refill and staff confirmation ad
   assert.equal(qty(db, "240"), before);
   const kitchenView = await svc.kitchenState(kitchen.token);
   assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before && row.sold_24h === 3 && row.pending_qty === 4 && row.suggested_refill_qty === Math.max(0, 6 - before - 4)), true);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_day, 3);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_night, 0);
   assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
 
   const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
@@ -1702,18 +1717,21 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /htmlFor="kitchen-store"><span>\{text\.store\}<\/span>/);
   assert.match(app, /className=\{styles\.storeSelect\}/);
   assert.match(app, /aria-label="SKU sections"/);
+  assert.match(app, /requestedOnly: "Requested only"/);
+  assert.match(app, /requestedOnly && \(product\.requested_qty \?\? 0\) <= 0/);
   assert.match(app, /\{start\}–\{start \+ 99\}/);
   assert.match(app, /Math\.max\(1000,/);
   assert.match(app, /changeSort\("sku"\)/);
   assert.match(app, /changeSort\("on_hand"\)/);
-  assert.match(app, /changeSort\("sold_24h"\)/);
+  assert.match(app, /changeSort\("sold_day"\)/);
+  assert.match(app, /changeSort\("sold_night"\)/);
   assert.match(app, /changeSort\("pending_qty"\)/);
   assert.match(app, /aria-label="Mobile sort"/);
-  assert.match(css, /\.mobileSort\{display:grid/);
+  assert.match(css, /\.mobileSort\s*\{[\s\S]*?display:\s*grid/);
   assert.match(app, /className=\{styles\.controlsRow\}/);
   assert.doesNotMatch(app, /aria-label="Refill filters"/);
   assert.match(app, /"▲" : "▼" : "↕"/);
-  assert.match(app, /Sold 24h × 2 − On hand − Pending/);
+  assert.doesNotMatch(app, /Sold 24h × 2 − On hand − Pending/);
   assert.match(app, /\{text\.refillList\} · \{totalUnits\}/);
   assert.doesNotMatch(app, />Review · \{totalUnits\}</);
   assert.match(app, /data-testid="kitchen-confirm"/);
@@ -1724,22 +1742,64 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /Status: PENDING_CONFIRM\. Store staff must confirm/);
   assert.match(css, /position: fixed/);
   assert.match(css, /overflow-y: auto/);
-  assert.match(css, /@media\(max-width:390px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
   assert.match(service, /async kitchenState\(token: string\)/);
   assert.match(service, /stores: \[\{ code: tillCode\(\), name:/);
   assert.match(service, /suggested_refill_qty/);
   assert.match(service, /24 \* 60 \* 60 \* 1000/);
+  assert.match(service, /timeZone: "America\/Toronto"/);
   assert.match(service, /async queueKitchenRefill/);
   assert.match(service, /status: "PENDING_CONFIRM"/);
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
 });
 
-test("Kitchen suggestions are hints and only touched quantities enter the refill batch", () => {
+test("Kitchen shows staff requests instead of suggested refill quantities", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   assert.match(app, /qty\[product\.sku\] \?\? ""/);
-  assert.match(app, /\{text\.useSuggested\} \{product\.suggested_refill_qty\}/);
-  assert.doesNotMatch(app, /qty\[product\.sku\] \?\? String\(product\.suggested_refill_qty/);
+  assert.match(app, /\{text\.useRequested\} \{product\.requested_qty\}/);
+  assert.doesNotMatch(app, /text\.useSuggested|text\.suggestedZero/);
   assert.match(app, /approval: "Store approval required"/);
+  assert.match(app, /dashboard: "Dashboard"/);
+  assert.match(app, /dashboard: "Trang chính"/);
+  assert.match(app, /screen === "history".*text\.dashboard/s);
+  assert.doesNotMatch(app, /newRefillButton/);
+});
+
+test("PNYS staff stock request reaches Kitchen without changing on-hand", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.shifts = db.state.shifts.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.store_products = db.state.store_products.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.balances = db.state.balances.map((row) => ({ ...row, store_code: "PNYS" }));
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const before = qty(db, "240");
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.2.8"));
+  db.writeMode = "FROZEN";
+  db.allowFrozenPreviewStockRequest = true;
+  await runStore(PNYS_STORE, () => svc.requestStock(staff.token, { key: "request-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(qty(db, "240"), before);
+  db.writeMode = "ACTIVE";
+  const kitchen = await runStore(PNYS_STORE, () => svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.9"));
+  const kitchenView = await runStore(PNYS_STORE, () => svc.kitchenState(kitchen.token));
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.requested_qty, 6);
+  assert.equal(db.state.stock_requests?.[0]?.staff_name, "Demo Budtender");
+  await runStore(PNYS_STORE, () => svc.queueKitchenRefill(kitchen.token, { key: "send-requested-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(db.state.stock_requests?.[0]?.status, "SENT");
+  assert.equal(qty(db, "240"), before);
+});
+
+test("PNYS frozen preview database guard permits only the STOCK_REQUEST mutation class", () => {
+  const migration = readFileSync("supabase/migrations/20261116173000_pnys_frozen_preview_stock_request.sql", "utf8");
+  const undo = readFileSync("supabase/undo/20261116173000_pnys_frozen_preview_stock_request.undo.sql", "utf8");
+  const app = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(migration, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO','STOCK_REQUEST'\) and preview_test/);
+  assert.match(undo, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO'\) and preview_test/);
+  assert.doesNotMatch(undo, /'STOCK_REQUEST'/);
+  assert.match(app, /Request sent:/);
+  assert.match(app, /styles\.requestError/);
+  assert.match(app, /Sending…/);
 });
 
 test("Kitchen defaults to Vietnamese, can switch to English, searches every SKU section, and shows stock/refill totals", () => {
@@ -1921,7 +1981,73 @@ test("PNYS Manager read model reports live shift, sales, stock, refills, closing
   assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings }), before);
 });
 
-test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only dashboard screens", () => {
+test("Manager store selector reads PNY01 through the curated snapshot and keeps every write locked", async () => {
+  const now = new Date("2026-11-16T02:30:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.2"));
+  const pny01 = structuredClone(db.state);
+  pny01.stores[0] = { ...pny01.stores[0], code: "PNY01", name: "P60 Cannabis" };
+  pny01.shifts = pny01.shifts.map((row) => ({ ...row, store_code: "PNY01", sccx_shift_id: "PNY01-LIVE" }));
+  pny01.store_products = pny01.store_products.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.balances = pny01.balances.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.incoming = pny01.incoming.map((row) => ({ ...row, store_code: "PNY01" }));
+  const view = await runStore(PNYS_STORE, () => svc.managerState(manager.token, "PNY01", async () => pny01));
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, true);
+  assert.equal(view.data_source, "LIVE_READ_ONLY");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.weed_mode.can_change, false);
+  assert.equal(view.stores.some((row) => row.code === "PNY01"), true);
+  assert.equal(view.stores.some((row) => row.code === "PNYS"), true);
+  assert.equal(view.live_shift?.shift_id, "PNY01-LIVE");
+});
+
+test("live Manager exposes operational PNYS state as one writable PNY01 store", () => {
+  const route = resolveManagerStoreRoute("PNY01", { vercelEnv: "production", testStore: "0" });
+  assert.deepEqual(route, {
+    internalStore: "PNYS",
+    externalStore: "PNY01",
+    useRetainedSnapshot: false,
+    liveCutover: true,
+  });
+  const view = exposeManagerStore({ store_code: "PNYS", stores: [{ code: "PNYS", name: "Test" }], read_only: true, data_source: "PNYS_PREVIEW", products: [{ sku: "240", on_hand: 72 }] }, route);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, false);
+  assert.equal(view.data_source, "LIVE");
+  assert.deepEqual(view.stores, [{ code: "PNY01", name: "PNY01 · P60 Cannabis" }]);
+  assert.deepEqual(view.products, [{ sku: "240", on_hand: 72 }]);
+
+  const preview = resolveManagerStoreRoute("PNY01", { vercelEnv: "preview", testStore: "1" });
+  assert.equal(preview.internalStore, "PNY01");
+  assert.equal(preview.useRetainedSnapshot, true);
+  assert.equal(preview.liveCutover, false);
+});
+
+test("live Manager keeps retained PNY01 closing and stock history after cutover", () => {
+  const current = {
+    closings: [{ shift_id: "PNYS-NEW", ended_at: "2026-11-16" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 71 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const retained = {
+    closings: [{ shift_id: "PNY-1104-1115", ended_at: "2026-11-15" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 0 }] }, { id: "PNY-1104-1115", rows: [{ sku: "240", on_hand: 72 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const merged = mergeRetainedManagerHistory(current, retained);
+  assert.deepEqual(merged.closings.map((row) => row.shift_id), ["PNYS-NEW", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots.map((row) => row.id), ["CURRENT", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots[0]?.rows, [{ sku: "240", on_hand: 71 }]);
+});
+
+test("Manager mobile UI has a nav-free PIN login and store-aware dashboard screens", () => {
   const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
   const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
   const login = app.slice(app.indexOf("if (!view.authenticated)"), app.indexOf("const stock"));
@@ -1929,10 +2055,67 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   assert.doesNotMatch(login, /<nav|href=|manager-actions/);
   for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
   assert.match(app, /Price, stock and expense changes stay locked/);
+  assert.match(app, /api\/pos\/manager\/state\?store=/);
+  assert.match(app, /Live PNY01 data/);
+  assert.match(app, /Retained PNY01 data · read-only/);
+  assert.match(app, /Coupon changes are locked while viewing PNY01/);
+  assert.match(app, /Show all available SKUs/);
+  assert.match(app, /Refills by batch/);
+  assert.match(app, /Refill coming/);
+  assert.match(app, /Final till balance/);
+  assert.match(app, /changeStockSort\("on_hand"\)/);
+  assert.match(app, /changeStockSort\("sold"\)/);
+  assert.match(app, /changeStockSort\("refill_coming"\)/);
+  assert.match(app, /setStockIndex/);
+  assert.match(app, /setRefillIndex/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
   assert.match(css, /position:\s*fixed/);
   assert.match(css, /overflow-y:\s*auto/);
   assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+});
+
+test("central Manager database function exposes a PIN-free read model only", () => {
+  const migration = readFileSync("migrations/20261116113000_manager_store_snapshot.sql", "utf8");
+  const undo = readFileSync("migrations/undo/20261116113000_manager_store_snapshot.undo.sql", "utf8");
+  assert.match(migration, /security definer/i);
+  assert.match(migration, /revoke all on function .* from public/i);
+  assert.match(migration, /grant execute .* to pnys_app/i);
+  assert.match(migration, /- 'pin_hash'/);
+  assert.match(migration, /- 'closing_access_pin_hash'/);
+  assert.doesNotMatch(migration, /update\s+pny_pos|insert\s+into\s+pny_pos|delete\s+from\s+pny_pos/i);
+  assert.match(undo, /drop function if exists pos_hub\.manager_store_snapshot/);
+});
+
+test("Manager opening-count policy is per store, audited, next-shift only, and keeps closing required", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS", opening_count_required: false, closing_count_required: true };
+  const currentShift = db.state.shifts[0]!;
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.8"));
+  const initial = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(initial.opening_policy.opening_count_required, false);
+  assert.equal(initial.opening_policy.closing_count_required, true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-no-confirm", opening_count_required: true, confirm: false })), "CONFIRM_REQUIRED");
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-on", opening_count_required: true, confirm: true }));
+  assert.equal(changed.from, "OFF");
+  assert.equal(changed.to, "ON");
+  assert.equal(changed.closing_count_required, true);
+  assert.equal(currentShift.opening_count_required, undefined);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming }), before);
+  assert.equal(db.state.audit.some((row) => row.action === "OPENING_COUNT_POLICY_CHANGED" && row.detail.applies_to === "NEXT_SHIFT"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).opening_policy.opening_count_required, true);
+});
+
+test("Manager mobile UI exposes confirmed opening-count control and keeps closing mandatory", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  assert.match(app, /data-testid="manager-opening-policy"/);
+  assert.match(app, /Closing count is always required/);
+  assert.match(app, /Changes apply to the next shift only/);
+  assert.match(app, /api\/pos\/manager\/opening-policy/);
+  assert.match(app, /manager-opening-policy-confirm/);
 });
 
 test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {

@@ -1,6 +1,7 @@
 import { json, toResponse } from "@/app/lib/pny-pos/http";
 import { getService } from "@/app/lib/pny-pos/runtime";
 import { SALES_FEED_HEADER, salesFeedTokenOk } from "@/app/lib/pny-pos/salesFeedAuth";
+import { forPny01Sccx } from "@/app/lib/pny-pos/sccxFeedCompatibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     const limit = Number(params.get("limit") ?? "50");
     const service = await getService();
     await service.assertIntegrationOwner("SCCX_FEED");
-    return json(await service.salesFeed(since, limit));
+    return json(forPny01Sccx(await service.salesFeed(since, limit)));
   } catch (error) {
     return toResponse(error);
   }

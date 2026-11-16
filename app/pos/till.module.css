@@ -2028,3 +2028,20 @@
   display: inline;
   font-size: 22px;
 }
+.requestDialog { position: fixed; inset: 0; z-index: 1800; display: grid; place-items: center; padding: 12px; background: rgb(0 0 0 / 65%); }
+.requestDialog > section { width: min(100%, 430px); max-height: min(720px, calc(100dvh - 24px)); display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; padding: 16px; border-radius: 18px; background: #fff; color: #111827; }
+.requestDialog header { display: flex; justify-content: space-between; gap: 10px; }
+.requestDialog h2, .requestDialog p { margin: 0; }
+.requestDialog p { color: #64748b; font-size: 12px; }
+.requestDialog header button { width: 44px; height: 44px; border: 0; border-radius: 10px; background: #e5e7eb; font-size: 26px; }
+.requestDialog > section > input { min-height: 48px; padding: 0 12px; border: 2px solid #334155; border-radius: 10px; font-size: 16px; }
+.requestList { min-height: 0; display: grid; gap: 7px; overflow-y: auto; }
+.requestList label { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 11px; }
+.requestList span { min-width: 0; display: grid; gap: 2px; color: #475569; font-size: 12px; }
+.requestList strong { color: #111827; font-size: 14px; }
+.requestList input { width: 100%; min-height: 44px; box-sizing: border-box; border: 2px solid #111827; border-radius: 9px; text-align: center; font-size: 17px; font-weight: 900; }
+.requestDialog footer { display: grid; grid-template-columns: 1fr 1.5fr; gap: 8px; }
+.requestDialog footer button { min-height: 50px; border: 0; border-radius: 10px; background: #e5e7eb; font-weight: 900; }
+.requestDialog footer button:last-child { background: #166534; color: #fff; }
+.requestError { margin: 0; padding: 10px 12px; border-radius: 9px; background: #fee2e2; color: #991b1b !important; font-size: 14px !important; font-weight: 800; }
+.requestSuccess { margin: 8px 12px 0; padding: 11px 12px; border: 1px solid #86efac; border-radius: 10px; background: #dcfce7; color: #166534; font-weight: 900; }

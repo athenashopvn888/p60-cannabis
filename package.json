@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",
+    "@vercel/oidc": "^3.8.10",
     "@zxing/browser": "^0.1.5",
     "jsqr": "^1.4.0",
     "next": "16.2.6",

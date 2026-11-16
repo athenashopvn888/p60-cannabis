@@ -12,6 +12,9 @@ export type StoreRow = {
   prices_tax_included: boolean;
   /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
   weed_in_store?: boolean;
+  /** Manager-controlled per-store opening policy. Closing remains mandatory. */
+  opening_count_required?: boolean;
+  closing_count_required?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
@@ -89,6 +92,8 @@ export type ShiftRow = {
   ended_at: string | null;
   end_reason: string | null;
   opening_confirmed_at: string | null;
+  /** Snapshot of the store policy when this shift opened. */
+  opening_count_required?: boolean;
   refill_confirmed_at: string | null;
   /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
   weed_gate_required?: boolean;
@@ -155,6 +160,20 @@ export type RefillReceiptRow = {
   sent_at: string;
   received_at: string;
   lines: RefillReceiptLine[];
+};
+
+export type StockRequestRow = {
+  id: string;
+  store_code: string;
+  shift_id: string;
+  staff_uid: string;
+  staff_name: string;
+  sku: string;
+  qty: number;
+  status: "REQUESTED" | "SENT";
+  requested_at: string;
+  sent_batch_id: string | null;
+  sent_at: string | null;
 };
 
 export type CountRow = {
@@ -443,6 +462,7 @@ export type State = {
   sessions: SessionRow[];
   incoming: IncomingRow[];
   refill_receipts?: RefillReceiptRow[];
+  stock_requests?: StockRequestRow[];
   counts: CountRow[];
   count_lines: CountLineRow[];
   tickets: TicketRow[];
