@@ -68,6 +68,7 @@
 .modeCard span, .modeCard small { color: #64748b; }
 .modeCard > div > strong { font-size: 22px; }
 .modeOn { border-color: #15803d; }
+.modeNeutral { border-color: #64748b; }
 .modeOff { border-color: #b91c1c; }
 .modeOff > div > strong { color: #b91c1c; }
 .modeActions { display: grid; gap: 7px; }

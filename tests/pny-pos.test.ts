@@ -2026,6 +2026,38 @@ test("central Manager database function exposes a PIN-free read model only", () 
   assert.match(undo, /drop function if exists pos_hub\.manager_store_snapshot/);
 });
 
+test("Manager opening-count policy is per store, audited, next-shift only, and keeps closing required", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS", opening_count_required: false, closing_count_required: true };
+  const currentShift = db.state.shifts[0]!;
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.8"));
+  const initial = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(initial.opening_policy.opening_count_required, false);
+  assert.equal(initial.opening_policy.closing_count_required, true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-no-confirm", opening_count_required: true, confirm: false })), "CONFIRM_REQUIRED");
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-on", opening_count_required: true, confirm: true }));
+  assert.equal(changed.from, "OFF");
+  assert.equal(changed.to, "ON");
+  assert.equal(changed.closing_count_required, true);
+  assert.equal(currentShift.opening_count_required, undefined);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming }), before);
+  assert.equal(db.state.audit.some((row) => row.action === "OPENING_COUNT_POLICY_CHANGED" && row.detail.applies_to === "NEXT_SHIFT"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).opening_policy.opening_count_required, true);
+});
+
+test("Manager mobile UI exposes confirmed opening-count control and keeps closing mandatory", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  assert.match(app, /data-testid="manager-opening-policy"/);
+  assert.match(app, /Closing count is always required/);
+  assert.match(app, /Changes apply to the next shift only/);
+  assert.match(app, /api\/pos\/manager\/opening-policy/);
+  assert.match(app, /manager-opening-policy-confirm/);
+});
+
 test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {
   const now = new Date("2026-11-14T15:00:00.000Z");
   const db = new MemoryDb();

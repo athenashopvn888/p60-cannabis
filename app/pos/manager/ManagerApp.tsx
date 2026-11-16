@@ -33,6 +33,7 @@ type ManagerView = {
   customers?: Customer[];
   coupons?: Coupon[];
   weed_mode?: { current: "WEED" | "NO_WEED"; shift_id: string | null; can_change: boolean; thc_sku_count: number; undo_backup_id: string | null };
+  opening_policy?: { opening_count_required: boolean; closing_count_required: true; can_change: boolean; applies_to: "NEXT_SHIFT" };
   write_actions?: { enabled: false; reason: string };
 };
 
@@ -70,6 +71,7 @@ const previewView: ManagerView = {
   coupons: [{ id: "cp1", code: "WELCOME10", label: "$10 welcome coupon", active: true, discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, redemption_count: 3 }],
   write_actions: { enabled: false, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
   weed_mode: { current: "WEED", shift_id: "PNYS-1114-A", can_change: true, thc_sku_count: 219, undo_backup_id: null },
+  opening_policy: { opening_count_required: false, closing_count_required: true, can_change: true, applies_to: "NEXT_SHIFT" },
 };
 
 const labels: Record<Screen, string> = { overview: "Overview", stock: "Stock on hand", refills: "Refill history", closings: "Closing reports", customers: "Customers", audit: "Audit log" };
@@ -96,6 +98,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [weedTarget, setWeedTarget] = useState<boolean | null>(null);
+  const [openingTarget, setOpeningTarget] = useState<boolean | null>(null);
   const [undoOpen, setUndoOpen] = useState(false);
   const [couponDraft, setCouponDraft] = useState({ code: "", label: "", discount_type: "FIXED" as "FIXED" | "PERCENT", discount_value: "10", min_spend: "50", limit: "1" });
   const [couponConfirm, setCouponConfirm] = useState(false);
@@ -164,6 +167,23 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
     finally { setBusy(false); }
   }
 
+  async function saveOpeningPolicy() {
+    if (openingTarget == null) return;
+    if (isPreview) {
+      setView((current) => ({ ...current, opening_policy: { ...current.opening_policy!, opening_count_required: openingTarget } }));
+      setOpeningTarget(null);
+      return;
+    }
+    const body = { opening_count_required: openingTarget, confirm: true };
+    const key = commands.key("manager-opening-policy", body);
+    setBusy(true); setError("");
+    try {
+      await readJson(await fetch("/api/pos/manager/opening-policy", { method: "POST", headers: { "content-type": "application/json", "idempotency-key": key }, credentials: "same-origin", body: JSON.stringify({ ...body, request_id: key }) }));
+      commands.complete("manager-opening-policy", key); setOpeningTarget(null); await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Opening count policy was not changed."); }
+    finally { setBusy(false); }
+  }
+
   async function createCoupon() {
     const body = { code: couponDraft.code.trim().toUpperCase(), label: couponDraft.label.trim(), discount_type: couponDraft.discount_type, discount_value: couponDraft.discount_type === "FIXED" ? Math.round(Number(couponDraft.discount_value) * 100) : Math.round(Number(couponDraft.discount_value)), min_spend_cents: Math.round(Number(couponDraft.min_spend) * 100), max_redemptions_per_customer: Math.round(Number(couponDraft.limit)), confirm: true };
     if (isPreview) {
@@ -214,6 +234,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
       {screen === "overview" ? <section data-testid="manager-overview">
         <h1>Live shift</h1>{view.live_shift ? <article className={styles.shift}><div><span>Status</span><strong>{view.live_shift.status}</strong></div><div><span>Staff</span><strong>{view.live_shift.staff_name}</strong></div><div><span>Started</span><strong>{stamp(view.live_shift.started_at)}</strong></div><div><span>Shift</span><strong>{view.live_shift.shift_id}</strong></div></article> : <p className={styles.empty}>No shift active.</p>}
         <article className={`${styles.modeCard} ${view.weed_mode?.current === "NO_WEED" ? styles.modeOff : styles.modeOn}`} data-testid="manager-weed-mode"><div><span>Store / shift mode</span><strong>{view.weed_mode?.current === "NO_WEED" ? "NO WEED" : "WEED"}</strong><small>{view.weed_mode?.current === "NO_WEED" ? `${view.weed_mode.thc_sku_count} THC SKUs hidden from sell and customer menu. Closing still counts them.` : "Default mode. All eligible SKUs remain available."}</small></div>{view.read_only ? <strong className={styles.locked}>READ ONLY</strong> : <div className={styles.modeActions}><button type="button" disabled={!view.weed_mode?.can_change || busy} onClick={() => setWeedTarget(view.weed_mode?.current === "NO_WEED")}>Set {view.weed_mode?.current === "NO_WEED" ? "WEED" : "NO WEED"}</button>{view.weed_mode?.undo_backup_id ? <button type="button" className={styles.undo} onClick={() => setUndoOpen(true)}>Undo last change</button> : null}</div>}</article>
+        <article className={`${styles.modeCard} ${view.opening_policy?.opening_count_required ? styles.modeOn : styles.modeNeutral}`} data-testid="manager-opening-policy"><div><span>Opening count</span><strong>{view.opening_policy?.opening_count_required ? "ON" : "OFF"}</strong><small>Closing count is always required. Changes apply to the next shift only.</small></div>{view.read_only ? <strong className={styles.locked}>READ ONLY</strong> : <div className={styles.modeActions}><button type="button" disabled={!view.opening_policy?.can_change || busy} onClick={() => setOpeningTarget(!view.opening_policy?.opening_count_required)}>Turn {view.opening_policy?.opening_count_required ? "OFF" : "ON"}</button></div>}</article>
         <h1>Today&apos;s sales</h1><div className={styles.cards}><article><span>Total</span><strong>{money(view.today?.sales_total_cents)}</strong><small>{view.today?.sale_count ?? 0} sales</small></article><article><span>Cash</span><strong>{money(view.today?.cash_cents)}</strong></article><article><span>Debit</span><strong>{money(view.today?.debit_cents)}</strong></article></div>
       </section> : null}
       {screen === "stock" ? <section data-testid="manager-stock"><div className={styles.historyNav}><button type="button" disabled={stockIndex >= snapshots.length - 1} onClick={() => setStockIndex((value) => Math.min(snapshots.length - 1, value + 1))}>↓</button><div><strong>{stockSnapshot.label}</strong><span>{stockSnapshot.staff_name} · {stamp(stockSnapshot.at)}</span></div><button type="button" disabled={stockIndex === 0} onClick={() => setStockIndex((value) => Math.max(0, value - 1))}>↑</button></div><label htmlFor="manager-stock-search">Search SKU, name or size</label><input id="manager-stock-search" className={styles.search} inputMode="numeric" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock"/><div className={styles.ranges}><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>All</button>{stockRanges.map((start) => <button type="button" key={start} aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div><label className={styles.showAll}><input type="checkbox" checked={showAllStock} onChange={(event) => setShowAllStock(event.target.checked)}/> Show all available SKUs</label><div className={styles.stockHead}><span>SKU</span><span>On hand</span><span>Sold</span><span>Refill coming</span></div><div className={styles.stockList}>{stock.map((row) => <article key={row.sku}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span></div><strong className={row.on_hand === 0 ? styles.zero : ""}>{row.on_hand}</strong><strong>{row.sold}</strong><strong>{row.refill_coming}</strong></article>)}</div>{!stock.length ? <p className={styles.empty}>No stock activity in this section.</p> : null}</section> : null}
@@ -225,6 +246,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
     </div>
     {weedTarget != null ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-weed-confirm"><section><h2>Confirm exact change</h2><p><strong>PNYS · {view.weed_mode?.shift_id}</strong></p><div className={styles.change}><span>{view.weed_mode?.current}</span><b>→</b><span>{weedTarget ? "WEED" : "NO WEED"}</span></div><p>{weedTarget ? "THC SKUs will show again using their saved stock." : "THC SKUs will be hidden on sell and customer menu. Closing count will still include them."}</p><p>An undo backup and audit entry will be written first. Stock quantities will not change.</p>{error ? <p className={styles.error}>{error}</p> : null}<div><button type="button" onClick={() => setWeedTarget(null)}>Cancel</button><button type="button" disabled={busy} onClick={() => void saveWeedMode()}>Confirm and save</button></div></section></div> : null}
     {undoOpen ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-weed-undo"><section><h2>Undo last mode change?</h2><p>The audited backup will restore the prior WEED mode for shift <strong>{view.weed_mode?.shift_id}</strong>.</p><div><button type="button" onClick={() => setUndoOpen(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void undoWeedMode()}>Confirm undo</button></div></section></div> : null}
+    {openingTarget != null ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-opening-policy-confirm"><section><h2>Confirm opening count change</h2><p><strong>{view.store_code} · Opening count</strong></p><div className={styles.change}><span>{view.opening_policy?.opening_count_required ? "ON" : "OFF"}</span><b>→</b><span>{openingTarget ? "ON" : "OFF"}</span></div><p>This applies to the next shift only. The current shift, stock, sales and PINs will not change.</p><p>Closing count stays required. The change is recorded in the audit log.</p>{error ? <p className={styles.error}>{error}</p> : null}<div><button type="button" onClick={() => setOpeningTarget(null)}>Cancel</button><button type="button" disabled={busy} onClick={() => void saveOpeningPolicy()}>Confirm and save</button></div></section></div> : null}
     {couponConfirm ? <div className={styles.dialog} role="dialog" aria-modal="true" data-testid="manager-coupon-confirm"><section><h2>Confirm exact coupon</h2><p><strong>PNYS · {couponDraft.code.trim().toUpperCase()}</strong></p><div className={styles.change}><span>{couponDraft.discount_type === "FIXED" ? `$${couponDraft.discount_value}` : `${couponDraft.discount_value}%`}</span><b>·</b><span>Min ${couponDraft.min_spend}</span></div><p>{couponDraft.label}</p><p>Limit: {couponDraft.limit} redemption(s) per customer. Creating this writes an audit entry. Nothing is sent to customers.</p>{error ? <p className={styles.error}>{error}</p> : null}<div><button type="button" onClick={() => setCouponConfirm(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void createCoupon()}>Confirm and create</button></div></section></div> : null}
     <footer className={styles.bottom} data-testid="manager-actions">{(["overview","stock","refills","closings","customers","audit"] as Screen[]).map((item) => <button type="button" key={item} className={screen === item ? styles.active : ""} onClick={() => setScreen(item)}>{item === "overview" ? "Home" : item === "closings" ? "Closes" : item === "customers" ? "Customers" : item[0]!.toUpperCase() + item.slice(1)}</button>)}</footer>
   </main>;

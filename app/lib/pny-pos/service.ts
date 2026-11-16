@@ -1399,15 +1399,21 @@ function requireAdmin(state: State, token: string, now: Date) {
   return session;
 }
 
-function sellingBlocked(_state: State, shift: ShiftRow) {
+function openingCountRequired(state: State, shift?: ShiftRow) {
+  if (shift?.opening_count_required != null) return shift.opening_count_required;
+  return state.stores.find((store) => store.code === (shift?.store_code ?? tillCode()))?.opening_count_required === true;
+}
+
+function sellingBlocked(state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
   if (weedAnswerRequired(shift)) return "WEED_ANSWER_REQUIRED";
+  if (openingCountRequired(state, shift) && !shift.opening_confirmed_at) return "OPENING_COUNT_REQUIRED";
   return null;
 }
 
-/** Selling does not wait on an opening count. Pending refills stay pending until staff receive them. */
-function openTillWithoutCount(shift: ShiftRow, at: string) {
-  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+/** Stores with opening count OFF open directly. Required counts remain blocking. */
+function openTillWithoutCount(state: State, shift: ShiftRow, at: string) {
+  if (!openingCountRequired(state, shift) && !shift.opening_confirmed_at) shift.opening_confirmed_at = at;
 }
 
 function ensureQuotedProduct(state: State, sku: string, at: string) {
@@ -1735,7 +1741,7 @@ export class PosService {
     const current = requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
     if (!current.session.master && !current.session.closing_only && !weedAnswerRequired(current.shift)) {
       nameLiveShift(state, iso(now));
-      openTillWithoutCount(current.shift, iso(now));
+      openTillWithoutCount(state, current.shift, iso(now));
     }
     return current;
   }
@@ -1959,6 +1965,7 @@ export class PosService {
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
       const pin = randomPin();
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: input.shift_id,
@@ -1973,7 +1980,8 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
         ...(tillCode() === "PNY01" ? {
           weed_gate_required: true,
@@ -2072,6 +2080,7 @@ export class PosService {
       if (!store) throw new PosError(404, "STORE", "Store is missing.");
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: sccxId,
@@ -2086,7 +2095,8 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
         ...(tillCode() === "PNY01" ? {
           weed_gate_required: true,
@@ -2376,7 +2386,7 @@ export class PosService {
       shift.weed_answered_by = actor;
       if (initialAnswer) {
         startStaffVerify(shift, at);
-        openTillWithoutCount(shift, at);
+        openTillWithoutCount(tx.state, shift, at);
       }
       audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, actor, {
         shift_id: shift.sccx_shift_id,
@@ -2432,7 +2442,7 @@ export class PosService {
       const master = Boolean(session.master);
       if (!master && !weedAnswerRequired(shift)) {
         nameLiveShift(tx.state, iso(now));
-        openTillWithoutCount(shift, iso(now));
+        openTillWithoutCount(tx.state, shift, iso(now));
       }
       const totals = shiftTotals(tx.state, shift.id);
       let products = tx.state.products
@@ -2495,7 +2505,7 @@ export class PosService {
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
       const openingLines = [...openingPlan(tx.state, raw, shift)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
-      const phase = weedAnswerRequired(shift) ? "weed" : shift.status === "CLOSING" ? "end" : "sell";
+      const phase = weedAnswerRequired(shift) ? "weed" : openingCountRequired(tx.state, shift) && !shift.opening_confirmed_at ? "opening" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
         .filter((row) => row.status !== "sent")
@@ -3023,9 +3033,34 @@ export class PosService {
         thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
         undo_backup_id: latestBackup?.id ?? null,
       },
+      opening_policy: {
+        opening_count_required: store?.opening_count_required === true,
+        closing_count_required: true as const,
+        can_change: storeCode === "PNYS",
+        applies_to: "NEXT_SHIFT" as const,
+      },
       write_actions: { enabled: false as const, reason: storeCode === "PNY01"
         ? "PNY01 is connected read-only. Price, stock, expense, mode and coupon changes are locked."
         : "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+    };
+  }
+
+  async managerSetOpeningCountPolicy(adminToken: string, input: { key: string; opening_count_required: boolean; confirm: boolean }) {
+    const now = this.now();
+    const state = await this.readState();
+    requireAdmin(state, adminToken, now);
+    if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Opening count policy is enabled on PNYS preview only.");
+    if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact opening count change before saving.");
+    if (!this.db.setOpeningCountPolicy) throw new PosError(503, "POLICY_UNAVAILABLE", "Store policy storage is unavailable.");
+    const result = await this.db.setOpeningCountPolicy("PNYS", input.opening_count_required, "MANAGER", input.key, iso(now));
+    return {
+      ok: true as const,
+      changed: result.changed,
+      opening_count_required: input.opening_count_required,
+      closing_count_required: true as const,
+      from: result.previous ? "ON" as const : "OFF" as const,
+      to: input.opening_count_required ? "ON" as const : "OFF" as const,
+      applies_to: "NEXT_SHIFT" as const,
     };
   }
 
@@ -4968,7 +5003,7 @@ export class PosService {
       const shift = tx.state.shifts.find((row) => row.store_code === tillCode() && row.status === "ACTIVE");
       if (shift) {
         nameLiveShift(tx.state, now);
-        openTillWithoutCount(shift, now);
+        openTillWithoutCount(tx.state, shift, now);
       }
       const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products

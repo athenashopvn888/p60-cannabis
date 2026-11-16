@@ -13,6 +13,8 @@ export function emptyState(now = new Date().toISOString()): State {
         timezone: STORE_TZ,
         prices_tax_included: true,
         weed_in_store: true,
+        opening_count_required: false,
+        closing_count_required: true,
         ticket_letter_seq: 0,
         created_at: now,
       },
@@ -115,6 +117,7 @@ export interface PosDb {
   assertIntegrationOwner?: (channel: IntegrationChannel) => Promise<IntegrationLease>;
   deliveredIntegrationEvents?: (channel: IntegrationChannel, cutoverId: string, eventIds: string[]) => Promise<Set<string>>;
   recordIntegrationDelivery?: (lease: IntegrationLease, eventId: string, receipt?: Record<string, unknown>) => Promise<boolean>;
+  setOpeningCountPolicy?: (storeCode: string, required: boolean, actor: string, auditKey: string, changedAt: string) => Promise<{ changed: boolean; previous: boolean }>;
 }
 
 export class MemoryDb implements PosDb {
@@ -163,6 +166,21 @@ export class MemoryDb implements PosDb {
     if (this.integrationDeliveries.has(key)) return false;
     this.integrationDeliveries.add(key);
     return true;
+  }
+
+  async setOpeningCountPolicy(storeCode: string, required: boolean, actor: string, auditKey: string, changedAt: string) {
+    const store = this.state.stores.find((row) => row.code === storeCode);
+    if (!store) throw new PosError(409, "STORE", `${storeCode} store settings are unavailable.`);
+    const previous = store.opening_count_required === true;
+    if (previous === required) return { changed: false, previous };
+    store.opening_count_required = required;
+    store.closing_count_required = true;
+    if (!this.state.audit.some((row) => row.detail.audit_key === auditKey)) this.state.audit.push({
+      id: crypto.randomUUID(), action: "OPENING_COUNT_POLICY_CHANGED", ref_type: "store", ref_id: storeCode, actor,
+      detail: { audit_key: auditKey, from: previous ? "ON" : "OFF", to: required ? "ON" : "OFF", closing_count_required: true, applies_to: "NEXT_SHIFT" },
+      created_at: changedAt,
+    });
+    return { changed: true, previous };
   }
 
   transaction<T>(fn: (tx: Tx) => Promise<T>, options: TransactionOptions = {}): Promise<T> {

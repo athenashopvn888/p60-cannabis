@@ -12,6 +12,9 @@ export type StoreRow = {
   prices_tax_included: boolean;
   /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
   weed_in_store?: boolean;
+  /** Manager-controlled per-store opening policy. Closing remains mandatory. */
+  opening_count_required?: boolean;
+  closing_count_required?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
@@ -89,6 +92,8 @@ export type ShiftRow = {
   ended_at: string | null;
   end_reason: string | null;
   opening_confirmed_at: string | null;
+  /** Snapshot of the store policy when this shift opened. */
+  opening_count_required?: boolean;
   refill_confirmed_at: string | null;
   /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
   weed_gate_required?: boolean;
