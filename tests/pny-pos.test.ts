@@ -952,6 +952,8 @@ test("23. shift, roster and closing code uses only the owned SCCx Signal gateway
   assert.doesNotMatch(clearCart, /post\(|fetch\(|cashout\(/);
   assert.match(posApp, /already has 10 different SKUs/);
   assert.match(posApp, /inputMode="numeric"[\s\S]*?onFocus=\{\(\) => setVerifyExpandedFor\(null\)\}/);
+  assert.match(posApp, /Done · Continue stock count/);
+  assert.match(posApp, /verifyOpen && view\.verify\?\.deadline_at[\s\S]*?setVerifyExpandedFor\(view\.verify\.deadline_at\)/);
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
   assert.match(posApp, /MENU QR/);

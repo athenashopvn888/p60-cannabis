@@ -1181,7 +1181,10 @@ export default function PosApp({
               <>
                 <h2>Sale {refNo}</h2>
                 <p>Recorded.</p>
-                <button className={styles.primary} type="button" onClick={() => setSheet(null)}>Done</button>
+                <button className={styles.primary} type="button" onClick={() => {
+                  setSheet(null);
+                  if (verifyOpen && view.verify?.deadline_at) setVerifyExpandedFor(view.verify.deadline_at);
+                }}>Done · Continue stock count</button>
               </>
             ) : null}
             {sheet === "summary-pin" ? (
