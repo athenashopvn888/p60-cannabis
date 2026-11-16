@@ -3954,7 +3954,7 @@ test("the float is stored on the close and does not change the deposit", async (
   assert.equal(ended.closing.final_deposit_cents, 200);
   const after = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
   assert.equal(after - before, 200);
-  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents);
+  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents - 500);
   const started = await h.svc.startShift({ key: "float-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-float" });
   const next = await h.svc.login(String(started.pin), "10.9.0.1");
   const open = await h.svc.state(next.token);
@@ -3973,6 +3973,52 @@ test("the float is stored on the close and does not change the deposit", async (
   const floatAudit = h.db.state.audit.find((row) => row.action === "OPENING_FLOAT_ADJUSTED");
   assert.equal(floatAudit?.detail?.difference_cents, -100);
   assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
+});
+
+test("the first store shift requires opening cash and produces a complete reconciliation", async () => {
+  const h = await readyTill({ "1001": 2 });
+  const open = await h.svc.state(h.token);
+  assert.equal(open.float_check.required, true);
+  assert.equal(open.float_check.done, false);
+  assert.equal(open.float_check.expected_cents, 0);
+
+  await assert.rejects(
+    () => h.svc.saveOpeningFloat(h.token, { found_cents: 4400 }),
+    (error: unknown) => error instanceof PosError && error.code === "FLOAT_ADJUST_CONFIRM_REQUIRED",
+  );
+  await h.svc.saveOpeningFloat(h.token, { found_cents: 4400, confirm_adjustment: true });
+  await h.svc.cashout(h.token, { key: "first-shift-sale", lines: [{ sku: "1001", qty: 1 }] });
+  await h.svc.saveFinalDeposit(h.token, { amount_cents: 500, float_cents: 100 });
+  await submitClosingValues(h.svc, h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "first-shift-end", final_deposit_cents: 500, float_cents: 100, lines: [] });
+
+  assert.equal(ended.closing.opening_float_counted_cents, 4400);
+  assert.equal(ended.closing.opening_float_expected_cents, 0);
+  assert.equal(ended.closing.balance_cents, 4400 + ended.closing.cash_sales_cents - 500 - 100);
+  assert.match(ended.closing.summary_text, /Opening cash: \$44\.00/);
+});
+
+test("PNYS accepts the retained PNY01 SCCx store code at shift start and end", async () => {
+  const h = harness();
+  h.db.state.stores.push({ ...h.db.state.stores[0], code: "PNYS", name: "PNYS Test Store", ticket_letter_seq: 0 });
+  await runStore(PNYS_STORE, () => h.svc.importRoster({
+    key: "pnys-randy-roster",
+    staff: [{ staff_uid: "staff-randy", sccx_id: "randy-sccx", pos_id: "RANDY", display_name: "Randy", active: true }],
+  }));
+  const started = await runStore(PNYS_STORE, () => h.svc.startShift({
+    key: "pnys-randy-start",
+    store: "PNY01",
+    staff_ref: "randy-sccx",
+    pos_id: "RANDY",
+    shift_id: "sccx-pny01-randy",
+  }));
+  assert.equal(h.db.state.shifts.find((row) => row.id === started.shift_id)?.store_code, "PNYS");
+  const ended = await runStore(PNYS_STORE, () => h.svc.endShiftFromSccx({
+    key: "pnys-randy-end",
+    store: "PNY01",
+    shift_id: "sccx-pny01-randy",
+  }));
+  assert.equal(ended.ok, true);
 });
 
 test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {

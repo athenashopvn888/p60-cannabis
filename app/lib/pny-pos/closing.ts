@@ -22,6 +22,18 @@ export function lineVariance(input: { expected_qty: number; counted_qty: number;
 }
 
 /** Positive means the drawer is short. Negative means cash is over. */
-export function closingBalance(input: { cash_sales_cents: number; shortage_cents: number; overage_cents: number; deposited_cents: number }) {
-  return input.cash_sales_cents + input.shortage_cents - input.overage_cents - input.deposited_cents;
+export function closingBalance(input: {
+  cash_sales_cents: number;
+  shortage_cents: number;
+  overage_cents: number;
+  deposited_cents: number;
+  opening_float_cents?: number;
+  closing_float_cents?: number;
+}) {
+  return (input.opening_float_cents ?? 0)
+    + input.cash_sales_cents
+    + input.shortage_cents
+    - input.overage_cents
+    - input.deposited_cents
+    - (input.closing_float_cents ?? 0);
 }
