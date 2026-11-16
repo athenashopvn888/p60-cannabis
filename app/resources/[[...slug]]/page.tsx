@@ -13,6 +13,8 @@ import {
   getRelatedPages,
   getResourcePageBySlug,
   getStaticResourceParams,
+  getUnresolvedRelatedLinks,
+  type ResourceLink,
   type ResourcePage,
 } from "../resourceData";
 
@@ -88,6 +90,7 @@ export default async function ResourceRoute({
   const children = page.kind === "root" ? getCategoryPages() : getChildPages(page.path);
   const featured = page.kind === "root" ? getFeaturedPages() : children;
   const related = getRelatedPages(page);
+  const unresolvedRelated = getUnresolvedRelatedLinks(page);
   const schema = buildSchema(page);
 
   return (
@@ -184,7 +187,9 @@ export default async function ResourceRoute({
             </section>
           )}
 
-          {related.length > 0 && <ResourceCards title="Related Resources" pages={related} compact />}
+          {(related.length > 0 || unresolvedRelated.length > 0) && (
+            <ResourceCards title="Related Resources" pages={related} compact extraLinks={unresolvedRelated} />
+          )}
         </article>
 
         <aside className={styles.sideRail}>
@@ -230,30 +235,35 @@ function ResourceCards({
   title,
   pages,
   compact = false,
+  extraLinks = [],
 }: {
   title: string;
   pages: ResourcePage[];
   compact?: boolean;
+  extraLinks?: ResourceLink[];
 }) {
   return (
     <section className={styles.cardsSection}>
       <h2>{title}</h2>
-      <div className={compact ? styles.cardGridCompact : styles.cardGrid}>
-        {pages.map((page) => {
-          const author = AUTHORS[page.author];
-          return (
-            <Link href={page.path} key={page.path} className={styles.resourceCard}>
-              <span className={styles.cardKicker}>{page.categoryLabel}</span>
-              <h3>{page.title}</h3>
-              <p>{page.excerpt}</p>
-              <div className={styles.cardMeta}>
-                <span>{author.name}</span>
-                <span>Updated {formatDate(page.dateModified)}</span>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+      {pages.length > 0 && (
+        <div className={compact ? styles.cardGridCompact : styles.cardGrid}>
+          {pages.map((page) => {
+            const author = AUTHORS[page.author];
+            return (
+              <Link href={page.path} key={page.path} className={styles.resourceCard}>
+                <span className={styles.cardKicker}>{page.categoryLabel}</span>
+                <h3>{page.title}</h3>
+                <p>{page.excerpt}</p>
+                <div className={styles.cardMeta}>
+                  <span>{author.name}</span>
+                  <span>Updated {formatDate(page.dateModified)}</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+      {extraLinks.length > 0 && <LinkList links={extraLinks} />}
     </section>
   );
 }

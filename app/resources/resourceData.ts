@@ -80,6 +80,26 @@ export const AUTHORS: Record<ResourceAuthorKey, ResourceAuthor> = {
 
 const updated = "2026-07-11";
 
+const FRESH_FROZEN_ARTICLE_LINK: ResourceLink = {
+  label: 'Fresh Frozen vs Cured Cannabis: What "Fresh Frozen" Means on a Concentrate',
+  href: "/resources/fresh-frozen-vs-cured-cannabis",
+  description:
+    "That's fresh frozen vs cured cannabis, and it explains a big chunk of concentrate vocabulary.",
+};
+
+const BONG_ARTICLE_LINK: ResourceLink = {
+  label: "How to Use a Bong: A Calm, Step-by-Step Guide from Weston Road",
+  href: "/resources/how-to-use-a-bong",
+  description:
+    "This is P60 Cannabis's plain walkthrough of how to use a bong, written for adults 19+ who would like a calm explanation rather than a dare.",
+};
+
+const STANDALONE_RESOURCE_LINKS = [FRESH_FROZEN_ARTICLE_LINK, BONG_ARTICLE_LINK];
+
+const STANDALONE_RESOURCE_LINK_BY_HREF = new Map(
+  STANDALONE_RESOURCE_LINKS.map((link) => [link.href, link]),
+);
+
 const nativeCigaretteCartonLines = [
   "Rolled Gold Lights",
   "Canadian Full",
@@ -162,6 +182,13 @@ const RESOURCE_PAGES_RAW: ResourcePage[] = [
           "These resources explain how to compare categories. When one product, price, weight, or hour decides the trip, check the current menu or call the store before travelling.",
         ],
       },
+      {
+        heading: "Latest articles",
+        body: [
+          "Adults 19+ can open two recent articles from here: a fresh-frozen and cured cannabis explainer, and a calm walkthrough of how to use a bong.",
+        ],
+        links: STANDALONE_RESOURCE_LINKS,
+      },
     ],
     commercialLinks: [
       { label: "View the P60 Cannabis store page", href: "/weed-dispensary-york" },
@@ -173,6 +200,8 @@ const RESOURCE_PAGES_RAW: ResourcePage[] = [
       "/resources/cannabis-101/how-to-read-a-cannabis-menu",
       "/resources/value-guides/how-to-compare-flower-prices",
       "/resources/local-guides/weed-dispensary-in-york",
+      "/resources/fresh-frozen-vs-cured-cannabis",
+      "/resources/how-to-use-a-bong",
     ],
   },
   {
@@ -229,6 +258,7 @@ const RESOURCE_PAGES_RAW: ResourcePage[] = [
       "/resources/weed-flower-guides",
       "/resources/pre-roll-guides",
       "/resources/edibles-guides",
+      "/resources/how-to-use-a-bong",
     ],
   },
   {
@@ -285,6 +315,7 @@ const RESOURCE_PAGES_RAW: ResourcePage[] = [
     related: [
       "/resources/value-guides",
       "/resources/cannabis-101/how-to-read-a-cannabis-menu",
+      "/resources/fresh-frozen-vs-cured-cannabis",
     ],
   },
   {
@@ -1623,4 +1654,13 @@ export function getRelatedPages(page: ResourcePage) {
   return page.related
     .map((path) => RESOURCE_PAGE_BY_PATH.get(normalizeResourcePath(path)))
     .filter((related): related is ResourcePage => Boolean(related));
+}
+
+export function getUnresolvedRelatedLinks(page: ResourcePage): ResourceLink[] {
+  return page.related.flatMap((path) => {
+    const href = normalizeResourcePath(path);
+    if (RESOURCE_PAGE_BY_PATH.has(href)) return [];
+    const known = STANDALONE_RESOURCE_LINK_BY_HREF.get(href);
+    return [known ?? { href, label: href }];
+  });
 }
