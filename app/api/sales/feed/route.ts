@@ -10,9 +10,12 @@ export async function GET(request: Request) {
     if (!salesFeedTokenOk(request.headers.get(SALES_FEED_HEADER))) {
       return json({ ok: false, error: "Unauthorized." }, 401);
     }
-    const since = new URL(request.url).searchParams.get("since");
+    const params = new URL(request.url).searchParams;
+    const since = params.get("since");
+    const limit = Number(params.get("limit") ?? "50");
     const service = await getService();
-    return json(await service.salesFeed(since));
+    await service.assertIntegrationOwner("SCCX_FEED");
+    return json(await service.salesFeed(since, limit));
   } catch (error) {
     return toResponse(error);
   }

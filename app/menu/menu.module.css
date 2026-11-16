@@ -236,6 +236,15 @@
   background: #e2e8f0;
 }
 
+@media (max-width: 480px) {
+  .hero,
+  .heroPh {
+    height: clamp(88px, 24vw, 112px);
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+}
+
 .heroPh {
   display: grid;
   place-items: center;

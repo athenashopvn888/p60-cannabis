@@ -8,6 +8,7 @@ import { currentStore } from "./storeContext.ts";
 
 export const SESSION_COOKIE = "pny_pos_session";
 export const KITCHEN_COOKIE = "pny_kitchen_session";
+export const MANAGER_COOKIE = "pny_manager_session";
 export const ADMIN_COOKIE = "pny_pos_admin";
 export const DEMO_JOURNAL_COOKIE = "pny_pos_demo";
 export const DEMO_DRAFT_COOKIE = "pny_pos_draft";
@@ -94,6 +95,16 @@ export function receiptLines(body: Record<string, unknown>) {
   });
 }
 
+export function receiptBatch(body: Record<string, unknown>) {
+  const action = String(body.action ?? "ACCEPT").toUpperCase();
+  return {
+    batch_id: String(body.batch_id ?? "").trim() || undefined,
+    action: action === "REJECT" ? "REJECT" as const : "ACCEPT" as const,
+    reason: body.reason == null ? undefined : String(body.reason),
+    lines: receiptLines(body),
+  };
+}
+
 export function idempotencyKey(request: Request, body: Record<string, unknown>) {
   const header = request.headers.get("idempotency-key")?.trim() ?? "";
   const fromBody = typeof body.request_id === "string" ? body.request_id.trim() : typeof body.event_id === "string" ? body.event_id.trim() : "";
@@ -116,6 +127,10 @@ export async function staffToken() {
 
 export async function kitchenToken() {
   return (await cookies()).get(KITCHEN_COOKIE)?.value ?? "";
+}
+
+export async function managerToken() {
+  return (await cookies()).get(MANAGER_COOKIE)?.value ?? "";
 }
 
 export async function adminToken() {

@@ -11,6 +11,7 @@ import { HOME_DOC_TITLE } from "./lib/homeDelivery";
 import type { Metadata } from "next";
 import "./globals.css";
 import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
+import PnysCustomerTestLabel from "./components/pnys/PnysCustomerTestLabel";
 
 export const revalidate = 300;
 
@@ -108,6 +109,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pnys = process.env.STORE_CODE?.trim().toUpperCase() === "PNYS";
   const [fleet, cigaretteSnapshot] = await Promise.all([getFleetContent(), getCigaretteSnapshot()]);
   const contentBanners = fleet.active && fleet.banners.some((banner, index) => banner !== CODED_BANNERS[index]) ? fleet.banners : undefined;
   const cigarettes = toPublicCigaretteState(cigaretteSnapshot);
@@ -145,6 +147,7 @@ export default async function RootLayout({
         <FleetContentProvider value={{ active: fleet.active, version: fleet.version, nap: fleet.nap, contentBanners }}>
           <CigaretteStateProvider value={{ ...cigarettes, web: SHOW_CIGARETTES ? cigarettes.web : false }}>
             <DeliveryAnnouncement />
+            {pnys ? <PnysCustomerTestLabel /> : null}
             {children}
             <FullNameNap />
             <PinnedNavClearance />
