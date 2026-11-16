@@ -9,7 +9,7 @@ type Product = { sku: string; name: string; category: string; size: string; pric
 type HistoryRow = { kitchen_row_id: string; batch_id: string; sku: string; name: string; size: string; qty_sent: number; qty_received: number | null; status: string; variance_reason?: string | null; sent_by?: string; received_by?: string | null; approval_required?: boolean; created_at: string; sent_at_toronto?: string; received_at_toronto?: string | null };
 type KitchenView = { authenticated: boolean; store_code?: string; stores?: { code: string; name: string }[]; products?: Product[]; history?: HistoryRow[] };
 type Screen = "refill" | "confirm" | "history" | "sent";
-type SortKey = "sku" | "on_hand" | "sold_day" | "sold_night" | "pending_qty";
+type SortKey = "sku" | "on_hand" | "sold_24h" | "pending_qty";
 type SortDirection = "asc" | "desc";
 type Language = "vi" | "en";
 type RefillLine = { sku: string; name: string; size: string; qty: number; approval_required?: boolean };
@@ -26,7 +26,7 @@ const copy = {
     enterPin: "Nhập mã PIN Kitchen.", signIn: "Đăng nhập", logout: "Đăng xuất", testStore: "CỬA HÀNG THỬ NGHIỆM",
     newRefill: "Tạo hàng bổ sung", confirmBatch: "Xác nhận lô hàng", refillHistory: "Lịch sử bổ sung", sentToStore: "Đã gửi đến cửa hàng",
     store: "Cửa hàng", search: "Tìm SKU, tên hoặc kích cỡ", all: "Tất cả", requestedOnly: "Chỉ hàng được yêu cầu",
-    sortBy: "Sắp xếp", onHand: "Tồn kho", soldDay: "Bán ca ngày", soldNight: "Bán ca đêm", pending: "Đang chờ", refill: "Bổ sung", refillQty: "SL bổ sung",
+    sortBy: "Sắp xếp", onHand: "Tồn kho", sold24h: "Bán 24 giờ", pending: "Đang chờ", refill: "Bổ sung", refillQty: "SL bổ sung",
     useRequested: "Theo yêu cầu", requestedZero: "Chưa yêu cầu", approval: "Cần cửa hàng duyệt", unavailable: "KHÔNG CÓ DỮ LIỆU", noMatch: "Không tìm thấy SKU phù hợp.",
     confirmTitle: "Xác nhận lô bổ sung", confirmHelp: "Kiểm tra từng số lượng trước khi gửi. Tồn kho chỉ thay đổi sau khi nhân viên cửa hàng xác nhận đã nhận.",
     skus: "SKU", totalUnits: "tổng sản phẩm", history: "Lịch sử", waiting: "Chờ nhân viên xác nhận", batch: "Lô", sentBy: "gửi bởi", reason: "Lý do",
@@ -37,7 +37,7 @@ const copy = {
     enterPin: "Enter the Kitchen PIN.", signIn: "Sign in", logout: "Logout", testStore: "TEST STORE",
     newRefill: "New refill", confirmBatch: "Confirm batch", refillHistory: "Refill history", sentToStore: "Sent to store",
     store: "Store", search: "Search SKU, name or size", all: "All", requestedOnly: "Requested only",
-    sortBy: "Sort by", onHand: "On hand", soldDay: "Sold Day", soldNight: "Sold Night", pending: "Pending", refill: "Refill", refillQty: "Refill qty",
+    sortBy: "Sort by", onHand: "On hand", sold24h: "Sold 24h", pending: "Pending", refill: "Refill", refillQty: "Refill qty",
     useRequested: "Use request", requestedZero: "No request", approval: "Store approval required", unavailable: "UNAVAILABLE", noMatch: "No SKUs match this filter.",
     confirmTitle: "Confirm refill batch", confirmHelp: "Review every quantity before sending. Stock will not change until store staff confirms receipt.",
     skus: "SKUs", totalUnits: "total units", history: "History", waiting: "Waiting for staff", batch: "Batch", sentBy: "sent by", reason: "Reason",
@@ -47,7 +47,7 @@ const copy = {
 } as const;
 
 const previewProducts: Product[] = [
-  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", price_cents: 500, on_hand: 0, sold_24h: 3, sold_day: 2, sold_night: 1, pending_qty: 0, suggested_refill_qty: 6, requested_qty: 5, enabled: true },
+  { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", price_cents: 500, on_hand: 0, sold_24h: 3, pending_qty: 0, suggested_refill_qty: 6, requested_qty: 5, enabled: true },
   { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", price_cents: 4000, on_hand: 3, sold_24h: 4, pending_qty: 2, suggested_refill_qty: 3 },
   { sku: "396-3g", name: "Preview Flower", category: "FLOWER", size: "3g", price_cents: 3000, on_hand: 0, sold_24h: 0, pending_qty: 4, suggested_refill_qty: 0 },
   { sku: "715", name: "Cigarettes", category: "CIGARETTES", size: "pack", price_cents: 250, on_hand: 12, sold_24h: 4, pending_qty: 0, suggested_refill_qty: 0 },
@@ -316,13 +316,12 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
           <label className={styles.controlField} htmlFor="kitchen-search"><span>{text.search}</span><input id="kitchen-search" className={styles.search} placeholder={text.search} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         </div>
         <div className={styles.skuRanges} aria-label="SKU sections"><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>{text.all}</button><button type="button" className={styles.requestedOnly} aria-pressed={requestedOnly} onClick={() => setRequestedOnly((value) => !value)}>{text.requestedOnly}</button>{skuRanges.map((start) => <button key={start} type="button" aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div>
-        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="day" type="button" aria-pressed={sortKey === "sold_day"} onClick={() => changeSort("sold_day")}>{sortLabel(text.soldDay, "sold_day")}</button><button data-column="night" type="button" aria-pressed={sortKey === "sold_night"} onClick={() => changeSort("sold_night")}>{sortLabel(text.soldNight, "sold_night")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
-        <div className={styles.legend}><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="day" type="button" aria-pressed={sortKey === "sold_day"} onClick={() => changeSort("sold_day")}>{sortLabel(text.soldDay, "sold_day")}</button><button data-column="night" type="button" aria-pressed={sortKey === "sold_night"} onClick={() => changeSort("sold_night")}>{sortLabel(text.soldNight, "sold_night")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
+        <div className={styles.mobileSort} aria-label="Mobile sort"><strong>{text.sortBy}</strong><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold24h, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button></div>
+        <div className={styles.legend}><button data-column="sku" type="button" aria-pressed={sortKey === "sku"} onClick={() => changeSort("sku")}>{sortLabel("SKU", "sku")}</button><button data-column="stock" type="button" aria-pressed={sortKey === "on_hand"} onClick={() => changeSort("on_hand")}>{sortLabel(text.onHand, "on_hand")}</button><button data-column="sold" type="button" aria-pressed={sortKey === "sold_24h"} onClick={() => changeSort("sold_24h")}>{sortLabel(text.sold24h, "sold_24h")}</button><button data-column="pending" type="button" aria-pressed={sortKey === "pending_qty"} onClick={() => changeSort("pending_qty")}>{sortLabel(text.pending, "pending_qty")}</button><span>{text.refill}</span></div>
         <div className={styles.products}>{products.map((product) => <article key={product.sku} className={styles.product} data-testid="kitchen-product" data-sku={product.sku}>
           <div className={styles.identity}><strong>{product.sku} · {product.size}</strong><span>{product.name}</span>{product.approval_required ? <em>{text.approval}</em> : null}</div>
           <span className={styles.metric}><small>{text.onHand}</small><strong>{product.on_hand ?? "—"}</strong>{product.on_hand == null ? <small>{product.availability ?? text.unavailable}</small> : null}</span>
-          <span className={styles.metric}><small>{text.soldDay}</small><strong>{product.sold_day ?? 0}</strong></span>
-          <span className={styles.metric}><small>{text.soldNight}</small><strong>{product.sold_night ?? 0}</strong></span>
+          <span className={styles.metric}><small>{text.sold24h}</small><strong>{product.sold_24h ?? 0}</strong></span>
           <span className={styles.metric}><small>{text.pending}</small><strong>{product.pending_qty}</strong></span>
           <label className={styles.qty}><small>{text.refillQty}</small><input inputMode="numeric" aria-label={`Refill ${product.sku} ${product.size}`} value={qty[product.sku] ?? ""} onChange={(event) => setQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/>{(product.requested_qty ?? 0) > 0 ? <button type="button" onClick={() => setQty((current) => ({ ...current, [product.sku]: String(product.requested_qty) }))}>{text.useRequested} {product.requested_qty}</button> : <small>{text.requestedZero}</small>}</label>
         </article>)}</div>

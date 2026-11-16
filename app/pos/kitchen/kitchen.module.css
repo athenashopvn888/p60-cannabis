@@ -266,7 +266,7 @@
 }
 .legend {
   display: grid;
-  grid-template-columns: minmax(118px, 1.7fr) repeat(5, minmax(48px, 0.65fr));
+  grid-template-columns: minmax(118px, 1.7fr) repeat(4, minmax(48px, 0.65fr));
   gap: 6px;
   padding: 0 9px 7px;
   color: #4b5563;
@@ -313,15 +313,10 @@
   background: #dcfce7;
   color: #14532d;
 }
-.legend button[data-column="day"],
-.mobileSort button[data-column="day"] {
+.legend button[data-column="sold"],
+.mobileSort button[data-column="sold"] {
   background: #ede9fe;
   color: #5b21b6;
-}
-.legend button[data-column="night"],
-.mobileSort button[data-column="night"] {
-  background: #e0e7ff;
-  color: #3730a3;
 }
 .legend button[data-column="pending"],
 .mobileSort button[data-column="pending"] {
@@ -349,7 +344,7 @@
 .product {
   display: grid;
   grid-template-columns: minmax(118px, 1.7fr) repeat(
-      4,
+      3,
       minmax(48px, 0.65fr)
     ) minmax(58px, 0.7fr);
   gap: 6px;
@@ -393,9 +388,6 @@
   background: #f5f3ff;
 }
 .product > .metric:nth-child(4) {
-  background: #eef2ff;
-}
-.product > .metric:nth-child(5) {
   background: #fffbeb;
 }
 .metric small,
@@ -554,7 +546,7 @@
   }
   .mobileSort {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     align-items: center;
     margin: 10px 2px 12px;
@@ -580,7 +572,7 @@
     font-size: 13px;
   }
   .product {
-    grid-template-columns: minmax(0, 1fr) repeat(5, 48px);
+    grid-template-columns: minmax(0, 1fr) repeat(4, 48px);
   }
   .metric small,
   .qty small {
