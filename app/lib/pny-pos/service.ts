@@ -2793,10 +2793,23 @@ export class PosService {
   }
 
   /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
-  async managerState(token: string) {
-    const state = await this.readState();
+  async managerState(token: string, selectedStore = tillCode(), readSelectedStore?: () => Promise<State>) {
+    const localState = await this.readState();
     const now = this.now();
-    requireAdmin(state, token, now);
+    requireAdmin(localState, token, now);
+    const storeCode = selectedStore === "PNY01" ? "PNY01" : "PNYS";
+    const state = storeCode === tillCode()
+      ? localState
+      : readSelectedStore
+        ? await readSelectedStore()
+        : (() => { throw new PosError(503, "STORE_UNAVAILABLE", `${storeCode} read-only data is unavailable.`); })();
+    // Customers and coupons are central records. Keep the authenticated PNYS
+    // hub data even while the operational view is switched to PNY01.
+    state.customers = localState.customers ?? [];
+    state.customer_consents = localState.customer_consents ?? [];
+    state.customer_visits = localState.customer_visits ?? [];
+    state.coupons = localState.coupons ?? [];
+    state.coupon_redemptions = localState.coupon_redemptions ?? [];
     const day = new Intl.DateTimeFormat("en-CA", {
       timeZone: STORE_TZ,
       year: "numeric",
@@ -2810,7 +2823,7 @@ export class PosService {
       day: "2-digit",
     }).format(new Date(value)) === day;
     const liveShift = [...state.shifts]
-      .filter((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      .filter((row) => row.store_code === storeCode && (row.status === "ACTIVE" || row.status === "CLOSING"))
       .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
     const todaySales = state.sales
       .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
@@ -2818,7 +2831,7 @@ export class PosService {
     const products = state.products
       .filter((product) => product.setb_active)
       .flatMap((product) => {
-        const storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === product.sku);
+        const storeProduct = state.store_products.find((row) => row.store_code === storeCode && row.sku === product.sku);
         if (!storeProduct?.enabled) return [];
         return [{
           sku: product.sku,
@@ -2832,6 +2845,7 @@ export class PosService {
       })
       .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
     const refills = [...state.incoming]
+      .filter((row) => row.store_code === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, 100)
       .map((row) => ({
@@ -2909,17 +2923,23 @@ export class PosService {
         };
       });
     const coupons = [...(state.coupons ?? [])]
-      .filter((row) => row.store_code === tillCode())
+      .filter((row) => row.store_code === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
-    const store = state.stores.find((row) => row.code === tillCode());
+    const store = state.stores.find((row) => row.code === storeCode);
     const latestBackup = [...state.audit]
-      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === tillCode())
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
     return {
       authenticated: true as const,
-      store_code: tillCode(),
+      store_code: storeCode,
+      stores: [
+        { code: "PNY01", name: "PNY01 · P60 Cannabis" },
+        { code: "PNYS", name: "PNYS · Test Store" },
+      ],
+      read_only: storeCode === "PNY01",
+      data_source: storeCode === "PNY01" ? "LIVE_READ_ONLY" as const : "PNYS_PREVIEW" as const,
       live_shift: liveShift ? {
         shift_id: liveShift.sccx_shift_id,
         status: liveShift.status,
@@ -2942,11 +2962,13 @@ export class PosService {
       weed_mode: {
         current: store?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
         shift_id: liveShift?.sccx_shift_id ?? null,
-        can_change: true,
+        can_change: storeCode === "PNYS",
         thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
         undo_backup_id: latestBackup?.id ?? null,
       },
-      write_actions: { enabled: false as const, reason: "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+      write_actions: { enabled: false as const, reason: storeCode === "PNY01"
+        ? "PNY01 is connected read-only. Price, stock, expense, mode and coupon changes are locked."
+        : "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
     };
   }
 

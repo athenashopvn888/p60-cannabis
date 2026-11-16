@@ -5,6 +5,10 @@
 .middle { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 12px 24px; overscroll-behavior: contain; }
 .middle h1 { margin: 18px 0 10px; font-size: 20px; }
 .readOnly { padding: 10px 12px; border: 1px solid #f59e0b; border-radius: 10px; background: #fffbeb; color: #92400e; font-size: 12px; font-weight: 800; }
+.storePicker { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; margin-top: 10px; font-size: 12px; font-weight: 850; }
+.storePicker select { min-width: 0; min-height: 48px; padding: 0 10px; border: 2px solid #1d4ed8; border-radius: 10px; background: #fff; color: #111827; font-size: 15px; font-weight: 850; }
+.storePicker small { color: #64748b; }
+.locked { align-self: center; padding: 8px 10px; border-radius: 8px; background: #e5e7eb; color: #334155; font-size: 11px !important; }
 .bottom { flex: 0 0 auto; min-height: calc(72px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 5px; box-sizing: border-box; padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #cbd5e1; background: #fff; box-shadow: 0 -8px 24px rgb(0 0 0 / 9%); }
 .bottom button { flex: 1 1 0; min-width: 0; min-height: 50px; border: 0; border-radius: 10px; background: #e5e7eb; color: #374151; font-size: 11px; font-weight: 850; }
 .bottom .active { background: #1d4ed8; color: #fff; }
@@ -78,4 +82,5 @@
   .bottom button { font-size: 9px; padding-inline: 2px; }
   .modeCard { grid-template-columns: 1fr; }
   .modeActions { grid-template-columns: 1fr 1fr; }
+  .storePicker { grid-template-columns: 1fr; }
 }

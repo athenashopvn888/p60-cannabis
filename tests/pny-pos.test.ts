@@ -1921,6 +1921,30 @@ test("PNYS Manager read model reports live shift, sales, stock, refills, closing
   assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings }), before);
 });
 
+test("Manager store selector reads PNY01 through the curated snapshot and keeps every write locked", async () => {
+  const now = new Date("2026-11-16T02:30:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.2"));
+  const pny01 = structuredClone(db.state);
+  pny01.stores[0] = { ...pny01.stores[0], code: "PNY01", name: "P60 Cannabis" };
+  pny01.shifts = pny01.shifts.map((row) => ({ ...row, store_code: "PNY01", sccx_shift_id: "PNY01-LIVE" }));
+  pny01.store_products = pny01.store_products.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.balances = pny01.balances.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.incoming = pny01.incoming.map((row) => ({ ...row, store_code: "PNY01" }));
+  const view = await runStore(PNYS_STORE, () => svc.managerState(manager.token, "PNY01", async () => pny01));
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, true);
+  assert.equal(view.data_source, "LIVE_READ_ONLY");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.weed_mode.can_change, false);
+  assert.equal(view.stores.some((row) => row.code === "PNY01"), true);
+  assert.equal(view.stores.some((row) => row.code === "PNYS"), true);
+  assert.equal(view.live_shift?.shift_id, "PNY01-LIVE");
+});
+
 test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only dashboard screens", () => {
   const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
   const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
@@ -1929,10 +1953,25 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   assert.doesNotMatch(login, /<nav|href=|manager-actions/);
   for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
   assert.match(app, /Price, stock and expense changes stay locked/);
+  assert.match(app, /api\/pos\/manager\/state\?store=/);
+  assert.match(app, /Live data · read-only/);
+  assert.match(app, /Coupon changes are locked while viewing PNY01/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
   assert.match(css, /position:\s*fixed/);
   assert.match(css, /overflow-y:\s*auto/);
   assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+});
+
+test("central Manager database function exposes a PIN-free read model only", () => {
+  const migration = readFileSync("migrations/20261116113000_manager_store_snapshot.sql", "utf8");
+  const undo = readFileSync("migrations/undo/20261116113000_manager_store_snapshot.undo.sql", "utf8");
+  assert.match(migration, /security definer/i);
+  assert.match(migration, /revoke all on function .* from public/i);
+  assert.match(migration, /grant execute .* to pnys_app/i);
+  assert.match(migration, /- 'pin_hash'/);
+  assert.match(migration, /- 'closing_access_pin_hash'/);
+  assert.doesNotMatch(migration, /update\s+pny_pos|insert\s+into\s+pny_pos|delete\s+from\s+pny_pos/i);
+  assert.match(undo, /drop function if exists pos_hub\.manager_store_snapshot/);
 });
 
 test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {
