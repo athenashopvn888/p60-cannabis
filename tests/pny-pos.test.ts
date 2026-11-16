@@ -2600,6 +2600,10 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   assert.equal(index.get("680")?.name, "Sour 150mg Gummies IND");
   assert.equal(index.get("681")?.price_cents, 1600);
   assert.equal(index.get("682")?.name, "Sour 600mg Gummies IND");
+  assert.equal(index.get("512-3g")?.price_cents, 4000);
+  assert.equal(index.get("512-3g")?.name, "PINK PHOENIX 3g");
+  assert.equal(index.get("512-5g")?.price_cents, 6000);
+  assert.equal(index.get("512-5g")?.name, "PINK PHOENIX 6g");
   assert.equal(index.get("713")?.price_cents, 500);
   assert.equal(index.get("610")?.price_cents, 2000);
   assert.equal(index.get("844")?.price_cents, 3000);
@@ -4022,10 +4026,10 @@ test("PNYS accepts the retained PNY01 SCCx store code at shift start and end", a
 });
 
 test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {
-  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
-  assert.equal(added.length, 102);
-  assert.equal(THC_SKUS.length, 248);
-  assert.equal(new Set(THC_SKUS).size, 248);
+  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 512-3g 512-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
+  assert.equal(added.length, 104);
+  assert.equal(THC_SKUS.length, 250);
+  assert.equal(new Set(THC_SKUS).size, 250);
   assert.equal(added.every(isThcSku), true);
   assert.equal(isThcSku("188"), true);
   assert.equal(isThcSku("710"), false);
