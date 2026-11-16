@@ -142,4 +142,7 @@ test("closing summary image never passes an undefined border to next/og", () => 
   const source = readFileSync(new URL("../app/lib/pny-pos/closingSummaryImage.tsx", import.meta.url), "utf8");
   assert.match(source, /borderBottom: strong \? "3px solid #1c1917" : "none"/);
   assert.doesNotMatch(source, /borderBottom:[^\n]*undefined/);
+  assert.match(source, /openingCashCents \+ view\.cashSalesCents \+ stockShortsCents - stockExtraCents/);
+  assert.match(source, /label="EXPECTED CASH"/);
+  assert.match(source, /label="CASH ACCOUNTED"/);
 });
