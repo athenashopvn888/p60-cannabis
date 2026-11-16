@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, isStockRequestOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
+import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, isKitchenRefillOnlyChange, isStockRequestOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
 import { deploymentGeneration, maintenanceMode } from "./controls.ts";
 import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
@@ -178,10 +178,9 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
       const client = await pool.connect();
       try {
         await client.query("set role pnys_app");
-        const result = await client.query(
-          "select exists(select 1 from pnys_pos.clone_audit where target_store = $1 and reconciled = true) as ready",
-          [store],
-        );
+        const result = store === "ACD01"
+          ? await client.query("select exists(select 1 from pnys_pos.live_state where store_code=$1 and jsonb_array_length(coalesce(doc->'products','[]'::jsonb)) > 0) as ready", [store])
+          : await client.query("select exists(select 1 from pnys_pos.clone_audit where target_store = $1 and reconciled = true) as ready", [store]);
         return result.rows[0]?.ready === true;
       } finally {
         await client.query("reset role").catch(() => undefined);
@@ -255,7 +254,11 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
             && process.env.VERCEL_ENV === "preview"
             && process.env.TEST_STORE === "1"
             && isStockRequestOnlyChange(original, snapshot);
-          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest)) {
+          const frozenAcdKitchenRefill = row?.write_mode === "FROZEN"
+            && kind === "KITCHEN_REFILL"
+            && store === "ACD01"
+            && isKitchenRefillOnlyChange(original, snapshot);
+          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest && !frozenAcdKitchenRefill)) {
             throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
           }
           if (Number(row.generation) !== deploymentGeneration()) throw new PosError(423, "STALE_DEPLOYMENT", "This deployment generation cannot write.");

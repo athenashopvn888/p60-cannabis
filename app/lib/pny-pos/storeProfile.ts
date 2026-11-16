@@ -1,6 +1,6 @@
 /** Till identity. Client components can import this. Server request scope lives in storeContext.ts. */
 
-export type StoreCode = "PNY01" | "PNY02" | "PNYS";
+export type StoreCode = "PNY01" | "PNY02" | "PNYS" | "ACD01";
 
 export type StoreProfile = {
   code: StoreCode;
@@ -64,10 +64,26 @@ export const PNYS_STORE: StoreProfile = {
   menuUrl: "/menu",
 };
 
+export const ACD01_STORE: StoreProfile = {
+  code: "ACD01",
+  label: "ACD01",
+  orderPrefix: "ACD01",
+  depositPrefix: "ACD01-D",
+  stockTab: null,
+  posPath: "/acd01/pos",
+  tillPath: "/acd01/pos/till",
+  menuPath: "/acd01/menu",
+  apiBase: "/api/acd01/pos",
+  menuApi: "/api/acd01/menu",
+  sessionCookie: "acd01_pos_session",
+  menuUrl: "https://afterdarkcannabis.com",
+};
+
 /** Columns Tri should put on the PNY2 tab. The code reads sku and on_hand by header name. */
 export const PNY2_STOCK_HEADERS = ["sku", "name", "category", "price_cents", "on_hand", "updated_at"] as const;
 
 export function storeProfile(code: string | null | undefined): StoreProfile {
+  if (code === "ACD01") return ACD01_STORE;
   if (code === "PNYS") return PNYS_STORE;
   return code === "PNY02" ? PNY02_STORE : PNY01_STORE;
 }

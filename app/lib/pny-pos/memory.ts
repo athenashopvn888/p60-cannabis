@@ -54,7 +54,7 @@ export function emptyState(now = new Date().toISOString()): State {
 }
 
 export type Tx = { state: State };
-export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION" | "CLOSE_REDO" | "STOCK_REQUEST";
+export type TransactionKind = "OPERATIONAL" | "AUTH_SESSION" | "CLOSE_REDO" | "STOCK_REQUEST" | "KITCHEN_REFILL";
 export type TransactionOptions = { kind?: TransactionKind };
 
 /**
@@ -106,6 +106,17 @@ export function isStockRequestOnlyChange(before: State, after: State) {
   return JSON.stringify(normalized) === JSON.stringify(before);
 }
 
+/** A frozen upcoming store may receive Kitchen batches without changing stock. */
+export function isKitchenRefillOnlyChange(before: State, after: State) {
+  const normalized = structuredClone(after) as State;
+  normalized.incoming = structuredClone(before.incoming);
+  normalized.stock_requests = structuredClone(before.stock_requests ?? []);
+  normalized.audit = structuredClone(before.audit);
+  normalized.idempotency = structuredClone(before.idempotency);
+  normalized.outbox = structuredClone(before.outbox);
+  return JSON.stringify(normalized) === JSON.stringify(before);
+}
+
 export interface PosDb {
   transaction<T>(fn: (tx: Tx) => Promise<T>, options?: TransactionOptions): Promise<T>;
   /** Read a detached snapshot without committing or projecting it. */
@@ -130,6 +141,7 @@ export class MemoryDb implements PosDb {
   allowFrozenPreviewAuth = false;
   allowFrozenPreviewCloseRedo = false;
   allowFrozenPreviewStockRequest = false;
+  allowFrozenKitchenRefill = false;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state?: State) {
@@ -201,7 +213,11 @@ export class MemoryDb implements PosDb {
           && this.allowFrozenPreviewStockRequest
           && options.kind === "STOCK_REQUEST"
           && isStockRequestOnlyChange(this.state, snapshot);
-        if (!frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
+        const frozenKitchenRefill = this.writeMode === "FROZEN"
+          && this.allowFrozenKitchenRefill
+          && options.kind === "KITCHEN_REFILL"
+          && isKitchenRefillOnlyChange(this.state, snapshot);
+        if (!frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest && !frozenKitchenRefill) throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
       }
       this.state = snapshot;
       try {

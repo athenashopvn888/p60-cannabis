@@ -2724,6 +2724,22 @@ export class PosService {
     const state = await this.readState();
     const now = this.now();
     this.session(state, token, now, "kitchen");
+    return this.kitchenStateView(state, now);
+  }
+
+  /** Validate the central Kitchen session before crossing into another store. */
+  async assertKitchenSession(token: string) {
+    const state = await this.readState();
+    const { staff } = this.session(state, token, this.now(), "kitchen");
+    return { staff_uid: staff.staff_uid, display_name: staff.display_name || "Kitchen" };
+  }
+
+  /** Server-only target-store read. The calling route must validate Kitchen first. */
+  async kitchenStateTrusted() {
+    return this.kitchenStateView(await this.readState(), this.now());
+  }
+
+  private kitchenStateView(state: State, now: Date) {
     const since = now.getTime() - 24 * 60 * 60 * 1000;
     const saleIds = new Set(state.sales
       .filter((sale) => sale.status === "COMPLETED" && Date.parse(sale.created_at) >= since)
@@ -3391,7 +3407,9 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "stock_request", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Stock requests are enabled on PNYS preview only.");
+      if (!["PNYS", "ACD01"].includes(tillCode())) {
+        throw new PosError(409, "STORE", "Stock requests are not enabled for this store.");
+      }
       const { shift, staff, session } = requireSession(tx.state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate: "pos" });
       denyMaster(session);
       const lines = input.lines.filter((line) => line.qty > 0);
@@ -3412,12 +3430,25 @@ export class PosService {
 
   /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
   async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    return this.queueKitchenRefillForActor(input, null, token);
+  }
+
+  /** Server-only target-store write. The calling route must validate Kitchen first. */
+  async queueKitchenRefillTrusted(input: { key: string; lines: { sku: string; qty: number }[] }, actor: { staff_uid: string; display_name: string }) {
+    return this.queueKitchenRefillForActor(input, actor);
+  }
+
+  private async queueKitchenRefillForActor(
+    input: { key: string; lines: { sku: string; qty: number }[] },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const seen = replay(tx.state, "kitchen_queue_refill", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { staff } = this.session(tx.state, token, now, "kitchen");
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
       const at = iso(now);
@@ -3463,7 +3494,7 @@ export class PosService {
       const resultBody = { ok: true, batch_id: input.key, lines: created };
       remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
-    });
+    }, { kind: "KITCHEN_REFILL" });
   }
 
   async cashout(token: string, input: {

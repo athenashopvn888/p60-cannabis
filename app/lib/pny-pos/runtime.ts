@@ -10,6 +10,8 @@ import { specialPinHash } from "./pinAuth.ts";
 import { signalGatewayFromEnv } from "./signalGateway.ts";
 import type { State, Secrets } from "./types.ts";
 import type { StoreCode } from "./storeProfile.ts";
+import { currentStore } from "./storeContext.ts";
+import type { StoreProfile } from "./storeProfile.ts";
 
 const DEMO_SECRETS: Secrets = {
   shift: "demo-shift-secret-placeholder",
@@ -77,17 +79,17 @@ function tagDemoStore(state: State, code: StoreCode) {
   }
 }
 
-async function boot() {
+async function boot(store: StoreProfile) {
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
   const deps: PosDeps = { sheet, secrets, demo: null, signal: signalGatewayFromEnv() };
   const demoPinHash = specialPinHash("demo");
   const locked = lockedStore();
-  if (locked || stateBackend() === "supabase") {
+  if (locked || store.code === "ACD01" || stateBackend() === "supabase") {
     const url = process.env.POS_SUPABASE_DB_URL?.trim() ?? "";
     if (!url) throw new Error("POS_SUPABASE_DB_URL is required when STORE_CODE or POS_STATE_BACKEND=supabase is set");
-    const code = locked?.code ?? "PNY01";
-    const schema = locked?.code === "PNYS" ? "pnys_pos" : "pny_pos";
+    const code = store.code;
+    const schema = code === "PNYS" || code === "ACD01" ? "pnys_pos" : "pny_pos";
     const configuredSchema = process.env.POS_DB_SCHEMA?.trim();
     if (configuredSchema && configuredSchema !== schema) {
       throw new Error(`POS_DB_SCHEMA must be ${schema} for ${code}`);
@@ -101,7 +103,7 @@ async function boot() {
         }
       });
       deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
-    } else if (code === "PNYS" && process.env.VERCEL_ENV !== "production" && demoPinHash) {
+    } else if ((code === "PNYS" || code === "ACD01") && process.env.VERCEL_ENV !== "production" && demoPinHash) {
       // PNYS previews use the cloned catalog/stock, not the destructive demo seed.
       // Supplying the preview-only demo hash enables an isolated test shift; a
       // missing hash or a production deployment remains fail-closed.
@@ -118,9 +120,15 @@ async function boot() {
   return new PosService(db, deps);
 }
 
-const globalState = globalThis as typeof globalThis & { __pnyPos?: Promise<PosService> };
+const globalState = globalThis as typeof globalThis & { __pnyPosByStore?: Map<StoreCode, Promise<PosService>> };
 
 export function getService() {
-  if (!globalState.__pnyPos) globalState.__pnyPos = boot();
-  return globalState.__pnyPos;
+  const store = currentStore();
+  globalState.__pnyPosByStore ??= new Map();
+  let service = globalState.__pnyPosByStore.get(store.code);
+  if (!service) {
+    service = boot(store);
+    globalState.__pnyPosByStore.set(store.code, service);
+  }
+  return service;
 }
