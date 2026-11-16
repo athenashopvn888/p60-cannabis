@@ -193,6 +193,22 @@
     min-height: 30px;
     font-size: 12px;
   }
+
+  .posHeader .headerActions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .posHeader .headerActions .cornerBtn,
+  .posHeader .headerActions .ghost,
+  .posHeader .headerActions .tillLink {
+    width: 100%;
+    min-height: 36px;
+    padding: 3px 5px;
+    white-space: normal;
+    line-height: 1.05;
+  }
 }
 
 .tillLink {
@@ -1415,7 +1431,7 @@
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1.2;
-  cursor: default;
+  cursor: pointer;
 }
 
 .countDock {

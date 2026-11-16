@@ -950,6 +950,8 @@ test("23. shift, roster and closing code uses only the owned SCCx Signal gateway
   const clearCart = posApp.split("function clearCart()")[1]?.slice(0, 120) ?? "";
   assert.match(clearCart, /setCart\(\{\}\)/);
   assert.doesNotMatch(clearCart, /post\(|fetch\(|cashout\(/);
+  assert.match(posApp, /already has 10 different SKUs/);
+  assert.match(posApp, /inputMode="numeric"[\s\S]*?onFocus=\{\(\) => setVerifyExpandedFor\(null\)\}/);
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
   assert.match(posApp, /MENU QR/);
@@ -2839,8 +2841,11 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   const beforeDock = posSource.split('data-testid="pos-dock"')[0] ?? "";
   const dock = posSource.split('data-testid="pos-dock"')[1]?.split("</footer>")[0] ?? "";
   assert.doesNotMatch(beforeDock, /<VerifyBanner|<CountCard/);
-  assert.match(dock, /<VerifyBanner slim/);
+  assert.match(dock, /<VerifyBanner[\s\S]*?slim/);
+  assert.match(dock, /expanded=\{verifyExpanded\}/);
+  assert.match(dock, /showVerify && verifyExpanded/);
   assert.match(dock, /<CountCard\s+compact/);
+  assert.match(readFileSync("app/pos/VerifyBanner.tsx", "utf8"), /Stock count[\s\S]*expanded \? "Hide" : "Open"/);
   assert.match(posSource, /Done \/ Back to POS/);
   assert.match(posSource, /pny-gap-dismissed:/);
   assert.match(dock, /className=\{styles\.footerBar\}/);

@@ -41,18 +41,28 @@ function clock(ms: number) {
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export default function VerifyBanner({ deadline, onOpen, slim }: { deadline: string; onOpen?: () => void; slim?: boolean }) {
+export default function VerifyBanner({
+  deadline,
+  onOpen,
+  slim,
+  expanded = false,
+}: {
+  deadline: string;
+  onOpen?: () => void;
+  slim?: boolean;
+  expanded?: boolean;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-  const label = `Verify stock count · ${clock(Date.parse(deadline) - now)}`;
+  const label = `Stock count · ${clock(Date.parse(deadline) - now)}`;
   const className = slim ? `${styles.verifyBanner} ${styles.verifySlim}` : styles.verifyBanner;
   if (!onOpen) return <div className={className} data-testid="verify-banner">{label}</div>;
   return (
-    <button type="button" className={className} data-testid="verify-banner" onClick={onOpen}>
-      {label}
+    <button type="button" className={className} data-testid="verify-banner" aria-expanded={expanded} onClick={onOpen}>
+      {label} · {expanded ? "Hide" : "Open"}
     </button>
   );
 }

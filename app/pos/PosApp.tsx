@@ -206,6 +206,7 @@ export default function PosApp({
   const [busy, setBusy] = useState(false);
   const [stockRequestStatus, setStockRequestStatus] = useState("");
   const [floatFound, setFloatFound] = useState("");
+  const [verifyExpandedFor, setVerifyExpandedFor] = useState<string | null>(null);
   const [activeTicket, setActiveTicket] = useState<{ id: string; code: string } | null>(null);
   /** Keeps TillSummary after /shift/end revokes the session until staff taps Done. */
   const [closeHold, setCloseHold] = useState(false);
@@ -285,6 +286,7 @@ export default function PosApp({
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
   const showVerify = Boolean(view?.phase === "sell" && !view.verify?.reveal && (verifyOpen || view.verify?.waiting));
+  const verifyExpanded = Boolean(view?.verify?.deadline_at && verifyExpandedFor === view.verify.deadline_at);
   const gapKey = view?.verify?.deadline_at ? `pny-gap-dismissed:${view.verify.deadline_at}` : "";
   const [gapsDismissed, setGapsDismissed] = useState(false);
   const gapsStored = gapKey !== "" && typeof window !== "undefined" && window.localStorage.getItem(gapKey) === "1";
@@ -305,10 +307,18 @@ export default function PosApp({
 
   function clearCart() {
     setCart({});
+    setError("");
   }
 
   function setQty(product: Product, next: number) {
     const qty = Math.max(0, Math.min(99, next));
+    const addingLine = qty > 0 && (cart[product.sku] ?? 0) === 0;
+    const lineCount = Object.values(cart).filter((value) => value > 0).length;
+    if (addingLine && lineCount >= 10) {
+      setError("This order already has 10 different SKUs. Cash it out, then start the next order.");
+      return;
+    }
+    setError("");
     setCart((current) => {
       const copy = { ...current };
       if (qty === 0) delete copy[product.sku];
@@ -911,7 +921,16 @@ export default function PosApp({
         <section className={styles.body} data-testid="pos-sell">
           <div className={styles.searchWrap}>
             <label className="sr-only" htmlFor="pos-search" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden" }}>Search SKU or name</label>
-            <input id="pos-search" className={styles.search} placeholder="Search SKU or name" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input
+              id="pos-search"
+              className={styles.search}
+              inputMode="numeric"
+              enterKeyHint="search"
+              placeholder="Search SKU or name"
+              value={query}
+              onFocus={() => setVerifyExpandedFor(null)}
+              onChange={(event) => setQuery(event.target.value)}
+            />
             <button type="button" className={styles.promoComing} data-testid="promo-coming" disabled>PROMO COMING</button>
           </div>
           <div className={styles.chipRows} role="tablist" aria-label="Categories">
@@ -1003,8 +1022,15 @@ export default function PosApp({
           {view.verify?.waiting ? (
             <div className={`${styles.verifyBanner} ${styles.verifySlim}`} data-testid="verify-banner">Master view · timer starts at the first staff login</div>
           ) : null}
-          {verifyOpen && view.verify?.deadline_at ? <VerifyBanner slim deadline={view.verify.deadline_at} /> : null}
-          {showVerify ? (
+          {verifyOpen && view.verify?.deadline_at ? (
+            <VerifyBanner
+              slim
+              deadline={view.verify.deadline_at}
+              expanded={verifyExpanded}
+              onOpen={() => setVerifyExpandedFor((current) => current === view.verify?.deadline_at ? null : view.verify?.deadline_at ?? null)}
+            />
+          ) : null}
+          {showVerify && verifyExpanded ? (
             <CountCard compact lines={view.verify?.lines ?? []} busy={busy || Boolean(view.master)} allowExtra onSave={saveVerifyLine} onJump={jumpVerify} onSubmit={submitVerify} />
           ) : null}
           {view.closing?.started && !view.closing.submitted ? (
