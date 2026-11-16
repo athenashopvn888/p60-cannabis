@@ -126,6 +126,12 @@ function tillCode() {
   return currentStore().code;
 }
 
+/** SCCx keeps the public PNY01 store code after the PNYS cutover. */
+function matchesTillInput(store?: string) {
+  const requested = store || tillCode();
+  return requested === tillCode() || (tillCode() === "PNYS" && requested === "PNY01");
+}
+
 const TONIGHT_DISPLAY_NAME = "Anom";
 const TONIGHT_NAME_MARK = "PNY01-TONIGHT";
 
@@ -1043,11 +1049,10 @@ function previousClosing(state: State, shift: ShiftRow) {
 function floatCheck(state: State, shift: ShiftRow) {
   const previous = previousClosing(state, shift);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
-  if (!previous) return { required: false, done: true, expected_cents: 0, found_cents: null as number | null, difference_cents: null as number | null, adjusted_by: null as string | null, adjusted_at: null as string | null };
   return {
     required: true,
     done: draft?.float_found_cents != null,
-    expected_cents: previous.float_cents ?? 0,
+    expected_cents: previous?.float_cents ?? 0,
     found_cents: draft?.float_found_cents ?? null,
     difference_cents: draft?.float_difference_cents ?? null,
     adjusted_by: draft?.float_adjusted_by ?? null,
@@ -1132,6 +1137,8 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
       shortage_cents: shortage,
       overage_cents: overage,
       deposited_cents: totals.deposited_cents,
+      opening_float_cents: draft?.float_found_cents ?? 0,
+      closing_float_cents: floatCents,
     }),
     tickets_total: tickets.total,
     tickets_cashed_out: tickets.cashed,
@@ -1945,7 +1952,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "shift_start", input.key, body, now, this.deps.secrets.shift);
       if (seen) return seen;
-      if ((input.store ?? tillCode()) !== tillCode()) throw new PosError(404, "STORE", "This till is PNY01 only.");
+      if (!matchesTillInput(input.store)) throw new PosError(404, "STORE", "This request is for another store.");
       const staff = tx.state.staff.find((row) => row.staff_uid === input.staff_ref || row.sccx_id === input.staff_ref);
       if (!staff?.active) throw new PosError(403, "STAFF_INACTIVE", "Staff is not active.");
       if (!input.shift_id) throw new PosError(400, "SHIFT_ID", "shift_id is required.");
@@ -2129,7 +2136,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "shift_end", input.key, body, now, this.deps.secrets.shift);
       if (seen) return seen;
-      if ((input.store ?? tillCode()) !== tillCode()) throw new PosError(404, "STORE", "This till is PNY01 only.");
+      if (!matchesTillInput(input.store)) throw new PosError(404, "STORE", "This request is for another store.");
       const shift = tx.state.shifts.find((row) => row.sccx_shift_id === input.shift_id || row.id === input.shift_id);
       if (!shift) throw new PosError(404, "SHIFT", "Shift was not found.");
       const at = iso(now);
@@ -4465,8 +4472,7 @@ export class PosService {
       const found = roundCents(input.found_cents);
       if (!Number.isFinite(found) || found < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the cash left in the till.");
       const previous = previousClosing(tx.state, shift);
-      if (!previous) throw new PosError(409, "NO_FLOAT", "There is no previous close to check.");
-      const expected = previous.float_cents ?? 0;
+      const expected = previous?.float_cents ?? 0;
       const difference = found - expected;
       if (difference !== 0 && !input.confirm_adjustment) {
         throw new PosError(409, "FLOAT_ADJUST_CONFIRM_REQUIRED", "The opening cash does not match the previous close. Confirm the adjustment.", {
