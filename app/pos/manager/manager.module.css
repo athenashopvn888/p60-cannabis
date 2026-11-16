@@ -67,6 +67,7 @@
 .reportList header span { color: #64748b; font-size: 12px; }
 .reportList article > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .reportList article > div span { display: flex; justify-content: space-between; padding: 8px; border-radius: 8px; background: #f8fafc; }
+.reportList article > div .finalTill { grid-column: 1 / -1; border: 2px solid #1e3a8a; background: #dbeafe; font-size: 16px; font-weight: 900; }
 .audit article { display: grid; gap: 3px; padding: 12px 13px; border-left: 4px solid #1d4ed8; border-radius: 8px; background: #fff; }
 .empty { padding: 18px; border: 1px dashed #94a3b8; border-radius: 12px; text-align: center; }
 .error { color: #b91c1c; font-weight: 750; }

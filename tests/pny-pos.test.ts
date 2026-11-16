@@ -2062,6 +2062,7 @@ test("Manager mobile UI has a nav-free PIN login and store-aware dashboard scree
   assert.match(app, /Show all available SKUs/);
   assert.match(app, /Refills by batch/);
   assert.match(app, /Refill coming/);
+  assert.match(app, /Final till balance/);
   assert.match(app, /changeStockSort\("on_hand"\)/);
   assert.match(app, /changeStockSort\("sold"\)/);
   assert.match(app, /changeStockSort\("refill_coming"\)/);
