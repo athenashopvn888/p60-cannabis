@@ -1702,6 +1702,8 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /htmlFor="kitchen-store"><span>\{text\.store\}<\/span>/);
   assert.match(app, /className=\{styles\.storeSelect\}/);
   assert.match(app, /aria-label="SKU sections"/);
+  assert.match(app, /requestedOnly: "Requested only"/);
+  assert.match(app, /requestedOnly && \(product\.requested_qty \?\? 0\) <= 0/);
   assert.match(app, /\{start\}–\{start \+ 99\}/);
   assert.match(app, /Math\.max\(1000,/);
   assert.match(app, /changeSort\("sku"\)/);
@@ -1713,7 +1715,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /className=\{styles\.controlsRow\}/);
   assert.doesNotMatch(app, /aria-label="Refill filters"/);
   assert.match(app, /"▲" : "▼" : "↕"/);
-  assert.match(app, /Sold 24h × 2 − On hand − Pending/);
+  assert.doesNotMatch(app, /Sold 24h × 2 − On hand − Pending/);
   assert.match(app, /\{text\.refillList\} · \{totalUnits\}/);
   assert.doesNotMatch(app, />Review · \{totalUnits\}</);
   assert.match(app, /data-testid="kitchen-confirm"/);
@@ -1734,12 +1736,37 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
 });
 
-test("Kitchen suggestions are hints and only touched quantities enter the refill batch", () => {
+test("Kitchen shows staff requests instead of suggested refill quantities", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   assert.match(app, /qty\[product\.sku\] \?\? ""/);
-  assert.match(app, /\{text\.useSuggested\} \{product\.suggested_refill_qty\}/);
-  assert.doesNotMatch(app, /qty\[product\.sku\] \?\? String\(product\.suggested_refill_qty/);
+  assert.match(app, /\{text\.useRequested\} \{product\.requested_qty\}/);
+  assert.doesNotMatch(app, /text\.useSuggested|text\.suggestedZero/);
   assert.match(app, /approval: "Store approval required"/);
+});
+
+test("PNYS staff stock request reaches Kitchen without changing on-hand", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.shifts = db.state.shifts.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.store_products = db.state.store_products.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.balances = db.state.balances.map((row) => ({ ...row, store_code: "PNYS" }));
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const before = qty(db, "240");
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.2.8"));
+  db.writeMode = "FROZEN";
+  db.allowFrozenPreviewStockRequest = true;
+  await runStore(PNYS_STORE, () => svc.requestStock(staff.token, { key: "request-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(qty(db, "240"), before);
+  db.writeMode = "ACTIVE";
+  const kitchen = await runStore(PNYS_STORE, () => svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.9"));
+  const kitchenView = await runStore(PNYS_STORE, () => svc.kitchenState(kitchen.token));
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.requested_qty, 6);
+  assert.equal(db.state.stock_requests?.[0]?.staff_name, "Demo Budtender");
+  await runStore(PNYS_STORE, () => svc.queueKitchenRefill(kitchen.token, { key: "send-requested-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(db.state.stock_requests?.[0]?.status, "SENT");
+  assert.equal(qty(db, "240"), before);
 });
 
 test("Kitchen defaults to Vietnamese, can switch to English, searches every SKU section, and shows stock/refill totals", () => {
@@ -1956,6 +1983,11 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   assert.match(app, /api\/pos\/manager\/state\?store=/);
   assert.match(app, /Live data · read-only/);
   assert.match(app, /Coupon changes are locked while viewing PNY01/);
+  assert.match(app, /Show all available SKUs/);
+  assert.match(app, /Refills by batch/);
+  assert.match(app, /Refill coming/);
+  assert.match(app, /setStockIndex/);
+  assert.match(app, /setRefillIndex/);
   assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
   assert.match(css, /position:\s*fixed/);
   assert.match(css, /overflow-y:\s*auto/);

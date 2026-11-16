@@ -5,8 +5,11 @@ import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 import styles from "./manager.module.css";
 
 type Screen = "overview" | "stock" | "refills" | "closings" | "customers" | "audit";
-type Product = { sku: string; name: string; category: string; size: string; on_hand: number; price_cents: number; enabled: boolean };
-type Refill = { kitchen_row_id: string; batch_id: string; sku: string; name: string; qty_sent: number; qty_received: number | null; status: string; kitchen_sent_at: string; staff_confirmed_at: string | null };
+type Product = { sku: string; name: string; category: string; size: string; on_hand: number; sold_24h: number; refill_coming: number; price_cents: number; enabled: boolean };
+type Refill = { kitchen_row_id: string; batch_id: string; sku: string; name: string; qty_sent: number; qty_received: number | null; status: string; kitchen_sent_at: string; staff_confirmed_at: string | null; sent_by?: string; received_by?: string | null };
+type RefillBatch = { batch_id: string; sent_at: string; sent_by: string; received_by: string | null; status: string; lines: Refill[] };
+type StockRow = { sku: string; name: string; size: string; on_hand: number; sold: number; refill_coming: number };
+type StockSnapshot = { id: string; label: string; at: string; staff_name: string; rows: StockRow[] };
 type ClosingVersion = { version: number; actor: string; created_at: string; final_deposit_cents: number; float_cents: number; shortage_cents: number; overage_cents: number; counts: { sku: string; counted_qty: number }[] };
 type Closing = { shift_id: string; staff_name: string; ended_at: string; sales_total_cents: number; deposited_cents: number; final_deposit_cents: number; shortage_cents: number; overage_cents: number; no_count: boolean; version?: number; reclosed_at?: string | null; versions?: ClosingVersion[] };
 type Audit = { id: string; action: string; actor: string | null; ref_type: string | null; ref_id: string | null; created_at: string };
@@ -23,6 +26,8 @@ type ManagerView = {
   today?: { date: string; sale_count: number; sales_total_cents: number; cash_cents: number; debit_cents: number };
   products?: Product[];
   refills?: Refill[];
+  refill_batches?: RefillBatch[];
+  stock_snapshots?: StockSnapshot[];
   closings?: Closing[];
   audit_log?: Audit[];
   customers?: Customer[];
@@ -40,14 +45,16 @@ const previewView: ManagerView = {
   live_shift: { shift_id: "PNYS-1114-A", status: "ACTIVE", staff_name: "Demo Staff", started_at: "2026-11-14T01:10:00.000Z" },
   today: { date: "2026-11-14", sale_count: 14, sales_total_cents: 55440, cash_cents: 49000, debit_cents: 6440 },
   products: [
-    { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, price_cents: 500, enabled: true },
-    { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3, price_cents: 6000, enabled: true },
-    { sku: "721", name: "Backwoods", category: "CIGARETTES", size: "pack", on_hand: 18, price_cents: 2000, enabled: true },
+    { sku: "240", name: "Preview Product", category: "ADD ONS", size: "each", on_hand: 0, sold_24h: 3, refill_coming: 0, price_cents: 500, enabled: true },
+    { sku: "261-14g", name: "Daydream Diesel", category: "FLOWER", size: "14g", on_hand: 3, sold_24h: 4, refill_coming: 2, price_cents: 6000, enabled: true },
+    { sku: "721", name: "Backwoods", category: "CIGARETTES", size: "pack", on_hand: 18, sold_24h: 4, refill_coming: 0, price_cents: 2000, enabled: true },
   ],
   refills: [
     { kitchen_row_id: "r1", batch_id: "PNYS-K-041", sku: "240", name: "Preview Product", qty_sent: 4, qty_received: null, status: "PENDING_CONFIRM", kitchen_sent_at: "2026-11-14T02:30:00.000Z", staff_confirmed_at: null },
     { kitchen_row_id: "r2", batch_id: "PNYS-K-040", sku: "261-14g", name: "Daydream Diesel", qty_sent: 2, qty_received: 2, status: "CONFIRMED", kitchen_sent_at: "2026-11-13T20:30:00.000Z", staff_confirmed_at: "2026-11-13T20:37:00.000Z" },
   ],
+  refill_batches: [],
+  stock_snapshots: [],
   closings: [
     { shift_id: "PNYS-1113-B", staff_name: "Demo Staff", ended_at: "2026-11-13T23:55:00.000Z", sales_total_cents: 71540, deposited_cents: 55500, final_deposit_cents: 55500, shortage_cents: 500, overage_cents: 0, no_count: false },
     { shift_id: "PNYS-1112-A", staff_name: "Demo Staff", ended_at: "2026-11-12T23:50:00.000Z", sales_total_cents: 68400, deposited_cents: 52000, final_deposit_cents: 52000, shortage_cents: 0, overage_cents: 250, no_count: false },
@@ -81,6 +88,10 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
   const [screen, setScreen] = useState<Screen>(preview && preview !== "login" ? preview : "overview");
   const [pin, setPin] = useState("");
   const [query, setQuery] = useState("");
+  const [skuRange, setSkuRange] = useState("all");
+  const [showAllStock, setShowAllStock] = useState(false);
+  const [stockIndex, setStockIndex] = useState(0);
+  const [refillIndex, setRefillIndex] = useState(0);
   const [selectedStore, setSelectedStore] = useState<"PNY01" | "PNYS">("PNYS");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -96,6 +107,7 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
     const next = await readJson(response) as unknown as ManagerView;
     setView(next);
     setSelectedStore(next.store_code === "PNY01" ? "PNY01" : "PNYS");
+    setStockIndex(0); setRefillIndex(0);
   }
 
   useEffect(() => {
@@ -177,7 +189,18 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
     </section>
   </main>;
 
-  const stock = (view.products ?? []).filter((row) => `${row.sku} ${row.name} ${row.size}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const snapshots = view.stock_snapshots?.length ? view.stock_snapshots : [{ id: "CURRENT", label: "Current stock", at: new Date().toISOString(), staff_name: view.live_shift?.staff_name ?? "No active shift", rows: (view.products ?? []).map((row) => ({ sku: row.sku, name: row.name, size: row.size, on_hand: row.on_hand, sold: row.sold_24h ?? 0, refill_coming: row.refill_coming ?? 0 })) }];
+  const stockSnapshot = snapshots[Math.min(stockIndex, snapshots.length - 1)]!;
+  const skuNumber = (sku: string) => Number.parseInt(sku.match(/^\d+/)?.[0] ?? "0", 10);
+  const stockRanges = [...new Set(stockSnapshot.rows.map((row) => Math.floor(skuNumber(row.sku) / 100) * 100))].filter((value) => value >= 100).sort((a, b) => a - b);
+  const stock = stockSnapshot.rows.filter((row) => {
+    const matchesSearch = `${row.sku} ${row.name} ${row.size}`.toLowerCase().includes(query.trim().toLowerCase());
+    const matchesRange = skuRange === "all" || Math.floor(skuNumber(row.sku) / 100) * 100 === Number(skuRange);
+    const relevant = showAllStock || row.on_hand > 0 || row.sold > 0 || row.refill_coming > 0;
+    return matchesSearch && matchesRange && relevant;
+  });
+  const refillBatches = view.refill_batches?.length ? view.refill_batches : [...new Set((view.refills ?? []).map((row) => row.batch_id))].map((batchId) => { const lines = (view.refills ?? []).filter((row) => row.batch_id === batchId); return { batch_id: batchId, sent_at: lines[0]?.kitchen_sent_at ?? "", sent_by: lines[0]?.sent_by ?? "Kitchen", received_by: lines[0]?.received_by ?? null, status: lines.every((row) => row.staff_confirmed_at) ? "CONFIRMED" : "PENDING", lines }; });
+  const refillBatch = refillBatches[Math.min(refillIndex, Math.max(0, refillBatches.length - 1))];
   return <main className={styles.shell} data-testid="manager-shell" data-manager-screen={screen}>
     <header className={styles.top}><div><strong>{view.store_code ?? "PNYS"}</strong><span> · Manager</span></div><strong>{labels[screen]}</strong><strong className={styles.test}>TEST STORE</strong></header>
     <div className={styles.middle}>
@@ -193,8 +216,8 @@ export default function ManagerApp({ preview, previewMode = "weed" }: { preview?
         <article className={`${styles.modeCard} ${view.weed_mode?.current === "NO_WEED" ? styles.modeOff : styles.modeOn}`} data-testid="manager-weed-mode"><div><span>Store / shift mode</span><strong>{view.weed_mode?.current === "NO_WEED" ? "NO WEED" : "WEED"}</strong><small>{view.weed_mode?.current === "NO_WEED" ? `${view.weed_mode.thc_sku_count} THC SKUs hidden from sell and customer menu. Closing still counts them.` : "Default mode. All eligible SKUs remain available."}</small></div>{view.read_only ? <strong className={styles.locked}>READ ONLY</strong> : <div className={styles.modeActions}><button type="button" disabled={!view.weed_mode?.can_change || busy} onClick={() => setWeedTarget(view.weed_mode?.current === "NO_WEED")}>Set {view.weed_mode?.current === "NO_WEED" ? "WEED" : "NO WEED"}</button>{view.weed_mode?.undo_backup_id ? <button type="button" className={styles.undo} onClick={() => setUndoOpen(true)}>Undo last change</button> : null}</div>}</article>
         <h1>Today&apos;s sales</h1><div className={styles.cards}><article><span>Total</span><strong>{money(view.today?.sales_total_cents)}</strong><small>{view.today?.sale_count ?? 0} sales</small></article><article><span>Cash</span><strong>{money(view.today?.cash_cents)}</strong></article><article><span>Debit</span><strong>{money(view.today?.debit_cents)}</strong></article></div>
       </section> : null}
-      {screen === "stock" ? <section data-testid="manager-stock"><label htmlFor="manager-stock-search">Search SKU, name or size</label><input id="manager-stock-search" className={styles.search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock"/><div className={styles.list}>{stock.map((row) => <article key={row.sku}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span><small>{money(row.price_cents)}</small></div><strong className={row.on_hand === 0 ? styles.zero : ""}>{row.on_hand}</strong></article>)}</div></section> : null}
-      {screen === "refills" ? <section data-testid="manager-refills"><h1>Kitchen → staff</h1><div className={styles.list}>{(view.refills ?? []).map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.name}</strong><span>Kitchen sent {row.qty_sent} · {stamp(row.kitchen_sent_at)}</span><small>{row.staff_confirmed_at ? `Staff confirmed ${row.qty_received ?? 0} · ${stamp(row.staff_confirmed_at)}` : "Waiting for staff confirmation"}</small></div><span className={row.staff_confirmed_at ? styles.good : styles.wait}>{row.staff_confirmed_at ? "CONFIRMED" : "PENDING"}</span></article>)}</div></section> : null}
+      {screen === "stock" ? <section data-testid="manager-stock"><div className={styles.historyNav}><button type="button" disabled={stockIndex >= snapshots.length - 1} onClick={() => setStockIndex((value) => Math.min(snapshots.length - 1, value + 1))}>↓</button><div><strong>{stockSnapshot.label}</strong><span>{stockSnapshot.staff_name} · {stamp(stockSnapshot.at)}</span></div><button type="button" disabled={stockIndex === 0} onClick={() => setStockIndex((value) => Math.max(0, value - 1))}>↑</button></div><label htmlFor="manager-stock-search">Search SKU, name or size</label><input id="manager-stock-search" className={styles.search} inputMode="numeric" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock"/><div className={styles.ranges}><button type="button" aria-pressed={skuRange === "all"} onClick={() => setSkuRange("all")}>All</button>{stockRanges.map((start) => <button type="button" key={start} aria-pressed={skuRange === String(start)} onClick={() => setSkuRange(String(start))}>{start}–{start + 99}</button>)}</div><label className={styles.showAll}><input type="checkbox" checked={showAllStock} onChange={(event) => setShowAllStock(event.target.checked)}/> Show all available SKUs</label><div className={styles.stockHead}><span>SKU</span><span>On hand</span><span>Sold</span><span>Refill coming</span></div><div className={styles.stockList}>{stock.map((row) => <article key={row.sku}><div><strong>{row.sku} · {row.size}</strong><span>{row.name}</span></div><strong className={row.on_hand === 0 ? styles.zero : ""}>{row.on_hand}</strong><strong>{row.sold}</strong><strong>{row.refill_coming}</strong></article>)}</div>{!stock.length ? <p className={styles.empty}>No stock activity in this section.</p> : null}</section> : null}
+      {screen === "refills" ? <section data-testid="manager-refills"><h1>Refills by batch</h1>{refillBatch ? <><div className={styles.historyNav}><button type="button" disabled={refillIndex >= refillBatches.length - 1} onClick={() => setRefillIndex((value) => Math.min(refillBatches.length - 1, value + 1))}>↓</button><div><strong>{refillBatch.batch_id}</strong><span>{refillBatch.sent_by} · {stamp(refillBatch.sent_at)}</span><small>{refillBatch.received_by ? `Received by ${refillBatch.received_by}` : "Waiting for staff"}</small></div><button type="button" disabled={refillIndex === 0} onClick={() => setRefillIndex((value) => Math.max(0, value - 1))}>↑</button></div><div className={styles.refillLines}>{refillBatch.lines.map((row) => <article key={row.kitchen_row_id}><div><strong>{row.sku} · {row.name}</strong><span>Sent {row.qty_sent}</span></div><strong>{row.qty_received == null ? "Pending" : `Received ${row.qty_received}`}</strong></article>)}</div></> : <p className={styles.empty}>No refill batches.</p>}</section> : null}
       {screen === "closings" ? <section data-testid="manager-closings"><h1>Closing reports</h1><div className={styles.reportList}>{(view.closings ?? []).map((row) => <article key={row.shift_id}><header><strong>{row.shift_id}{(row.version ?? 1) > 1 ? ` · Re-closed v${row.version}` : ""}</strong><span>{row.staff_name} · {stamp(row.reclosed_at ?? row.ended_at)}</span></header><div><span>Sales <strong>{money(row.sales_total_cents)}</strong></span><span>Deposits <strong>{money(row.deposited_cents)}</strong></span><span>Short <strong className={styles.bad}>{money(row.shortage_cents)}</strong></span><span>Over <strong className={styles.good}>{money(row.overage_cents)}</strong></span></div>{(row.versions?.length ?? 0) > 0 ? <details><summary>All closing versions</summary>{row.versions!.map((version) => <div key={version.version}><strong>v{version.version} · {stamp(version.created_at)}</strong><span>Deposit {money(version.final_deposit_cents)} · Till {money(version.float_cents)} · Short {money(version.shortage_cents)} · Over {money(version.overage_cents)}</span><small>{version.counts.map((line) => `${line.sku}: ${line.counted_qty}`).join(" · ")}</small></div>)}</details> : null}</article>)}</div></section> : null}
       {screen === "customers" ? <section data-testid="manager-customers"><h1>Customer database</h1><p className={styles.privacy}>Manager PIN only · Nothing is sent automatically.</p><div className={styles.customerList}>{(view.customers ?? []).map((row) => <article key={row.id}><header><strong>{row.name}</strong><span>{row.phone}</span></header><small>{row.email || "No email"}</small><div><span>{row.visit_count} visits</span><strong>{money(row.spend_cents)}</strong><span>{row.consent ? `${row.consent.type} · ${stamp(row.consent.date)}` : "No CASL record"}</span><span className={row.consent?.unsubscribed_at ? styles.bad : styles.good}>{row.consent?.unsubscribed_at ? "UNSUBSCRIBED" : "Subscribed"}</span></div></article>)}</div><h1>Coupons</h1>{view.read_only ? <p className={styles.empty}>Coupon changes are locked while viewing PNY01.</p> : <div className={styles.couponForm}><input aria-label="Coupon code" placeholder="CODE" value={couponDraft.code} onChange={(event) => setCouponDraft((row) => ({ ...row, code: event.target.value.toUpperCase() }))}/><input aria-label="Coupon label" placeholder="Coupon label" value={couponDraft.label} onChange={(event) => setCouponDraft((row) => ({ ...row, label: event.target.value }))}/><select aria-label="Discount type" value={couponDraft.discount_type} onChange={(event) => setCouponDraft((row) => ({ ...row, discount_type: event.target.value as "FIXED" | "PERCENT" }))}><option value="FIXED">Fixed $</option><option value="PERCENT">Percent %</option></select><input aria-label="Discount value" inputMode="decimal" value={couponDraft.discount_value} onChange={(event) => setCouponDraft((row) => ({ ...row, discount_value: event.target.value }))}/><input aria-label="Minimum spend" inputMode="decimal" placeholder="Minimum spend" value={couponDraft.min_spend} onChange={(event) => setCouponDraft((row) => ({ ...row, min_spend: event.target.value }))}/><input aria-label="Per customer limit" inputMode="numeric" value={couponDraft.limit} onChange={(event) => setCouponDraft((row) => ({ ...row, limit: event.target.value }))}/><button type="button" disabled={!couponDraft.code.trim() || !couponDraft.label.trim()} onClick={() => setCouponConfirm(true)}>Review coupon</button></div>}<div className={styles.couponList}>{(view.coupons ?? []).map((row) => <article key={row.id}><strong>{row.code}</strong><span>{row.label}</span><small>{row.discount_type === "FIXED" ? money(row.discount_value) : `${row.discount_value}%`} · min {money(row.min_spend_cents)} · {row.max_redemptions_per_customer} per customer · {row.redemption_count} used</small></article>)}</div></section> : null}
       {screen === "audit" ? <section data-testid="manager-audit"><h1>Audit log</h1><div className={styles.audit}>{(view.audit_log ?? []).map((row) => <article key={row.id}><strong>{row.action}</strong><span>{row.actor ?? "System"} · {stamp(row.created_at)}</span><small>{row.ref_type ?? "event"}{row.ref_id ? ` · ${row.ref_id}` : ""}</small></article>)}</div></section> : null}

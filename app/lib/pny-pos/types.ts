@@ -157,6 +157,20 @@ export type RefillReceiptRow = {
   lines: RefillReceiptLine[];
 };
 
+export type StockRequestRow = {
+  id: string;
+  store_code: string;
+  shift_id: string;
+  staff_uid: string;
+  staff_name: string;
+  sku: string;
+  qty: number;
+  status: "REQUESTED" | "SENT";
+  requested_at: string;
+  sent_batch_id: string | null;
+  sent_at: string | null;
+};
+
 export type CountRow = {
   id: string;
   shift_id: string;
@@ -443,6 +457,7 @@ export type State = {
   sessions: SessionRow[];
   incoming: IncomingRow[];
   refill_receipts?: RefillReceiptRow[];
+  stock_requests?: StockRequestRow[];
   counts: CountRow[];
   count_lines: CountLineRow[];
   tickets: TicketRow[];

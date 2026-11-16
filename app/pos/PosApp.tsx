@@ -190,6 +190,9 @@ export default function PosApp({
   const [depositCode, setDepositCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [refillOpen, setRefillOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestQuery, setRequestQuery] = useState("");
+  const [requestQty, setRequestQty] = useState<Record<string, string>>({});
   const [refNo, setRefNo] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -210,6 +213,20 @@ export default function PosApp({
   const storeLabel = forced?.label ?? label;
   const storeTill = forced?.tillHref ?? tillHref;
   const storeMenu = forced?.menuUrl ?? menuUrl;
+
+  async function sendStockRequest() {
+    const lines = Object.entries(requestQty).map(([sku, value]) => ({ sku, qty: Number(value) })).filter((line) => Number.isInteger(line.qty) && line.qty > 0);
+    if (!lines.length) { setError("Enter at least one requested quantity."); return; }
+    const body = { lines };
+    const key = commandKeys.key("staff-stock-request", body);
+    setBusy(true); setError("");
+    try {
+      await post(`${storeApi}/stock-requests`, { ...body, request_id: key }, key);
+      commandKeys.complete("staff-stock-request", key);
+      setRequestQty({}); setRequestQuery(""); setRequestOpen(false);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Stock request was not sent."); }
+    finally { setBusy(false); }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -825,6 +842,7 @@ export default function PosApp({
               {(view.incoming?.length ?? 0) > 0 ? <span className={styles.refillBadge} data-testid="refill-badge">{view.incoming?.length}</span> : null}
             </button>
           ) : null}
+          {view.phase === "sell" && storeCode === "PNYS" && !view.master ? <button className={styles.cornerBtn} type="button" data-testid="pos-stock-request" onClick={() => { setError(""); setRequestOpen(true); }}>Request stock</button> : null}
           {view.phase === "sell" ? (
             <button className={styles.cornerBtn} type="button" data-testid="pos-summary" disabled={shadowPny01} onClick={() => { setError(""); setSummaryPin(""); setSheet("summary-pin"); }}>Summary</button>
           ) : null}
@@ -882,6 +900,7 @@ export default function PosApp({
       ) : null}
 
       {refillOpen ? <RefillList lines={view.incoming ?? []} busy={busy} viewOnly={Boolean(view.master)} scanCatalog={view.scan_products ?? []} onClose={() => setRefillOpen(false)} onReceive={receiveRefills} /> : null}
+      {requestOpen ? <div className={styles.requestDialog} role="dialog" aria-modal="true" data-testid="stock-request-dialog"><section><header><div><h2>Request stock</h2><p>Kitchen will see the requested quantities. Stock does not change.</p></div><button type="button" onClick={() => setRequestOpen(false)}>×</button></header><input inputMode="numeric" placeholder="Search SKU or name" value={requestQuery} onChange={(event) => setRequestQuery(event.target.value)}/><div className={styles.requestList}>{(view.products ?? []).filter((product) => `${product.sku} ${product.name}`.toLowerCase().includes(requestQuery.trim().toLowerCase())).map((product) => <label key={product.sku}><span><strong>{product.sku}</strong>{product.name}</span><input inputMode="numeric" aria-label={`Request ${product.sku}`} value={requestQty[product.sku] ?? ""} onChange={(event) => setRequestQty((current) => ({ ...current, [product.sku]: event.target.value.replace(/[^\d]/g, "") }))}/></label>)}</div><footer><button type="button" onClick={() => setRequestOpen(false)}>Cancel</button><button type="button" disabled={busy} onClick={() => void sendStockRequest()}>Send request</button></footer></section></div> : null}
 
       {view.phase === "sell" && tab === "sell" ? (
         <section className={styles.body} data-testid="pos-sell">

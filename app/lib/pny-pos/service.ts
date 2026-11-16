@@ -2729,6 +2729,11 @@ export class PosService {
       if (row.store_code !== tillCode() || row.status !== "PENDING_CONFIRM") continue;
       pending.set(row.sku, (pending.get(row.sku) ?? 0) + row.qty_sent);
     }
+    const requested = new Map<string, number>();
+    for (const row of state.stock_requests ?? []) {
+      if (row.store_code !== tillCode() || row.status !== "REQUESTED") continue;
+      requested.set(row.sku, (requested.get(row.sku) ?? 0) + row.qty);
+    }
     const products = state.products
       .filter((product) => product.setb_active)
       .map((product) => {
@@ -2746,6 +2751,7 @@ export class PosService {
           sold_24h: sold,
           pending_qty: pendingQty,
           suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
+          requested_qty: requested.get(product.sku) ?? 0,
           enabled,
           approval_required: !enabled,
         };
@@ -2828,6 +2834,14 @@ export class PosService {
     const todaySales = state.sales
       .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const last24SaleIds = new Set(state.sales
+      .filter((row) => row.status === "COMPLETED" && Date.parse(row.created_at) >= now.getTime() - 24 * 60 * 60 * 1000)
+      .filter((row) => state.shifts.some((shift) => shift.id === row.shift_id && shift.store_code === storeCode))
+      .map((row) => row.id));
+    const sold24 = new Map<string, number>();
+    for (const line of state.sale_lines) if (last24SaleIds.has(line.sale_id)) sold24.set(line.sku, (sold24.get(line.sku) ?? 0) + line.qty);
+    const refillComing = new Map<string, number>();
+    for (const row of state.incoming) if (row.store_code === storeCode && row.status === "PENDING_CONFIRM") refillComing.set(row.sku, (refillComing.get(row.sku) ?? 0) + row.qty_sent);
     const products = state.products
       .filter((product) => product.setb_active)
       .flatMap((product) => {
@@ -2839,6 +2853,8 @@ export class PosService {
           category: product.category,
           size: sizeLabel(product.sku, product.category, product.name),
           on_hand: qtyOf(state, product.sku),
+          sold_24h: sold24.get(product.sku) ?? 0,
+          refill_coming: refillComing.get(product.sku) ?? 0,
           price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
           enabled: storeProduct.enabled,
         }];
@@ -2858,7 +2874,21 @@ export class PosService {
         status: row.status,
         kitchen_sent_at: row.kitchen_created_at ?? row.created_at,
         staff_confirmed_at: row.confirmed_at,
+        sent_by: row.sent_by ?? "Kitchen",
+        received_by: row.received_by ?? null,
       }));
+    const refillBatches = [...new Set(refills.map((row) => row.batch_id))].map((batchId) => {
+      const lines = refills.filter((row) => row.batch_id === batchId);
+      const first = lines[0]!;
+      return {
+        batch_id: batchId,
+        sent_at: first.kitchen_sent_at,
+        sent_by: first.sent_by,
+        received_by: lines.find((row) => row.received_by)?.received_by ?? null,
+        status: lines.every((row) => row.staff_confirmed_at) ? "CONFIRMED" : "PENDING",
+        lines,
+      };
+    }).sort((a, b) => b.sent_at.localeCompare(a.sent_at));
     const closings = [...state.closings]
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, 100)
@@ -2926,6 +2956,23 @@ export class PosService {
       .filter((row) => row.store_code === storeCode)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
+    const stockSnapshots = [{
+      id: "CURRENT",
+      label: "Current stock",
+      at: now.toISOString(),
+      staff_name: liveShift ? state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff" : "No active shift",
+      rows: products.map((row) => ({ sku: row.sku, name: row.name, size: row.size, on_hand: row.on_hand, sold: row.sold_24h, refill_coming: row.refill_coming })),
+    }, ...state.closings.map((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+      return {
+        id: closing.shift_id,
+        label: shift?.sccx_shift_id ?? closing.shift_id,
+        at: shift?.ended_at ?? closing.created_at,
+        staff_name: staff?.display_name ?? "Staff",
+        rows: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, size: sizeLabel(line.sku, state.products.find((row) => row.sku === line.sku)?.category, line.name), on_hand: line.left, sold: line.sold_qty ?? 0, refill_coming: 0 })),
+      };
+    }).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 99)];
     const store = state.stores.find((row) => row.code === storeCode);
     const latestBackup = [...state.audit]
       .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === storeCode)
@@ -2955,6 +3002,8 @@ export class PosService {
       },
       products,
       refills,
+      refill_batches: refillBatches,
+      stock_snapshots: stockSnapshots,
       closings,
       audit_log: auditLog,
       customers,
@@ -3280,6 +3329,32 @@ export class PosService {
     throw new PosError(410, "LEGACY_REFILL_DISABLED", "Use Kitchen send and store acceptance. Stock cannot be added directly.");
   }
 
+  /** Staff request stock for Kitchen. This never changes on-hand or creates a refill. */
+  async requestStock(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "stock_request", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Stock requests are enabled on PNYS preview only.");
+      const { shift, staff, session } = requireSession(tx.state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate: "pos" });
+      denyMaster(session);
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (!lines.length) throw new PosError(400, "EMPTY", "Enter at least one requested quantity.");
+      const at = iso(now);
+      tx.state.stock_requests ??= [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        if (!tx.state.products.some((row) => row.sku === line.sku && row.setb_active)) throw new PosError(404, "SKU", `SKU ${line.sku} is not in the catalog.`);
+        tx.state.stock_requests.push({ id: randomUUID(), store_code: tillCode(), shift_id: shift.id, staff_uid: staff.staff_uid, staff_name: staff.display_name, sku: line.sku, qty: line.qty, status: "REQUESTED", requested_at: at, sent_batch_id: null, sent_at: null });
+      }
+      audit(tx.state, "STOCK_REQUESTED", "shift", shift.id, staff.staff_uid, { lines }, at);
+      const result = { ok: true, requested_at: at, line_count: lines.length, total_units: lines.reduce((sum, line) => sum + line.qty, 0) };
+      remember(tx.state, "stock_request", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    }, { kind: "STOCK_REQUEST" });
+  }
+
   /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
   async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
     const body = input as unknown as Json;
@@ -3320,6 +3395,13 @@ export class PosService {
           created_at: at,
         });
         created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM", approval_required: approvalRequired });
+        for (const request of tx.state.stock_requests ?? []) {
+          if (request.store_code === tillCode() && request.sku === line.sku && request.status === "REQUESTED") {
+            request.status = "SENT";
+            request.sent_batch_id = input.key;
+            request.sent_at = at;
+          }
+        }
       }
       enqueueSignalNotice(tx.state, `SIG-KSEND-${input.key}`, "KITCHEN_SENT", input.key, kitchenSentMessage(input.key, staff.display_name || "Kitchen", at, created), at);
       audit(tx.state, "KITCHEN_REFILL_SENT", "incoming_batch", input.key, staff.staff_uid, { line_count: created.length, total_units: created.reduce((sum, line) => sum + line.qty, 0) }, at);

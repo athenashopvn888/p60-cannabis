@@ -1,5 +1,5 @@
 import { Pool, type PoolClient } from "pg";
-import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
+import { emptyState, isAuthSessionOnlyChange, isCloseRedoOnlyChange, isStockRequestOnlyChange, type PosDb, type TransactionKind, type Tx } from "./memory.ts";
 import { deploymentGeneration, maintenanceMode } from "./controls.ts";
 import { PosError } from "./errors.ts";
 import type { State } from "./types.ts";
@@ -24,6 +24,7 @@ function asState(doc: unknown): State {
   state.coupon_redemptions ??= [];
   state.closing_versions ??= [];
   state.refill_receipts ??= [];
+  state.stock_requests ??= [];
   return state;
 }
 
@@ -216,7 +217,13 @@ export function createSupabaseStateDb(connectionString: string, store: StoreCode
             && process.env.VERCEL_ENV === "preview"
             && process.env.TEST_STORE === "1"
             && isCloseRedoOnlyChange(original, snapshot);
-          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo)) {
+          const frozenPreviewStockRequest = row?.write_mode === "FROZEN"
+            && kind === "STOCK_REQUEST"
+            && store === "PNYS"
+            && process.env.VERCEL_ENV === "preview"
+            && process.env.TEST_STORE === "1"
+            && isStockRequestOnlyChange(original, snapshot);
+          if (!row || (row.write_mode !== "ACTIVE" && !frozenPreviewAuth && !frozenPreviewCloseRedo && !frozenPreviewStockRequest)) {
             throw new PosError(423, "STORE_WRITE_BLOCKED", "Store frozen");
           }
           if (Number(row.generation) !== deploymentGeneration()) throw new PosError(423, "STALE_DEPLOYMENT", "This deployment generation cannot write.");
