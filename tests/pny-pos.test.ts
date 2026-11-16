@@ -14,6 +14,7 @@ import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
 import { forPny01Sccx } from "../app/lib/pny-pos/sccxFeedCompatibility.ts";
+import { exposeManagerStore, resolveManagerStoreRoute } from "../app/lib/pny-pos/managerStoreView.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
@@ -2004,7 +2005,28 @@ test("Manager store selector reads PNY01 through the curated snapshot and keeps 
   assert.equal(view.live_shift?.shift_id, "PNY01-LIVE");
 });
 
-test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only dashboard screens", () => {
+test("live Manager exposes operational PNYS state as one writable PNY01 store", () => {
+  const route = resolveManagerStoreRoute("PNY01", { vercelEnv: "production", testStore: "0" });
+  assert.deepEqual(route, {
+    internalStore: "PNYS",
+    externalStore: "PNY01",
+    useRetainedSnapshot: false,
+    liveCutover: true,
+  });
+  const view = exposeManagerStore({ store_code: "PNYS", stores: [{ code: "PNYS", name: "Test" }], read_only: true, data_source: "PNYS_PREVIEW", products: [{ sku: "240", on_hand: 72 }] }, route);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, false);
+  assert.equal(view.data_source, "LIVE");
+  assert.deepEqual(view.stores, [{ code: "PNY01", name: "PNY01 · P60 Cannabis" }]);
+  assert.deepEqual(view.products, [{ sku: "240", on_hand: 72 }]);
+
+  const preview = resolveManagerStoreRoute("PNY01", { vercelEnv: "preview", testStore: "1" });
+  assert.equal(preview.internalStore, "PNY01");
+  assert.equal(preview.useRetainedSnapshot, true);
+  assert.equal(preview.liveCutover, false);
+});
+
+test("Manager mobile UI has a nav-free PIN login and store-aware dashboard screens", () => {
   const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
   const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
   const login = app.slice(app.indexOf("if (!view.authenticated)"), app.indexOf("const stock"));
@@ -2013,7 +2035,8 @@ test("PNYS Manager mobile UI has a nav-free PIN login and exposes only read-only
   for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
   assert.match(app, /Price, stock and expense changes stay locked/);
   assert.match(app, /api\/pos\/manager\/state\?store=/);
-  assert.match(app, /Live data · read-only/);
+  assert.match(app, /Live PNY01 data/);
+  assert.match(app, /Retained PNY01 data · read-only/);
   assert.match(app, /Coupon changes are locked while viewing PNY01/);
   assert.match(app, /Show all available SKUs/);
   assert.match(app, /Refills by batch/);
