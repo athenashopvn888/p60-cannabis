@@ -2922,6 +2922,12 @@ export class PosService {
           final_deposit_cents: closing.final_deposit_cents ?? 0,
           shortage_cents: closing.shortage_cents ?? 0,
           overage_cents: closing.overage_cents ?? 0,
+          balance_cents: closing.balance_cents ?? closingBalance({
+            cash_sales_cents: closing.cash_sales_cents ?? closing.sales_total_cents - (closing.debit_sales_cents ?? 0),
+            shortage_cents: closing.shortage_cents ?? 0,
+            overage_cents: closing.overage_cents ?? 0,
+            deposited_cents: closing.deposited_cents,
+          }),
           no_count: closing.no_count,
           version: closing.version ?? 1,
           reclosed_at: closing.reclosed_at ?? null,
@@ -2936,6 +2942,12 @@ export class PosService {
               float_cents: row.closing.float_cents ?? 0,
               shortage_cents: row.closing.shortage_cents ?? 0,
               overage_cents: row.closing.overage_cents ?? 0,
+              balance_cents: row.closing.balance_cents ?? closingBalance({
+                cash_sales_cents: row.closing.cash_sales_cents ?? row.closing.sales_total_cents - (row.closing.debit_sales_cents ?? 0),
+                shortage_cents: row.closing.shortage_cents ?? 0,
+                overage_cents: row.closing.overage_cents ?? 0,
+                deposited_cents: row.closing.deposited_cents,
+              }),
               counts: row.closing.closing_lines.map((line) => ({ sku: line.sku, counted_qty: line.left })),
             })),
         };
