@@ -37,7 +37,7 @@ export function blindStaffState<T extends Row>(view: T): T {
     };
   }
   next.count_lines = rows(view.count_lines).map((row) => pick(row, ["sku", "name"]));
-  next.incoming = rows(view.incoming).map((row) => pick(row, ["kitchen_row_id", "sku", "text", "qty_sent"]));
+  next.incoming = rows(view.incoming).map((row) => pick(row, ["kitchen_row_id", "batch_id", "refill_id", "sent_at", "sent_by", "sku", "text", "qty_sent"]));
   const verify = view.verify && typeof view.verify === "object" ? (view.verify as Row) : null;
   if (verify) {
     next.verify = {

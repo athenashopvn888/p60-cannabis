@@ -45,13 +45,17 @@ import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
+import { issueShiftReference } from "./shiftReference.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
 import type { IntegrationChannel, IntegrationLease } from "./controls.ts";
+import { closingEmailPayload, ensureRefillId, refillEmailPayload } from "./accountantEmail.ts";
+import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "./accountantEmailDelivery.ts";
 import type { SheetClient } from "./sheets.ts";
 import type { SignalGateway } from "./signalGateway.ts";
+import { POS_TAB_SPECS } from "./sheetStore.ts";
 import type {
   ClosingLine,
   ClosingRow,
@@ -1130,13 +1134,14 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
     closing.opening_float_counted_cents != null
       ? `Opening cash: ${formatMoney(closing.opening_float_counted_cents)} · Previous close: ${formatMoney(closing.opening_float_expected_cents ?? 0)} · Adjustment: ${formatMoney(closing.opening_float_difference_cents ?? 0)}${closing.opening_float_adjusted_by ? ` by ${closing.opening_float_adjusted_by}` : ""}`
       : "",
+    closing.shift_ref ? `Shift ref: ${closing.shift_ref}` : "",
     `Left: ${shown}${more}`,
     closing.close_label ? `Close: ${closing.close_label}` : "",
     closing.no_count ? "No count taken" : "",
   ].filter(Boolean).join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, floatCents = 0): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, floatCents = 0, shiftRef?: string): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
@@ -1178,13 +1183,14 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     no_count: noCount,
     created_at: at,
     close_label: stampCloseLabel(state, shift, at).close_label,
+    shift_ref: shiftRef || issueShiftReference(state, shift.store_code),
   };
   return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base) };
 }
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, closing.float_cents ?? 0);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, closing.float_cents ?? 0, closing.shift_ref);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
@@ -1261,6 +1267,8 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
       .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
       .join(" | "),
   }, at);
+  const email = closingEmailPayload(state, shift, closing, at);
+  enqueue(state, "S_EmailOutbox", email.row_id, email, at);
   queueSnapshot(state, at);
 }
 
@@ -1301,6 +1309,8 @@ function receiptPayload(state: State, row: IncomingRow, shiftSccx: string, staff
   return {
     row_id: `R-${row.kitchen_row_id}`,
     kitchen_row_id: row.kitchen_row_id,
+    refill_id: row.refill_id ?? "",
+    batch_id: row.batch_id,
     store_code: tillCode(),
     sku: row.sku,
     name: productName(state, row.sku),
@@ -1489,6 +1499,26 @@ function ensureQuotedProduct(state: State, sku: string, at: string) {
     storeProduct.enabled = true;
     storeProduct.updated_at = at;
   }
+}
+
+function ensurePublishedFlowerProduct(state: State, sku: string, flowers: FlowerIndex | null, at: string) {
+  if (state.products.some((row) => row.sku === sku)) return true;
+  const parsed = parseFlowerSku(sku);
+  const record = parsed ? flowers?.get(parsed.base) : null;
+  const cents = flowerPriceCents(flowers, sku);
+  if (!parsed || !record || cents == null || cents <= 0) return false;
+  state.products.push({
+    sku,
+    sku_sort: skuSortKey(sku),
+    name: record.strain ? `${record.strain} ${parsed.size}` : sku,
+    category: record.tier || "Flower",
+    default_price_cents: cents,
+    image_url: record.image,
+    setb_active: true,
+    synced_at: at,
+    created_at: at,
+  });
+  return true;
 }
 
 function mergeLines(lines: { sku?: string; qty?: number }[]) {
@@ -2512,13 +2542,14 @@ export class PosService {
           return {
             kitchen_row_id: row.kitchen_row_id,
             batch_id: row.batch_id,
+            refill_id: row.refill_id ?? row.batch_id,
             store_code: row.store_code,
             sku: row.sku,
             text: staffSkuText(row.sku, size),
             name: productName(tx.state, row.sku),
             qty_sent: row.qty_sent,
             kind: row.kind,
-            sent_by: row.sent_by ?? "Kitchen",
+            sent_by: row.created_by ?? row.sent_by ?? "Kitchen",
             sent_at: row.kitchen_created_at ?? row.created_at,
             sent_at_toronto: torontoDateTime(row.kitchen_created_at ?? row.created_at),
             approval_required: Boolean(row.approval_required),
@@ -3364,6 +3395,8 @@ export class PosService {
       for (const row of batchRows) {
         const line = submitted.get(row.kitchen_row_id);
         const received = action === "REJECT" ? 0 : Number(line!.qty_received);
+        if (!row.batch_id) row.batch_id = row.kitchen_row_id;
+        if (!row.refill_id) row.refill_id = ensureRefillId(tx.state, row.batch_id, row.store_code);
         row.qty_received = received;
         row.variance_reason = (action === "REJECT" ? input.reason : line?.variance_reason)?.trim() || null;
         row.confirmed_at = at;
@@ -3393,6 +3426,7 @@ export class PosService {
       const receipt: RefillReceiptRow = {
         id: randomUUID(),
         batch_id: batchId,
+        refill_id: batchRows[0]?.refill_id ?? batchId,
         store_code: tillCode(),
         status: batchRows.every((row) => row.status === "REJECTED") ? "REJECTED" : batchRows.every((row) => row.status === "CONFIRMED") ? "CONFIRMED" : "PARTIAL",
         sent_by: batchRows[0]?.sent_by ?? "Kitchen",
@@ -3412,6 +3446,8 @@ export class PosService {
       };
       tx.state.refill_receipts ??= [];
       tx.state.refill_receipts.push(receipt);
+      const email = refillEmailPayload(tx.state, batchRows, "RECEIVED", at, staff.display_name || staff.pos_id);
+      enqueue(tx.state, "S_EmailOutbox", email.row_id, email, at);
       enqueueSignalNotice(tx.state, `SIG-KRECEIPT-${batchId}`, "KITCHEN_RECEIPT", batchId, kitchenReceiptMessage(receipt), at);
       audit(tx.state, "KITCHEN_REFILL_RECEIVED", "incoming_batch", batchId, staff.staff_uid, { status: receipt.status, line_count: receipt.lines.length }, at);
       const resultBody = {
@@ -3509,6 +3545,8 @@ export class PosService {
       }
       const at = iso(now);
       const before = batchRows.filter((row) => row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      const refillId = batchRows[0]?.refill_id ?? ensureRefillId(tx.state, batchId, tillCode());
+      const createdBy = batchRows[0]?.created_by ?? batchRows[0]?.sent_by ?? staff.display_name ?? "Kitchen";
       const requestedBySku = new Map(lines.map((line) => [line.sku, line.qty]));
       for (const row of batchRows.filter((item) => item.status === "PENDING_CONFIRM")) {
         const nextQty = requestedBySku.get(row.sku);
@@ -3533,7 +3571,7 @@ export class PosService {
         const product = tx.state.products.find((item) => item.sku === sku && item.setb_active)!;
         const enabled = tx.state.store_products.some((item) => item.store_code === tillCode() && item.sku === sku && item.enabled);
         tx.state.incoming.push({
-          kitchen_row_id: randomUUID(), batch_id: batchId, store_code: tillCode(), sku, qty_sent: qty, kind: "REFILL",
+          kitchen_row_id: randomUUID(), batch_id: batchId, refill_id: refillId, created_by: createdBy, store_code: tillCode(), sku, qty_sent: qty, kind: "REFILL",
           kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null,
           confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: staff.display_name || "Kitchen",
           received_by: null, approval_required: !enabled, created_at: at,
@@ -3541,6 +3579,8 @@ export class PosService {
         void product;
       }
       const after = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId && row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      const updatedEmail = refillEmailPayload(tx.state, tx.state.incoming.filter((row) => row.batch_id === batchId && row.status === "PENDING_CONFIRM"), "SENT", at);
+      enqueue(tx.state, "S_EmailOutbox", updatedEmail.row_id, updatedEmail, at);
       audit(tx.state, "KITCHEN_REFILL_EDITED", "incoming_batch", batchId, staff.staff_uid, { before, after }, at);
       const resultBody = { ok: true, batch_id: batchId, lines: after };
       remember(tx.state, "kitchen_edit_refill", input.key, body, resultBody, now, this.deps.secrets.session);
@@ -3611,6 +3651,7 @@ export class PosService {
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
       const at = iso(now);
+      const refillId = ensureRefillId(tx.state, input.key, tillCode());
       const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string; approval_required: boolean }[] = [];
       for (const line of lines) {
         if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
@@ -3622,6 +3663,8 @@ export class PosService {
         tx.state.incoming.push({
           kitchen_row_id: kitchenRowId,
           batch_id: input.key,
+          refill_id: refillId,
+          created_by: staff.display_name || "Kitchen",
           store_code: tillCode(),
           sku: line.sku,
           qty_sent: line.qty,
@@ -3648,9 +3691,12 @@ export class PosService {
           }
         }
       }
+      const sentRows = tx.state.incoming.filter((row) => row.batch_id === input.key);
+      const sentEmail = refillEmailPayload(tx.state, sentRows, "SENT", at);
+      enqueue(tx.state, "S_EmailOutbox", sentEmail.row_id, sentEmail, at);
       enqueueSignalNotice(tx.state, `SIG-KSEND-${input.key}`, "KITCHEN_SENT", input.key, kitchenSentMessage(input.key, staff.display_name || "Kitchen", at, created), at);
       audit(tx.state, "KITCHEN_REFILL_SENT", "incoming_batch", input.key, staff.staff_uid, { line_count: created.length, total_units: created.reduce((sum, line) => sum + line.qty, 0) }, at);
-      const resultBody = { ok: true, batch_id: input.key, lines: created };
+      const resultBody = { ok: true, batch_id: input.key, refill_id: refillId, lines: created };
       remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
     }, { kind: "KITCHEN_REFILL" });
@@ -3982,6 +4028,30 @@ export class PosService {
         has_more: hasMore,
         bootstrap: !cursor,
       };
+  }
+
+  /**
+   * Read-only stock feed for trusted internal consumers such as Kitchen.
+   * This deliberately reads the authoritative till balances and never queues
+   * a sheet write or rewrites live_state.
+   */
+  async stockFeed() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const products = state.balances
+        .filter((balance) => balanceForStore(balance))
+        .map((balance) => {
+          const product = state.products.find((row) => row.sku === balance.sku);
+          return {
+            sku: balance.sku,
+            name: product?.name ?? "",
+            category: product?.category ?? "",
+            on_hand: balance.qty,
+          };
+        })
+        .sort((left, right) => skuSortKey(left.sku) - skuSortKey(right.sku) || left.sku.localeCompare(right.sku));
+    const activeShift = state.shifts.some((shift) => shift.store_code === tillCode() && shift.status === "ACTIVE");
+    return { ok: true as const, store_code: tillCode(), generated_at: iso(this.now()), active_shift: activeShift, products };
   }
 
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
@@ -4831,7 +4901,7 @@ export class PosService {
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
-      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, closing: saved };
+      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, shift_ref: saved.shift_ref ?? null, closing: saved };
       remember(tx.state, "pos_end", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
@@ -4854,20 +4924,33 @@ export class PosService {
       }
     };
     let rows: SheetRow[] = [];
+    let legacyCount = 0;
+    let refillCount = 0;
     try {
       const [legacy, refills] = await Promise.all([readTab("K_Allocations"), readTab("POS_Refills")]);
-      rows = [
-        ...legacy,
-        ...refills.filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED"),
-      ];
+      legacyCount = legacy.length;
+      refillCount = refills.length;
+      const byId = new Map<string, SheetRow>();
+      const withoutId: SheetRow[] = [];
+      const add = (row: SheetRow) => row.row_id ? byId.set(row.row_id, row) : withoutId.push(row);
+      refills
+        .filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED")
+        .forEach(add);
+      // K_Allocations is Kitchen's canonical row. It must win over a stale
+      // mirrored POS_Refills copy carrying the same row_id.
+      legacy.forEach(add);
+      rows = [...byId.values(), ...withoutId];
     } catch (error) {
       if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
       throw error;
     }
-    return this.importRows(rows);
+    const flowers = await this.flowerIndex().catch(() => new Map());
+    const result = await this.importRows(rows, flowers, Boolean(opts.force));
+    if (opts.force) console.info(`[sheet-import] legacy=${legacyCount} refills=${refillCount} imported=${result.imported} full=${result.full}`);
+    return result;
   }
 
-  private async importRows(rows: SheetRow[]) {
+  private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null, forceFull = false) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -4877,17 +4960,23 @@ export class PosService {
         cursor = { tab: "K_Allocations", last_row_number: 0, last_polled_at: null, last_ok_at: null, last_full_scan_at: null };
         state.cursors.push(cursor);
       }
-      const full = !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
+      // K_Allocations and POS_Refills have independent sheet row numbers. A
+      // forced refresh (the cron/recovery path) must therefore rescan all rows
+      // instead of applying K_Allocations' cursor to POS_Refills.
+      const full = forceFull || !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
       const minRow = full ? 0 : Math.max(0, cursor.last_row_number - IMPORT_OVERLAP_ROWS);
       let imported = 0;
       let maxRow = cursor.last_row_number;
+      const touchedBatches = new Set<string>();
       for (const row of rows) {
         const sheetRow = Number(row._sheet_row ?? 0);
         if (sheetRow < minRow) continue;
         maxRow = Math.max(maxRow, sheetRow);
         if ((row.store_code ?? "").trim() !== tillCode()) continue;
-        const problem = this.kitchenProblem(state, row);
+        const problem = this.kitchenProblem(state, row, flowers);
+        const recent = Boolean(row.created_at && now.getTime() - Date.parse(row.created_at) < 24 * 60 * 60 * 1000);
         if (problem) {
+          if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=rejected reason=${problem}`);
           const badId = row.row_id && isUuid(row.row_id) ? `R-${row.row_id}` : `R-BAD-${sheetRow}`;
           enqueue(state, "S_Receipts", badId, {
             row_id: badId,
@@ -4906,7 +4995,11 @@ export class PosService {
           audit(state, "ROW_REJECTED", "sheet", row.row_id || String(sheetRow), "system", { reason: problem }, at);
           continue;
         }
+        if (!state.products.some((product) => product.sku === row.sku)) {
+          if (!ensurePublishedFlowerProduct(state, row.sku, flowers, at)) ensureQuotedProduct(state, row.sku, at);
+        }
         const existing = state.incoming.find((item) => item.kitchen_row_id === row.row_id);
+        if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=${existing?.status ?? "new"}`);
         const qty = Number(row.qty);
         const kitchenStatus = (row.kitchen_status ?? "ACTIVE").toUpperCase();
         if (!existing) {
@@ -4914,9 +5007,13 @@ export class PosService {
           if (state.incoming.some((item) => item.batch_id === (row.batch_id ?? "") && item.sku === row.sku && item.qty_sent === qty && item.kitchen_created_at && Math.abs(Date.parse(item.kitchen_created_at) - Date.parse(created)) < 5 * 60 * 1000)) {
             audit(state, "DUPLICATE_BATCH_WINDOW", "incoming", row.row_id, "system", { batch_id: row.batch_id, sku: row.sku, qty }, at);
           }
+          const batchId = row.batch_id || row.row_id;
+          const refillId = ensureRefillId(state, batchId, tillCode());
           const incoming: IncomingRow = {
             kitchen_row_id: row.row_id,
-            batch_id: row.batch_id ?? "",
+            batch_id: batchId,
+            refill_id: refillId,
+            created_by: row.created_by || row.sent_by || "Kitchen",
             store_code: tillCode(),
             sku: row.sku,
             qty_sent: qty,
@@ -4932,15 +5029,29 @@ export class PosService {
             created_at: at,
           };
           state.incoming.push(incoming);
+          touchedBatches.add(batchId);
           imported += 1;
           enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(state, incoming, "", ""), at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, incoming, at);
         } else if (qty !== existing.qty_sent) {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
           audit(state, "QTY_CHANGED_AFTER_IMPORT", "incoming", existing.kitchen_row_id, "system", { sheet_qty: qty, imported_qty: existing.qty_sent }, at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, existing, at);
         } else if (kitchenStatus === "CANCELLED") {
           this.applyCancel(state, existing, at);
+        } else if (existing.status === "CANCELLED_BY_KITCHEN") {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
+          existing.status = "PENDING_CONFIRM";
+          existing.qty_received = null;
+          existing.confirmed_at = null;
+          enqueue(state, "S_Receipts", `R-${existing.kitchen_row_id}`, receiptPayload(state, existing, "", ""), at);
+          audit(state, "KITCHEN_ROW_REOPENED", "incoming", existing.kitchen_row_id, "system", { source: "K_Allocations" }, at);
         }
+      }
+      for (const batchId of touchedBatches) {
+        const batchRows = state.incoming.filter((row) => row.batch_id === batchId);
+        const email = refillEmailPayload(state, batchRows, "SENT", at);
+        enqueue(state, "S_EmailOutbox", email.row_id, email, at);
       }
       cursor.last_row_number = Math.max(cursor.last_row_number, maxRow);
       cursor.last_polled_at = at;
@@ -4950,9 +5061,12 @@ export class PosService {
     });
   }
 
-  private kitchenProblem(state: State, row: SheetRow) {
+  private kitchenProblem(state: State, row: SheetRow, flowers: FlowerIndex | null = null) {
     if (!row.row_id || !isUuid(row.row_id)) return "row_id must be a UUID";
-    if (!state.products.some((product) => product.sku === row.sku)) return "SKU does not exist";
+    const known = state.products.some((product) => product.sku === row.sku)
+      || flowerPriceCents(flowers, row.sku) != null
+      || quoteForSku(row.sku) != null;
+    if (!known) return "SKU does not exist";
     if (!/^[1-9]\d*$/.test(row.qty ?? "")) return "qty must be an integer greater than 0";
     const kind = (row.kind ?? "ALLOCATION").toUpperCase();
     if (kind !== "ALLOCATION" && kind !== "REFILL") return "kind must be ALLOCATION or REFILL";
@@ -5012,6 +5126,7 @@ export class PosService {
   async drainOutbox() {
     let owner = await this.assertIntegrationOwner("SHEET_OUTBOX");
     const now = this.now();
+    const emailOnly = process.env.PNY_SHEET_READ_ONLY === "1" && process.env.PNY_EMAIL_OUTBOX_ENABLED === "1";
     const leaseId = randomUUID();
     const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
     const batch = await this.db.transaction(async (tx) => {
@@ -5029,7 +5144,7 @@ export class PosService {
         audit(tx.state, "OUTBOX_LEASE_EXPIRED", "sheet_outbox", row.id, "cron", { row_id: row.row_id, tab: row.tab, lease_id: expiredLease }, at);
       }
       const due = tx.state.outbox
-        .filter((row) => row.tab !== "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .filter((row) => row.tab !== "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime() && (!emailOnly || row.tab === "S_EmailOutbox"))
         .sort((left, right) => left.created_at.localeCompare(right.created_at))
         .slice(0, OUTBOX_BATCH_SIZE);
       for (const row of due) {
@@ -5060,6 +5175,10 @@ export class PosService {
     }
     const unsentBatch = batch.filter((row) => !delivered.has(row.row_id));
     if (unsentBatch.length === 0) return { ok: true, sent: 0, replayed: delivered.size, ...(await this.outboxStatus()) };
+    const directEmail = accountantEmailWebhookConfigured();
+    if (!emailOnly || !directEmail) {
+      await this.deps.sheet.ensureTabs(emailOnly ? POS_TAB_SPECS.filter((spec) => spec.title === "S_EmailOutbox") : POS_TAB_SPECS);
+    }
     const groups = new Map<string, typeof batch>();
     for (const row of unsentBatch) {
       const list = groups.get(row.tab) ?? [];
@@ -5072,7 +5191,11 @@ export class PosService {
       const rows = groups.get(tab) ?? [];
       if (!rows.length) continue;
       try {
-        await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
+        if (tab === "S_EmailOutbox" && directEmail) {
+          for (const row of rows) await deliverAccountantEmail(row.payload);
+        } else {
+          await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
+        }
         for (const row of rows) await this.recordIntegrationDelivery(owner, row.row_id, { tab: row.tab });
         const acknowledged = await this.db.transaction(async (tx) => {
           const at = iso(this.now());
@@ -5484,6 +5607,33 @@ export class PosService {
         };
       });
       return { ok: true, closings };
+  }
+
+  /**
+   * Preview-only accountant backfill reader. This deliberately requires the
+   * database peek surface so reading old closings cannot rewrite live_state or
+   * increment SCCx delivery counters.
+   */
+  async closingHistoryReadOnly() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    if (!peek) throw new PosError(503, "READ_ONLY", "A read-only closing history source is not available.");
+    const state = await peek();
+    const code = tillCode();
+    const closings = state.closings.flatMap((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      if (shift?.store_code && shift.store_code !== code) return [];
+      const staff = state.staff.find((row) => row.staff_uid === shift?.staff_uid);
+      return [{
+        store_code: code,
+        shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+        internal_shift_id: closing.shift_id,
+        staff_name: staff?.display_name ?? staff?.pos_id ?? shift?.staff_uid ?? "Staff",
+        started_at: shift?.started_at ?? null,
+        ended_at: shift?.ended_at ?? closing.created_at,
+        closing,
+      }];
+    });
+    return { ok: true as const, store: code, closings };
   }
 
   /** Read-only. Does not count an SCCx poll and does not change the till. */

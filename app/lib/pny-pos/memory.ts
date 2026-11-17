@@ -50,6 +50,8 @@ export function emptyState(now = new Date().toISOString()): State {
     coupons: [],
     coupon_redemptions: [],
     deposit_seq: 0,
+    refill_seq_by_store: {},
+    shift_ref_seq_by_store: {},
   };
 }
 
@@ -114,6 +116,7 @@ export function isKitchenRefillOnlyChange(before: State, after: State) {
   normalized.audit = structuredClone(before.audit);
   normalized.idempotency = structuredClone(before.idempotency);
   normalized.outbox = structuredClone(before.outbox);
+  normalized.refill_seq_by_store = structuredClone(before.refill_seq_by_store ?? {});
   return JSON.stringify(normalized) === JSON.stringify(before);
 }
 

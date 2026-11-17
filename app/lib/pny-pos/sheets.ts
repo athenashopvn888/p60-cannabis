@@ -158,8 +158,9 @@ export class GoogleSheet implements SheetClient {
     this.privateKey = privateKey;
   }
 
-  private refuseWrite() {
-    if (process.env.PNY_SHEET_READ_ONLY === "1") throw new SheetUnavailable("The sheet is read only.");
+  private refuseWrite(tab?: string) {
+    const emailOnly = tab === "S_EmailOutbox" && process.env.PNY_EMAIL_OUTBOX_ENABLED === "1";
+    if (process.env.PNY_SHEET_READ_ONLY === "1" && !emailOnly) throw new SheetUnavailable("The sheet is read only.");
   }
 
   private async accessToken() {
@@ -208,7 +209,8 @@ export class GoogleSheet implements SheetClient {
   }
 
   async ensureTabs(specs: SheetTabSpec[]) {
-    this.refuseWrite();
+    if (specs.some((spec) => spec.title !== "S_EmailOutbox")) this.refuseWrite();
+    else this.refuseWrite("S_EmailOutbox");
     const meta = await this.sheetsFetch("?fields=sheets.properties.title");
     const sheets = (meta.sheets as { properties?: { title?: string } }[] | undefined) ?? [];
     const have = new Set(sheets.map((sheet) => sheet.properties?.title ?? ""));
@@ -322,7 +324,7 @@ export class GoogleSheet implements SheetClient {
   }
 
   async upsert(tab: string, rows: Record<string, string>[]) {
-    this.refuseWrite();
+    this.refuseWrite(tab);
     if (!sheetWriteAllowed(tab) || rows.length === 0) return;
     const raw = await this.sheetsFetch(`/values/${encodeURIComponent(tab)}?majorDimension=ROWS`);
     const values = (raw.values as string[][] | undefined) ?? [];

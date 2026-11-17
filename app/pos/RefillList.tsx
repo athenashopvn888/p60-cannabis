@@ -6,6 +6,7 @@ import styles from "./till.module.css";
 export type PendingRefill = {
   kitchen_row_id: string;
   batch_id: string;
+  refill_id?: string;
   store_code: string;
   sku: string;
   text: string;
@@ -20,6 +21,7 @@ export type PendingRefill = {
 
 export type RefillReceipt = {
   batch_id: string;
+  refill_id?: string;
   status: "CONFIRMED" | "PARTIAL" | "REJECTED";
   sent_by: string;
   received_by: string;
@@ -91,12 +93,13 @@ export default function RefillList({ lines, busy, viewOnly, onClose, onReceive }
   if (receipt) return <section className={styles.refillPage} data-testid="refill-receipt">
     <header className={styles.header}><div className={styles.headerTop}><div className={styles.brand}>Refill receipt</div></div></header>
     <div className={styles.refillBody}>
-      <p><strong>{receipt.status}</strong> · Batch {receipt.batch_id}</p>
+      <p><strong>{receipt.status}</strong> · Refill {receipt.refill_id ?? receipt.batch_id}</p>
       <p>Sent by {receipt.sent_by} · {receipt.sent_at_toronto} Toronto</p>
       <p>Received by {receipt.received_by} · {receipt.received_at_toronto} Toronto</p>
       {receipt.lines.map((line) => <article key={line.kitchen_row_id} className={styles.refillRow}><div><strong>{line.sku} · {line.name}</strong><small>Sent {line.qty_sent} · Received {line.qty_received} · Variance {line.variance}</small>{line.reason ? <small>Reason: {line.reason}</small> : null}</div></article>)}
       <p>Group notice: {receipt.signal_notice === "DRY_RUN" ? "preview dry run only" : "queued"}</p>
-      <button className={styles.primary} type="button" onClick={onClose}>Done</button>
+      <p className={styles.photoInstruction}><strong>Take a picture of this receipt and post it in the STOCK group.</strong></p>
+      <button className={styles.primary} type="button" onClick={onClose}>Done, I posted it</button>
     </div>
   </section>;
 
@@ -110,7 +113,7 @@ export default function RefillList({ lines, busy, viewOnly, onClose, onReceive }
         const editing = editingBatch === batch.batchId;
         const rejecting = rejectingBatch === batch.batchId;
         return <section key={batch.batchId} className={styles.refillBatch} data-testid="refill-batch">
-          <h2>Batch {batch.batchId}</h2><p>{first.sent_by} · {first.sent_at_toronto} Toronto</p>
+          <h2>Refill {first.refill_id ?? batch.batchId}</h2><p>{first.sent_by} · {first.sent_at_toronto} Toronto</p>
           {batch.lines.map((line) => {
             const received = Number(qty[line.kitchen_row_id] ?? line.qty_sent);
             const differs = editing && Number.isInteger(received) && received !== line.qty_sent;

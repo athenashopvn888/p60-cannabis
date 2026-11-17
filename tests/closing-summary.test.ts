@@ -82,6 +82,7 @@ function endedState(): State {
     sccx_attempts: 0,
     no_count: false,
     summary_text: "test",
+    shift_ref: "S00022",
     created_at: "2026-11-05T18:00:00.000Z",
   });
   return state;
@@ -95,6 +96,8 @@ test("the closing summary lists off SKUs only and exposes frozen close metadata"
   assert.equal(view?.staffName, "Staff");
   assert.equal(view?.startedAt, "2026-11-05T12:00:00.000Z");
   assert.equal(view?.endedAt, "2026-11-05T18:00:00.000Z");
+  assert.equal(view?.shiftRef, "S00022");
+  assert.equal(view?.systemShiftId, "pny01-test-close");
   assert.deepEqual(view?.deposits, []);
   assert.equal(view?.expenseCents, 0);
   assert.equal(view?.cashSalesCents, 8000);
