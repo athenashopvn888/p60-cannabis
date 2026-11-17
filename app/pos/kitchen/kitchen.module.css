@@ -701,9 +701,6 @@
   color: #5b21b6;
   box-shadow: inset 0 0 0 1px #7c3aed;
 }
-.fileInput {
-  display: none;
-}
 .editNotice {
   display: flex;
   align-items: center;
@@ -716,8 +713,7 @@
   background: #eff6ff;
 }
 .editNotice button,
-.batchActions button,
-.addRow {
+.batchActions button {
   min-height: 40px;
   border: 1px solid #94a3b8;
   border-radius: 9px;
@@ -767,122 +763,15 @@
 .historyLines > div > span:last-child {
   text-align: right;
 }
-.scanReview,
 .deleteConfirm {
   max-width: 760px;
   margin: 0 auto;
-}
-.scanPhotoTools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-.scanPhotoTools button {
-  min-height: 44px;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 10px;
-  background: #166534;
-  color: #fff;
-  font-weight: 900;
-}
-.scanProgress {
-  display: grid;
-  gap: 8px;
-  padding: 16px;
-  border-radius: 12px;
-  background: #eff6ff;
-}
-.scanProgress progress {
-  width: 100%;
-}
-.scanWarning {
-  margin: 10px 0;
-  padding: 12px;
-  border: 2px solid #b91c1c;
-  border-radius: 12px;
-  background: #fff1f2;
-  color: #991b1b;
-}
-.scanRows {
-  display: grid;
-  gap: 9px;
-  margin: 14px 0;
-}
-.scanRows article {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 86px 92px auto;
-  gap: 8px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  background: #fff;
-}
-.scanRows article[data-review="required"] {
-  border-color: #dc2626;
-  background: #fff7f7;
-}
-.scanRows article[data-review="complete"] {
-  border-color: #16a34a;
-}
-.scanRows label,
-.scanRows article > div {
-  display: grid;
-  gap: 3px;
-}
-.scanRows input {
-  min-height: 46px;
-  min-width: 0;
-  border: 2px solid #334155;
-  border-radius: 9px;
-  padding: 0 10px;
-  font-size: 16px;
-  font-weight: 800;
-}
-.scanRows em {
-  color: #b45309;
-  font-style: normal;
-  font-weight: 900;
-}
-.scanRows article > div button {
-  margin-top: 4px;
-  border: 0;
-  border-radius: 8px;
-  background: #166534;
-  color: #fff;
-  font-weight: 900;
-  padding: 8px 10px;
-}
-.scanRows article > button {
-  min-height: 46px;
-  border: 1px solid #dc2626;
-  border-radius: 9px;
-  background: #fff;
-  color: #b91c1c;
-  font-weight: 850;
-}
-.addRow {
-  width: 100%;
-  margin-bottom: 12px;
 }
 .danger {
   background: #b91c1c !important;
   color: #fff !important;
 }
 @media (max-width: 520px) {
-  .scanRows article {
-    grid-template-columns: minmax(0, 1fr) 78px;
-  }
-  .scanRows article > div,
-  .scanRows article > button {
-    grid-column: auto;
-  }
   .historyBatch > header {
     align-items: flex-start;
     flex-direction: column;
