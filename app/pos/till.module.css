@@ -388,6 +388,28 @@
   margin-top: 16px;
 }
 
+.receiptCard {
+  border: 2px solid #1c1917;
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+}
+
+.receiptCard h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.photoInstruction {
+  margin: 20px 0 0;
+  border-radius: 12px;
+  background: #fef3c7;
+  padding: 14px;
+  color: #92400e;
+  font-size: 18px;
+  font-weight: 900;
+}
+
 .refillBody .primary,
 .refillBody .secondary {
   width: 100%;

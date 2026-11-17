@@ -109,6 +109,10 @@ export type SessionRow = {
 export type IncomingRow = {
   kitchen_row_id: string;
   batch_id: string;
+  /** Human-readable sequence shared by every line in the Kitchen batch. */
+  refill_id?: string;
+  /** Kitchen identity copied from the source batch. */
+  created_by?: string;
   store_code: string;
   sku: string;
   qty_sent: number;
@@ -342,6 +346,8 @@ export type State = {
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;
+  /** Last issued refill sequence per store. PNY01-R0001 is 1. */
+  refill_seq_by_store?: Record<string, number>;
   /** One master stock id per store. Missing until the first close after labels shipped. */
   stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
   /** Set when the approved opening stock is copied in. Missing means the till is waiting. */

@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS incoming_batches (
   kitchen_row_id uuid PRIMARY KEY,
   batch_id text,
+  refill_id text,
+  created_by text,
   store_code text NOT NULL,
   sku text NOT NULL,
   qty_sent integer NOT NULL,
@@ -117,6 +119,9 @@ CREATE TABLE IF NOT EXISTS incoming_batches (
   linked_ledger_id uuid,
   created_at timestamptz NOT NULL
 );
+
+ALTER TABLE incoming_batches ADD COLUMN IF NOT EXISTS refill_id text;
+ALTER TABLE incoming_batches ADD COLUMN IF NOT EXISTS created_by text;
 
 CREATE TABLE IF NOT EXISTS stock_counts (
   id uuid PRIMARY KEY,

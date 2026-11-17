@@ -48,8 +48,9 @@ import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapsho
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
+import { closingEmailPayload, ensureRefillId, refillEmailPayload } from "./accountantEmail.ts";
 import type { SheetClient } from "./sheets.ts";
-import { SheetDb } from "./sheetStore.ts";
+import { POS_TAB_SPECS, SheetDb } from "./sheetStore.ts";
 import type {
   ClosingLine,
   ClosingRow,
@@ -1099,6 +1100,8 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
       .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
       .join(" | "),
   }, at);
+  const email = closingEmailPayload(state, shift, closing, at);
+  enqueue(state, "S_EmailOutbox", email.row_id, email, at);
   queueSnapshot(state, at);
 }
 
@@ -1139,6 +1142,8 @@ function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): 
   return {
     row_id: `R-${row.kitchen_row_id}`,
     kitchen_row_id: row.kitchen_row_id,
+    refill_id: row.refill_id ?? "",
+    batch_id: row.batch_id,
     store_code: tillCode(),
     sku: row.sku,
     qty_sent: String(row.qty_sent),
@@ -2107,7 +2112,17 @@ export class PosService {
         .map((row) => {
           const product = tx.state.products.find((item) => item.sku === row.sku);
           const size = sizeLabel(row.sku, product?.category, product?.name);
-          return { kitchen_row_id: row.kitchen_row_id, sku: row.sku, text: staffSkuText(row.sku, size), qty_sent: row.qty_sent, kind: row.kind };
+          return {
+            kitchen_row_id: row.kitchen_row_id,
+            batch_id: row.batch_id,
+            refill_id: row.refill_id ?? row.batch_id,
+            sent_at: row.kitchen_created_at ?? row.created_at,
+            sent_by: row.created_by ?? "Kitchen",
+            sku: row.sku,
+            text: staffSkuText(row.sku, size),
+            qty_sent: row.qty_sent,
+            kind: row.kind,
+          };
         })
         .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
@@ -2301,6 +2316,7 @@ export class PosService {
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
       const at = iso(now);
+      const batches = new Map<string, IncomingRow[]>();
       for (const line of input.lines) {
         const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id);
         if (!row || row.status !== "PENDING_CONFIRM") throw new PosError(409, "ALREADY_CONFIRMED", "That incoming row is not waiting.");
@@ -2308,6 +2324,8 @@ export class PosService {
       }
       for (const line of input.lines) {
         const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id)!;
+        if (!row.batch_id) row.batch_id = row.kitchen_row_id;
+        if (!row.refill_id) row.refill_id = ensureRefillId(tx.state, row.batch_id || row.kitchen_row_id, row.store_code);
         row.qty_received = line.qty_received;
         row.variance_reason = line.variance_reason?.trim() || null;
         row.confirmed_at = at;
@@ -2321,9 +2339,30 @@ export class PosService {
           ensureQuotedProduct(tx.state, row.sku, at);
         }
         enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
+        const batch = batches.get(row.batch_id) ?? [];
+        batch.push(row);
+        batches.set(row.batch_id, batch);
       }
+      const receipts = [...batches.values()].map((confirmedRows) => {
+        const refillId = confirmedRows[0]?.refill_id ?? confirmedRows[0]?.batch_id ?? "REFILL";
+        const allRows = tx.state.incoming.filter((row) => row.batch_id === confirmedRows[0]?.batch_id);
+        const email = refillEmailPayload(tx.state, allRows, "RECEIVED", at, staff.display_name || staff.pos_id);
+        enqueue(tx.state, "S_EmailOutbox", email.row_id, email, at);
+        return {
+          refill_id: refillId,
+          received_at: at,
+          staff_name: staff.display_name || staff.pos_id,
+          lines: allRows.map((row) => ({
+            sku: row.sku,
+            name: productName(tx.state, row.sku),
+            qty_sent: row.qty_sent,
+            qty_received: row.qty_received ?? 0,
+            variance_reason: row.variance_reason ?? "",
+          })),
+        };
+      });
       if (!tx.state.incoming.some((row) => row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
-      const resultBody = { ok: true };
+      const resultBody = { ok: true, receipts };
       remember(tx.state, "incoming_confirm", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
     });
@@ -2344,6 +2383,7 @@ export class PosService {
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
       const at = iso(now);
+      const refillId = ensureRefillId(tx.state, input.key, tillCode());
       const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
       for (const line of lines) {
         if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
@@ -2353,6 +2393,8 @@ export class PosService {
         tx.state.incoming.push({
           kitchen_row_id: kitchenRowId,
           batch_id: input.key,
+          refill_id: refillId,
+          created_by: staff.display_name || staff.pos_id,
           store_code: tillCode(),
           sku: line.sku,
           qty_sent: line.qty,
@@ -2376,6 +2418,11 @@ export class PosService {
         created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "CONFIRMED" });
       }
       shift.refill_confirmed_at = at;
+      const sentRows = tx.state.incoming.filter((row) => row.batch_id === input.key);
+      const sentEmail = refillEmailPayload(tx.state, sentRows, "SENT", at);
+      enqueue(tx.state, "S_EmailOutbox", sentEmail.row_id, sentEmail, at);
+      const receivedEmail = refillEmailPayload(tx.state, sentRows, "RECEIVED", at, staff.display_name || staff.pos_id);
+      enqueue(tx.state, "S_EmailOutbox", receivedEmail.row_id, receivedEmail, at);
       const resultBody = { ok: true, lines: created };
       remember(tx.state, "kitchen_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
@@ -3497,6 +3544,7 @@ export class PosService {
       const minRow = full ? 0 : Math.max(0, cursor.last_row_number - IMPORT_OVERLAP_ROWS);
       let imported = 0;
       let maxRow = cursor.last_row_number;
+      const touchedBatches = new Set<string>();
       for (const row of rows) {
         const sheetRow = Number(row._sheet_row ?? 0);
         if (sheetRow < minRow) continue;
@@ -3536,9 +3584,13 @@ export class PosService {
           if (state.incoming.some((item) => item.batch_id === (row.batch_id ?? "") && item.sku === row.sku && item.qty_sent === qty && item.kitchen_created_at && Math.abs(Date.parse(item.kitchen_created_at) - Date.parse(created)) < 5 * 60 * 1000)) {
             audit(state, "DUPLICATE_BATCH_WINDOW", "incoming", row.row_id, "system", { batch_id: row.batch_id, sku: row.sku, qty }, at);
           }
+          const batchId = row.batch_id || row.row_id;
+          const refillId = ensureRefillId(state, batchId, tillCode());
           const incoming: IncomingRow = {
             kitchen_row_id: row.row_id,
-            batch_id: row.batch_id ?? "",
+            batch_id: batchId,
+            refill_id: refillId,
+            created_by: row.created_by || row.sent_by || "Kitchen",
             store_code: tillCode(),
             sku: row.sku,
             qty_sent: qty,
@@ -3554,21 +3606,29 @@ export class PosService {
             created_at: at,
           };
           state.incoming.push(incoming);
+          touchedBatches.add(batchId);
           imported += 1;
           enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(incoming, "", ""), at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, incoming, at);
         } else if (qty !== existing.qty_sent) {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
           audit(state, "QTY_CHANGED_AFTER_IMPORT", "incoming", existing.kitchen_row_id, "system", { sheet_qty: qty, imported_qty: existing.qty_sent }, at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, existing, at);
         } else if (kitchenStatus === "CANCELLED") {
           this.applyCancel(state, existing, at);
         } else if (existing.status === "CANCELLED_BY_KITCHEN") {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
           existing.status = "PENDING_CONFIRM";
           existing.qty_received = null;
           existing.confirmed_at = null;
           enqueue(state, "S_Receipts", `R-${existing.kitchen_row_id}`, receiptPayload(existing, "", ""), at);
           audit(state, "KITCHEN_ROW_REOPENED", "incoming", existing.kitchen_row_id, "system", { source: "K_Allocations" }, at);
         }
+      }
+      for (const batchId of touchedBatches) {
+        const batchRows = state.incoming.filter((row) => row.batch_id === batchId);
+        const email = refillEmailPayload(state, batchRows, "SENT", at);
+        enqueue(state, "S_EmailOutbox", email.row_id, email, at);
       }
       cursor.last_row_number = Math.max(cursor.last_row_number, maxRow);
       cursor.last_polled_at = at;
@@ -3605,8 +3665,14 @@ export class PosService {
 
   async drainOutbox() {
     const now = this.now();
-    const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime()));
+    const emailOnly = process.env.PNY_SHEET_READ_ONLY === "1" && process.env.PNY_EMAIL_OUTBOX_ENABLED === "1";
+    const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) =>
+      row.status === "queued"
+      && Date.parse(row.next_attempt_at) <= now.getTime()
+      && (!emailOnly || row.tab === "S_EmailOutbox"),
+    ));
     if (batch.length === 0) return { ok: true, sent: 0 };
+    await this.deps.sheet.ensureTabs(emailOnly ? POS_TAB_SPECS.filter((spec) => spec.title === "S_EmailOutbox") : POS_TAB_SPECS);
     const groups = new Map<string, typeof batch>();
     for (const row of batch) {
       const list = groups.get(row.tab) ?? [];

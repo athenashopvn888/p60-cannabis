@@ -3,7 +3,23 @@
 import { useState } from "react";
 import styles from "./till.module.css";
 
-export type PendingRefill = { kitchen_row_id: string; sku: string; text: string; qty_sent: number };
+export type PendingRefill = {
+  kitchen_row_id: string;
+  batch_id?: string;
+  refill_id?: string;
+  sent_at?: string;
+  sent_by?: string;
+  sku: string;
+  text: string;
+  qty_sent: number;
+};
+
+export type RefillReceipt = {
+  refill_id: string;
+  received_at: string;
+  staff_name: string;
+  lines: { sku: string; name: string; qty_sent: number; qty_received: number; variance_reason?: string }[];
+};
 
 export default function RefillList({
   lines,
@@ -16,11 +32,13 @@ export default function RefillList({
   busy: boolean;
   viewOnly?: boolean;
   onClose: () => void;
-  onReceive: (lines: { kitchen_row_id: string; qty_received: number }[]) => Promise<void>;
+  onReceive: (lines: { kitchen_row_id: string; qty_received: number }[]) => Promise<RefillReceipt[]>;
 }) {
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const [receipts, setReceipts] = useState<RefillReceipt[]>([]);
+  const [receiptIndex, setReceiptIndex] = useState(0);
 
   function startEdit() {
     const next: Record<string, string> = {};
@@ -37,7 +55,49 @@ export default function RefillList({
       return;
     }
     setError("");
-    await onReceive(payload);
+    const saved = await onReceive(payload);
+    setReceipts(saved);
+    setReceiptIndex(0);
+  }
+
+  async function receiveAll() {
+    const saved = await onReceive(lines.map((line) => ({ kitchen_row_id: line.kitchen_row_id, qty_received: line.qty_sent })));
+    setReceipts(saved);
+    setReceiptIndex(0);
+  }
+
+  const receipt = receipts[receiptIndex];
+  if (receipt) {
+    const isLast = receiptIndex === receipts.length - 1;
+    return (
+      <section className={styles.refillPage} data-testid="refill-receipt">
+        <header className={styles.header}>
+          <div className={styles.headerTop}><div className={styles.brand}>Refill received</div></div>
+        </header>
+        <div className={styles.refillBody}>
+          <div className={styles.receiptCard}>
+            <h1>{receipt.refill_id}</h1>
+            <p><strong>Date:</strong> {new Date(receipt.received_at).toLocaleString("en-CA", { timeZone: "America/Toronto" })}</p>
+            <p><strong>Staff:</strong> {receipt.staff_name}</p>
+            {receipt.lines.map((line) => (
+              <div key={`${receipt.refill_id}-${line.sku}`} className={styles.refillRow}>
+                <strong>{line.sku} {line.name}</strong>
+                <span>{line.qty_received}</span>
+              </div>
+            ))}
+            <p className={styles.photoInstruction}>Take a picture of this receipt and post it in the STOCK group.</p>
+          </div>
+          <button
+            className={styles.primary}
+            type="button"
+            data-testid="refill-receipt-ok"
+            onClick={() => isLast ? onClose() : setReceiptIndex((index) => index + 1)}
+          >
+            {isLast ? "OK - Back to POS" : "Next receipt"}
+          </button>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -70,7 +130,7 @@ export default function RefillList({
         {viewOnly ? <p>Master view only. Receiving is saved with the staff PIN.</p> : null}
         {lines.length > 0 && !editing && !viewOnly ? (
           <div className={styles.refillActions}>
-            <button className={styles.primary} type="button" data-testid="refill-received" disabled={busy} onClick={() => void onReceive(lines.map((line) => ({ kitchen_row_id: line.kitchen_row_id, qty_received: line.qty_sent })))}>Received</button>
+            <button className={styles.primary} type="button" data-testid="refill-received" disabled={busy} onClick={() => void receiveAll()}>Received</button>
             <button className={styles.secondary} type="button" data-testid="refill-report" disabled={busy} onClick={startEdit}>Report error</button>
           </div>
         ) : null}

@@ -37,6 +37,7 @@ export function emptyState(now = new Date().toISOString()): State {
     audit: [],
     admin_sessions: [],
     deposit_seq: 0,
+    refill_seq_by_store: {},
   };
 }
 

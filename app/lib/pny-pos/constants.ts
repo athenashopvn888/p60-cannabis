@@ -18,6 +18,7 @@ export const OUTBOX_ERROR_ATTEMPTS = 20;
 export const SCHEMA_VERSION = "3";
 
 export const OUTBOX_TAB_ORDER = [
+  "S_EmailOutbox",
   "S_Sales",
   "S_Deposits",
   "S_Shifts",

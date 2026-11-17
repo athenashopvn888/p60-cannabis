@@ -15,7 +15,7 @@ import CustomerQr from "./CustomerQr";
 import OpeningCount, { type OpeningLine } from "./OpeningCount";
 import SkuOffList, { type OffLine } from "./SkuOffList";
 import CountCard from "./CountCard";
-import RefillList, { type PendingRefill } from "./RefillList";
+import RefillList, { type PendingRefill, type RefillReceipt } from "./RefillList";
 import VerifyBanner, { useVerifyOpen } from "./VerifyBanner";
 import WeedShiftGate from "./WeedShiftGate";
 import WeedToggle from "./WeedToggle";
@@ -555,15 +555,16 @@ export default function PosApp({
     }
   }
 
-  async function receiveRefills(lines: { kitchen_row_id: string; qty_received: number }[]) {
+  async function receiveRefills(lines: { kitchen_row_id: string; qty_received: number }[]): Promise<RefillReceipt[]> {
     setError("");
     setBusy(true);
     try {
-      await post(`${storeApi}/incoming/confirm`, { lines }, crypto.randomUUID());
-      setRefillOpen(false);
+      const saved = await post(`${storeApi}/incoming/confirm`, { lines }, crypto.randomUUID()) as { receipts?: RefillReceipt[] };
       await load();
+      return saved.receipts ?? [];
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refill was not saved");
+      return [];
     } finally {
       setBusy(false);
     }

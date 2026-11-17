@@ -1,0 +1,108 @@
+import { STORE_TZ } from "./constants.ts";
+import { skuSortKey } from "./flowerSku.ts";
+import { formatMoney } from "./money.ts";
+import type { ClosingRow, IncomingRow, ShiftRow, State } from "./types.ts";
+
+export const ACCOUNTANT_EMAIL = "doli.doli.080496@gmail.com";
+
+function storeStamp(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function nameOf(state: State, sku: string) {
+  return state.products.find((row) => row.sku === sku)?.name ?? "Unknown item";
+}
+
+export function ensureRefillId(state: State, batchId: string, storeCode: string) {
+  const existing = state.incoming.find((row) => row.batch_id === batchId && row.refill_id)?.refill_id;
+  if (existing) return existing;
+  const seqs = state.refill_seq_by_store ?? (state.refill_seq_by_store = {});
+  const next = (seqs[storeCode] ?? 0) + 1;
+  seqs[storeCode] = next;
+  return `${storeCode}-R${String(next).padStart(4, "0")}`;
+}
+
+export function refillEmailPayload(state: State, rows: IncomingRow[], stage: "SENT" | "RECEIVED", at: string, staffName = "") {
+  const first = rows[0];
+  if (!first) throw new Error("A refill email requires at least one line.");
+  const refillId = first.refill_id ?? first.batch_id;
+  const sentBy = first.created_by || "Kitchen";
+  const lineText = [...rows]
+    .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku))
+    .map((row) => {
+      const received = row.qty_received == null ? "" : ` | received ${row.qty_received}`;
+      const variance = row.variance_reason ? ` | reason: ${row.variance_reason}` : "";
+      return `${row.sku} | ${nameOf(state, row.sku)} | sent ${row.qty_sent}${received}${variance}`;
+    });
+  const totalSent = rows.reduce((sum, row) => sum + row.qty_sent, 0);
+  const totalReceived = rows.reduce((sum, row) => sum + (row.qty_received ?? 0), 0);
+  const subject = `${first.store_code} REFILL ${refillId} ${stage}`;
+  const body = [
+    subject,
+    `Date: ${storeStamp(at)} Toronto`,
+    `Sent by: ${sentBy}`,
+    ...(stage === "RECEIVED" ? [`Received by: ${staffName || "Staff"}`] : []),
+    "",
+    ...lineText,
+    "",
+    `Lines: ${rows.length}`,
+    `Units sent: ${totalSent}`,
+    ...(stage === "RECEIVED" ? [`Units received: ${totalReceived}`] : []),
+  ].join("\n");
+  return {
+    row_id: `EMAIL-${stage}-${refillId}`,
+    to: ACCOUNTANT_EMAIL,
+    subject,
+    body,
+    status: "PENDING",
+    created_at: at,
+    sent_at: "",
+    last_error: "",
+  };
+}
+
+export function closingEmailPayload(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
+  const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
+  const draft = state.closing_drafts.find((row) => row.shift_id === shift.id);
+  const onHand = state.balances
+    .filter((row) => (row.store_code == null || row.store_code === shift.store_code) && row.qty > 0)
+    .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+  const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
+  const body = [
+    subject,
+    `Shift: ${storeStamp(shift.started_at)} - ${storeStamp(shift.ended_at ?? at)} Toronto`,
+    `Sales: ${formatMoney(closing.sales_total_cents)}`,
+    `Orders: ${closing.sale_count}`,
+    `Cash sales: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)}`,
+    `Debit sales: ${formatMoney(closing.debit_sales_cents ?? 0)}`,
+    `Deposited: ${formatMoney(closing.deposited_cents)}`,
+    `Final deposit: ${formatMoney(closing.final_deposit_cents ?? 0)}`,
+    `Opening float: ${draft?.float_found_cents == null ? "UNAVAILABLE" : formatMoney(draft.float_found_cents)}`,
+    `Closing float: ${formatMoney(closing.float_cents ?? 0)}`,
+    `Stock shortage: ${formatMoney(closing.shortage_cents ?? 0)}`,
+    `Stock overage: ${formatMoney(closing.overage_cents ?? 0)}`,
+    `Final till balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+    "",
+    `ON HAND STOCK (${onHand.length} SKUs)`,
+    ...onHand.map((row) => `${row.sku} | ${nameOf(state, row.sku)} | ${row.qty}`),
+    "",
+    `Total on-hand units: ${onHand.reduce((sum, row) => sum + row.qty, 0)}`,
+  ].join("\n");
+  return {
+    row_id: `EMAIL-CLOSE-${shift.id}`,
+    to: ACCOUNTANT_EMAIL,
+    subject,
+    body,
+    status: "PENDING",
+    created_at: at,
+    sent_at: "",
+    last_error: "",
+  };
+}
