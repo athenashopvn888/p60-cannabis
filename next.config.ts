@@ -66,11 +66,22 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
-    return [
-      { source: "/store-delivery", destination: "https://sd2-pos.vercel.app/store-delivery" },
-      { source: "/store-delivery-assets/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-assets/:path*" },
-      { source: "/store-delivery-data/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-data/:path*" },
-    ];
+    const posApiOrigin = process.env.POS_API_ORIGIN?.trim().replace(/\/$/, "");
+
+    return {
+      beforeFiles: posApiOrigin ? [
+        {
+          source: "/api/pos/:path*",
+          destination: `${posApiOrigin}/api/pos/:path*`,
+        },
+      ] : [],
+      afterFiles: [
+        { source: "/store-delivery", destination: "https://sd2-pos.vercel.app/store-delivery" },
+        { source: "/store-delivery-assets/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-assets/:path*" },
+        { source: "/store-delivery-data/:path*", destination: "https://sd2-pos.vercel.app/store-delivery-data/:path*" },
+      ],
+      fallback: [],
+    };
   },
   async redirects() {
     return [
@@ -108,21 +119,6 @@ const nextConfig: NextConfig = {
       { source: "/blog/p60-cannabis-flower-tier-guide", destination: "/resources/weed-flower-guides/aa-vs-aaa-vs-premium-vs-exotic", permanent: true },
       { source: "/blog/p60-cannabis-local-visit-guide-adults-19", destination: "/resources/local-guides/weed-dispensary-in-york", permanent: true },
     ];
-  },
-  async rewrites() {
-    const posApiOrigin = process.env.POS_API_ORIGIN?.trim().replace(/\/$/, "");
-    if (!posApiOrigin) return [];
-
-    return {
-      beforeFiles: [
-        {
-          source: "/api/pos/:path*",
-          destination: `${posApiOrigin}/api/pos/:path*`,
-        },
-      ],
-      afterFiles: [],
-      fallback: [],
-    };
   },
 };
 
