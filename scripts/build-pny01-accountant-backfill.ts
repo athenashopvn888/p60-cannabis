@@ -129,7 +129,9 @@ function money(cents: number) {
 
 async function main() {
   const source = JSON.parse(await readFile(sourcePath, "utf8")) as { closings: HistoryRow[] };
-  const rows = structuredClone(source.closings);
+  const rows = structuredClone(source.closings).sort(
+    (left, right) => new Date(left.ended_at).getTime() - new Date(right.ended_at).getTime(),
+  );
   for (const correction of corrections) applyCorrection(rows, correction);
   await mkdir(outputDir, { recursive: true });
   for (const name of await readdir(outputDir)) {
@@ -148,14 +150,21 @@ async function main() {
   const emailManifest: Array<{ to: string; cc: string; subject: string; body: string; attachment: string }> = [];
   const fileNameCounts = new Map<string, number>();
 
-  for (const row of rows) {
+  for (const [rowIndex, row] of rows.entries()) {
     const corrected = corrections.some((correction) => correction.shiftId === row.shift_id);
     const review = reviewShiftIds.has(row.shift_id);
     const version = corrected ? 2 : 1;
+    const shiftRef = `S${String(rowIndex + 1).padStart(5, "0")}`;
+    const startingFloatCents = rowIndex === 0 ? null : rows[rowIndex - 1].closing.float_cents;
     const reportInput = {
       storeCode: row.store_code,
       staffName: row.staff_name,
       closeDate: row.ended_at,
+      shiftRef,
+      systemShiftId: row.shift_id,
+      startingFloatCents,
+      // Historical closes predate explicit opening-float confirmation tracking.
+      startingFloatConfirmed: false,
       closing: row.closing,
     };
     const baseName = stockClosingReportFileName(reportInput, version);
@@ -172,11 +181,18 @@ async function main() {
     const sold = row.closing.closing_lines.filter((line) => (line.sold_qty ?? 0) > 0);
     const onHand = row.closing.closing_lines.filter((line) => (line.left ?? 0) > 0);
     const refillUnits = row.closing.closing_lines.reduce((sum, line) => sum + (line.received_qty ?? 0), 0);
+    const refillValueCents = row.closing.closing_lines.reduce(
+      (sum, line) => sum + (line.received_qty ?? 0) * (line.price_cents ?? 0),
+      0,
+    );
     const body = [
-      `PNY01 STOCK CLOSING REPORT${corrected ? " - CORRECTED v2" : review ? " - REVIEW" : ""}`,
+      `PNY01 STOCK CLOSING REPORT - CORRECTED BACKFILL${corrected ? " v2" : review ? " - REVIEW" : ""}`,
       `Date: ${localDate(row.ended_at)} Toronto`,
       `Staff: ${row.staff_name}`,
-      `Shift: ${row.shift_id}`,
+      `Shift ref: ${shiftRef}`,
+      `System shift ID: ${row.shift_id}`,
+      `Starting float: ${startingFloatCents == null ? "UNAVAILABLE" : money(startingFloatCents)}`,
+      "Starting float status: NOT CONFIRMED (historical record)",
       `Sales: ${money(row.closing.sales_total_cents)}`,
       `Debit: ${money(row.closing.debit_sales_cents)}`,
       `Safebox: ${money(row.closing.deposited_cents)}`,
@@ -185,6 +201,8 @@ async function main() {
       `Stock extra: ${money(row.closing.overage_cents)}`,
       `Final till balance: ${money(row.closing.balance_cents)}`,
       `Refill units: ${refillUnits}`,
+      `Refill value: ${money(refillValueCents)}`,
+      "Backfill note: starting float is the prior completed shift's closing float; historical confirmation was not recorded.",
       ...(review ? ["Review note: recorded count is preserved because multiple quantities need accountant review."] : []),
       "",
       `SOLD (${sold.length} SKUs)`,
@@ -196,7 +214,7 @@ async function main() {
     emailManifest.push({
       to: "doli.doli.080496@gmail.com",
       cc: "athenashopvn888@gmail.com",
-      subject: `PNY01 STOCK CLOSING ${localDate(row.ended_at)} - ${row.staff_name}${corrected ? " - CORRECTED v2" : review ? " - REVIEW" : ""}`,
+      subject: `CORRECTED BACKFILL - PNY01 STOCK CLOSING ${localDate(row.ended_at)} - ${row.staff_name} - ${shiftRef}`,
       body,
       attachment,
     });

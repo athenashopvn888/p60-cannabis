@@ -186,10 +186,10 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   });
 
   const startingFloat = input.startingFloatCents == null ? "UNAVAILABLE" : moneyText(input.startingFloatCents);
-  const status = input.startingFloatConfirmed ? "CONFIRMED" : "NOT CONFIRMED";
+  const status = input.startingFloatConfirmed ? "YES" : "NO";
   const topFacts = [
     ["A8:G8", "STARTING FLOAT", startingFloat, "FFEAF3FB"],
-    ["H8:N8", "FLOAT STATUS", status, input.startingFloatConfirmed ? "FFDDF0E4" : "FFFFE5CC"],
+    ["H8:N8", "FLOAT CONFIRMED", status, input.startingFloatConfirmed ? "FFDDF0E4" : "FFFFE5CC"],
     ["O8:U8", "REFILL VALUE", moneyText(refillValueCents(input)), "FFF3ECFA"],
   ] as const;
   for (const [range, label, value, fill] of topFacts) {
