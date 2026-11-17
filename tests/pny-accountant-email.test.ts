@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ACCOUNTANT_EMAIL, closingEmailPayload, ensureRefillId, refillEmailPayload } from "../app/lib/pny-pos/accountantEmail.ts";
+import { ACCOUNTANT_CC, ACCOUNTANT_EMAIL, closingEmailPayload, ensureRefillId, refillEmailPayload } from "../app/lib/pny-pos/accountantEmail.ts";
 import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
@@ -29,13 +29,14 @@ test("refill emails contain the complete line list and use Doli's address", () =
   ] as IncomingRow[];
   const payload = refillEmailPayload(state, rows, "SENT", at);
   assert.equal(payload.to, ACCOUNTANT_EMAIL);
+  assert.equal(payload.cc, ACCOUNTANT_CC);
   assert.match(payload.subject, /PNY01-R0007 SENT/);
   assert.match(payload.body, /488 \| Premium Pink \| sent 20/);
   assert.match(payload.body, /655 \| Knock Out LW \| sent 2/);
   assert.match(payload.body, /Units sent: 22/);
 });
 
-test("closing email includes every positive on-hand SKU and the total units", () => {
+test("closing email includes sold items, every positive on-hand SKU, and total units", () => {
   const state = emptyState(at);
   state.products.push(
     { sku: "240", name: "Grabba", category: "Add Ons", default_price_cents: 500 } as never,
@@ -48,6 +49,8 @@ test("closing email includes every positive on-hand SKU and the total units", ()
     { sku: "999", qty: 0, updated_at: at, created_at: at },
   );
   state.staff.push({ staff_uid: "staff-a", pos_id: "A1", display_name: "Randy" } as never);
+  state.sales.push({ id: "sale-1", shift_id: "shift-a", status: "COMPLETED" } as never);
+  state.sale_lines.push({ id: "line-1", sale_id: "sale-1", sku: "240", qty: 3 } as never);
   const shift = { id: "shift-a", staff_uid: "staff-a", store_code: "PNY01", started_at: at, ended_at: at } as ShiftRow;
   const closing = {
     sales_total_cents: 10000,
@@ -57,6 +60,10 @@ test("closing email includes every positive on-hand SKU and the total units", ()
   } as ClosingRow;
   const payload = closingEmailPayload(state, shift, closing, at);
   assert.equal(payload.to, ACCOUNTANT_EMAIL);
+  assert.equal(payload.cc, ACCOUNTANT_CC);
+  assert.match(payload.body, /SOLD THIS SHIFT \(1 SKUs\)/);
+  assert.match(payload.body, /240 \| Grabba \| 3/);
+  assert.match(payload.body, /Total sold units: 3/);
   assert.match(payload.body, /ON HAND STOCK \(2 SKUs\)/);
   assert.match(payload.body, /240 \| Grabba \| 7/);
   assert.match(payload.body, /655 \| Knock Out LW \| 2/);

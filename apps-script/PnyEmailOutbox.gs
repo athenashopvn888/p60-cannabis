@@ -28,6 +28,7 @@ function processPnyEmailOutbox() {
         if (!alreadySent) {
           MailApp.sendEmail({
             to: String(row[col.to]),
+            cc: col.cc === undefined ? '' : String(row[col.cc]),
             subject: subject,
             body: String(row[col.body]) + '\n\n' + marker,
             name: 'PNY POS',

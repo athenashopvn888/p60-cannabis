@@ -4,6 +4,7 @@ import { formatMoney } from "./money.ts";
 import type { ClosingRow, IncomingRow, ShiftRow, State } from "./types.ts";
 
 export const ACCOUNTANT_EMAIL = "doli.doli.080496@gmail.com";
+export const ACCOUNTANT_CC = "athenashopvn888@gmail.com";
 
 function storeStamp(value: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -59,6 +60,7 @@ export function refillEmailPayload(state: State, rows: IncomingRow[], stage: "SE
   return {
     row_id: `EMAIL-${stage}-${refillId}`,
     to: ACCOUNTANT_EMAIL,
+    cc: ACCOUNTANT_CC,
     subject,
     body,
     status: "PENDING",
@@ -74,6 +76,19 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
   const onHand = state.balances
     .filter((row) => (row.store_code == null || row.store_code === shift.store_code) && row.qty > 0)
     .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+  const saleIds = new Set(
+    state.sales
+      .filter((row) => row.shift_id === shift.id && row.status === "COMPLETED")
+      .map((row) => row.id),
+  );
+  const soldBySku = new Map<string, number>();
+  for (const row of state.sale_lines) {
+    if (!saleIds.has(row.sale_id)) continue;
+    soldBySku.set(row.sku, (soldBySku.get(row.sku) ?? 0) + row.qty);
+  }
+  const sold = [...soldBySku]
+    .filter(([, qty]) => qty > 0)
+    .sort(([a], [b]) => skuSortKey(a) - skuSortKey(b) || a.localeCompare(b));
   const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
   const body = [
     subject,
@@ -90,6 +105,11 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     `Stock overage: ${formatMoney(closing.overage_cents ?? 0)}`,
     `Final till balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     "",
+    `SOLD THIS SHIFT (${sold.length} SKUs)`,
+    ...sold.map(([sku, qty]) => `${sku} | ${nameOf(state, sku)} | ${qty}`),
+    "",
+    `Total sold units: ${sold.reduce((sum, [, qty]) => sum + qty, 0)}`,
+    "",
     `ON HAND STOCK (${onHand.length} SKUs)`,
     ...onHand.map((row) => `${row.sku} | ${nameOf(state, row.sku)} | ${row.qty}`),
     "",
@@ -98,6 +118,7 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
   return {
     row_id: `EMAIL-CLOSE-${shift.id}`,
     to: ACCOUNTANT_EMAIL,
+    cc: ACCOUNTANT_CC,
     subject,
     body,
     status: "PENDING",

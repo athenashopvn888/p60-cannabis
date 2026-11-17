@@ -21,7 +21,7 @@ export const POS_TAB_SPECS: SheetTabSpec[] = [
   { title: "POS_Refills", headers: ["row_id", "kitchen_row_id", "batch_id", "store_code", "sku", "qty", "qty_sent", "qty_received", "kind", "status", "kitchen_status", "variance_reason", "confirmed_at", "created_at", "record_type", "doc"] },
   { title: "POS_Counts", headers: ["row_id", "count_id", "shift_id", "kind", "sku", "system_qty", "counted_qty", "variance_reason", "confirmed_at", "doc"] },
   { title: "POS_Deposits", headers: ["row_id", "shift_id", "staff", "amount_cents", "note", "created_at", "doc"] },
-  { title: "S_EmailOutbox", headers: ["row_id", "to", "subject", "body", "status", "created_at", "sent_at", "last_error"] },
+  { title: "S_EmailOutbox", headers: ["row_id", "to", "cc", "subject", "body", "status", "created_at", "sent_at", "last_error"] },
 ];
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
