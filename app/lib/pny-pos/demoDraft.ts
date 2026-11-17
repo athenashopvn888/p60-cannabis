@@ -20,6 +20,8 @@ export type DemoDraft = {
   verify_submitted_at?: string | null;
   closing_started_at?: string | null;
   closing_submitted_at?: string | null;
+  closing_recount_skus?: string[];
+  closing_recount_started_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   updated_at: string;
