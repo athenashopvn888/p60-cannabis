@@ -3978,6 +3978,33 @@ export class PosService {
     });
   }
 
+  /**
+   * Preview-only accountant backfill reader. This deliberately requires the
+   * database peek surface so reading old closings cannot rewrite live_state or
+   * increment SCCx delivery counters.
+   */
+  async closingHistoryReadOnly() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    if (!peek) throw new PosError(503, "READ_ONLY", "A read-only closing history source is not available.");
+    const state = await peek();
+    const code = tillCode();
+    const closings = state.closings.flatMap((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      if (shift?.store_code && shift.store_code !== code) return [];
+      const staff = state.staff.find((row) => row.staff_uid === shift?.staff_uid);
+      return [{
+        store_code: code,
+        shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+        internal_shift_id: closing.shift_id,
+        staff_name: staff?.display_name ?? staff?.pos_id ?? shift?.staff_uid ?? "Staff",
+        started_at: shift?.started_at ?? null,
+        ended_at: shift?.ended_at ?? closing.created_at,
+        closing,
+      }];
+    });
+    return { ok: true as const, store: code, closings };
+  }
+
   /** Read-only. Does not count an SCCx poll and does not change the till. */
   async closingSummary(sccxShiftId: string) {
     const peek = (this.db as { peek?: () => Promise<State> }).peek;

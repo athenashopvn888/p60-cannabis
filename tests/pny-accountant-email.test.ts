@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ACCOUNTANT_CC, ACCOUNTANT_EMAIL, closingEmailPayload, ensureRefillId, refillEmailPayload } from "../app/lib/pny-pos/accountantEmail.ts";
 import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "../app/lib/pny-pos/accountantEmailDelivery.ts";
+import { buildStockClosingReport } from "../app/lib/pny-pos/stockClosingReport.ts";
+import ExcelJS from "exceljs";
 import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
@@ -70,6 +72,42 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.match(payload.body, /655 \| Knock Out LW \| 2/);
   assert.doesNotMatch(payload.body, /999 \| Zero/);
   assert.match(payload.body, /Total on-hand units: 9/);
+  assert.match(String(payload.attachment_name), /^PNY01-Stock-Closing-2026-11-17-Randy\.xlsx$/);
+  assert.ok(payload.attachment_report_json);
+});
+
+test("stock closing workbook preserves the accountant layout and adds R after A", async () => {
+  const buffer = await buildStockClosingReport({
+    storeCode: "PNY01",
+    staffName: "Randy",
+    closeDate: at,
+    closing: {
+      sales_total_cents: 79300,
+      debit_sales_cents: 500,
+      deposited_cents: 92000,
+      float_cents: 4400,
+      overage_cents: 10800,
+      balance_cents: -3450,
+      closing_lines: [
+        { sku: "172-3g", name: "Lavender Kush", opening_qty: 10, received_qty: 2, sold_qty: 3, left: 9, system_qty: 9 },
+        { sku: "396-6g", name: "Khalifa Kush", opening_qty: 4, received_qty: 1, sold_qty: 2, left: 3, system_qty: 3 },
+        { sku: "655", name: "Knock Out LW", opening_qty: 2, received_qty: 2, sold_qty: 1, left: 3, system_qty: 3 },
+      ],
+    },
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet("STOCK CLOSING REPORT");
+  assert.ok(sheet);
+  assert.equal(sheet.getCell("A1").value, "STOCK CLOSING REPORT");
+  assert.equal(sheet.getCell("A9").value, "A = Assigned     R = Confirmed refill     S = Sold     OH = Onhand");
+  assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(11, column).value), ["A", "R", "S", "OH"]);
+  assert.equal(sheet.getCell("A12").value, "172");
+  assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(12, column).value), [10, 2, 3, 9]);
+  assert.equal(sheet.getCell("A13").value, "396");
+  assert.deepEqual([6, 7, 8, 9].map((column) => sheet.getCell(13, column).value), [4, 1, 2, 3]);
+  assert.equal(sheet.getCell("A14").value, "655");
+  assert.deepEqual([18, 19, 20, 21].map((column) => sheet.getCell(14, column).value), [2, 2, 1, 3]);
 });
 
 test("direct accountant email sender posts the complete payload", async () => {
@@ -85,11 +123,35 @@ test("direct accountant email sender posts the complete payload", async () => {
   }) as typeof fetch;
   try {
     assert.equal(accountantEmailWebhookConfigured(), true);
-    await deliverAccountantEmail({ row_id: "EMAIL-CLOSE-1", to: ACCOUNTANT_EMAIL, cc: ACCOUNTANT_CC, subject: "Close", body: "ON HAND STOCK" });
+    await deliverAccountantEmail({
+      row_id: "EMAIL-CLOSE-1",
+      to: ACCOUNTANT_EMAIL,
+      cc: ACCOUNTANT_CC,
+      subject: "Close",
+      body: "ON HAND STOCK",
+      attachment_name: "PNY01-Stock-Closing.xlsx",
+      attachment_report_json: JSON.stringify({
+        storeCode: "PNY01",
+        staffName: "Randy",
+        closeDate: at,
+        closing: {
+          sales_total_cents: 1000,
+          debit_sales_cents: 0,
+          deposited_cents: 1000,
+          float_cents: 0,
+          overage_cents: 0,
+          balance_cents: 0,
+          closing_lines: [{ sku: "655", name: "Knock Out LW", left: 2, system_qty: 2, opening_qty: 1, received_qty: 2, sold_qty: 1 }],
+        },
+      }),
+    });
     assert.equal(posted.to, ACCOUNTANT_EMAIL);
     assert.equal(posted.cc, ACCOUNTANT_CC);
     assert.equal(posted.body, "ON HAND STOCK");
     assert.equal(posted.secret, "test-secret");
+    assert.equal(posted.attachment_name, "PNY01-Stock-Closing.xlsx");
+    assert.equal(posted.attachment_mime, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    assert.ok(posted.attachment_base64.length > 1000);
   } finally {
     global.fetch = oldFetch;
     if (oldUrl == null) delete process.env.PNY_EMAIL_WEBHOOK_URL;

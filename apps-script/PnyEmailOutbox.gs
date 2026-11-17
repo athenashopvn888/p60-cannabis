@@ -70,12 +70,21 @@ function doPost(event) {
     var subject = String(payload.subject);
     var alreadySent = GmailApp.search('in:sent subject:"' + subject.replace(/"/g, '') + '" "' + marker + '"', 0, 1).length > 0;
     if (!alreadySent) {
+      var attachments = [];
+      if (String(payload.attachment_base64 || '')) {
+        attachments.push(Utilities.newBlob(
+          Utilities.base64Decode(String(payload.attachment_base64)),
+          String(payload.attachment_mime || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+          String(payload.attachment_name || 'PNY01-Stock-Closing.xlsx')
+        ));
+      }
       MailApp.sendEmail({
         to: String(payload.to),
         cc: String(payload.cc || ''),
         subject: subject,
         body: String(payload.body) + '\n\n' + marker,
         name: 'PNY POS',
+        attachments: attachments,
       });
     }
     return pnyEmailJson_({ ok: true, duplicate: alreadySent });
