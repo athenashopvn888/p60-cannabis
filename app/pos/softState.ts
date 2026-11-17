@@ -1,3 +1,19 @@
+export async function parseTillResponse(response: Response) {
+  let data: Record<string, unknown>;
+  try {
+    data = (await response.json()) as Record<string, unknown>;
+  } catch {
+    throw new Error("The till could not be reached. Try again.");
+  }
+  if (!response.ok) {
+    const failure = new Error(typeof data.error === "string" ? data.error : "Request failed") as Error & { code?: string; details?: Record<string, unknown> };
+    failure.code = typeof data.code === "string" ? data.code : undefined;
+    failure.details = data;
+    throw failure;
+  }
+  return data;
+}
+
 /** A real 401 replaces the till. Any other failure leaves the signed-in screen up. */
 export async function readTillState(apiBase: string): Promise<
   { keep: true; message: string } | { keep: false; data: Record<string, unknown> }

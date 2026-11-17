@@ -6,6 +6,7 @@ import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChip
 import { menuPriceText } from "./menuPrice";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
+import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 
 type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string; flower_type?: string; thc?: string };
 type Menu = {
@@ -44,20 +45,24 @@ function chooseLayout(next: Layout) {
 export default function MenuApp({
   menuApi = "/api/menu",
   label = "PNY01",
+  previewMenu,
 }: {
   menuApi?: string;
   label?: string;
+  previewMenu?: Menu;
 } = {}) {
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(previewMenu ?? null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
   const [category, setCategory] = useState("");
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
+    if (previewMenu) return;
     let stop = false;
     const load = () => {
       void fetch(menuApi, { cache: "no-store" })
@@ -72,7 +77,7 @@ export default function MenuApp({
       stop = true;
       window.clearInterval(timer);
     };
-  }, [menuApi]);
+  }, [menuApi, previewMenu]);
 
   const items = menu?.items ?? [];
   const categories = useMemo(
@@ -113,14 +118,17 @@ export default function MenuApp({
   async function place() {
     setError("");
     setBusy(true);
+    const body = { lines: lines.map(([sku, qty]) => ({ sku, qty })) };
+    const key = commandKeys.key("menu-order", body);
     try {
       const response = await fetch(`${menuApi}/orders`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ lines: lines.map(([sku, qty]) => ({ sku, qty })) }),
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify(body),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not place the order");
+      commandKeys.complete("menu-order", key);
       setPaid(false);
       setTicket({ code: data.code, total_cents: data.total_cents, expires_at: data.expires_at });
       setCart({});

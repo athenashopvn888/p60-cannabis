@@ -10,7 +10,10 @@ export async function POST(request: Request) {
     const service = await getService();
     await beginDemoRequest(service);
     try {
-      return json(await service.saveOpeningFloat(await staffToken(), { found_cents: Number(body.found_cents) }));
+      return json(await service.saveOpeningFloat(await staffToken(), {
+        found_cents: Number(body.found_cents),
+        confirm_adjustment: body.confirm_adjustment === true,
+      }));
     } finally {
       await endDemoRequest(service);
     }

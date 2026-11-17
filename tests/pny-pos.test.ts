@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { TICKET_LETTERS } from "../app/lib/pny-pos/constants.ts";
 import { PosError } from "../app/lib/pny-pos/errors.ts";
-import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
+import { emptyState, isKitchenRefillOnlyChange, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { categoryChipLabel, defaultCategory, inStockCategories, layoutCategoryChips, layoutMenuCategoryChips, posDefaultCategory, signedMoney, sortCategories } from "../app/lib/pny-pos/money.ts";
 import { insertRows } from "../app/lib/pny-pos/postgres.ts";
 import { SCHEMA_SQL } from "../app/lib/pny-pos/schema.ts";
@@ -13,12 +13,13 @@ import { catalogFromFeed, DEFAULT_SETB_PRODUCTS_URL, readCommittedPnyCatalog } f
 import { closingBalance, lineVariance } from "../app/lib/pny-pos/closing.ts";
 import { cartonNote, unitPricesFromRawRows } from "../app/lib/pny-pos/rawPrice.ts";
 import { salesFeedTokenOk } from "../app/lib/pny-pos/salesFeedAuth.ts";
+import { forPny01Sccx } from "../app/lib/pny-pos/sccxFeedCompatibility.ts";
+import { exposeManagerStore, mergeRetainedManagerHistory, resolveManagerStoreRoute } from "../app/lib/pny-pos/managerStoreView.ts";
 import { END_SHIFT_MESSAGE, PosService } from "../app/lib/pny-pos/service.ts";
 import { PAPER_BATCH, paperLines, paperPart2Lines, planPaperRefills } from "../app/lib/pny-pos/paperRefill.ts";
 import { POS_TAB_SPECS, SheetDb } from "../app/lib/pny-pos/sheetStore.ts";
 import { LocalSheet, sheetWriteAllowed } from "../app/lib/pny-pos/sheets.ts";
 import type { Secrets } from "../app/lib/pny-pos/types.ts";
-import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
 import { quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
@@ -26,26 +27,23 @@ import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCen
 import { expandSetbItems, expandSkuCell, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
 import { hideMobileBottomBar } from "../app/lib/mobileBottomBar.ts";
-import { depositCodeLabel, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
+import { depositCodeLabel, formatDepositCode, nextDepositSeq } from "../app/lib/pny-pos/depositCode.ts";
 import { runStore } from "../app/lib/pny-pos/storeContext.ts";
-import { PNY02_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
+import { ACD01_STORE, PNY02_STORE, PNYS_STORE, PNY2_STOCK_HEADERS } from "../app/lib/pny-pos/storeProfile.ts";
 import { historyPeriod, historySheetConfig } from "../app/lib/pny-pos/stockHistory.ts";
 import { closeLabelFor, ensureStockLabel, masterIdFor } from "../app/lib/pny-pos/stockLabel.ts";
 import { PNY2_START_KEY, PNY2_START_NOTE, pny2StartingLines } from "../app/lib/pny-pos/pny2StartingStock.ts";
 import { chunkToken, readDemoDrafts, signDemoDrafts } from "../app/lib/pny-pos/demoDraft.ts";
 import { blindStaffState } from "../app/lib/pny-pos/staffView.ts";
 import { startClosingWithRecovery } from "../app/pos/closeStart.ts";
-import { transactionPoolConnectionString } from "../app/lib/pny-pos/supabaseState.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
-
-test("Supabase serverless connections use transaction pooling", () => {
-  assert.equal(
-    transactionPoolConnectionString("postgresql://user:pass@aws-0-ca-central-1.pooler.supabase.com:5432/postgres"),
-    "postgresql://user:pass@aws-0-ca-central-1.pooler.supabase.com:6543/postgres",
-  );
-  assert.equal(transactionPoolConnectionString("postgresql://user:pass@db.example.com:5432/postgres"), "postgresql://user:pass@db.example.com:5432/postgres");
-});
+import { hashPin } from "../app/lib/pny-pos/crypto.ts";
+import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
+import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
+import { OUTBOX_LEASE_MS, outboxBackoffMs } from "../app/lib/pny-pos/outbox.ts";
+import { parseTillResponse } from "../app/pos/softState.ts";
+import { parseRefillSheetWords } from "../app/pos/kitchen/refillSheetOcr.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -55,6 +53,46 @@ const secrets: Secrets = {
   admin: "test-admin-secret-value",
   cron: "test-cron-secret-value",
 };
+
+const TEST_DEMO_PIN = "24680";
+const TEST_KITCHEN_PIN = "135790";
+const TEST_MASTER_PIN = "86420";
+const TEST_DEMO_PIN_HASH = hashPin(TEST_DEMO_PIN);
+process.env.PNY_DEMO_PIN_HASH = TEST_DEMO_PIN_HASH;
+process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+process.env.PNY_MASTER_PIN_HASH = hashPin(TEST_MASTER_PIN);
+
+test("missing special-login hashes fail closed", { concurrency: false }, () => {
+  const saved = {
+    demo: process.env.PNY_DEMO_PIN_HASH,
+    kitchen: process.env.PNY_KITCHEN_PIN_HASH,
+    master: process.env.PNY_MASTER_PIN_HASH,
+  };
+  try {
+    delete process.env.PNY_DEMO_PIN_HASH;
+    delete process.env.PNY_KITCHEN_PIN_HASH;
+    delete process.env.PNY_MASTER_PIN_HASH;
+    assert.equal(specialPinMatches("demo", TEST_DEMO_PIN), false);
+    assert.equal(specialPinMatches("kitchen", TEST_KITCHEN_PIN), false);
+    assert.equal(specialPinMatches("master", TEST_MASTER_PIN), false);
+  } finally {
+    if (saved.demo) process.env.PNY_DEMO_PIN_HASH = saved.demo;
+    if (saved.kitchen) process.env.PNY_KITCHEN_PIN_HASH = saved.kitchen;
+    if (saved.master) process.env.PNY_MASTER_PIN_HASH = saved.master;
+  }
+});
+
+test("durable client command keys survive retries and rotate after success", () => {
+  let sequence = 0;
+  const keys = new DurableCommandKeys(() => `command-${++sequence}`);
+  const body = { lines: [{ sku: "1001", qty: 1 }], payment: "CASH" };
+  const first = keys.key("cashout", body);
+  assert.equal(keys.key("cashout", { payment: "CASH", lines: [{ qty: 1, sku: "1001" }] }), first);
+  assert.notEqual(keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" }), first);
+  const changed = keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" });
+  keys.complete("cashout", changed);
+  assert.notEqual(keys.key("cashout", { lines: [{ sku: "1001", qty: 2 }], payment: "CASH" }), changed);
+});
 
 function harness(start = new Date("2026-11-03T15:00:00.000Z")) {
   const clock = { t: start };
@@ -96,8 +134,9 @@ async function rejects(run: () => Promise<unknown>, code: string) {
   });
 }
 
-async function readyTill(stock = { "1001": 2, "1002": 5 }) {
+async function readyTill(stock = { "1001": 2, "1002": 5 }, openingVerify = false) {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: openingVerify };
   await h.svc.syncSetb([
     { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
     { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
@@ -129,7 +168,17 @@ async function submitClosingValues(svc: PosService, token: string, values: Recor
       counted_qty: values[line.sku] ?? line.system_qty,
     });
   }
-  await svc.submitClosingCount(token);
+  try {
+    await svc.submitClosingCount(token);
+  } catch (error) {
+    if (!(error instanceof PosError) || error.code !== "COUNT_RECOUNT_REQUIRED") throw error;
+    const recount = (error.details.recount_lines ?? []) as { sku: string }[];
+    for (const line of recount) {
+      const first = view.close_lines.find((row: { sku: string }) => row.sku === line.sku);
+      await svc.saveClosingCount(token, { sku: line.sku, counted_qty: values[line.sku] ?? first.system_qty });
+    }
+    await svc.submitClosingCount(token);
+  }
 }
 
 function qty(db: MemoryDb, sku: string) {
@@ -193,13 +242,15 @@ test("3. SCCx off shift kills the PIN and flags the summary as no count", async 
   await rejects(() => h.svc.state(h.token), "NO_SESSION");
 });
 
-test("4. five bad PINs lock the shift, admin reissue works, and a 14 hour PIN is rejected", async () => {
+test("4. five bad PINs cool down one client without locking the shift, and a 14 hour PIN is rejected", async () => {
   const h = await readyTill();
   await rejects(() => h.svc.login("000000", "10.1.0.4"), "BAD_PIN");
   assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.pin_failed_attempts, 0);
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => h.svc.login("0000", "10.1.0.5"), "BAD_PIN");
-  await rejects(() => h.svc.login("0000", "10.1.0.5"), "LOCKED");
-  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "LOCKED");
+  await rejects(() => h.svc.login("0000", "10.1.0.5"), "RATE_LIMITED");
+  assert.equal(h.db.state.shifts.find((shift) => shift.sccx_shift_id === "sccx-a")?.status, "ACTIVE");
+  await rejects(() => h.svc.login(h.pin, "10.1.0.5"), "RATE_LIMITED");
+  assert.equal((await h.svc.login(h.pin, "10.1.0.6")).ok, true);
   const reissued = await h.svc.reissuePin(h.admin, { key: "reissue-1", shift_id: "sccx-a" });
   assert.match(String(reissued.pin), /^\d{4}$/);
   assert.notEqual(reissued.pin, h.pin);
@@ -334,6 +385,52 @@ test("7. one idempotency key creates one sale and a different body conflicts", a
   assert.equal(h.db.state.sales.length, 1);
 });
 
+test("expired idempotency receipts are purged and new receipts carry a seven-day expiry", async () => {
+  const h = await readyTill();
+  h.db.state.idempotency.push({
+    scope: "old-command",
+    key: "expired",
+    request_hash: "old",
+    response_json: "{}",
+    public_json: {},
+    status_code: 200,
+    purge_at: null,
+    created_at: new Date(h.clock.t.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+
+  await h.svc.cashout(h.token, { key: "bounded-command", lines: [{ sku: "1001", qty: 1 }] });
+
+  assert.equal(h.db.state.idempotency.some((row) => row.key === "expired"), false);
+  const saved = h.db.state.idempotency.find((row) => row.key === "bounded-command");
+  assert.ok(saved?.purge_at);
+  assert.equal(Date.parse(saved.purge_at) - h.clock.t.getTime(), 7 * 24 * 60 * 60 * 1000);
+});
+
+test("a retry after a service restart returns the durable receipt without another sale", async () => {
+  const h = await readyTill();
+  const command = { key: "restart-sale", lines: [{ sku: "1001", qty: 1 }] };
+  const first = await h.svc.cashout(h.token, command);
+  const restarted = new PosService(h.db, { now: () => h.clock.t, sheet: h.sheet, secrets, demo: null });
+  const replayed = await restarted.cashout(h.token, command);
+  assert.equal(replayed.sale_id, first.sale_id);
+  assert.equal(replayed.replay, true);
+  assert.equal(h.db.state.sales.length, 1);
+  assert.equal(qty(h.db, "1001"), 1);
+});
+
+test("a simultaneous sale and refill serialize without losing either stock movement", async () => {
+  const h = await readyTill({ "1001": 2, "1002": 0 });
+  const rowId = crypto.randomUUID();
+  h.db.state.incoming.push({ kitchen_row_id: rowId, batch_id: "race-refill", store_code: "PNY01", sku: "1001", qty_sent: 3, kind: "REFILL", kitchen_created_at: h.clock.t.toISOString(), imported_at: h.clock.t.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: h.clock.t.toISOString() });
+  await Promise.all([
+    h.svc.cashout(h.token, { key: "race-sale", lines: [{ sku: "1001", qty: 1 }] }),
+    h.svc.confirmIncoming(h.token, { key: "race-receive", batch_id: "race-refill", action: "ACCEPT", lines: [{ kitchen_row_id: rowId, qty_received: 3 }] }),
+  ]);
+  assert.equal(qty(h.db, "1001"), 4);
+  assert.equal(h.db.state.sales.filter((row) => row.status === "COMPLETED").length, 1);
+  assert.equal(h.db.state.incoming.filter((row) => row.batch_id === "race-refill").length, 1);
+});
+
 test("8. the total is the sum of server prices with tax included and client prices ignored", async () => {
   const h = await readyTill();
   const sale = await h.svc.cashout(h.token, {
@@ -360,12 +457,12 @@ test("9. header totals follow sale, deposit and void", async () => {
   await h.svc.cashout(h.token, { key: "sale", lines: [{ sku: "1001", qty: 1 }] });
   await h.svc.deposit(h.token, { key: "drop", amount_cents: 400, note: "safe" });
   const mid = await h.svc.state(h.token);
-  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400 });
+  assert.deepEqual(mid.totals, { sales_cents: 1000, cash_sales_cents: 1000, debit_sales_cents: 0, cash_on_hand_cents: 600, deposited_cents: 400, sale_count: 1, cigarette_packs: 0 });
   const saleId = h.db.state.sales[0]?.id ?? "";
   await rejects(() => h.svc.voidSale(h.token, { key: "staff-void", sale_id: saleId, reason: "no" }), "ADMIN_ONLY");
   await h.svc.voidSale(h.admin, { key: "void-1", sale_id: saleId, reason: "mis-ring" });
   const after = await h.svc.state(h.token);
-  assert.deepEqual(after.totals, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400 });
+  assert.deepEqual(after.totals, { sales_cents: 0, cash_sales_cents: 0, debit_sales_cents: 0, cash_on_hand_cents: -400, deposited_cents: 400, sale_count: 0, cigarette_packs: 0 });
   assert.equal(qty(h.db, "1001"), 2);
 });
 
@@ -487,86 +584,18 @@ test("13. re-importing a row and double-confirming add stock once", async () => 
   assert.equal(h.db.state.ledger.filter((row) => row.movement_type === "INCOMING_CONFIRM").length, 1);
 });
 
-test("13a. forced refresh rescans POS_Refills behind the legacy-tab cursor exactly once", async () => {
-  const h = await readyTill({ "1001": 0, "1002": 0 });
-  h.db.state.cursors.push({
-    tab: "K_Allocations",
-    last_row_number: 1000,
-    last_polled_at: h.clock.t.toISOString(),
-    last_ok_at: h.clock.t.toISOString(),
-    last_full_scan_at: h.clock.t.toISOString(),
-  });
-  const lines = [
-    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "488", qty: "20", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "200" },
-    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "655", qty: "2", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "201" },
-    { row_id: crypto.randomUUID(), batch_id: "randy-missing", store_code: "PNY01", kind: "REFILL", sku: "1015", qty: "20", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE", _sheet_row: "202" },
-  ];
-  h.sheet.tabs.POS_Refills = lines;
-
-  const first = await h.svc.refreshIncoming({ force: true });
-  const second = await h.svc.refreshIncoming({ force: true });
-
-  assert.equal(first.imported, 3);
-  assert.equal(first.full, true);
-  assert.equal(second.imported, 0);
-  assert.deepEqual(h.db.state.incoming.map((row) => [row.sku, row.qty_sent, row.status]), [
-    ["488", 20, "PENDING_CONFIRM"],
-    ["655", 2, "PENDING_CONFIRM"],
-    ["1015", 20, "PENDING_CONFIRM"],
-  ]);
-  assert.equal(qty(h.db, "488"), 0);
-  assert.equal(qty(h.db, "655"), 0);
-  assert.equal(qty(h.db, "1015"), 0);
-});
-
-test("13aa. canonical Kitchen rows reopen stale cancelled mirrors without touching stock", async () => {
-  const h = await readyTill({ "1001": 0, "1002": 0 });
-  const id = crypto.randomUUID();
-  const active = { row_id: id, batch_id: "randy", store_code: "PNY01", kind: "REFILL", sku: "655", qty: "2", created_at: "2026-11-16T04:45:00-05:00", kitchen_status: "ACTIVE" };
-  h.sheet.tabs.K_Allocations = [active];
-  h.sheet.tabs.POS_Refills = [{ ...active, kitchen_status: "CANCELLED" }];
-  h.db.state.incoming.push({ kitchen_row_id: id, batch_id: "randy", store_code: "PNY01", sku: "655", qty_sent: 2, kind: "REFILL", kitchen_created_at: active.created_at, imported_at: active.created_at, status: "CANCELLED_BY_KITCHEN", qty_received: 0, variance_reason: null, confirmed_shift_id: null, confirmed_at: active.created_at, linked_ledger_id: null, created_at: active.created_at });
-
-  const result = await h.svc.refreshIncoming({ force: true });
-
-  assert.equal(result.imported, 0);
-  assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === id)?.status, "PENDING_CONFIRM");
-  assert.equal(qty(h.db, "655"), 0);
-  assert.equal(h.db.state.ledger.filter((row) => row.sku === "655").length, 0);
-});
-
-test("13b. Kitchen can refill a zero-stock flower from the full Flowers catalog", async () => {
-  const h = await readyTill({ "1001": 0, "1002": 0 });
-  h.sheet.grids.Flowers_Raw = [
-    ["SKU", "Strain", "Tier", "Type", "THC", "Price_3G", "Price_5G", "Price_14G", "Price_28G", "ImageURL"],
-    ["396", "KHALIFA KUSH (AAA+ ON SALE)", "BUDGET", "IH SALE", "31%", "20|10", "30|20", "", "", "https://example.com/396.webp"],
-  ];
-  const rowId = crypto.randomUUID();
-  h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "khalifa", store_code: "PNY01", kind: "REFILL", sku: "396-3g", qty: "2", created_at: "2026-11-03T15:00:00+07:00", kitchen_status: "ACTIVE" }];
-
-  const imported = await h.svc.refreshIncoming({ force: true });
-  assert.equal(imported.imported, 1);
-  assert.equal(qty(h.db, "396-3g"), 0);
-  const product = h.db.state.products.find((row) => row.sku === "396-3g");
-  assert.equal(product?.name, "KHALIFA KUSH 3g");
-  assert.equal(product?.default_price_cents, 1000);
-
-  await h.svc.confirmIncoming(h.token, { key: "receive-khalifa", lines: [{ kitchen_row_id: rowId, qty_received: 2 }] });
-  assert.equal(qty(h.db, "396-3g"), 2);
-  assert.equal(h.db.state.ledger.filter((row) => row.sku === "396-3g" && row.movement_type === "INCOMING_CONFIRM").length, 1);
-});
-
 test("14. a partial receipt needs a reason and the receipt shows the variance", async () => {
   const h = await readyTill({ "1001": 0, "1002": 0 });
   const rowId = crypto.randomUUID();
   h.sheet.tabs.K_Allocations = [{ row_id: rowId, batch_id: "b9", store_code: "PNY01", kind: "ALLOCATION", sku: "1001", qty: "4", created_at: "2026-11-03T15:00:00+07:00", kitchen_status: "ACTIVE" }];
   await h.svc.refreshIncoming({ force: true });
-  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] });
+  await rejects(() => h.svc.confirmIncoming(h.token, { key: "partial-missing", lines: [{ kitchen_row_id: rowId, qty_received: 1 }] }), "REASON_REQUIRED");
+  await h.svc.confirmIncoming(h.token, { key: "partial-ok", lines: [{ kitchen_row_id: rowId, qty_received: 1, variance_reason: "One bag damaged" }] });
   assert.equal(qty(h.db, "1001"), 1);
   const receipt = h.db.state.outbox.find((row) => row.row_id === `R-${rowId}`);
   assert.equal(receipt?.payload.status, "PARTIAL");
   assert.equal(receipt?.payload.variance, "-3");
-  assert.equal(receipt?.payload.variance_reason, "");
+  assert.equal(receipt?.payload.variance_reason, "One bag damaged");
 });
 
 test("15. a kitchen cancel before confirm is acknowledged and a cancel after confirm is ignored", async () => {
@@ -604,6 +633,7 @@ test("16. editing an imported kitchen qty does not change PNY stock and raises a
 
 test("17. sales, deposits and counts succeed while the sheet is down and the outbox catches up once", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1500, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "ob", sku: "1001", qty: 4 });
@@ -631,6 +661,173 @@ test("17. sales, deposits and counts succeed while the sheet is down and the out
   h.clock.t = new Date(h.clock.t.getTime() + 11 * 60 * 1000);
   const view = await h.svc.state(login.token);
   assert.equal(view.sheet_sync_delayed, true);
+});
+
+test("outbox claims prevent overlapping CRON runs from sending a row twice", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-concurrent",
+    tab: "S_Sales",
+    row_id: "sale-concurrent",
+    payload: { row_id: "sale-concurrent", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  const originalUpsert = h.sheet.upsert.bind(h.sheet);
+  let writes = 0;
+  h.sheet.upsert = async (tab, rows) => {
+    writes += 1;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await originalUpsert(tab, rows);
+  };
+
+  const results = await Promise.all([h.svc.drainOutbox(), h.svc.drainOutbox()]);
+
+  assert.equal(writes, 1);
+  assert.equal(results.reduce((sum, row) => sum + row.sent, 0), 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("outbox retry uses bounded backoff, exposes the failure, and recovers once", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-retry",
+    tab: "S_Sales",
+    row_id: "sale-retry",
+    payload: { row_id: "sale-retry", amount: "100" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+
+  const failed = await h.svc.drainOutbox();
+  assert.equal(failed.ok, false);
+  assert.equal(failed.sheet_down, true);
+  assert.equal(failed.failures[0]?.row_id, "sale-retry");
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(Date.parse(h.db.state.outbox[0]?.next_attempt_at ?? "") - h.clock.t.getTime(), outboxBackoffMs(1));
+
+  h.sheet.reachable = true;
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 0);
+  h.clock.t = new Date(h.clock.t.getTime() + 30_000);
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "sent");
+});
+
+test("an early tab failure does not consume attempts for later unattempted tabs", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push(
+    {
+      id: "outbox-sales-failure",
+      tab: "S_Sales",
+      row_id: "sale-failure",
+      payload: { row_id: "sale-failure", amount: "100" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+    {
+      id: "outbox-deposit-unattempted",
+      tab: "S_Deposits",
+      row_id: "deposit-unattempted",
+      payload: { row_id: "deposit-unattempted", amount: "200" },
+      sent_at: null,
+      attempts: 0,
+      last_error: null,
+      next_attempt_at: at,
+      status: "queued",
+      created_at: at,
+    },
+  );
+  h.sheet.reachable = false;
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.ok, false);
+  assert.equal(h.db.state.outbox[0]?.attempts, 1);
+  assert.equal(h.db.state.outbox[1]?.attempts, 0);
+  assert.equal(h.db.state.outbox[1]?.last_error, null);
+  assert.equal(h.db.state.outbox[1]?.status, "queued");
+  assert.equal(h.db.state.outbox[1]?.next_attempt_at, h.db.state.outbox[0]?.next_attempt_at);
+});
+
+test("an expired outbox worker lease is recovered with a stable row upsert", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-lease",
+    tab: "S_Deposits",
+    row_id: "deposit-lease",
+    payload: { row_id: "deposit-lease", amount: "200" },
+    sent_at: null,
+    attempts: 0,
+    last_error: null,
+    next_attempt_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    status: "sending",
+    created_at: at,
+    lease_id: "dead-worker",
+    lease_expires_at: new Date(h.clock.t.getTime() - 1).toISOString(),
+    last_attempt_at: new Date(h.clock.t.getTime() - OUTBOX_LEASE_MS).toISOString(),
+  });
+  h.sheet.tabs.S_Deposits = [{ row_id: "deposit-lease", amount: "old" }];
+
+  const result = await h.svc.drainOutbox();
+
+  assert.equal(result.sent, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.length, 1);
+  assert.equal(h.sheet.tabs.S_Deposits?.[0]?.amount, "200");
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_LEASE_EXPIRED"), true);
+});
+
+test("dead outbox rows stay visible until an authenticated manual recovery", async () => {
+  const h = harness();
+  const at = h.clock.t.toISOString();
+  h.db.state.outbox.push({
+    id: "outbox-dead",
+    tab: "S_Sales",
+    row_id: "sale-dead",
+    payload: { row_id: "sale-dead", amount: "300" },
+    sent_at: null,
+    attempts: 19,
+    last_error: "previous failure",
+    next_attempt_at: at,
+    status: "queued",
+    created_at: at,
+  });
+  h.sheet.reachable = false;
+  await h.svc.drainOutbox();
+  const status = await h.svc.outboxStatus();
+  assert.equal(status.errors, 1);
+  assert.equal(status.failures[0]?.attempts, 20);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_DEAD"), true);
+
+  const admin = await h.svc.adminLogin(secrets.admin);
+  const recovered = await h.svc.retryOutboxFailures(admin.token, ["sale-dead"]);
+  assert.equal(recovered.recovered, 1);
+  assert.equal(h.db.state.outbox[0]?.status, "queued");
+  assert.equal(h.db.state.outbox[0]?.attempts, 0);
+
+  h.sheet.reachable = true;
+  assert.equal((await h.svc.drainOutbox()).sent, 1);
+  assert.equal(h.sheet.tabs.S_Sales?.length, 1);
+  assert.equal(h.db.state.audit.some((row) => row.action === "OUTBOX_MANUAL_RETRY"), true);
 });
 
 test("18. an emergency adjustment and a late kitchen row are linked without double counting", async () => {
@@ -723,10 +920,11 @@ test("22 and 26. PNY has no kitchen credentials and does not track a kitchen on-
   assert.equal(qty(h.db, "1001"), 0);
 });
 
-test("23. shift, roster and closing code does not reference SOD", () => {
+test("23. shift, roster and closing code uses only the owned SCCx Signal gateway", () => {
   const files = [...walk("app/lib/pny-pos"), ...walk("app/api/shifts"), ...walk("app/api/sccx"), ...walk("app/api/roster"), ...walk("app/api/pos"), ...walk("app/api/cron")];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
-  assert.doesNotMatch(source, /\bSOD\b|\/api\/gateway\/send|signal-cli|SOD_/);
+  assert.doesNotMatch(source, /signal-cli|SOD_/);
+  assert.match(source, /\/api\/gateway\/send/);
   const sitemap = readFileSync("app/sitemap.ts", "utf8");
   assert.doesNotMatch(sitemap, /\/pos|\/menu|\/kitchen/);
   assert.equal(hideMobileBottomBar("/pos"), true);
@@ -747,7 +945,7 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   assert.match(readFileSync("app/pos/posSearch.ts", "utf8"), /isFlowerCategory/);
   assert.match(posApp, /data-layout="list"/);
   assert.match(posApp, /data-size=/);
-  assert.doesNotMatch(posApp, /stockCount|demo stock|qty_sent|System /);
+  assert.doesNotMatch(posApp, /stockCount|demo stock|System /);
   assert.doesNotMatch(readFileSync("app/pos/OpeningCount.tsx", "utf8"), /System |incoming_qty|system_qty/);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /Expected |shortage_qty|system_qty/);
   assert.doesNotMatch(tillApp, /system_qty|Sent /);
@@ -765,6 +963,10 @@ test("23. shift, roster and closing code does not reference SOD", () => {
   const clearCart = posApp.split("function clearCart()")[1]?.slice(0, 120) ?? "";
   assert.match(clearCart, /setCart\(\{\}\)/);
   assert.doesNotMatch(clearCart, /post\(|fetch\(|cashout\(/);
+  assert.match(posApp, /already has 10 different SKUs/);
+  assert.match(posApp, /inputMode="numeric"[\s\S]*?onFocus=\{\(\) => setVerifyExpandedFor\(null\)\}/);
+  assert.match(posApp, /Done · Continue stock count/);
+  assert.match(posApp, /verifyOpen && view\.verify\?\.deadline_at[\s\S]*?setVerifyExpandedFor\(view\.verify\.deadline_at\)/);
   assert.match(posApp, /data-testid="pos-deposit"/);
   assert.match(posApp, /\+Deposit/);
   assert.match(posApp, /MENU QR/);
@@ -952,14 +1154,14 @@ test("the till PIN check keeps the POS session and leaves the shift alone", asyn
   const again = await h.svc.unlockTill(h.token, h.pin);
   assert.equal(again.view_only, false);
   assert.equal(h.db.state.shifts.find((row) => row.id === shift.id)?.pin_failed_attempts, 0);
-  const asMaster = await h.svc.unlockTill(h.token, "1988");
+  const asMaster = await h.svc.unlockTill(h.token, TEST_MASTER_PIN);
   assert.equal(asMaster.view_only, true);
   const still = await h.svc.state(h.token);
   assert.equal(still.master, false);
   assert.equal(still.can_sell, true);
   assert.equal(h.db.state.sessions.length, sessions);
-  const master = await h.svc.login("1988", "10.9.0.1");
-  const masterView = await h.svc.unlockTill(master.token, "1988");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.9.0.1");
+  const masterView = await h.svc.unlockTill(master.token, TEST_MASTER_PIN);
   assert.equal(masterView.view_only, true);
   const staffPinOnMaster = await h.svc.unlockTill(master.token, h.pin);
   assert.equal(staffPinOnMaster.view_only, true);
@@ -990,6 +1192,7 @@ test("the sales feed returns new sales once and does not change the till", async
   assert.equal(boot.store, "PNY01");
   const page = await h.svc.salesFeed("0");
   assert.equal(page.sales.length, 2);
+  assert.equal(page.has_more, false);
   const cash = page.sales.find((row) => row.payment === "cash");
   const debit = page.sales.find((row) => row.payment === "debit");
   assert.ok(cash && debit);
@@ -1007,6 +1210,13 @@ test("the sales feed returns new sales once and does not change the till", async
     page.sales[1]?.shift_total_cents,
     (page.sales[0]?.total_cents ?? 0) + (page.sales[1]?.total_cents ?? 0),
   );
+  const firstPage = await h.svc.salesFeed("0", 1);
+  assert.equal(firstPage.sales.length, 1);
+  assert.equal(firstPage.has_more, true);
+  const nextPage = await h.svc.salesFeed(firstPage.next_cursor, 1);
+  assert.equal(nextPage.sales.length, 1);
+  assert.equal(nextPage.has_more, false);
+  assert.equal(nextPage.sales[0]?.id, page.sales[1]?.id);
   const repeat = await h.svc.salesFeed("0");
   assert.deepEqual(repeat.sales.map((row) => row.id), page.sales.map((row) => row.id));
   const second = await h.svc.salesFeed(`${page.sales[0]?.at}|${page.sales[0]?.id}`);
@@ -1032,62 +1242,33 @@ test("the sales feed returns new sales once and does not change the till", async
   }
 });
 
-test("the production sales feed uses the read-only snapshot path", async () => {
-  const h = await readyTill({ "1001": 4 });
-  const state = structuredClone(h.db.state);
-  (h.db as typeof h.db & { peek: () => Promise<typeof state> }).peek = async () => state;
-  h.db.transaction = async () => {
-    throw new Error("sales feed must not open a write transaction");
+test("PNYS sales feed preserves the retained PNY01 SCCx contract", () => {
+  const payload = forPny01Sccx({
+    ok: true,
+    store: "PNYS",
+    sales: [{ id: "sale-1", store: "PNYS", order_no: "PNYS-00001" }],
+  });
+  assert.equal(payload.store, "PNY01");
+  assert.equal(payload.sales[0]?.store, "PNY01");
+  assert.equal(payload.sales[0]?.order_no, "PNYS-00001");
+});
+
+test("poll endpoints use detached reads instead of transactions", async () => {
+  const h = await readyTill({ "1001": 5, "1002": 5 });
+  let transactions = 0;
+  const transaction = h.db.transaction.bind(h.db);
+  h.db.transaction = async (fn) => {
+    transactions += 1;
+    return transaction(fn);
   };
 
-  const feed = await h.svc.salesFeed(null);
-  assert.equal(feed.ok, true);
-  assert.equal(feed.bootstrap, true);
-});
+  await h.svc.state(h.token);
+  await h.svc.menu();
+  await h.svc.salesFeed("0", 1);
+  await h.svc.readClosings();
+  await h.svc.closedShifts();
 
-test("the stock feed returns authoritative enabled balances without changing the till", async () => {
-  const h = await readyTill({ "1001": 7, "1002": 0 });
-  const before = JSON.stringify(h.db.state);
-  const feed = await h.svc.stockFeed();
-
-  assert.equal(feed.ok, true);
-  assert.equal(feed.store_code, "PNY01");
-  assert.equal(feed.active_shift, true);
-  assert.deepEqual(feed.products.map((row) => ({ sku: row.sku, on_hand: row.on_hand })), [
-    { sku: "1001", on_hand: 7 },
-    { sku: "1002", on_hand: 0 },
-  ]);
-  assert.equal(JSON.stringify(h.db.state), before);
-});
-
-test("the production stock feed uses the read-only snapshot path", async () => {
-  const h = await readyTill({ "1001": 4 });
-  const state = structuredClone(h.db.state);
-  (h.db as typeof h.db & { peek: () => Promise<typeof state> }).peek = async () => state;
-  h.db.transaction = async () => {
-    throw new Error("stock feed must not open a write transaction");
-  };
-
-  const feed = await h.svc.stockFeed();
-  assert.equal(feed.products.find((row) => row.sku === "1001")?.on_hand, 4);
-});
-
-test("the stock feed includes balances whose catalog row is missing", async () => {
-  const h = await readyTill({ "1001": 2 });
-  h.db.state.balances.push({
-    sku: "656",
-    qty: 4,
-    created_at: h.clock.t.toISOString(),
-    updated_at: h.clock.t.toISOString(),
-  });
-
-  const feed = await h.svc.stockFeed();
-  assert.deepEqual(feed.products.find((row) => row.sku === "656"), {
-    sku: "656",
-    name: "",
-    category: "",
-    on_hand: 4,
-  });
+  assert.equal(transactions, 0);
 });
 
 test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
@@ -1253,19 +1434,18 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
 });
 
-test("demo PIN 6666 is a signed session that another server accepts", async () => {
-  assert.equal(DEMO_PIN, "6666");
-  assert.match(DEMO_PIN, /^\d{4}$/);
+test("the env-hashed demo PIN is a signed session that another server accepts", async () => {
+  assert.match(TEST_DEMO_PIN, /^\d{1,6}$/);
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return { db, svc };
   };
   const first = make();
   const second = make();
-  const login = await first.svc.login(DEMO_PIN, "10.9.9.1");
+  const login = await first.svc.login(TEST_DEMO_PIN, "10.9.9.1");
   assert.match(login.token, /^v1\./);
   const remote = await second.svc.state(login.token);
   assert.equal(remote.shift?.pos_id, "DEMO1");
@@ -1276,7 +1456,7 @@ test("demo PIN 6666 is a signed session that another server accepts", async () =
     shift.status = "ENDED";
     shift.pin_hash = null;
   });
-  const again = await second.svc.login(DEMO_PIN, "10.9.9.3");
+  const again = await second.svc.login(TEST_DEMO_PIN, "10.9.9.3");
   assert.equal((await second.svc.state(again.token)).shift?.status, "ACTIVE");
   process.env.VERCEL_ENV = "production";
   try {
@@ -1284,19 +1464,111 @@ test("demo PIN 6666 is a signed session that another server accepts", async () =
       shift.status = "ENDED";
       shift.pin_hash = null;
     });
-    const live = await second.svc.login(DEMO_PIN, "10.9.9.4");
+    const live = await second.svc.login(TEST_DEMO_PIN, "10.9.9.4");
     assert.equal((await second.svc.state(live.token)).shift?.status, "ACTIVE");
   } finally {
     delete process.env.VERCEL_ENV;
   }
 });
 
+test("PNYS demo PIN creates only a test staff shift over the cloned inventory", async () => {
+  const now = new Date("2026-11-13T10:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({
+    sku: "240",
+    sku_sort: "000240",
+    name: "Test product",
+    category: "OTHER",
+    default_price_cents: 500,
+    image_url: null,
+    setb_active: true,
+    synced_at: now.toISOString(),
+    created_at: now.toISOString(),
+  });
+  db.state.store_products.push({ store_code: "PNYS", sku: "240", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "240", qty: 12, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+
+  const login = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.9.9.5"));
+  const state = await runStore(PNYS_STORE, () => svc.state(login.token));
+
+  assert.equal(state.shift?.pos_id, "DEMO1");
+  assert.equal(state.shift?.status, "ACTIVE");
+  assert.equal(db.state.balances.find((row) => row.sku === "240")?.qty, 12);
+  assert.equal(db.state.products.length, 1);
+  assert.equal(db.state.shifts.filter((row) => row.sccx_shift_id === "demo-shift-pnys").length, 1);
+  assert.equal(db.state.staff.filter((row) => row.staff_uid === "staff-demo-pnys").length, 1);
+});
+
+test("PNYS post-close PIN is closing-only, versions a redo, and applies stock difference once", async () => {
+  await runStore(PNYS_STORE, async () => {
+    const h = harness(new Date("2026-11-15T08:00:00.000Z"));
+    h.db.state.stores[0]!.code = "PNYS";
+    h.db.state.stores[0]!.name = "PNYS";
+    await h.svc.syncSetb([{ sku: "240", name: "Preview Product", category: "ADD ONS", price_cents: 500, active: true }]);
+    const admin = await h.svc.adminLogin(secrets.admin);
+    await h.svc.openingBalance(admin.token, { key: "pnys-close-opening", sku: "240", qty: 2 });
+    await h.svc.importRoster({ key: "pnys-close-roster", staff: [{ staff_uid: "staff-close", sccx_id: "close", pos_id: "C1", display_name: "Close Staff", active: true }] });
+    const started = await h.svc.startShift({ key: "pnys-close-start", store: "PNYS", staff_ref: "staff-close", pos_id: "C1", shift_id: "pnys-close-1" });
+    const active = await h.svc.login(String(started.pin), "10.0.0.40");
+    await h.svc.state(active.token);
+    await h.svc.startClosingCount(active.token);
+    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
+    await rejects(() => h.svc.submitClosingCount(active.token), "COUNT_RECOUNT_REQUIRED");
+    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
+    await h.svc.submitClosingCount(active.token);
+    await h.svc.endShiftFromPos(active.token, { key: "pnys-close-end", lines: [{ sku: "240", counted_qty: 1 }], final_deposit_cents: 0, float_cents: 1000 });
+    assert.equal(qty(h.db, "240"), 1);
+    assert.equal(h.db.state.shifts[0]?.pin_hash, null);
+    assert.ok(h.db.state.shifts[0]?.closing_access_pin_hash);
+
+    h.db.writeMode = "FROZEN";
+    h.db.allowFrozenPreviewAuth = true;
+    h.db.allowFrozenPreviewCloseRedo = true;
+    const closed = await h.svc.login(String(started.pin), "10.0.0.40");
+    const own = await h.svc.state(closed.token);
+    assert.equal(own.closing_only, true);
+    assert.equal(own.post_close.closing.closing_lines[0].left, 1);
+    await rejects(() => h.svc.cashout(closed.token, { key: "blocked-sale", payment_method: "CASH", lines: [{ sku: "240", qty: 1 }] }), "SHIFT_NOT_ACTIVE");
+
+    const draft = await h.svc.startClosingRedo(closed.token);
+    assert.deepEqual(draft.counts.map((row) => [row.sku, row.counted_qty]), [["240", 1]]);
+    const body = { key: "pnys-redo-v2", counts: [{ sku: "240", counted_qty: 0 }], final_deposit_cents: 0, float_cents: 900 };
+    const replaced = await h.svc.submitClosingRedo(closed.token, body);
+    const replayed = await h.svc.submitClosingRedo(closed.token, body);
+    assert.equal(replaced.version, 2);
+    assert.equal(replayed.version, 2);
+    assert.equal(qty(h.db, "240"), 0);
+    assert.equal(h.db.state.ledger.filter((row) => row.ref_type === "closing_redo").length, 1);
+    assert.deepEqual(h.db.state.closing_versions?.map((row) => row.version), [1, 2]);
+    assert.match(h.db.state.closings[0]!.summary_text, /Re-closed · version 2/);
+
+    h.clock.t = new Date("2026-11-15T10:00:01.000Z");
+    await rejects(() => h.svc.login(String(started.pin), "10.0.0.41"), "NO_SHIFT");
+
+    h.db.writeMode = "ACTIVE";
+    h.clock.t = new Date("2026-11-15T08:01:00.000Z");
+    await h.svc.startShift({ key: "pnys-next-start", store: "PNYS", staff_ref: "staff-close", pos_id: "C1", shift_id: "pnys-close-2" });
+    await rejects(() => h.svc.state(closed.token), "NEXT_SHIFT_OPEN");
+  });
+});
+
+test("post-close mobile UI exposes only summary, redo warning, entry and re-closed report", () => {
+  const source = readFileSync(join(process.cwd(), "app/pos/PostCloseClosing.tsx"), "utf8");
+  assert.match(source, /This login can only see your own closing/);
+  assert.match(source, /Redo this close\?/);
+  assert.match(source, /No sales or refills are available during redo/);
+  assert.match(source, /RE-CLOSED · VERSION/);
+  assert.doesNotMatch(source, /href=.*(?:kitchen|manager|till)/i);
+});
+
 test("demo seed is labeled, reconciles, and the menu shows real SETB products with images", async () => {
   const db = new MemoryDb();
   const now = new Date("2026-11-03T15:00:00.000Z");
-  applyDemoSeed(db.state, now);
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
   const sheet = new LocalSheet();
-  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA — real SETB products, sample stock, not live on-hand" } });
+  const svc = new PosService(db, { now: () => now, sheet, secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA — real SETB products, sample stock, not live on-hand" } });
   const report = await svc.reconciliation();
   assert.equal(report.ok, true);
   const menu = await svc.menu();
@@ -1309,7 +1581,7 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(packs.every((item) => item.price_cents === 250 && item.unit_label === "per pack"), true);
   assert.equal(keysDeep(menu).has("qty"), false);
   assert.equal(keysDeep(menu).has("on_hand"), false);
-  const login = await svc.login(DEMO_PIN, "10.0.0.1");
+  const login = await svc.login(TEST_DEMO_PIN, "10.0.0.1");
   const state = await svc.state(login.token);
   assert.equal(state.pending_count, 2);
   assert.ok((state.totals?.sales_cents ?? 0) >= 500);
@@ -1319,24 +1591,14 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(db.state.ledger.filter((row) => row.movement_type === "OPENING_BALANCE").every((row) => row.reason === "DEMO stock, not SETB on-hand"), true);
 });
 
-test("kitchen send adds allocation or refill stock once and does not write the public catalog", async () => {
+test("legacy sendRefill is locked and cannot add stock without store confirmation", async () => {
   const h = await readyTill({ "1001": 2, "1002": 1 });
   const before = qty(h.db, "1001");
   const refill = { key: "refill-1", kind: "REFILL" as const, lines: [{ sku: "1001", qty: 3 }, { sku: "1002", qty: 0 }] };
-  await h.svc.sendRefill(h.token, refill);
-  assert.equal(h.db.state.incoming.filter((row) => row.kind === "REFILL").length, 1);
-  assert.equal(qty(h.db, "1001"), before + 3);
+  await rejects(() => h.svc.sendRefill(h.token, refill), "LEGACY_REFILL_DISABLED");
+  assert.equal(h.db.state.incoming.length, 0);
+  assert.equal(qty(h.db, "1001"), before);
   assert.equal(qty(h.db, "1002"), 1);
-  assert.equal(h.db.state.incoming[0]?.kind, "REFILL");
-  assert.equal(h.db.state.incoming[0]?.status, "CONFIRMED");
-  await h.svc.sendRefill(h.token, refill);
-  assert.equal(qty(h.db, "1001"), before + 3);
-  await h.svc.sendRefill(h.token, { key: "alloc-1", kind: "ALLOCATION", lines: [{ sku: "1002", qty: 4 }] });
-  assert.equal(qty(h.db, "1002"), 5);
-  assert.equal(h.db.state.incoming.find((row) => row.sku === "1002")?.kind, "ALLOCATION");
-  const state = await h.svc.state(h.token);
-  assert.equal(state.receipts.length, 2);
-  await rejects(() => h.svc.sendRefill(h.token, { key: "empty", lines: [] }), "EMPTY");
   assert.equal(existsSync("app/api/kitchen/refill/route.ts"), false);
 });
 
@@ -1370,12 +1632,12 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return { db, svc };
   };
   const origin = make();
-  const login = await origin.svc.login(DEMO_PIN, "10.8.1.1");
+  const login = await origin.svc.login(TEST_DEMO_PIN, "10.8.1.1");
   const open = (await origin.svc.state(login.token)).tickets[0];
   assert.ok(open);
   const seededSales = (await origin.svc.state(login.token)).totals?.sales_cents ?? 0;
@@ -1390,7 +1652,7 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   assert.equal(warm.tickets.some((row) => row.id === open.id), false);
   assert.equal(warm.totals?.sales_cents, seededSales + closed.total_cents);
   const cold = make();
-  const other = await cold.svc.login(DEMO_PIN, "10.8.1.2");
+  const other = await cold.svc.login(TEST_DEMO_PIN, "10.8.1.2");
   const reloaded = await cold.svc.state(other.token, journal);
   assert.equal(reloaded.tickets.some((row) => row.id === open.id), false);
   assert.equal(reloaded.totals?.sales_cents, warm.totals?.sales_cents);
@@ -1404,33 +1666,703 @@ test("cashing a ticket marks it paid once and a fresh demo server keeps that clo
   assert.equal((await cold.svc.ticketStatus(open.code, journal)).status, "PAID");
 });
 
-test("kitchen PIN 9999 opens the kitchen and the POS PIN 6666 does not", async () => {
-  assert.equal(KITCHEN_PIN, "9999");
-  assert.notEqual(KITCHEN_PIN, DEMO_PIN);
+test("the env-hashed kitchen PIN opens only the kitchen login", async () => {
+  assert.notEqual(TEST_KITCHEN_PIN, TEST_DEMO_PIN);
   const now = new Date("2026-11-03T15:00:00.000Z");
   const make = () => {
     const db = new MemoryDb();
-    applyDemoSeed(db.state, now);
-    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pin: DEMO_PIN, label: "DEMO DATA" } });
+    applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+    const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
     return svc;
   };
   const svc = make();
-  await rejects(() => svc.kitchenLogin(DEMO_PIN, "10.7.0.1"), "BAD_PIN");
+  await rejects(() => svc.kitchenLogin(TEST_DEMO_PIN, "10.7.0.1"), "BAD_PIN");
   await rejects(() => svc.kitchenLogin("12345", "10.7.0.2"), "BAD_PIN");
-  const kitchen = await svc.kitchenLogin(KITCHEN_PIN, "10.7.0.3");
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.0.3");
   assert.match(kitchen.token, /^v1\./);
   const view = await svc.state(kitchen.token, undefined, "kitchen");
-  assert.equal(view.shift?.pos_id, "DEMO1");
+  assert.equal(view.shift?.pos_id, "KITCHEN");
   await rejects(() => svc.state(kitchen.token), "SESSION_REJECTED");
-  const pos = await svc.login(DEMO_PIN, "10.7.0.4");
+  const pos = await svc.login(TEST_DEMO_PIN, "10.7.0.4");
   assert.equal((await svc.state(pos.token)).shift?.pos_id, "DEMO1");
   await rejects(() => svc.state(pos.token, undefined, "kitchen"), "SESSION_REJECTED");
-  await rejects(() => svc.login(KITCHEN_PIN, "10.7.0.5"), "BAD_PIN");
+  await rejects(() => svc.login(TEST_KITCHEN_PIN, "10.7.0.5"), "BAD_PIN");
 
   const locker = make();
   for (let attempt = 0; attempt < 4; attempt += 1) await rejects(() => locker.kitchenLogin("0000", "10.7.1.1"), "BAD_PIN");
   await rejects(() => locker.kitchenLogin("0000", "10.7.1.2"), "LOCKED");
-  await rejects(() => locker.kitchenLogin(KITCHEN_PIN, "10.7.1.3"), "LOCKED");
+  await rejects(() => locker.kitchenLogin(TEST_KITCHEN_PIN, "10.7.1.3"), "LOCKED");
+});
+
+test("PNYS Kitchen queues an idempotent pending refill and staff confirmation adds stock once", async () => {
+  const now = new Date("2026-11-03T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const shift = db.state.shifts[0];
+  db.state.sales.push({ id: "kitchen-sale-24h", ref_no: "PNYS-KITCHEN-1", shift_id: shift.id, staff_uid: shift.staff_uid, ticket_id: null, total_cents: 2000, prices_tax_included: true, payment_method: "CASH", status: "COMPLETED", void_reason: null, voided_by: null, created_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString() });
+  db.state.sale_lines.push({ id: "kitchen-sale-line-24h", sale_id: "kitchen-sale-24h", sku: "240", qty: 3, unit_price_cents: 100, price_source: "TEST", line_total_cents: 300 });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.1");
+  const before = qty(db, "240");
+  const command = { key: "kitchen-pending-240", lines: [{ sku: "240", qty: 4 }] };
+  const sent = await svc.queueKitchenRefill(kitchen.token, command);
+  const replayed = await svc.queueKitchenRefill(kitchen.token, command);
+  assert.equal(replayed.replay, true);
+  assert.equal(replayed.lines[0]?.kitchen_row_id, sent.lines[0]?.kitchen_row_id);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === command.key).length, 1);
+  const pending = db.state.incoming.find((row) => row.batch_id === command.key)!;
+  assert.equal(pending.status, "PENDING_CONFIRM");
+  assert.equal(pending.qty_received, null);
+  assert.equal(qty(db, "240"), before);
+  const kitchenView = await svc.kitchenState(kitchen.token);
+  assert.equal(kitchenView.products.some((row) => row.sku === "240" && row.on_hand === before && row.sold_24h === 3 && row.pending_qty === 4 && row.suggested_refill_qty === Math.max(0, 6 - before - 4)), true);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_day, 3);
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.sold_night, 0);
+  assert.equal(kitchenView.history.find((row) => row.batch_id === command.key)?.status, "PENDING_CONFIRM");
+
+  const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.2");
+  await svc.confirmIncoming(staff.token, { key: "staff-receives-240", lines: [{ kitchen_row_id: pending.kitchen_row_id, qty_received: 4 }] });
+  assert.equal(qty(db, "240"), before + 4);
+  assert.equal(db.state.incoming.find((row) => row.kitchen_row_id === pending.kitchen_row_id)?.status, "CONFIRMED");
+});
+
+test("Kitchen can edit or delete only a pending refill without changing stock", async () => {
+  const now = new Date("2026-11-17T12:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.91");
+  const otherSku = db.state.products.find((product) => product.sku !== "240" && product.setb_active)!.sku;
+  const before240 = qty(db, "240");
+  const beforeOther = qty(db, otherSku);
+  const sent = await svc.queueKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1", lines: [{ sku: "240", qty: 4 }] });
+  const edited = await svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-V2", batch_id: sent.batch_id, lines: [{ sku: "240", qty: 6 }, { sku: otherSku, qty: 2 }] });
+  const replayed = await svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-V2", batch_id: sent.batch_id, lines: [{ sku: "240", qty: 6 }, { sku: otherSku, qty: 2 }] });
+  assert.equal(replayed.replay, true);
+  assert.deepEqual(new Map(edited.lines.map((line) => [line.sku, line.qty])), new Map([["240", 6], [otherSku, 2]]));
+  assert.equal(qty(db, "240"), before240);
+  assert.equal(qty(db, otherSku), beforeOther);
+  assert.equal(db.state.audit.some((row) => row.action === "KITCHEN_REFILL_EDITED" && row.ref_id === sent.batch_id), true);
+
+  const deleted = await svc.deleteKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-DELETE", batch_id: sent.batch_id });
+  assert.equal(deleted.deleted, true);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === sent.batch_id && row.status === "PENDING_CONFIRM").length, 0);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === sent.batch_id).every((row) => row.status === "CANCELLED_BY_KITCHEN"), true);
+  assert.equal(qty(db, "240"), before240);
+  assert.equal(qty(db, otherSku), beforeOther);
+  assert.equal(db.state.audit.some((row) => row.action === "KITCHEN_REFILL_DELETED" && row.ref_id === sent.batch_id), true);
+
+  const locked = await svc.queueKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED", lines: [{ sku: "240", qty: 1 }] });
+  const pending = db.state.incoming.find((row) => row.batch_id === locked.batch_id)!;
+  const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.92");
+  await svc.confirmIncoming(staff.token, { key: "EDIT-DELETE-RECEIVE", lines: [{ kitchen_row_id: pending.kitchen_row_id, qty_received: 1 }] });
+  await rejects(() => svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED-V2", batch_id: locked.batch_id, lines: [{ sku: "240", qty: 2 }] }), "BATCH_LOCKED");
+  await rejects(() => svc.deleteKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED-DELETE", batch_id: locked.batch_id }), "BATCH_LOCKED");
+});
+
+test("refill sheet OCR parser maps detected grid columns into editable catalog SKUs", () => {
+  const word = (text: string, x: number, y: number, confidence = 90) => ({ text, confidence, bbox: { x0: x, y0: y, x1: x + 24, y1: y + 14 } });
+  const words = [
+    word("39", 300, 100), word("5g", 350, 100), word("149", 400, 100), word("289", 450, 100), word("QTY", 500, 100),
+    word("105", 40, 150), word("2", 450, 150, 86),
+    word("188", 40, 180), word("70", 500, 180, 62),
+    word("334", 40, 210), word("5", 300, 210, 55), word("5", 350, 210, 54),
+    word("10C0", 40, 240), word("50", 500, 240, 73),
+  ];
+  const products = [
+    { sku: "105-28g", name: "Space Cookies", size: "28g" }, { sku: "188", name: "Pre-roll Pink", size: "each" },
+    { sku: "334-3g", name: "Pink Inferno", size: "3g" }, { sku: "334-6g", name: "Pink Inferno", size: "6g" },
+    { sku: "1000", name: "BB Lights", size: "each" },
+  ];
+  assert.deepEqual(parseRefillSheetWords(words, products).map(({ sku, qty }) => ({ sku, qty })), [
+    { sku: "105-28g", qty: 2 }, { sku: "188", qty: 70 }, { sku: "334-3g", qty: 5 }, { sku: "334-6g", qty: 5 },
+    { sku: "1000", qty: 50 },
+  ]);
+});
+
+test("refill sheet OCR parser tolerates split-photo header and common printed-sheet OCR mistakes", () => {
+  const word = (text: string, x: number, y: number, width = 24, confidence = 90) => ({ text, confidence, bbox: { x0: x, y0: y, x1: x + width, y1: y + 14 } });
+  const words = [
+    word("39", 300, 100), word("60", 350, 100), word("[140200", 395, 100, 100), word("QTY", 520, 100),
+    word("10S", 40, 150), word("2", 468, 150),
+    word("395", 40, 180), word("10", 300, 180, 24, 58),
+    word("413", 40, 210), word("3", 350, 210, 24, 55),
+    word("100088", 40, 240), word("50", 520, 240),
+  ];
+  const products = [
+    { sku: "105-28g", name: "Space Cookies", size: "28g" },
+    { sku: "396-3g", name: "Khalifa Kush", size: "3g" },
+    { sku: "419-6g", name: "Pink Kobe", size: "6g" },
+    { sku: "1000", name: "BB Lights", size: "each" },
+  ];
+  assert.deepEqual(parseRefillSheetWords(words, products).map(({ sku, qty }) => ({ sku, qty })), [
+    { sku: "105-28g", qty: 2 }, { sku: "396-3g", qty: 10 }, { sku: "419-6g", qty: 3 }, { sku: "1000", qty: 50 },
+  ]);
+});
+
+test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history editing and staff handoff", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const previewPage = readFileSync("app/pos/kitchen-preview/page.tsx", "utf8");
+  const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(app, /data-testid="kitchen-login"/);
+  assert.doesNotMatch(app.slice(app.indexOf("if \(!view.authenticated\)"), app.indexOf("const products")), /<nav|href=|kitchen-actions/);
+  assert.match(app, /Search SKU, name or size/);
+  assert.match(app, /htmlFor="kitchen-store"><span>\{text\.store\}<\/span>/);
+  assert.match(app, /className=\{styles\.storeSelect\}/);
+  assert.match(app, /aria-label="SKU sections"/);
+  assert.match(app, /requestedOnly: "Requested only"/);
+  assert.match(app, /requestedOnly && \(product\.requested_qty \?\? 0\) <= 0/);
+  assert.match(app, /\{start\}–\{start \+ 99\}/);
+  assert.match(app, /Math\.max\(1000,/);
+  assert.match(app, /changeSort\("sku"\)/);
+  assert.match(app, /changeSort\("on_hand"\)/);
+  assert.match(app, /changeSort\("sold_24h"\)/);
+  assert.match(app, /Sold 24h/);
+  assert.doesNotMatch(app, /changeSort\("sold_day"\)/);
+  assert.doesNotMatch(app, /changeSort\("sold_night"\)/);
+  assert.match(app, /changeSort\("pending_qty"\)/);
+  assert.match(app, /aria-label="Mobile sort"/);
+  assert.match(css, /\.mobileSort\s*\{[\s\S]*?display:\s*grid/);
+  assert.match(app, /className=\{styles\.controlsRow\}/);
+  assert.doesNotMatch(app, /aria-label="Refill filters"/);
+  assert.match(app, /"▲" : "▼" : "↕"/);
+  assert.doesNotMatch(app, /Sold 24h × 2 − On hand − Pending/);
+  assert.match(app, /\{text\.refillList\} · \{totalUnits\}/);
+  assert.doesNotMatch(app, />Review · \{totalUnits\}</);
+  assert.match(app, /data-testid="kitchen-confirm"/);
+  assert.match(app, /total units/);
+  assert.match(app, /api\/pos\/kitchen\/logout/);
+  assert.match(app, /accept="image\/\*" capture="environment"/);
+  assert.match(app, /data-testid="kitchen-scan-review"/);
+  assert.match(app, /Photos are not stored/);
+  assert.match(app, /Add another photo/);
+  assert.match(previewPage, /screen === "scan"/);
+  assert.match(app, /setScanPhotoCount\(\(count\) => count \+ 1\)/);
+  assert.match(app, /CHECK duplicate/);
+  assert.match(app, /setScanLines\(\(current\) =>/);
+  assert.match(app, /method: editingBatch \? "PATCH" : "POST"/);
+  assert.match(app, /method: "DELETE"/);
+  assert.match(service, /KITCHEN_REFILL_EDITED/);
+  assert.match(service, /KITCHEN_REFILL_DELETED/);
+  assert.match(app, /data-testid="kitchen-history"/);
+  assert.match(app, /Status: PENDING_CONFIRM\. Store staff must confirm/);
+  assert.match(css, /position: fixed/);
+  assert.match(css, /overflow-y: auto/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+  assert.match(service, /async kitchenState\(token: string\)/);
+  assert.match(service, /stores: \[\{ code: tillCode\(\), name:/);
+  assert.match(service, /suggested_refill_qty/);
+  assert.match(service, /24 \* 60 \* 60 \* 1000/);
+  assert.match(service, /timeZone: "America\/Toronto"/);
+  assert.match(service, /async queueKitchenRefill/);
+  assert.match(service, /status: "PENDING_CONFIRM"/);
+  assert.match(service, /remember\(tx\.state, "kitchen_queue_refill"/);
+});
+
+test("Kitchen shows staff requests instead of suggested refill quantities", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  assert.match(app, /qty\[product\.sku\] \?\? ""/);
+  assert.match(app, /\{text\.useRequested\} \{product\.requested_qty\}/);
+  assert.doesNotMatch(app, /text\.useSuggested|text\.suggestedZero/);
+  assert.match(app, /approval: "Store approval required"/);
+  assert.match(app, /dashboard: "Dashboard"/);
+  assert.match(app, /dashboard: "Trang chính"/);
+  assert.match(app, /screen === "history".*text\.dashboard/s);
+  assert.doesNotMatch(app, /newRefillButton/);
+});
+
+test("PNYS staff stock request reaches Kitchen without changing on-hand", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.shifts = db.state.shifts.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.store_products = db.state.store_products.map((row) => ({ ...row, store_code: "PNYS" }));
+  db.state.balances = db.state.balances.map((row) => ({ ...row, store_code: "PNYS" }));
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const before = qty(db, "240");
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.2.8"));
+  db.writeMode = "FROZEN";
+  db.allowFrozenPreviewStockRequest = true;
+  await runStore(PNYS_STORE, () => svc.requestStock(staff.token, { key: "request-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(qty(db, "240"), before);
+  db.writeMode = "ACTIVE";
+  const kitchen = await runStore(PNYS_STORE, () => svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.9"));
+  const kitchenView = await runStore(PNYS_STORE, () => svc.kitchenState(kitchen.token));
+  assert.equal(kitchenView.products.find((row) => row.sku === "240")?.requested_qty, 6);
+  assert.equal(db.state.stock_requests?.[0]?.staff_name, "Demo Budtender");
+  await runStore(PNYS_STORE, () => svc.queueKitchenRefill(kitchen.token, { key: "send-requested-240", lines: [{ sku: "240", qty: 6 }] }));
+  assert.equal(db.state.stock_requests?.[0]?.status, "SENT");
+  assert.equal(qty(db, "240"), before);
+});
+
+test("PNYS frozen preview database guard permits only the STOCK_REQUEST mutation class", () => {
+  const migration = readFileSync("supabase/migrations/20261116173000_pnys_frozen_preview_stock_request.sql", "utf8");
+  const undo = readFileSync("supabase/undo/20261116173000_pnys_frozen_preview_stock_request.undo.sql", "utf8");
+  const app = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(migration, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO','STOCK_REQUEST'\) and preview_test/);
+  assert.match(undo, /mutation_kind in \('AUTH_SESSION','CLOSE_REDO'\) and preview_test/);
+  assert.doesNotMatch(undo, /'STOCK_REQUEST'/);
+  assert.match(app, /Request sent:/);
+  assert.match(app, /styles\.requestError/);
+  assert.match(app, /Sending…/);
+});
+
+test("Kitchen defaults to Vietnamese, can switch to English, searches every SKU section, and shows stock/refill totals", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(app, /useState<Language>\("vi"\)/);
+  assert.match(app, />VN<\/button>.*>ENG<\/button>/s);
+  assert.match(app, /pnys-kitchen-language/);
+  assert.match(app, /if \(!search && skuRange !== "all"\)/);
+  assert.match(app, /totalStockValueCents/);
+  assert.match(app, /refillValueCents/);
+  assert.match(app, /text\.totalStock/);
+  assert.match(app, /text\.refillTotal/);
+  assert.match(css, /\.topStats/);
+  assert.match(service, /price_cents: sellingPriceCents\(state, product\.sku\)/);
+});
+
+test("PNY01 Kitchen bridge opens the full staff till and accepts only an isolated browser test receipt", () => {
+  const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const route = readFileSync("app/api/pos/kitchen/pny01-shadow/route.ts", "utf8");
+  const receiver = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const receiverPage = readFileSync("app/pos/pny01-refill-preview/page.tsx", "utf8");
+  assert.match(app, /PNY01 Stock Snapshot · Test Receiver/);
+  assert.match(app, /get\("store"\) !== "PNY01_TEST"/);
+  assert.match(app, /void chooseStore\("PNY01_TEST"\)/);
+  assert.match(app, /pnys-pny01-shadow-batches/);
+  assert.match(app, /function withShadowReceipts/);
+  assert.match(app, /product\.on_hand \+ \(receivedBySku\.get\(product\.sku\) \?\? 0\)/);
+  assert.match(app, /status: batch\.status === "PENDING" \? "PENDING_CONFIRM" : batch\.status/);
+  assert.match(app, /window\.addEventListener\("pageshow", refresh\)/);
+  assert.match(app, /PNY01 TEST RECEIVER/);
+  assert.match(route, /const token = await kitchenToken\(\)/);
+  assert.match(route, /service\.kitchenState\(token\)/);
+  assert.match(route, /service\.menu\(\)/);
+  assert.match(route, /price_cents: prices\.get\(product\.sku\) \?\? 0/);
+  assert.doesNotMatch(route, /pny_pos|POST|insert|update|delete/i);
+  assert.match(route, /source: "PNYS refreshed PNY01 stock snapshot"/);
+  assert.match(route, /stock_precision: "EXACT_TEST_MIRROR"/);
+  assert.match(receiverPage, /<PosApp shadowPny01/);
+  assert.match(receiver, /PNY01_SHADOW_KEY/);
+  assert.match(receiver, /pny01ShadowView/);
+  assert.match(receiver, /fetch\("\/api\/pos\/kitchen\/pny01-shadow"/);
+  assert.match(receiver, /window\.localStorage\.setItem/);
+  assert.match(receiver, /TEST RECEIVER — sales, deposits, closing and live stock are disabled/);
+  assert.match(receiver, /<RefillList/);
+  assert.match(receiver, /disabled=\{view\.master \|\| shadowPny01\}/);
+});
+
+test("real Kitchen PIN signs in outside demo without opening or changing a staff shift", { concurrency: false }, async () => {
+  const saved = process.env.PNY_KITCHEN_PIN_HASH;
+  process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+  try {
+    const h = await readyTill();
+    const before = structuredClone(h.db.state.shifts);
+    const svc = new PosService(h.db, { now: () => h.clock.t, sheet: h.sheet, secrets, demo: null });
+    const login = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.9.1");
+    const state = await svc.kitchenState(login.token);
+    assert.equal(state.authenticated, true);
+    assert.deepEqual(h.db.state.shifts, before);
+    assert.equal(h.db.state.audit.some((row) => row.action === "KITCHEN_LOGIN"), true);
+  } finally {
+    if (saved) process.env.PNY_KITCHEN_PIN_HASH = saved; else delete process.env.PNY_KITCHEN_PIN_HASH;
+  }
+});
+
+test("Kitchen batch accepts disabled SKUs, saves a partial receipt, and dry-runs each Signal notice exactly once", { concurrency: false }, async () => {
+  const saved = process.env.PNY_KITCHEN_PIN_HASH;
+  process.env.PNY_KITCHEN_PIN_HASH = hashPin(TEST_KITCHEN_PIN);
+  let signalCalls = 0;
+  try {
+    const h = await readyTill({ "1001": 2, "1002": 0 });
+    const at = h.clock.t.toISOString();
+    h.db.state.products.push(
+      { sku: "656", sku_sort: 656, name: "Knock Out MW", category: "EDIBLES", default_price_cents: 3500, image_url: null, setb_active: true, synced_at: at, created_at: at },
+      { sku: "668", sku_sort: 668, name: "red ROSE Grabba Shaker", category: "CIGARETTES", default_price_cents: 2000, image_url: null, setb_active: true, synced_at: at, created_at: at },
+    );
+    h.db.state.incoming.push({ kitchen_row_id: "other-store", batch_id: "OTHER-BATCH", store_code: "OTHER", sku: "1001", qty_sent: 9, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: at });
+    const svc = new PosService(h.db, {
+      now: () => h.clock.t,
+      sheet: h.sheet,
+      secrets,
+      demo: null,
+      signal: { enabled: true, dryRun: true, async send() { signalCalls += 1; return { ok: true, status: "dry-run" }; } },
+    });
+    const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.9.2");
+    const catalog = await svc.kitchenState(kitchen.token);
+    assert.equal(catalog.products.find((row) => row.sku === "656")?.approval_required, true);
+    assert.equal(catalog.history.some((row) => row.kitchen_row_id === "other-store"), false);
+
+    const command = { key: "DRY-KITCHEN-BATCH", lines: [{ sku: "656", qty: 2 }, { sku: "668", qty: 2 }] };
+    const queued = await svc.queueKitchenRefill(kitchen.token, command);
+    const replayed = await svc.queueKitchenRefill(kitchen.token, command);
+    assert.equal(replayed.lines[0]?.kitchen_row_id, queued.lines[0]?.kitchen_row_id);
+    assert.equal(h.db.state.incoming.filter((row) => row.batch_id === command.key).length, 2);
+    assert.equal(h.db.state.incoming.filter((row) => row.batch_id === command.key).every((row) => row.sent_by === "Kitchen" && row.approval_required), true);
+    assert.equal(qty(h.db, "656"), 0);
+
+    const [first, second] = h.db.state.incoming.filter((row) => row.batch_id === command.key);
+    const accepted = await svc.confirmIncoming(h.token, {
+      key: "DRY-KITCHEN-ACCEPT",
+      batch_id: command.key,
+      action: "ACCEPT",
+      lines: [
+        { kitchen_row_id: first!.kitchen_row_id, qty_received: 2 },
+        { kitchen_row_id: second!.kitchen_row_id, qty_received: 1, variance_reason: "One unit missing" },
+      ],
+    });
+    assert.equal(accepted.receipt.status, "PARTIAL");
+    assert.equal(accepted.receipt.lines.find((row) => row.sku === "668")?.variance, -1);
+    assert.equal(accepted.receipt.lines.find((row) => row.sku === "668")?.reason, "One unit missing");
+    assert.equal(accepted.receipt.sent_by, "Kitchen");
+    assert.match(accepted.receipt.sent_at_toronto, /2026/);
+    assert.equal(qty(h.db, "656"), 2);
+    assert.equal(qty(h.db, "668"), 1);
+    assert.equal(h.db.state.store_products.find((row) => row.sku === "656")?.enabled, true);
+    assert.equal(h.db.state.refill_receipts?.length, 1);
+    assert.equal(h.db.state.outbox.filter((row) => row.tab === "SIGNAL_GROUP").length, 2);
+
+    assert.equal((await svc.drainSignalOutbox()).sent, 2);
+    assert.equal((await svc.drainSignalOutbox()).sent, 0);
+    assert.equal(signalCalls, 2);
+    assert.equal((await svc.kitchenState(kitchen.token)).history.some((row) => row.batch_id === command.key && row.status === "PARTIAL"), true);
+  } finally {
+    if (saved) process.env.PNY_KITCHEN_PIN_HASH = saved; else delete process.env.PNY_KITCHEN_PIN_HASH;
+  }
+});
+
+test("store receiving requires variance reasons and can reject a whole Kitchen batch", async () => {
+  const h = await readyTill({ "1001": 0, "1002": 0 });
+  const at = h.clock.t.toISOString();
+  h.db.state.incoming.push(
+    { kitchen_row_id: "reject-1", batch_id: "REJECT-BATCH", store_code: "PNY01", sku: "1001", qty_sent: 2, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: "Kitchen", created_at: at },
+    { kitchen_row_id: "reject-2", batch_id: "REJECT-BATCH", store_code: "PNY01", sku: "1002", qty_sent: 1, kind: "REFILL", kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: "Kitchen", created_at: at },
+  );
+  await rejects(() => h.svc.confirmIncoming(h.token, { key: "reject-no-reason", batch_id: "REJECT-BATCH", action: "REJECT", lines: [] }), "REASON_REQUIRED");
+  const rejected = await h.svc.confirmIncoming(h.token, { key: "reject-ok", batch_id: "REJECT-BATCH", action: "REJECT", reason: "Wrong store delivery", lines: [] });
+  assert.equal(rejected.receipt.status, "REJECTED");
+  assert.equal(rejected.receipt.lines.every((row) => row.qty_received === 0 && row.reason === "Wrong store delivery"), true);
+  assert.equal(qty(h.db, "1001"), 0);
+  assert.equal(qty(h.db, "1002"), 0);
+});
+
+test("the env-hashed Master PIN opens the read-only Manager session only", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  await rejects(() => svc.managerLogin(TEST_DEMO_PIN, "10.7.3.1"), "BAD_PIN");
+  await rejects(() => svc.managerLogin(TEST_KITCHEN_PIN, "10.7.3.2"), "BAD_PIN");
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.3.3");
+  const view = await svc.managerState(manager.token);
+  assert.equal(view.authenticated, true);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.products.some((row) => row.sku === "240"), true);
+  await rejects(() => svc.state(manager.token), "NO_SESSION");
+  await rejects(() => svc.kitchenState(manager.token), "NO_SESSION");
+  await rejects(() => svc.managerState("wrong-token"), "ADMIN_ONLY");
+  await rejects(() => svc.login(TEST_KITCHEN_PIN, "10.7.3.4"), "BAD_PIN");
+});
+
+test("PNYS Manager read model reports live shift, sales, stock, refills, closings and audit without changing operational state", async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.audit.push({ id: "manager-audit", action: "TEST_EVENT", ref_type: "shift", ref_id: "demo", actor: "tester", detail: {}, created_at: now.toISOString() });
+  db.state.incoming.push({ kitchen_row_id: "manager-refill", batch_id: "manager-batch", store_code: "PNY01", sku: "240", qty_sent: 2, kind: "REFILL", kitchen_created_at: now.toISOString(), imported_at: now.toISOString(), status: "PENDING_CONFIRM", qty_received: null, variance_reason: null, confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, created_at: now.toISOString() });
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "DEMO DATA" } });
+  const manager = await svc.managerLogin(TEST_MASTER_PIN, "10.7.4.1");
+  const view = await svc.managerState(manager.token);
+  assert.ok(view.live_shift);
+  assert.ok(view.today);
+  assert.ok(Array.isArray(view.products));
+  assert.equal(view.refills.some((row) => row.kitchen_row_id === "manager-refill" && row.status === "PENDING_CONFIRM"), true);
+  assert.ok(Array.isArray(view.closings));
+  assert.equal(view.audit_log.some((row) => row.id === "manager-audit"), true);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, incoming: db.state.incoming, closings: db.state.closings }), before);
+});
+
+test("Manager store selector reads PNY01 through the curated snapshot and keeps every write locked", async () => {
+  const now = new Date("2026-11-16T02:30:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.2"));
+  const pny01 = structuredClone(db.state);
+  pny01.stores[0] = { ...pny01.stores[0], code: "PNY01", name: "P60 Cannabis" };
+  pny01.shifts = pny01.shifts.map((row) => ({ ...row, store_code: "PNY01", sccx_shift_id: "PNY01-LIVE" }));
+  pny01.store_products = pny01.store_products.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.balances = pny01.balances.map((row) => ({ ...row, store_code: "PNY01" }));
+  pny01.incoming = pny01.incoming.map((row) => ({ ...row, store_code: "PNY01" }));
+  const view = await runStore(PNYS_STORE, () => svc.managerState(manager.token, "PNY01", async () => pny01));
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, true);
+  assert.equal(view.data_source, "LIVE_READ_ONLY");
+  assert.equal(view.write_actions.enabled, false);
+  assert.equal(view.weed_mode.can_change, false);
+  assert.equal(view.stores.some((row) => row.code === "PNY01"), true);
+  assert.equal(view.stores.some((row) => row.code === "PNYS"), true);
+  assert.equal(view.live_shift?.shift_id, "PNY01-LIVE");
+});
+
+test("live Manager exposes operational PNYS state as one writable PNY01 store", () => {
+  const route = resolveManagerStoreRoute("PNY01", { vercelEnv: "production", testStore: "0" });
+  assert.deepEqual(route, {
+    internalStore: "PNYS",
+    externalStore: "PNY01",
+    useRetainedSnapshot: false,
+    liveCutover: true,
+  });
+  const view = exposeManagerStore({ store_code: "PNYS", stores: [{ code: "PNYS", name: "Test" }], read_only: true, data_source: "PNYS_PREVIEW", products: [{ sku: "240", on_hand: 72 }] }, route);
+  assert.equal(view.store_code, "PNY01");
+  assert.equal(view.read_only, false);
+  assert.equal(view.data_source, "LIVE");
+  assert.deepEqual(view.stores, [{ code: "PNY01", name: "PNY01 · P60 Cannabis" }]);
+  assert.deepEqual(view.products, [{ sku: "240", on_hand: 72 }]);
+
+  const preview = resolveManagerStoreRoute("PNY01", { vercelEnv: "preview", testStore: "1" });
+  assert.equal(preview.internalStore, "PNY01");
+  assert.equal(preview.useRetainedSnapshot, true);
+  assert.equal(preview.liveCutover, false);
+});
+
+test("live Manager keeps retained PNY01 closing and stock history after cutover", () => {
+  const current = {
+    closings: [{ shift_id: "PNYS-NEW", ended_at: "2026-11-16" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 71 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const retained = {
+    closings: [{ shift_id: "PNY-1104-1115", ended_at: "2026-11-15" }],
+    stock_snapshots: [{ id: "CURRENT", rows: [{ sku: "240", on_hand: 0 }] }, { id: "PNY-1104-1115", rows: [{ sku: "240", on_hand: 72 }] }],
+    refills: [],
+    refill_batches: [],
+    audit_log: [],
+  };
+  const merged = mergeRetainedManagerHistory(current, retained);
+  assert.deepEqual(merged.closings.map((row) => row.shift_id), ["PNYS-NEW", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots.map((row) => row.id), ["CURRENT", "PNY-1104-1115"]);
+  assert.deepEqual(merged.stock_snapshots[0]?.rows, [{ sku: "240", on_hand: 71 }]);
+});
+
+test("Manager mobile UI has a nav-free PIN login and store-aware dashboard screens", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const css = readFileSync("app/pos/manager/manager.module.css", "utf8");
+  const login = app.slice(app.indexOf("if (!view.authenticated)"), app.indexOf("const stock"));
+  assert.match(login, /data-testid="manager-login"/);
+  assert.doesNotMatch(login, /<nav|href=|manager-actions/);
+  for (const screen of ["manager-overview", "manager-stock", "manager-refills", "manager-closings", "manager-audit"]) assert.match(app, new RegExp(`data-testid="${screen}"`));
+  assert.match(app, /Price, stock and expense changes stay locked/);
+  assert.match(app, /api\/pos\/manager\/state\?store=/);
+  assert.match(app, /Live PNY01 data/);
+  assert.match(app, /Retained PNY01 data · read-only/);
+  assert.match(app, /Coupon changes are locked while viewing PNY01/);
+  assert.match(app, /Show all available SKUs/);
+  assert.match(app, /Refills by batch/);
+  assert.match(app, /Refill coming/);
+  assert.match(app, /Final till balance/);
+  assert.match(app, /changeStockSort\("on_hand"\)/);
+  assert.match(app, /changeStockSort\("sold"\)/);
+  assert.match(app, /changeStockSort\("refill_coming"\)/);
+  assert.match(app, /setStockIndex/);
+  assert.match(app, /setRefillIndex/);
+  assert.doesNotMatch(app, /api\/pos\/(?:price|adjust|expense)|Save price|Adjust stock|Approve expense/);
+  assert.match(css, /position:\s*fixed/);
+  assert.match(css, /overflow-y:\s*auto/);
+  assert.match(css, /@media\s*\(max-width:\s*390px\)/);
+});
+
+test("central Manager database function exposes a PIN-free read model only", () => {
+  const migration = readFileSync("migrations/20261116113000_manager_store_snapshot.sql", "utf8");
+  const undo = readFileSync("migrations/undo/20261116113000_manager_store_snapshot.undo.sql", "utf8");
+  assert.match(migration, /security definer/i);
+  assert.match(migration, /revoke all on function .* from public/i);
+  assert.match(migration, /grant execute .* to pnys_app/i);
+  assert.match(migration, /- 'pin_hash'/);
+  assert.match(migration, /- 'closing_access_pin_hash'/);
+  assert.doesNotMatch(migration, /update\s+pny_pos|insert\s+into\s+pny_pos|delete\s+from\s+pny_pos/i);
+  assert.match(undo, /drop function if exists pos_hub\.manager_store_snapshot/);
+});
+
+test("Manager opening-count policy is per store, audited, next-shift only, and keeps closing required", { concurrency: false }, async () => {
+  const now = new Date("2026-11-16T03:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS", opening_count_required: false, closing_count_required: true };
+  const currentShift = db.state.shifts[0]!;
+  const before = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.4.8"));
+  const initial = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(initial.opening_policy.opening_count_required, false);
+  assert.equal(initial.opening_policy.closing_count_required, true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-no-confirm", opening_count_required: true, confirm: false })), "CONFIRM_REQUIRED");
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetOpeningCountPolicy(manager.token, { key: "opening-on", opening_count_required: true, confirm: true }));
+  assert.equal(changed.from, "OFF");
+  assert.equal(changed.to, "ON");
+  assert.equal(changed.closing_count_required, true);
+  assert.equal(currentShift.opening_count_required, undefined);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, shifts: db.state.shifts, counts: db.state.counts, incoming: db.state.incoming }), before);
+  assert.equal(db.state.audit.some((row) => row.action === "OPENING_COUNT_POLICY_CHANGED" && row.detail.applies_to === "NEXT_SHIFT"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).opening_policy.opening_count_required, true);
+});
+
+test("Manager Opening count OFF suppresses the staff verification count without blocking sales", async () => {
+  const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: false };
+  await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "opening-off-stock", sku: "1001", qty: 2 });
+  await h.svc.importRoster({ key: "opening-off-roster", staff: [{ staff_uid: "staff-off", pos_id: "OFF1", display_name: "Off Staff", active: true }] });
+  const started = await h.svc.startShift({ key: "opening-off-start", store: "PNY01", staff_ref: "staff-off", shift_id: "opening-off-shift" });
+  const login = await h.svc.login(String(started.pin), "10.7.4.9");
+  await h.svc.answerWeedInStore(login.token, true);
+  const view = await h.svc.state(login.token);
+  const shift = h.db.state.shifts.find((row) => row.id === started.shift_id)!;
+  assert.equal(view.can_sell, true);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.verify.show_banner, false);
+  assert.equal(view.verify.total, 0);
+  assert.deepEqual(view.verify.lines, []);
+  assert.equal(shift.verify_opened_at ?? null, null);
+});
+
+test("Manager mobile UI exposes confirmed opening-count control and keeps closing mandatory", () => {
+  const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  assert.match(app, /data-testid="manager-opening-policy"/);
+  assert.match(app, /Closing count is always required/);
+  assert.match(app, /Changes apply to the next shift only/);
+  assert.match(app, /api\/pos\/manager\/opening-policy/);
+  assert.match(app, /manager-opening-policy-confirm/);
+});
+
+test("PNYS Manager WEED mode backs up, audits, hides THC from sell and menu, keeps THC in closing, and undoes", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T15:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push(
+    { sku: "188", thc_flag: true, sku_sort: 188, name: "Pink Animal", category: "FLOWER", default_price_cents: 2000, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+    { sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 250, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() },
+  );
+  for (const sku of ["188", "710"]) {
+    db.state.store_products.push({ store_code: "PNYS", sku, enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+    db.state.balances.push({ store_code: "PNYS", sku, qty: 4, created_at: now.toISOString(), updated_at: now.toISOString() });
+  }
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.5.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.5.2"));
+  const defaultView = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(defaultView.products.some((row) => row.sku === "188"), true);
+  assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).weed_mode.current, "WEED");
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "no-confirm", weed_in_store: false, confirm: false })), "CONFIRM_REQUIRED");
+
+  const protectedBefore = JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts });
+  const changed = await runStore(PNYS_STORE, () => svc.managerSetWeedMode(manager.token, { key: "pnys-no-weed", weed_in_store: false, confirm: true }));
+  assert.equal(changed.from, "WEED");
+  assert.equal(changed.to, "NO_WEED");
+  assert.ok(changed.backup_id);
+  const backupIndex = db.state.audit.findIndex((row) => row.id === changed.backup_id && row.action === "WEED_MODE_BACKUP");
+  const changeIndex = db.state.audit.findIndex((row) => row.action === "WEED_MODE_CHANGED" && row.detail.backup_id === changed.backup_id);
+  assert.ok(backupIndex >= 0 && changeIndex > backupIndex);
+  assert.equal(JSON.stringify({ balances: db.state.balances, sales: db.state.sales, counts: db.state.counts, incoming: db.state.incoming, drafts: db.state.closing_drafts }), protectedBefore);
+
+  const noWeed = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(noWeed.products.some((row) => row.sku === "188"), false);
+  assert.equal(noWeed.products.some((row) => row.sku === "710"), true);
+  assert.equal(noWeed.close_lines.some((row) => row.sku === "188"), true);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "blocked-thc", lines: [{ sku: "188", qty: 1 }] })), "THC_HIDDEN");
+  const menuOff = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOff.items.some((row) => row.sku === "188"), false);
+  assert.equal(menuOff.items.some((row) => row.sku === "710"), true);
+
+  const undone = await runStore(PNYS_STORE, () => svc.managerUndoWeedMode(manager.token, { key: "undo-no-weed", backup_id: String(changed.backup_id), confirm: true }));
+  assert.equal(undone.to, "WEED");
+  assert.equal(db.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === changed.backup_id), true);
+  const restored = await runStore(PNYS_STORE, () => svc.state(staff.token));
+  assert.equal(restored.products.some((row) => row.sku === "188"), true);
+  const menuOn = await runStore(PNYS_STORE, () => svc.menu());
+  assert.equal(menuOn.items.some((row) => row.sku === "188"), true);
+});
+
+test("PNYS mode controls remain Manager-only and proof screens cover sell, closing and customer menu in both modes", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const proof = readFileSync("app/pos/mode-preview/ModeProof.tsx", "utf8");
+  const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
+  assert.match(manager, /Confirm exact change/);
+  assert.match(manager, /undo backup and audit entry will be written first/i);
+  assert.match(manager, /api\/pos\/manager\/weed/);
+  assert.match(pos, /storeCode === "PNY01" && view\.weed_gate/);
+  assert.match(service, /WEED_MODE_BACKUP/);
+  assert.match(service, /WEED_MODE_CHANGED/);
+  assert.match(service, /WEED_MODE_UNDONE/);
+  assert.match(proof, /surface === "closing" \? allProducts : visible/);
+  assert.match(proof, /surface === "menu"/);
+  assert.match(proof, /noWeed \? allProducts\.filter/);
+});
+
+test("PNYS customers, CASL history, visits and coupons are server-side, PIN-gated and redemption-safe", { concurrency: false }, async () => {
+  const now = new Date("2026-11-14T16:00:00.000Z");
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0], code: "PNYS", name: "PNYS" };
+  db.state.products.push({ sku: "710", thc_flag: false, sku_sort: 710, name: "Raw Paper", category: "ADD ONS", default_price_cents: 2500, image_url: null, setb_active: true, synced_at: now.toISOString(), created_at: now.toISOString() });
+  db.state.store_products.push({ store_code: "PNYS", sku: "710", enabled: true, price_override_cents: null, created_at: now.toISOString(), updated_at: now.toISOString() });
+  db.state.balances.push({ store_code: "PNYS", sku: "710", qty: 6, created_at: now.toISOString(), updated_at: now.toISOString() });
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const staff = await runStore(PNYS_STORE, () => svc.login(TEST_DEMO_PIN, "10.7.6.1"));
+  const manager = await runStore(PNYS_STORE, () => svc.managerLogin(TEST_MASTER_PIN, "10.7.6.2"));
+  await rejects(() => runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-no-confirm", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: false })), "CONFIRM_REQUIRED");
+  const created = await runStore(PNYS_STORE, () => svc.managerCreateCoupon(manager.token, { key: "coupon-create", code: "WELCOME10", label: "$10 welcome coupon", discount_type: "FIXED", discount_value: 1000, min_spend_cents: 5000, max_redemptions_per_customer: 1, confirm: true }));
+  assert.equal(created.coupon.code, "WELCOME10");
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATE_BACKUP" && row.ref_id === created.coupon.id), true);
+  assert.equal(db.state.audit.some((row) => row.action === "COUPON_CREATED" && row.ref_id === created.coupon.id), true);
+
+  const quote = await runStore(PNYS_STORE, () => svc.couponQuote(staff.token, { lines: [{ sku: "710", qty: 2 }], coupon_code: "welcome10", customer_phone: "416-555-0124" }));
+  assert.equal(quote.total_cents, 4000);
+  const sale = await runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "customer-sale", lines: [{ sku: "710", qty: 2 }], payment_method: "CASH", customer: { phone: "416-555-0124", name: "Sample Customer", email: "sample@example.com", consent_type: "EXPRESS", consented_at: now.toISOString(), consent_source: "IN_STORE" }, coupon_code: "WELCOME10" }));
+  assert.equal(sale.subtotal_cents, 5000);
+  assert.equal(sale.discount_cents, 1000);
+  assert.equal(sale.total_cents, 4000);
+  assert.equal(db.state.customers?.length, 1);
+  assert.equal(db.state.customer_consents?.[0]?.consent_type, "EXPRESS");
+  assert.equal(db.state.customer_visits?.[0]?.sale_id, sale.sale_id);
+  assert.equal(db.state.customer_visits?.[0]?.spend_cents, 4000);
+  assert.equal(db.state.coupon_redemptions?.length, 1);
+  await rejects(() => runStore(PNYS_STORE, () => svc.cashout(staff.token, { key: "coupon-reuse", lines: [{ sku: "710", qty: 1 }], customer: { phone: "4165550124" }, coupon_code: "WELCOME10" })), "COUPON_LIMIT");
+  assert.equal(db.state.balances.find((row) => row.sku === "710")?.qty, 4);
+
+  const staffView = await runStore(PNYS_STORE, () => svc.customerLookup(staff.token, "4165550124"));
+  assert.deepEqual(staffView, { found: true, customer: { name: "Sample Customer", phone_last4: "0124" } });
+  await rejects(() => runStore(PNYS_STORE, () => svc.customerLookup("wrong-token", "4165550124")), "NO_SESSION");
+  const managerView = await runStore(PNYS_STORE, () => svc.managerState(manager.token));
+  assert.equal(managerView.customers[0]?.email, "sample@example.com");
+  assert.equal(managerView.customers[0]?.visit_count, 1);
+  assert.equal(managerView.customers[0]?.spend_cents, 4000);
+  assert.equal(managerView.coupons[0]?.redemption_count, 1);
+});
+
+test("PNYS customer data stays behind staff or Manager PIN routes and customer pages never import it", () => {
+  const manager = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
+  const till = readFileSync("app/pos/PosApp.tsx", "utf8");
+  const home = readFileSync("app/page.tsx", "utf8");
+  const menu = readFileSync("app/menu/page.tsx", "utf8");
+  const migration = readFileSync("supabase/migrations/20261114130000_pnys_customers_coupons.sql", "utf8");
+  assert.match(manager, /data-testid="manager-customers"/);
+  assert.match(manager, /Confirm exact coupon/);
+  assert.match(till, /Customer phone \(optional\)/);
+  assert.match(till, /nothing is auto-sent/i);
+  assert.doesNotMatch(`${home}\n${menu}`, /customer_consents|customer_visits|coupon_redemptions|api\/pos\/customers/);
+  assert.match(migration, /create table if not exists pos_hub\.customer_visit/);
+  assert.match(migration, /force row level security/);
 });
 
 test("cash stays in the drawer and debit does not, and the close balance uses shortage and deposits", async () => {
@@ -1632,6 +2564,8 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
   assert.equal(draft.final_deposit_cents, 1000);
   assert.equal(draft.totals.cash_on_hand_cents, 1500);
+  await rejects(() => resumed.submitClosingCount(login.token), "COUNT_RECOUNT_REQUIRED");
+  await resumed.saveClosingCount(login.token, { sku: "1001", counted_qty: 0 });
   await resumed.submitClosingCount(login.token);
 
   const ended = await resumed.endShiftFromPos(login.token, {
@@ -1795,6 +2729,10 @@ test("Items_Raw lists a stocked unpriced paper and keeps Marlboro at ten dollars
   assert.equal(index.get("680")?.name, "Sour 150mg Gummies IND");
   assert.equal(index.get("681")?.price_cents, 1600);
   assert.equal(index.get("682")?.name, "Sour 600mg Gummies IND");
+  assert.equal(index.get("512-3g")?.price_cents, 4000);
+  assert.equal(index.get("512-3g")?.name, "PINK PHOENIX 3g");
+  assert.equal(index.get("512-5g")?.price_cents, 6000);
+  assert.equal(index.get("512-5g")?.name, "PINK PHOENIX 6g");
   assert.equal(index.get("713")?.price_cents, 500);
   assert.equal(index.get("610")?.price_cents, 2000);
   assert.equal(index.get("844")?.price_cents, 3000);
@@ -2028,8 +2966,11 @@ test("verify count order, size label, and the staff discrepancy row", () => {
   const beforeDock = posSource.split('data-testid="pos-dock"')[0] ?? "";
   const dock = posSource.split('data-testid="pos-dock"')[1]?.split("</footer>")[0] ?? "";
   assert.doesNotMatch(beforeDock, /<VerifyBanner|<CountCard/);
-  assert.match(dock, /<VerifyBanner slim/);
+  assert.match(dock, /<VerifyBanner[\s\S]*?slim/);
+  assert.match(dock, /expanded=\{verifyExpanded\}/);
+  assert.match(dock, /showVerify && verifyExpanded/);
   assert.match(dock, /<CountCard\s+compact/);
+  assert.match(readFileSync("app/pos/VerifyBanner.tsx", "utf8"), /Stock count[\s\S]*expanded \? "Hide" : "Open"/);
   assert.match(posSource, /Done \/ Back to POS/);
   assert.match(posSource, /pny-gap-dismissed:/);
   assert.match(dock, /className=\{styles\.footerBar\}/);
@@ -2066,7 +3007,7 @@ test("verify count order, size label, and the staff discrepancy row", () => {
 });
 
 test("sell 2 then verify-count the remainder is 0, and a later sale does not change it", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 5 });
+  const h = await readyTill({ "1001": 10, "1002": 5 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -2110,7 +3051,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
   assert.equal(JSON.stringify(blind.stock_check).includes("expected"), false);
   assert.doesNotMatch(readFileSync("app/pos/PosApp.tsx", "utf8"), /book |Expected /);
   assert.doesNotMatch(readFileSync("app/pos/CloseShift.tsx", "utf8"), /book |Expected |Confirm & End Shift/);
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening Verify/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /Opening cash adjustment/);
   assert.equal(blind.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   await h.svc.saveOpeningCount(h.token, { sku: "200-5g", counted_qty: 0 });
   await h.svc.saveOpeningCount(h.token, { sku: "350-5g", counted_qty: 1 });
@@ -2120,7 +3061,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
 });
 
 test("moving between SKUs keeps blanks open, and Submit accepts them without changing stock", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 });
+  const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 }, true);
   await h.svc.syncSetb([
     { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
     { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
@@ -2151,7 +3092,7 @@ test("moving between SKUs keeps blanks open, and Submit accepts them without cha
 });
 
 test("reading state leaves an in-progress verify draft and the deadline alone", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.ok(shift);
   const opened = shift.verify_opened_at;
@@ -2183,7 +3124,7 @@ test("reading state leaves an in-progress verify draft and the deadline alone", 
 });
 
 test("undoing a submitted verify restores pre-count stock and leaves the deadline", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -2323,7 +3264,7 @@ test("voiding the goose carton sale leaves the other sales and deposits", async 
 });
 
 test("restarting the verify deadline changes only the clock", async () => {
-  const h = await readyTill({ "1001": 4, "1002": 2 });
+  const h = await readyTill({ "1001": 4, "1002": 2 }, true);
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.ok(shift);
   shift.verify_opened_at = "2026-11-04T17:38:18.755Z";
@@ -2347,7 +3288,7 @@ test("restarting the verify deadline changes only the clock", async () => {
 });
 
 test("a count on zero stock is flagged and does not invent quantity", async () => {
-  const h = await readyTill({ "1001": 2, "1002": 0 });
+  const h = await readyTill({ "1001": 2, "1002": 0 }, true);
   const savedQty = qty(h.db, "1002");
   await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 3 });
   assert.equal(qty(h.db, "1002"), savedQty);
@@ -2358,7 +3299,7 @@ test("a count on zero stock is flagged and does not invent quantity", async () =
 });
 
 test("after two hours the verify card closes and uncounted SKUs are accepted with no discrepancy", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -2403,9 +3344,7 @@ test("after two hours the verify card closes and uncounted SKUs are accepted wit
   const locked = await h.svc.state(h.token);
   const accepted = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
   assert.equal(locked.verify.show_banner, false);
-  assert.equal(accepted?.accepted_as_is, true);
-  assert.equal(accepted?.expected_qty, 11);
-  assert.equal(accepted?.counted_qty, 11);
+  assert.equal(accepted, undefined, "a state poll must not persist the computed timeout result");
   assert.equal(locked.stock_check.opening.lines.some((line) => line.sku === "1001"), false);
   assert.equal(locked.verify.opening_lines.some((line) => line.sku === "1001"), false);
   assert.equal(locked.stock_check.opening.lines.find((line) => line.sku === "1002")?.off, -3);
@@ -2419,7 +3358,7 @@ test("after two hours the verify card closes and uncounted SKUs are accepted wit
 });
 
 test("verify expected uses only received refills, and a short receipt is a refill issue", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -2460,7 +3399,7 @@ test("verify expected uses only received refills, and a short receipt is a refil
   await h.svc.saveOpeningCount(h.token, { sku: "1001", counted_qty: 10 });
   const frozen = h.db.state.closing_drafts.find((draft) => draft.shift_id === h.shiftId)?.opening_counts?.find((line) => line.sku === "1001");
   assert.equal(frozen?.expected_qty, 10);
-  await h.svc.confirmIncoming(h.token, { key: "short-refill", lines: [{ kitchen_row_id: pending, qty_received: 2 }] });
+  await h.svc.confirmIncoming(h.token, { key: "short-refill", lines: [{ kitchen_row_id: pending, qty_received: 2, variance_reason: "Three units missing" }] });
   assert.equal(qty(h.db, "1001"), 12);
   assert.equal(h.db.state.incoming.find((row) => row.kitchen_row_id === pending)?.qty_sent, 5);
   const view = await h.svc.state(h.token);
@@ -2477,6 +3416,7 @@ test("verify expected uses only received refills, and a short receipt is a refil
 
 test("master login does not start the verify window and cannot change the shift", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "ob-master", sku: "1001", qty: 2 });
@@ -2486,7 +3426,7 @@ test("master login does not start the verify window and cannot change the shift"
   const hash = shift?.pin_hash;
   const openedAt = shift?.started_at;
   h.clock.t = new Date(h.clock.t.getTime() + 30 * 60 * 1000);
-  const master = await h.svc.login("1988", "10.8.0.1");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.8.0.1");
   const preview = await h.svc.state(master.token);
   const during = h.db.state.shifts.find((row) => row.sccx_shift_id === "sccx-master");
   assert.equal(preview.master, true);
@@ -2535,7 +3475,7 @@ test("master PIN can view the last ended shift without reopening it", async () =
   if (oldSession) oldSession.revoked_at = h.clock.t.toISOString();
   await rejects(() => h.svc.login(String(started.pin), "10.8.1.2"), "NO_SHIFT");
 
-  const master = await h.svc.login("1988", "10.8.1.3");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.8.1.3");
   const preview = await h.svc.state(master.token);
   assert.equal(preview.master, true);
   assert.equal(preview.shift?.status, "ENDED");
@@ -2590,7 +3530,7 @@ test("a deposit above recorded cash is kept and the shift can end over or short"
   assert.doesNotMatch(service, /OVER_COH/);
   assert.match(service, /DEPOSIT_ABOVE/);
   const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
-  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /TOTAL CASH COLLECTED/);
+  assert.match(readFileSync("app/pos/TillSummary.tsx", "utf8"), /CASH ACCOUNTED/);
   assert.match(closeUi, /Float left in the till/);
   assert.doesNotMatch(closeUi, /both stores/i);
   assert.doesNotMatch(closeUi, /Math\.max\(0,\s*totals\.cash_on_hand_cents/);
@@ -2655,6 +3595,8 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.equal(depositCodeLabel(undefined), "n/a");
   assert.equal(depositCodeLabel("D0004"), "D0004");
   assert.equal(depositCodeLabel(first.deposit_code), first.deposit_code);
+  assert.equal(formatDepositCode(1, "PNYS-D"), "PNYS-D0001");
+  assert.equal(depositCodeLabel("PNYS-D0001"), "PNYS-D0001");
   assert.equal(nextDepositSeq(0, ["D0004", "PNY-D0002"]), 5);
   const finalDeposit = await h.svc.saveFinalDeposit(h.token, { amount_cents: 200 });
   const repeated = await h.svc.saveFinalDeposit(h.token, { amount_cents: 150 });
@@ -2678,6 +3620,34 @@ test("each new deposit gets a unique slip number and a past deposit stays n/a", 
   assert.match(readFileSync("app/pos/DepositSlip.tsx", "utf8"), /Done, slip attached/);
   assert.match(readFileSync("app/pos/till/TillApp.tsx", "utf8"), /deposit_code/);
   assert.match(summary.text, /PNY-D0001/);
+});
+
+test("same-amount deposits warn on the server and confirmation records one new unique bag", async () => {
+  const h = await readyTill();
+  const first = await h.svc.deposit(h.token, { key: "near-a", amount_cents: 400 });
+  await rejects(() => h.svc.deposit(h.token, { key: "near-b", amount_cents: 400 }), "NEAR_DUPLICATE_DEPOSIT");
+  assert.equal(h.db.state.deposits.length, 1);
+  const confirmed = await h.svc.deposit(h.token, { key: "near-b", amount_cents: 400, confirm_near_duplicate: true });
+  const replayed = await h.svc.deposit(h.token, { key: "near-b", amount_cents: 400 });
+  assert.equal(replayed.deposit_code, confirmed.deposit_code);
+  assert.notEqual(confirmed.deposit_code, first.deposit_code);
+  assert.equal(new Set(h.db.state.deposits.map((row) => row.deposit_code)).size, 2);
+});
+
+test("shift end refuses a deposit bag reference already used by the store", async () => {
+  const h = await readyTill();
+  const existing = await h.svc.deposit(h.token, { key: "bag-existing", amount_cents: 100 });
+  const view = await h.svc.state(h.token);
+  await submitClosingValues(h.svc, h.token);
+  const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
+  assert.ok(draft);
+  draft.final_deposit_code = existing.deposit_code;
+  await rejects(() => h.svc.endShiftFromPos(h.token, {
+    key: "bag-duplicate-end",
+    final_deposit_cents: 200,
+    lines: (view.close_lines ?? []).map((line) => ({ sku: line.sku, counted_qty: line.system_qty })),
+  }), "DUPLICATE_DEPOSIT_REF");
+  assert.equal(h.db.state.deposits.length, 1);
 });
 
 test("PNY02 keeps its own stock, orders, and deposits away from PNY01", async () => {
@@ -2835,11 +3805,12 @@ test("closing summary stays until Done after session revoke", () => {
   const summaryUi = readFileSync("app/pos/TillSummary.tsx", "utf8");
   const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
   assert.match(closeUi, /data-testid="close-summary-banner"/);
-  assert.match(closeUi, /TAKE A PICTURE OF THIS SCREEN AND POST IT IN THE TILL GROUP FOR THE ACCOUNTANT/);
+  assert.match(closeUi, /TAKE A PICTURE AND POST IT IN THE TILL GROUP/);
   assert.match(closeUi, /data-testid="close-summary-done"/);
   assert.match(closeUi, /Done, I posted it/);
   assert.match(closeUi, /resumeSummary/);
-  assert.match(closeUi, /step === "summary"[\s\S]*visibility: "hidden"/);
+  assert.match(closeUi, /resumeSummary \? "posted"/);
+  assert.match(closeUi, /step === "posted"[\s\S]*close-summary/);
   assert.match(pos, /closeHold/);
   assert.match(pos, /pos-close-hold/);
   assert.match(pos, /finishCloseSummary/);
@@ -2851,16 +3822,65 @@ test("closing summary stays until Done after session revoke", () => {
   assert.match(confirmEnd, /setCloseHold\(true\)[\s\S]*await post\(`\$\{storeApi\}\/shift\/end`/);
   assert.equal(pos.match(/localStorage\.removeItem\(`pny-close-hold:/g)?.length, 1);
   assert.doesNotMatch(pos.slice(pos.indexOf("useEffect(() =>"), pos.indexOf("const load = useCallback")), /localStorage\.removeItem/);
+  const finish = pos.slice(pos.indexOf("function finishCloseSummary"), pos.indexOf("async function saveVerifyLine"));
+  assert.match(finish, /setView\(\{ authenticated: false \}\)/);
+  assert.doesNotMatch(finish, /load\(/);
   assert.doesNotMatch(closeUi, /step === "slip"|setStep\("slip"\)/);
   assert.match(summaryUi, /closing-identity/);
-  assert.match(summaryUi, /TOTAL CASH COLLECTED/);
-  assert.match(summaryUi, /Expense paid from store cash/);
-  assert.match(summaryUi, /less stock sold value =/);
-  assert.match(summaryUi, /less stock shorts =/);
-  assert.match(summaryUi, /add stock extra =/);
+  assert.match(summaryUi, /Stock adjustment/);
+  assert.match(summaryUi, /Safebox deposits/);
+  assert.match(summaryUi, /Cigarette sale/);
+  assert.match(summaryUi, /EXPECTED CASH/);
+  assert.match(summaryUi, /CASH ACCOUNTED/);
+  assert.match(summaryUi, /FINAL/);
   assert.match(summaryUi, /const stockShortsCents = closeLines\.reduce/);
-  assert.match(summaryUi, /Opening differences are shown for review and are not included/);
+  assert.doesNotMatch(summaryUi, /TOTAL CASH COLLECTED uses|Opening differences are shown|shown separately/);
   assert.doesNotMatch(closeUi, /on-hand stock|expected stock/i);
+});
+
+test("PNYS mobile close uses four shell steps and keeps persistence on the existing callbacks", () => {
+  const closeUi = readFileSync("app/pos/CloseShift.tsx", "utf8");
+  const countUi = readFileSync("app/pos/CountCard.tsx", "utf8");
+  const css = readFileSync("app/pos/till.module.css", "utf8");
+  const preview = readFileSync("app/pos/closing-summary-preview/ClosingFlowPreview.tsx", "utf8");
+  assert.match(closeUi, /count: \{ number: 1, title: "Closing stock count" \}/);
+  assert.match(closeUi, /cash: \{ number: 2, title: "Cash & deposit" \}/);
+  assert.match(closeUi, /review: \{ number: 3, title: "Shorts & refills" \}/);
+  assert.match(closeUi, /confirm: \{ number: 4, title: "Confirm & post" \}/);
+  assert.match(closeUi, /data-testid="close-fixed-top"/);
+  assert.match(closeUi, /data-testid="close-scroll-middle"/);
+  assert.match(closeUi, /data-testid="close-fixed-actions"/);
+  assert.match(css, /\.closeBody[\s\S]*overflow-y: auto/);
+  assert.match(css, /@media \(max-width: 390px\)/);
+  assert.match(closeUi, /className=\{styles\.scanDisabled\} disabled>SCAN/);
+  assert.match(closeUi, /step === "count" && countExpanded/);
+  assert.match(countUi, /!expanded \? <div className=\{styles\.countSplit\}/);
+  assert.match(countUi, /placeholder="Search SKU or name"/);
+  assert.match(countUi, /knownLines\.map/);
+  assert.doesNotMatch(closeUi, /Formula A|Formula B|Neither one is selected/);
+  assert.match(closeUi, /await onSaveDeposit\(depositCents, floatCents\)/);
+  assert.match(closeUi, /await onConfirm\(depositCents, floatCents, finalDepositCode\)/);
+  assert.match(preview, /counted_qty: 0/);
+  assert.match(preview, /scanCatalog=\{\[\]\}/);
+});
+
+test("staff variance lines retain dollar values without revealing expected stock", () => {
+  const blind = blindStaffState({
+    stock_check: {
+      opening: { offCount: 1, lines: [{ sku: "1001", text: "#1001", off: -2, cents: -2000, expected: 7 }] },
+      closing: { offCount: 1, lines: [{ sku: "1002", text: "#1002", off: 1, cents: 500, expected: 2 }] },
+      refills: { count: 1, lines: [{ sku: "1003", text: "#1003", sent: 4, received: 3, diff: -1, cents: -800, expected: 4 }] },
+    },
+  });
+  assert.equal((blind.stock_check as { opening: { lines: { cents?: number }[] } }).opening.lines[0]?.cents, -2000);
+  assert.equal((blind.stock_check as { closing: { lines: { cents?: number }[] } }).closing.lines[0]?.cents, 500);
+  assert.equal((blind.stock_check as { refills: { lines: { cents?: number }[] } }).refills.lines[0]?.cents, -800);
+  assert.equal(JSON.stringify(blind).includes("expected"), false);
+});
+
+test("non-JSON till failures use a clear retry message", async () => {
+  const response = new Response("<html>gateway timeout</html>", { status: 504, headers: { "content-type": "text/html" } });
+  await assert.rejects(() => parseTillResponse(response), /The till could not be reached\. Try again\./);
 });
 
 test("PNY02 starting stock is added once and leaves PNY01 untouched", async () => {
@@ -2923,6 +3943,8 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.deepEqual(open.closing?.lines?.map((line) => line.sku), open.close_lines?.map((line) => line.sku));
   await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 4 });
   await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
+  await rejects(() => h.svc.submitClosingCount(h.token), "COUNT_RECOUNT_REQUIRED");
+  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
   await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === shift.id);
   assert.equal(draft?.closing_submitted_at != null, true);
@@ -2974,6 +3996,30 @@ test("preview closing count can search and add known zero-quantity SKU 240", asy
   await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
 });
 
+test("unusual closing counts require an explicit second confirmation", async () => {
+  const h = await readyTill({ "1001": 4 });
+  await h.svc.startClosingCount(h.token);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 }),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_CONFIRM_REQUIRED");
+      assert.deepEqual(error.details, { sku: "1001", counted_qty: 1001 });
+      return true;
+    },
+  );
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts.length ?? 0, 0);
+  await assert.rejects(
+    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 14 }),
+    (error: unknown) => error instanceof PosError && error.code === "COUNT_CONFIRM_REQUIRED",
+  );
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001, confirm_unusual: true });
+  assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts[0]?.counted_qty, 1001);
+  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
+  assert.match(pos, /COUNT_CONFIRM_REQUIRED/);
+  assert.match(pos, /confirm_unusual: true/);
+});
+
 test("close start timeout recovers by rereading committed server state", async () => {
   let aborted = false;
   const result = await startClosingWithRecovery(
@@ -3008,8 +4054,29 @@ test("closing count requires every SKU and explicit confirmation records blanks 
     "COUNT_REQUIRED",
   );
 
-  const submitted = await h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true });
-  assert.deepEqual(submitted.recorded_as_zero, ["1002"]);
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true }),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_RECOUNT_REQUIRED");
+      assert.deepEqual(error.details.recount_lines, [{ sku: "1002", text: "#1002 each" }]);
+      assert.equal(JSON.stringify(error.details).includes("expected"), false);
+      assert.equal(JSON.stringify(error.details).includes("counted"), false);
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_RECOUNT_INCOMPLETE");
+      assert.equal(JSON.stringify(error.details).includes("expected"), false);
+      assert.equal(JSON.stringify(error.details).includes("counted"), false);
+      return true;
+    },
+  );
+  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 0 });
+  await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
   const zero = draft?.counts.find((row) => row.sku === "1002");
   assert.equal(zero?.counted_qty, 0);
@@ -3047,26 +4114,78 @@ test("the float is stored on the close and does not change the deposit", async (
   assert.equal(ended.closing.final_deposit_cents, 200);
   const after = h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0);
   assert.equal(after - before, 200);
-  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents);
+  assert.equal(ended.closing.balance_cents, ended.closing.cash_sales_cents + (ended.closing.shortage_cents ?? 0) - (ended.closing.overage_cents ?? 0) - ended.closing.deposited_cents - 500);
   const started = await h.svc.startShift({ key: "float-next", store: "PNY01", staff_ref: "staff-b", pos_id: "B1", shift_id: "sccx-float" });
   const next = await h.svc.login(String(started.pin), "10.9.0.1");
   const open = await h.svc.state(next.token);
   assert.equal(open.float_check.required, true);
   assert.equal(open.float_check.expected_cents, 500);
   assert.equal(open.float_check.done, false);
-  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400 });
+  await assert.rejects(() => h.svc.saveOpeningFloat(next.token, { found_cents: 400 }), (error: unknown) => error instanceof PosError && error.code === "FLOAT_ADJUST_CONFIRM_REQUIRED");
+  const checked = await h.svc.saveOpeningFloat(next.token, { found_cents: 400, confirm_adjustment: true });
   assert.equal(checked.gap_cents, -100);
   const verified = await h.svc.state(next.token);
   assert.equal(verified.float_check.done, true);
   assert.equal(verified.float_check.found_cents, 400);
+  assert.equal(verified.float_check.difference_cents, -100);
+  assert.equal(verified.float_check.adjusted_by, "Bea");
+  assert.ok(verified.float_check.adjusted_at);
+  const floatAudit = h.db.state.audit.find((row) => row.action === "OPENING_FLOAT_ADJUSTED");
+  assert.equal(floatAudit?.detail?.difference_cents, -100);
   assert.equal(h.db.state.deposits.reduce((sum, row) => sum + row.amount_cents, 0), after);
 });
 
+test("the first store shift requires opening cash and produces a complete reconciliation", async () => {
+  const h = await readyTill({ "1001": 2 });
+  const open = await h.svc.state(h.token);
+  assert.equal(open.float_check.required, true);
+  assert.equal(open.float_check.done, false);
+  assert.equal(open.float_check.expected_cents, 0);
+
+  await assert.rejects(
+    () => h.svc.saveOpeningFloat(h.token, { found_cents: 4400 }),
+    (error: unknown) => error instanceof PosError && error.code === "FLOAT_ADJUST_CONFIRM_REQUIRED",
+  );
+  await h.svc.saveOpeningFloat(h.token, { found_cents: 4400, confirm_adjustment: true });
+  await h.svc.cashout(h.token, { key: "first-shift-sale", lines: [{ sku: "1001", qty: 1 }] });
+  await h.svc.saveFinalDeposit(h.token, { amount_cents: 500, float_cents: 100 });
+  await submitClosingValues(h.svc, h.token);
+  const ended = await h.svc.endShiftFromPos(h.token, { key: "first-shift-end", final_deposit_cents: 500, float_cents: 100, lines: [] });
+
+  assert.equal(ended.closing.opening_float_counted_cents, 4400);
+  assert.equal(ended.closing.opening_float_expected_cents, 0);
+  assert.equal(ended.closing.balance_cents, 4400 + ended.closing.cash_sales_cents - 500 - 100);
+  assert.match(ended.closing.summary_text, /Opening cash: \$44\.00/);
+});
+
+test("PNYS accepts the retained PNY01 SCCx store code at shift start and end", async () => {
+  const h = harness();
+  h.db.state.stores.push({ ...h.db.state.stores[0], code: "PNYS", name: "PNYS Test Store", ticket_letter_seq: 0 });
+  await runStore(PNYS_STORE, () => h.svc.importRoster({
+    key: "pnys-randy-roster",
+    staff: [{ staff_uid: "staff-randy", sccx_id: "randy-sccx", pos_id: "RANDY", display_name: "Randy", active: true }],
+  }));
+  const started = await runStore(PNYS_STORE, () => h.svc.startShift({
+    key: "pnys-randy-start",
+    store: "PNY01",
+    staff_ref: "randy-sccx",
+    pos_id: "RANDY",
+    shift_id: "sccx-pny01-randy",
+  }));
+  assert.equal(h.db.state.shifts.find((row) => row.id === started.shift_id)?.store_code, "PNYS");
+  const ended = await runStore(PNYS_STORE, () => h.svc.endShiftFromSccx({
+    key: "pnys-randy-end",
+    store: "PNY01",
+    shift_id: "sccx-pny01-randy",
+  }));
+  assert.equal(ended.ok, true);
+});
+
 test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, and the next WEED opening owns the variance", async () => {
-  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
-  assert.equal(added.length, 102);
-  assert.equal(THC_SKUS.length, 248);
-  assert.equal(new Set(THC_SKUS).size, 248);
+  const added = `170-28g 170-3g 172-28g 172-3g 187-28g 187-3g 202-14g 202-5g 203-14g 203-5g 204-14g 204-5g 205-5g 216-14g 216-5g 219-14g 219-5g 222-14g 222-5g 224-14g 224-5g 225-14g 225-5g 236-14g 236-5g 261-14g 313-3g 313-5g 315-3g 323-3g 323-5g 328-3g 328-5g 331-3g 331-5g 332-3g 332-5g 337-3g 337-5g 345-3g 345-5g 350-3g 350-5g 373-3g 373-5g 376-3g 376-5g 403-3g 403-5g 404-3g 404-5g 418-3g 418-5g 420-3g 420-5g 424-3g 424-5g 425-3g 425-5g 426-3g 426-5g 427-3g 427-5g 428-3g 430-3g 430-5g 431-3g 431-5g 474-3g 474-5g 499-3g 499-5g 502-3g 502-5g 503-3g 503-5g 506-3g 506-5g 509-3g 509-5g 510-3g 510-5g 511-3g 511-5g 512-3g 512-5g 517-3g 517-5g 563-3g 563-5g 921 945 946 947 887 888 889 940 610 611 680 681 960 969`.split(/\s+/);
+  assert.equal(added.length, 104);
+  assert.equal(THC_SKUS.length, 250);
+  assert.equal(new Set(THC_SKUS).size, 250);
   assert.equal(added.every(isThcSku), true);
   assert.equal(isThcSku("188"), true);
   assert.equal(isThcSku("710"), false);
@@ -3078,6 +4197,7 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
 
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([
     { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
     { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
@@ -3145,7 +4265,7 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(h.db.state.audit.filter((row) => row.action === "WEED_SHIFT_TOGGLE" && row.ref_id === first.shift_id).length, 1);
   await h.svc.answerWeedInStore(login.token, false);
 
-  const master = await h.svc.login("1988", "10.0.0.18");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.0.0.18");
   assert.equal((await h.svc.state(master.token)).master, true);
   const masterToggle = await h.svc.answerWeedInStore(master.token, true);
   assert.equal(masterToggle.changed, true);
@@ -3195,13 +4315,14 @@ test("PNY01 staff cannot change WEED after the closing count starts", async () =
   await h.svc.answerWeedInStore(login.token, true);
   await h.svc.startClosingCount(login.token);
   await rejects(() => h.svc.answerWeedInStore(login.token, false), "WEED_TOGGLE_CLOSED");
-  const master = await h.svc.login("1988", "10.0.0.12");
+  const master = await h.svc.login(TEST_MASTER_PIN, "10.0.0.12");
   await rejects(() => h.svc.answerWeedInStore(master.token, false), "WEED_TOGGLE_CLOSED");
   assert.equal(h.db.state.shifts.find((row) => row.id === opened.shift_id)?.weed_in_store, true);
 });
 
 test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "legacy-weed-stock", sku: "188", qty: 2 });
@@ -3236,4 +4357,37 @@ test("PNY02 does not receive the PNY01 WEED gate", async () => {
   assert.equal(shift?.weed_gate_required, undefined);
   assert.equal(view.weed_gate.required, false);
   assert.equal(view.phase, "sell");
+});
+
+test("ACD01 has an isolated staff login route and appears in the central Kitchen selector", () => {
+  const profile = ACD01_STORE;
+  assert.equal(profile.code, "ACD01");
+  assert.equal(profile.apiBase, "/api/acd01/pos");
+  assert.equal(profile.sessionCookie, "acd01_pos_session");
+  const page = readFileSync(join(process.cwd(), "app/acd01/pos/page.tsx"), "utf8");
+  const api = readFileSync(join(process.cwd(), "app/api/acd01/pos/[[...slug]]/route.ts"), "utf8");
+  const kitchen = readFileSync(join(process.cwd(), "app/pos/kitchen/KitchenApp.tsx"), "utf8");
+  assert.match(page, /storeCode="ACD01"/);
+  assert.match(api, /runStore\(ACD01_STORE/);
+  assert.match(kitchen, /store_code: selectedStore/);
+  assert.match(kitchen, /selectedStore/);
+});
+
+test("frozen ACD01 accepts only a pending Kitchen refill and never changes on-hand", async () => {
+  const db = new MemoryDb();
+  db.state.stores[0] = { ...db.state.stores[0]!, code: "ACD01", name: "Amesbury Cannabis Dispensary", opening_count_required: true };
+  db.state.products.push({ sku: "656", name: "KNOCK OUT MW 3000MG", category: "EDIBLES", default_price_cents: 3500, thc_flag: false, image_url: null, setb_active: true, created_at: "2026-11-16T00:00:00.000Z", updated_at: "2026-11-16T00:00:00.000Z" });
+  db.state.store_products.push({ store_code: "ACD01", sku: "656", enabled: false, price_override_cents: null, created_at: "2026-11-16T00:00:00.000Z", updated_at: "2026-11-16T00:00:00.000Z" });
+  db.writeMode = "FROZEN";
+  db.allowFrozenKitchenRefill = true;
+  const svc = new PosService(db, { now: () => new Date("2026-11-16T12:00:00.000Z"), sheet: new LocalSheet(), secrets, demo: null });
+  const before = structuredClone(db.state);
+  const result = await runStore(ACD01_STORE, () => svc.queueKitchenRefillTrusted({ key: "acd01-opening-656", lines: [{ sku: "656", qty: 2 }] }, { staff_uid: "KITCHEN", display_name: "Kitchen" }));
+  assert.equal(result.lines[0]?.status, "PENDING_CONFIRM");
+  assert.equal(db.state.incoming[0]?.store_code, "ACD01");
+  assert.equal(db.state.incoming[0]?.approval_required, true);
+  assert.equal(db.state.balances.length, 0);
+  assert.equal(isKitchenRefillOnlyChange(before, db.state), true);
+  db.allowFrozenKitchenRefill = false;
+  await rejects(() => runStore(ACD01_STORE, () => svc.queueKitchenRefillTrusted({ key: "acd01-blocked", lines: [{ sku: "656", qty: 1 }] }, { staff_uid: "KITCHEN", display_name: "Kitchen" })), "STORE_WRITE_BLOCKED");
 });

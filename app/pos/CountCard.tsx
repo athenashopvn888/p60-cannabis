@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { ScanCatalogItem } from "../lib/pny-pos/labelScan";
+import ProductScanner from "./ProductScanner";
 import styles from "./till.module.css";
 
 export type CountCardLine = {
@@ -20,6 +22,10 @@ export default function CountCard({
   onSave,
   onJump,
   onSubmit,
+  scanCatalog = [],
+  submitSignal = 0,
+  onExpandedChange,
+  initialExpanded = false,
 }: {
   lines: CountCardLine[];
   busy: boolean;
@@ -30,6 +36,10 @@ export default function CountCard({
   onSave: (sku: string, countedQty: number) => Promise<void>;
   onJump?: (sku: string) => Promise<void>;
   onSubmit?: (confirmBlanksZero?: boolean) => Promise<void>;
+  scanCatalog?: ScanCatalogItem[];
+  submitSignal?: number;
+  onExpandedChange?: (expanded: boolean) => void;
+  initialExpanded?: boolean;
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -39,16 +49,32 @@ export default function CountCard({
   void onJump;
   const [qty, setQty] = useState(current?.counted_qty == null ? "" : String(current.counted_qty));
   const [seen, setSeen] = useState(current?.sku ?? "");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const lastSubmitSignal = useRef(submitSignal);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [extraSku, setExtraSku] = useState("");
   const [extraQty, setExtraQty] = useState("");
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
+  const [recountLines, setRecountLines] = useState<CountCardLine[] | null>(null);
+  const [recountDrafts, setRecountDrafts] = useState<Record<string, string>>({});
   const knownSkuListId = useId();
 
+  useEffect(() => {
+    onExpandedChange?.(expanded);
+  }, [expanded, onExpandedChange]);
+
+  useEffect(() => {
+    if (submitSignal === lastSubmitSignal.current) return;
+    lastSubmitSignal.current = submitSignal;
+    void requestSubmit();
+    // requestSubmit intentionally uses the current count draft at signal time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitSignal]);
+
   if (!current) return null;
+
   if (current.sku !== seen) {
     setSeen(current.sku);
     setQty(current.counted_qty == null ? (drafts[current.sku] ?? "") : String(current.counted_qty));
@@ -114,7 +140,42 @@ export default function CountCard({
       }
       await onSubmit?.(false);
     } catch (err) {
+      const failure = err as Error & { code?: string; details?: { recount_lines?: unknown } };
+      if (failure.code === "COUNT_RECOUNT_REQUIRED" || failure.code === "COUNT_RECOUNT_INCOMPLETE") {
+        const rows = Array.isArray(failure.details?.recount_lines)
+          ? failure.details.recount_lines.flatMap((row) => {
+              if (!row || typeof row !== "object") return [];
+              const candidate = row as { sku?: unknown; text?: unknown };
+              if (typeof candidate.sku !== "string" || typeof candidate.text !== "string") return [];
+              return [{ sku: candidate.sku, text: candidate.text, counted_qty: null }];
+            })
+          : [];
+        if (rows.length) {
+          setRecountLines(rows);
+          setRecountDrafts({});
+          setLocalError("");
+          return;
+        }
+      }
       setLocalError(err instanceof Error ? err.message : "Count was not submitted");
+    }
+  }
+
+  async function submitRecount() {
+    if (!recountLines) return;
+    const missing = recountLines.filter((line) => !/^\d+$/.test(recountDrafts[line.sku] ?? ""));
+    if (missing.length) {
+      setLocalError(`Recount all ${recountLines.length} listed SKUs.`);
+      return;
+    }
+    setLocalError("");
+    try {
+      for (const line of recountLines) await onSave(line.sku, Number(recountDrafts[line.sku]));
+      setRecountLines(null);
+      setRecountDrafts({});
+      await onSubmit?.(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Recount was not saved");
     }
   }
 
@@ -138,6 +199,23 @@ export default function CountCard({
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
     }
+  }
+
+  function scanToSku(sku: string) {
+    const next = lines.findIndex((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (next >= 0) {
+      setIndex(next);
+      setExpanded(false);
+      return true;
+    }
+    const known = knownLines.find((row) => row.sku.toLowerCase() === sku.toLowerCase());
+    if (known) {
+      openList();
+      setExtraSku(known.sku);
+      setExtraQty("");
+      return true;
+    }
+    return false;
   }
 
   async function addExtra() {
@@ -174,6 +252,7 @@ export default function CountCard({
       {allowExtra ? (
         <div className={styles.countListRow}>
           <input
+            className={styles.countSearch}
             aria-label="Search or add SKU"
             placeholder="Search SKU or name"
             list={knownSkuListId}
@@ -245,15 +324,38 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const recountModal = recountLines ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="recount-title" data-testid="recount-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="recount-title">Please recount these SKUs</h2>
+        <p>Please recount these SKUs to make sure the stock count is accurate.</p>
+        <div className={styles.countList} data-testid="recount-list">
+          {recountLines.map((line) => (
+            <label key={line.sku} className={styles.countListRow}>
+              <strong>{line.text}</strong>
+              <input
+                inputMode="numeric"
+                aria-label={`Recount ${line.text}`}
+                value={recountDrafts[line.sku] ?? ""}
+                onChange={(event) => setRecountDrafts((currentDrafts) => ({ ...currentDrafts, [line.sku]: event.target.value.replace(/[^\d]/g, "") }))}
+              />
+            </label>
+          ))}
+        </div>
+        <button className={styles.primary} type="button" disabled={busy} data-testid="recount-submit" onClick={() => void submitRecount()}>Save updated counts</button>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
       <div data-testid="count-card" className={styles.countDock}>
-        <div className={styles.countRuleRow}>{ruleButton}</div>
+        <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
         {list}
         {error}
         {ruleModal}
         {blankModal}
+        {recountModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -270,8 +372,8 @@ export default function CountCard({
 
   return (
     <div data-testid="count-card">
-      <div className={styles.countRuleRow}>{ruleButton}</div>
-      <div className={styles.countSplit}>
+      <div className={styles.countRuleRow}>{ruleButton}{scanCatalog.length ? <ProductScanner catalog={scanCatalog} onMatch={scanToSku} /> : null}</div>
+      {!expanded ? <div className={styles.countSplit}>
         <form className={styles.countMain} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <p className={styles.countSku}>{current.text}</p>
           <div className={styles.countEntry}>
@@ -285,12 +387,13 @@ export default function CountCard({
             {expanded ? "Collapse" : "Expand"}
           </button>
         </div>
-      </div>
-      {onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
+      </div> : null}
+      {!expanded && onSubmit ? <button className={styles.countSubmit} type="button" data-testid="count-submit" disabled={busy} onClick={() => void requestSubmit()}>Submit</button> : null}
       {list}
       {error}
       {ruleModal}
       {blankModal}
+      {recountModal}
     </div>
   );
 }

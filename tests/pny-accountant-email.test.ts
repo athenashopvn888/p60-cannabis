@@ -238,8 +238,9 @@ test("Kitchen import and staff receive queue SENT and RECEIVED emails and return
   const view = await service.state(login.token);
   assert.equal(view.incoming[0]?.refill_id, "PNY01-R0001");
   const received = await service.confirmIncoming(login.token, { key: "receive", lines: [{ kitchen_row_id: rowId, qty_received: 2 }] });
-  assert.equal(received.receipts[0]?.staff_name, db.state.staff.find((row) => row.staff_uid === "staff-a")?.display_name);
-  assert.equal(received.receipts[0]?.lines[0]?.qty_received, 2);
+  assert.equal(received.receipt.received_by, db.state.staff.find((row) => row.staff_uid === "staff-a")?.display_name);
+  assert.equal(received.receipt.refill_id, "PNY01-R0001");
+  assert.equal(received.receipt.lines[0]?.qty_received, 2);
   const emailRows = db.state.outbox.filter((row) => row.tab === "S_EmailOutbox");
   assert.deepEqual(emailRows.map((row) => row.payload.status).sort(), ["PENDING", "PENDING"]);
   assert.ok(emailRows.some((row) => row.payload.subject.includes("SENT")));

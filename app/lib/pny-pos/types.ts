@@ -10,6 +10,11 @@ export type StoreRow = {
   active: boolean;
   timezone: string;
   prices_tax_included: boolean;
+  /** Manager-controlled store policy. Missing legacy rows default safely to WEED. */
+  weed_in_store?: boolean;
+  /** Manager-controlled per-store opening policy. Closing remains mandatory. */
+  opening_count_required?: boolean;
+  closing_count_required?: boolean;
   ticket_letter_seq: number;
   created_at: string;
 };
@@ -79,11 +84,16 @@ export type ShiftRow = {
   pin_hash: string | null;
   pin_expires_at: string | null;
   pin_failed_attempts: number;
+  /** Hash-only, time-limited access to this staff member's own completed close. */
+  closing_access_pin_hash?: string | null;
+  closing_access_expires_at?: string | null;
   status: ShiftStatus;
   started_at: string;
   ended_at: string | null;
   end_reason: string | null;
   opening_confirmed_at: string | null;
+  /** Snapshot of the store policy when this shift opened. */
+  opening_count_required?: boolean;
   refill_confirmed_at: string | null;
   /** PNY01-only gate. Missing on older shifts and every PNY02 shift. */
   weed_gate_required?: boolean;
@@ -104,6 +114,7 @@ export type SessionRow = {
   revoked_at: string | null;
   created_at: string;
   master?: boolean;
+  closing_only?: boolean;
 };
 
 export type IncomingRow = {
@@ -125,7 +136,49 @@ export type IncomingRow = {
   confirmed_shift_id: string | null;
   confirmed_at: string | null;
   linked_ledger_id: string | null;
+  /** Kitchen identity and approval state are captured per line for the receipt. */
+  sent_by?: string | null;
+  received_by?: string | null;
+  approval_required?: boolean;
   created_at: string;
+};
+
+export type RefillReceiptLine = {
+  kitchen_row_id: string;
+  sku: string;
+  name: string;
+  qty_sent: number;
+  qty_received: number;
+  variance: number;
+  reason: string | null;
+  approval_required: boolean;
+};
+
+export type RefillReceiptRow = {
+  id: string;
+  batch_id: string;
+  refill_id?: string;
+  store_code: string;
+  status: "CONFIRMED" | "PARTIAL" | "REJECTED";
+  sent_by: string;
+  received_by: string;
+  sent_at: string;
+  received_at: string;
+  lines: RefillReceiptLine[];
+};
+
+export type StockRequestRow = {
+  id: string;
+  store_code: string;
+  shift_id: string;
+  staff_uid: string;
+  staff_name: string;
+  sku: string;
+  qty: number;
+  status: "REQUESTED" | "SENT";
+  requested_at: string;
+  sent_batch_id: string | null;
+  sent_at: string | null;
 };
 
 export type CountRow = {
@@ -176,6 +229,66 @@ export type SaleRow = {
   void_reason: string | null;
   voided_by: string | null;
   created_at: string;
+  customer_id?: string | null;
+  coupon_id?: string | null;
+  discount_cents?: number;
+};
+
+export type CustomerRow = {
+  id: string;
+  phone_e164: string;
+  display_name: string;
+  email: string | null;
+  created_store_code: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerConsentRow = {
+  id: string;
+  customer_id: string;
+  consent_type: "EXPRESS" | "IMPLIED";
+  consented_at: string;
+  source: string;
+  store_code: string;
+  unsubscribed_at: string | null;
+  created_at: string;
+};
+
+export type CustomerVisitRow = {
+  id: string;
+  customer_id: string;
+  store_code: string;
+  sale_id: string;
+  shift_id: string;
+  spend_cents: number;
+  visited_at: string;
+};
+
+export type CouponRow = {
+  id: string;
+  store_code: string;
+  code: string;
+  label: string;
+  active: boolean;
+  discount_type: "FIXED" | "PERCENT";
+  discount_value: number;
+  min_spend_cents: number;
+  max_redemptions_per_customer: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CouponRedemptionRow = {
+  id: string;
+  coupon_id: string;
+  customer_id: string | null;
+  store_code: string;
+  shift_id: string;
+  sale_id: string;
+  discount_cents: number;
+  redeemed_at: string;
 };
 
 export type SaleLineRow = {
@@ -226,6 +339,11 @@ export type ClosingRow = {
   final_deposit_cents?: number;
   /** Cash left in the drawer after the final deposit. Missing means 0. */
   float_cents?: number;
+  opening_float_expected_cents?: number | null;
+  opening_float_counted_cents?: number | null;
+  opening_float_difference_cents?: number | null;
+  opening_float_adjusted_by?: string | null;
+  opening_float_adjusted_at?: string | null;
   shortage_cents?: number;
   overage_cents?: number;
   balance_cents?: number;
@@ -240,8 +358,20 @@ export type ClosingRow = {
   created_at: string;
   /** Master plus close date, such as PNY-1104-1105. Missing on closings saved before labels. */
   close_label?: string;
+  version?: number;
+  reclosed_at?: string | null;
+  reclosed_by?: string | null;
   /** Six-character sequential reference for daily use. The full shift_id remains the audit key. */
   shift_ref?: string;
+};
+
+export type ClosingVersionRow = {
+  id: string;
+  shift_id: string;
+  version: number;
+  closing: ClosingRow;
+  actor: string;
+  created_at: string;
 };
 
 export type ClosingDraftRow = {
@@ -262,6 +392,9 @@ export type ClosingDraftRow = {
   /** Set when staff choose Yes on End Shift. Missing means the closing count has not started. */
   closing_started_at?: string | null;
   closing_submitted_at?: string | null;
+  /** SKUs whose first closing count differed and must be physically recounted once. */
+  closing_recount_skus?: string[];
+  closing_recount_started_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   /** Cash left in the drawer when this shift closes. Not a deposit. */
@@ -269,6 +402,9 @@ export type ClosingDraftRow = {
   /** Cash counted at the next opening, compared with the previous close. */
   float_found_cents?: number | null;
   float_expected_cents?: number | null;
+  float_difference_cents?: number | null;
+  float_adjusted_by?: string | null;
+  float_adjusted_at?: string | null;
   updated_at: string;
 };
 
@@ -292,8 +428,12 @@ export type OutboxRow = {
   attempts: number;
   last_error: string | null;
   next_attempt_at: string;
-  status: "queued" | "sent" | "error";
+  status: "queued" | "sending" | "sent" | "error";
   created_at: string;
+  /** Internal worker lease fields live in live_state and are never sent to Sheets. */
+  lease_id?: string | null;
+  lease_expires_at?: string | null;
+  last_attempt_at?: string | null;
 };
 
 export type CursorRow = {
@@ -331,6 +471,8 @@ export type State = {
   shifts: ShiftRow[];
   sessions: SessionRow[];
   incoming: IncomingRow[];
+  refill_receipts?: RefillReceiptRow[];
+  stock_requests?: StockRequestRow[];
   counts: CountRow[];
   count_lines: CountLineRow[];
   tickets: TicketRow[];
@@ -339,12 +481,19 @@ export type State = {
   sale_lines: SaleLineRow[];
   deposits: DepositRow[];
   closings: ClosingRow[];
+  closing_versions?: ClosingVersionRow[];
   closing_drafts: ClosingDraftRow[];
   idempotency: IdemRow[];
   outbox: OutboxRow[];
   cursors: CursorRow[];
   audit: AuditRow[];
   admin_sessions: AdminSessionRow[];
+  /** Central customer records are persisted in pos_hub and hydrated into this transaction snapshot. */
+  customers?: CustomerRow[];
+  customer_consents?: CustomerConsentRow[];
+  customer_visits?: CustomerVisitRow[];
+  coupons?: CouponRow[];
+  coupon_redemptions?: CouponRedemptionRow[];
   /** Last issued Deposit #. PNY-D0001 is 1. Missing on shifts saved before sequential numbers. */
   deposit_seq?: number;
   deposit_seq_pny02?: number;

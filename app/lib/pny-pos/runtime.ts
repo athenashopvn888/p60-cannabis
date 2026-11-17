@@ -1,4 +1,4 @@
-import { DEMO_LABEL, DEMO_PIN, DEMO_SESSION_SECRET } from "./constants.ts";
+import { DEMO_LABEL, DEMO_SESSION_SECRET } from "./constants.ts";
 import { MemoryDb } from "./memory.ts";
 import { applyDemoSeed } from "./seed.ts";
 import { PosService, type PosDeps } from "./service.ts";
@@ -6,7 +6,12 @@ import { SheetDb } from "./sheetStore.ts";
 import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import { createSupabaseStateDb } from "./supabaseState.ts";
+import { specialPinHash } from "./pinAuth.ts";
+import { signalGatewayFromEnv } from "./signalGateway.ts";
 import type { State, Secrets } from "./types.ts";
+import type { StoreCode } from "./storeProfile.ts";
+import { currentStore } from "./storeContext.ts";
+import type { StoreProfile } from "./storeProfile.ts";
 
 const DEMO_SECRETS: Secrets = {
   shift: "demo-shift-secret-placeholder",
@@ -62,7 +67,7 @@ export function loadSecrets(): Secrets {
   };
 }
 
-function tagDemoStore(state: State, code: "PNY01" | "PNY02") {
+function tagDemoStore(state: State, code: StoreCode) {
   for (const row of state.shifts) row.store_code = code;
   for (const row of state.balances) row.store_code = code;
   for (const row of state.incoming) row.store_code = code;
@@ -74,39 +79,56 @@ function tagDemoStore(state: State, code: "PNY01" | "PNY02") {
   }
 }
 
-async function boot() {
+async function boot(store: StoreProfile) {
   const sheet = sheetFromEnv();
   const secrets = loadSecrets();
-  const deps: PosDeps = { sheet, secrets, demo: null };
+  const deps: PosDeps = { sheet, secrets, demo: null, signal: signalGatewayFromEnv() };
+  const demoPinHash = specialPinHash("demo");
   const locked = lockedStore();
-  if (locked || stateBackend() === "supabase") {
+  if (locked || store.code === "ACD01" || stateBackend() === "supabase") {
     const url = process.env.POS_SUPABASE_DB_URL?.trim() ?? "";
     if (!url) throw new Error("POS_SUPABASE_DB_URL is required when STORE_CODE or POS_STATE_BACKEND=supabase is set");
-    const code = locked?.code ?? "PNY01";
-    const db = createSupabaseStateDb(url, code);
+    const code = store.code;
+    const schema = code === "PNYS" || code === "ACD01" ? "pnys_pos" : "pny_pos";
+    const configuredSchema = process.env.POS_DB_SCHEMA?.trim();
+    if (configuredSchema && configuredSchema !== schema) {
+      throw new Error(`POS_DB_SCHEMA must be ${schema} for ${code}`);
+    }
+    const db = createSupabaseStateDb(url, code, schema);
     if (demoMode()) {
       await db.transaction(async (tx) => {
         if (tx.state.shifts.length === 0 && tx.state.products.length === 0) {
-          applyDemoSeed(tx.state, new Date());
+          applyDemoSeed(tx.state, new Date(), demoPinHash);
           tagDemoStore(tx.state, code);
         }
       });
-      deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
+      deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
+    } else if ((code === "PNYS" || code === "ACD01") && process.env.VERCEL_ENV !== "production" && demoPinHash) {
+      // PNYS previews use the cloned catalog/stock, not the destructive demo seed.
+      // Supplying the preview-only demo hash enables an isolated test shift; a
+      // missing hash or a production deployment remains fail-closed.
+      deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
     }
     return new PosService(db, deps);
   }
   if (sheet.configured) return new PosService(new SheetDb(sheet), deps);
   const db = new MemoryDb();
   if (demoMode()) {
-    applyDemoSeed(db.state, new Date());
-    deps.demo = { pin: DEMO_PIN, label: DEMO_LABEL };
+    applyDemoSeed(db.state, new Date(), demoPinHash);
+    deps.demo = { pinHash: demoPinHash, label: DEMO_LABEL };
   }
   return new PosService(db, deps);
 }
 
-const globalState = globalThis as typeof globalThis & { __pnyPos?: Promise<PosService> };
+const globalState = globalThis as typeof globalThis & { __pnyPosByStore?: Map<StoreCode, Promise<PosService>> };
 
 export function getService() {
-  if (!globalState.__pnyPos) globalState.__pnyPos = boot();
-  return globalState.__pnyPos;
+  const store = currentStore();
+  globalState.__pnyPosByStore ??= new Map();
+  let service = globalState.__pnyPosByStore.get(store.code);
+  if (!service) {
+    service = boot(store);
+    globalState.__pnyPosByStore.set(store.code, service);
+  }
+  return service;
 }
