@@ -1814,7 +1814,11 @@ test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history e
   assert.match(app, /api\/pos\/kitchen\/logout/);
   assert.match(app, /accept="image\/\*" capture="environment"/);
   assert.match(app, /data-testid="kitchen-scan-review"/);
-  assert.match(app, /The photo is not stored/);
+  assert.match(app, /Photos are not stored/);
+  assert.match(app, /Add another photo/);
+  assert.match(app, /setScanPhotoCount\(\(count\) => count \+ 1\)/);
+  assert.match(app, /CHECK duplicate/);
+  assert.match(app, /setScanLines\(\(current\) =>/);
   assert.match(app, /method: editingBatch \? "PATCH" : "POST"/);
   assert.match(app, /method: "DELETE"/);
   assert.match(service, /KITCHEN_REFILL_EDITED/);

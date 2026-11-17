@@ -772,6 +772,25 @@
   max-width: 760px;
   margin: 0 auto;
 }
+.scanPhotoTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.scanPhotoTools button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #166534;
+  color: #fff;
+  font-weight: 900;
+}
 .scanProgress {
   display: grid;
   gap: 8px;
