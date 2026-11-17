@@ -3474,6 +3474,129 @@ export class PosService {
     return this.queueKitchenRefillForActor(input, actor);
   }
 
+  async editKitchenRefill(token: string, input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] }) {
+    return this.editKitchenRefillForActor(input, null, token);
+  }
+
+  async editKitchenRefillTrusted(input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] }, actor: { staff_uid: string; display_name: string }) {
+    return this.editKitchenRefillForActor(input, actor);
+  }
+
+  private async editKitchenRefillForActor(
+    input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_edit_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
+      const batchId = input.batch_id.trim();
+      if (!batchId) throw new PosError(400, "BATCH_REQUIRED", "Choose a refill batch to edit.");
+      const batchRows = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId);
+      if (!batchRows.length) throw new PosError(404, "BATCH_NOT_FOUND", "That refill batch was not found.");
+      if (batchRows.some((row) => ["CONFIRMED", "PARTIAL", "REJECTED"].includes(row.status))) {
+        throw new PosError(409, "BATCH_LOCKED", "This refill was already received or closed and cannot be changed.");
+      }
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (!lines.length) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item, or delete the refill.");
+      if (new Set(lines.map((line) => line.sku)).size !== lines.length) throw new PosError(400, "DUPLICATE_SKU", "Each SKU can appear only once.");
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        if (!tx.state.products.some((item) => item.sku === line.sku && item.setb_active)) throw new PosError(404, "SKU", `SKU ${line.sku} is not in the catalog.`);
+      }
+      const at = iso(now);
+      const before = batchRows.filter((row) => row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      const requestedBySku = new Map(lines.map((line) => [line.sku, line.qty]));
+      for (const row of batchRows.filter((item) => item.status === "PENDING_CONFIRM")) {
+        const nextQty = requestedBySku.get(row.sku);
+        if (nextQty == null) {
+          row.status = "CANCELLED_BY_KITCHEN";
+          row.qty_received = 0;
+          row.confirmed_at = at;
+          row.received_by = staff.display_name || "Kitchen";
+          for (const request of tx.state.stock_requests ?? []) {
+            if (request.store_code === tillCode() && request.sent_batch_id === batchId && request.sku === row.sku && request.status === "SENT") {
+              request.status = "REQUESTED";
+              request.sent_batch_id = null;
+              request.sent_at = null;
+            }
+          }
+        } else {
+          row.qty_sent = nextQty;
+          requestedBySku.delete(row.sku);
+        }
+      }
+      for (const [sku, qty] of requestedBySku) {
+        const product = tx.state.products.find((item) => item.sku === sku && item.setb_active)!;
+        const enabled = tx.state.store_products.some((item) => item.store_code === tillCode() && item.sku === sku && item.enabled);
+        tx.state.incoming.push({
+          kitchen_row_id: randomUUID(), batch_id: batchId, store_code: tillCode(), sku, qty_sent: qty, kind: "REFILL",
+          kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null,
+          confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: staff.display_name || "Kitchen",
+          received_by: null, approval_required: !enabled, created_at: at,
+        });
+        void product;
+      }
+      const after = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId && row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      audit(tx.state, "KITCHEN_REFILL_EDITED", "incoming_batch", batchId, staff.staff_uid, { before, after }, at);
+      const resultBody = { ok: true, batch_id: batchId, lines: after };
+      remember(tx.state, "kitchen_edit_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    }, { kind: "KITCHEN_REFILL" });
+  }
+
+  async deleteKitchenRefill(token: string, input: { key: string; batch_id: string }) {
+    return this.deleteKitchenRefillForActor(input, null, token);
+  }
+
+  async deleteKitchenRefillTrusted(input: { key: string; batch_id: string }, actor: { staff_uid: string; display_name: string }) {
+    return this.deleteKitchenRefillForActor(input, actor);
+  }
+
+  private async deleteKitchenRefillForActor(
+    input: { key: string; batch_id: string },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_delete_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
+      const batchId = input.batch_id.trim();
+      const batchRows = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId);
+      if (!batchRows.length) throw new PosError(404, "BATCH_NOT_FOUND", "That refill batch was not found.");
+      if (batchRows.some((row) => ["CONFIRMED", "PARTIAL", "REJECTED"].includes(row.status))) {
+        throw new PosError(409, "BATCH_LOCKED", "This refill was already received or closed and cannot be changed.");
+      }
+      const pendingRows = batchRows.filter((row) => row.status === "PENDING_CONFIRM");
+      if (!pendingRows.length) throw new PosError(409, "ALREADY_DELETED", "This refill is already deleted.");
+      const at = iso(now);
+      for (const row of pendingRows) {
+        row.status = "CANCELLED_BY_KITCHEN";
+        row.qty_received = 0;
+        row.confirmed_at = at;
+        row.received_by = staff.display_name || "Kitchen";
+      }
+      for (const request of tx.state.stock_requests ?? []) {
+        if (request.store_code === tillCode() && request.sent_batch_id === batchId && request.status === "SENT") {
+          request.status = "REQUESTED";
+          request.sent_batch_id = null;
+          request.sent_at = null;
+        }
+      }
+      const deleted = pendingRows.map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      audit(tx.state, "KITCHEN_REFILL_DELETED", "incoming_batch", batchId, staff.staff_uid, { lines: deleted }, at);
+      const resultBody = { ok: true, batch_id: batchId, deleted: true };
+      remember(tx.state, "kitchen_delete_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    }, { kind: "KITCHEN_REFILL" });
+  }
+
   private async queueKitchenRefillForActor(
     input: { key: string; lines: { sku: string; qty: number }[] },
     trustedActor: { staff_uid: string; display_name: string } | null,

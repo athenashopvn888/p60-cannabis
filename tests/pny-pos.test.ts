@@ -43,6 +43,7 @@ import { specialPinMatches } from "../app/lib/pny-pos/pinAuth.ts";
 import { DurableCommandKeys } from "../app/lib/pny-pos/durableCommand.ts";
 import { OUTBOX_LEASE_MS, outboxBackoffMs } from "../app/lib/pny-pos/outbox.ts";
 import { parseTillResponse } from "../app/pos/softState.ts";
+import { parseRefillSheetWords } from "../app/pos/kitchen/refillSheetOcr.ts";
 
 const secrets: Secrets = {
   shift: "test-shift-secret-value",
@@ -1725,7 +1726,61 @@ test("PNYS Kitchen queues an idempotent pending refill and staff confirmation ad
   assert.equal(db.state.incoming.find((row) => row.kitchen_row_id === pending.kitchen_row_id)?.status, "CONFIRMED");
 });
 
-test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled scan, history and staff handoff", () => {
+test("Kitchen can edit or delete only a pending refill without changing stock", async () => {
+  const now = new Date("2026-11-17T12:00:00.000Z");
+  const db = new MemoryDb();
+  applyDemoSeed(db.state, now, TEST_DEMO_PIN_HASH);
+  const svc = new PosService(db, { now: () => now, sheet: new LocalSheet(), secrets, demo: { pinHash: TEST_DEMO_PIN_HASH, label: "TEST STORE" } });
+  const kitchen = await svc.kitchenLogin(TEST_KITCHEN_PIN, "10.7.2.91");
+  const otherSku = db.state.products.find((product) => product.sku !== "240" && product.setb_active)!.sku;
+  const before240 = qty(db, "240");
+  const beforeOther = qty(db, otherSku);
+  const sent = await svc.queueKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1", lines: [{ sku: "240", qty: 4 }] });
+  const edited = await svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-V2", batch_id: sent.batch_id, lines: [{ sku: "240", qty: 6 }, { sku: otherSku, qty: 2 }] });
+  const replayed = await svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-V2", batch_id: sent.batch_id, lines: [{ sku: "240", qty: 6 }, { sku: otherSku, qty: 2 }] });
+  assert.equal(replayed.replay, true);
+  assert.deepEqual(new Map(edited.lines.map((line) => [line.sku, line.qty])), new Map([["240", 6], [otherSku, 2]]));
+  assert.equal(qty(db, "240"), before240);
+  assert.equal(qty(db, otherSku), beforeOther);
+  assert.equal(db.state.audit.some((row) => row.action === "KITCHEN_REFILL_EDITED" && row.ref_id === sent.batch_id), true);
+
+  const deleted = await svc.deleteKitchenRefill(kitchen.token, { key: "EDIT-DELETE-1-DELETE", batch_id: sent.batch_id });
+  assert.equal(deleted.deleted, true);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === sent.batch_id && row.status === "PENDING_CONFIRM").length, 0);
+  assert.equal(db.state.incoming.filter((row) => row.batch_id === sent.batch_id).every((row) => row.status === "CANCELLED_BY_KITCHEN"), true);
+  assert.equal(qty(db, "240"), before240);
+  assert.equal(qty(db, otherSku), beforeOther);
+  assert.equal(db.state.audit.some((row) => row.action === "KITCHEN_REFILL_DELETED" && row.ref_id === sent.batch_id), true);
+
+  const locked = await svc.queueKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED", lines: [{ sku: "240", qty: 1 }] });
+  const pending = db.state.incoming.find((row) => row.batch_id === locked.batch_id)!;
+  const staff = await svc.login(TEST_DEMO_PIN, "10.7.2.92");
+  await svc.confirmIncoming(staff.token, { key: "EDIT-DELETE-RECEIVE", lines: [{ kitchen_row_id: pending.kitchen_row_id, qty_received: 1 }] });
+  await rejects(() => svc.editKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED-V2", batch_id: locked.batch_id, lines: [{ sku: "240", qty: 2 }] }), "BATCH_LOCKED");
+  await rejects(() => svc.deleteKitchenRefill(kitchen.token, { key: "EDIT-DELETE-LOCKED-DELETE", batch_id: locked.batch_id }), "BATCH_LOCKED");
+});
+
+test("refill sheet OCR parser maps detected grid columns into editable catalog SKUs", () => {
+  const word = (text: string, x: number, y: number, confidence = 90) => ({ text, confidence, bbox: { x0: x, y0: y, x1: x + 24, y1: y + 14 } });
+  const words = [
+    word("39", 300, 100), word("5g", 350, 100), word("149", 400, 100), word("289", 450, 100), word("QTY", 500, 100),
+    word("105", 40, 150), word("2", 450, 150, 86),
+    word("188", 40, 180), word("70", 500, 180, 62),
+    word("334", 40, 210), word("5", 300, 210, 55), word("5", 350, 210, 54),
+    word("10C0", 40, 240), word("50", 500, 240, 73),
+  ];
+  const products = [
+    { sku: "105-28g", name: "Space Cookies", size: "28g" }, { sku: "188", name: "Pre-roll Pink", size: "each" },
+    { sku: "334-3g", name: "Pink Inferno", size: "3g" }, { sku: "334-6g", name: "Pink Inferno", size: "6g" },
+    { sku: "1000", name: "BB Lights", size: "each" },
+  ];
+  assert.deepEqual(parseRefillSheetWords(words, products).map(({ sku, qty }) => ({ sku, qty })), [
+    { sku: "105-28g", qty: 2 }, { sku: "188", qty: 70 }, { sku: "334-3g", qty: 5 }, { sku: "334-6g", qty: 5 },
+    { sku: "1000", qty: 50 },
+  ]);
+});
+
+test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history editing and staff handoff", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
   const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
   const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
@@ -1757,7 +1812,13 @@ test("PNYS Kitchen mobile UI has a nav-free login, zero-stock search, disabled s
   assert.match(app, /data-testid="kitchen-confirm"/);
   assert.match(app, /total units/);
   assert.match(app, /api\/pos\/kitchen\/logout/);
-  assert.match(app, /className=\{styles\.scan\} disabled>SCAN/);
+  assert.match(app, /accept="image\/\*" capture="environment"/);
+  assert.match(app, /data-testid="kitchen-scan-review"/);
+  assert.match(app, /The photo is not stored/);
+  assert.match(app, /method: editingBatch \? "PATCH" : "POST"/);
+  assert.match(app, /method: "DELETE"/);
+  assert.match(service, /KITCHEN_REFILL_EDITED/);
+  assert.match(service, /KITCHEN_REFILL_DELETED/);
   assert.match(app, /data-testid="kitchen-history"/);
   assert.match(app, /Status: PENDING_CONFIRM\. Store staff must confirm/);
   assert.match(css, /position: fixed/);
