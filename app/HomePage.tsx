@@ -1,0 +1,502 @@
+"use client";
+
+import { cigaretteSafeContent } from "./lib/siteConfig";
+
+import { HOME_TITLE } from "./lib/homeDelivery";
+import CohortDeliveryActions from "./components/CohortDeliveryActions";
+import HomeDeliverySection from "./components/HomeDeliverySection";
+import HomepageTopNotices from "./components/HomepageTopNotices";
+
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import styles from "./page.module.css";
+import FleetAnnouncementBanner from "./components/FleetAnnouncementBanner";
+import HomeTitleBlock from "./components/HomeTitleBlock";
+import Navbar from "./components/Navbar";
+import HiringCallout from "./components/HiringCallout";
+import Footer from "./components/Footer";
+import FlowerCard from "./components/FlowerCard";
+import Papa from "papaparse";
+import { useLiveFlowers } from "./lib/useLiveMenu";
+import NearMeFaq from "./components/NearMeFaq";
+import nearMeFaq from "./lib/nearMeFaq.json";
+
+/* ── Bento Mosaic Config ── */
+const BENTO_TIERS = [
+  {
+    name: "Exotic Weed",
+    slug: "exotic-weed",
+    price: "$10-$12/g",
+    banner: "/banners/p60-real/tile-exotic.webp",
+    className: styles.bentoExotic,
+  },
+  {
+    name: "Premium Weed",
+    slug: "premium-weed",
+    price: "$7-$10/g",
+    banner: "/banners/p60-real/tile-premium.webp",
+    className: styles.bentoPremium,
+  },
+  {
+    name: "AAA+ Weed",
+    slug: "aaa-weed",
+    price: "$5-$6/g",
+    banner: "/banners/p60-real/tile-aaa.webp",
+    className: styles.bentoTile,
+  },
+  {
+    name: "AA Weed",
+    slug: "aa-weed",
+    price: "$4/g",
+    banner: "/banners/p60-real/tile-aa.webp",
+    className: styles.bentoTile,
+  },
+  {
+    name: "Budget Weed",
+    slug: "budget-weed",
+    price: "$3/g",
+    banner: "/banners/p60-real/tile-budget.webp",
+    className: styles.bentoTile,
+  },
+  {
+    name: "EDIBLES + MORE",
+    slug: "items/edibles",
+    price: "Shop menu",
+    banner: "/banners/p60-real/tile-menu-plus.webp",
+    className: styles.bentoEdibles,
+  },
+];
+
+/* ── Explore Categories Config (New Banners) ── */
+const EXPLORE_CATEGORIES = cigaretteSafeContent([
+  { name: "Nicotine Vape", slug: "items/vapes", banner: "/banners/p60-real/tile-nic-vape.webp", icon: "💨" },
+  { name: "THC Vape", slug: "items/vape-disposables", banner: "/banners/p60-real/tile-thc-vape.webp", icon: "💨" },
+  { name: "Concentrates", slug: "items/concentrates", banner: "/banners/p60-real/tile-concentrates.webp", icon: "💎" },
+  { name: "Pre-Rolls", slug: "items/prerolls", banner: "/banners/p60-real/tile-prerolls.webp", icon: "🚬" },
+  { name: "Accessories", slug: "items/add-ons", banner: "/banners/p60-real/tile-accessories.webp", icon: "➕" },
+  { name: "Cigarettes", slug: "items/cigarettes", banner: "/banners/native-cigarette-offer-20260822.webp", icon: "🏷️" },
+  { name: "Magic Stuff", slug: "items/magic", banner: "/banners/p60-real/tile-magic.webp", icon: "🍄" },
+]);
+
+/* ── Local FAQs for Jane St ── */
+const LOCAL_FAQS = [
+  {
+    q: "What are the hours for P60 Cannabis?",
+    a: "P60 Cannabis at 1938 Weston Rd, York is open 24 hours daily. Walk in anytime — no appointment needed.",
+  },
+  {
+    q: "What cannabis products do you carry?",
+    a: "The menu organizes flower into Exotic Weed, Premium Weed, AAA+ Weed, AA Weed, and Budget Weed, alongside edibles, pre-rolls, Nicotine Vape, THC Vape, and concentrates. Check current listings for product details.",
+  },
+  {
+    q: "Where is P60 Cannabis located?",
+    a: "We are located at 1938 Weston Rd, York, ON M9N 1W2. Visit us in person or call us at +1 (289) 217-2763. Check current local signs or your preferred map service when planning the trip.",
+  },
+  {
+    q: "Where can I compare Budget Weed at P60 Cannabis?",
+    a: "Open the Budget Weed collection and compare its current product names, sizes, posted prices, and listing details before choosing.",
+  },
+];
+
+const HOME_WEBPAGE_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "@id": "https://www.p60cannabis.com/#webpage",
+  url: "https://www.p60cannabis.com/",
+  name: "P60 Cannabis | 24-Hour Cannabis Store in York",
+  description: "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
+  about: { "@id": "https://www.p60cannabis.com/#store" },
+};
+
+interface Review {
+  name: string;
+  comment: string;
+  date: string;
+}
+
+interface ReviewStats {
+  total: number;
+  avg: number;
+}
+
+export default function HomePage() {
+    const __liveFlowers = useLiveFlowers();
+  const [featuredStrains, setFeaturedStrains] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsStats, setReviewsStats] = useState<ReviewStats | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [welcomeBannerError, setWelcomeBannerError] = useState(false);
+  const welcomeBannerSrc: string = "/p60-home-delivery-banner.webp";
+  const hasWelcomeBanner = welcomeBannerSrc && welcomeBannerSrc !== "/banners/" && !welcomeBannerSrc.includes("HERO_BANNER") && !welcomeBannerSrc.includes("WELCOME_BANNER") && welcomeBannerSrc !== "";
+
+  /* ── 1. Fetch Client-Side Google Reviews ── */
+  useEffect(() => {
+    const STORE_KEY = "PNY01";
+    const url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSu6iy9W3YKRzBYo_r96rXcbJsAOzlkzn5Rw9QMFnE0NbYSBgPxKX8kPRZNC9QcffZYj57155esmnqH/pub?gid=1555782756&single=true&output=csv";
+
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Review feed returned ${r.status}`);
+        return r.text();
+      })
+      .then((raw) => {
+        const rows = Papa.parse<Record<string, string>>(raw, {
+          header: true,
+          skipEmptyLines: true,
+        }).data;
+
+        const reviewsPool: Review[] = [];
+        let totalVal: number | null = null;
+        let avgVal: number | null = null;
+        let hasStats = false;
+
+        rows.forEach((row) => {
+          if (row.StoreKey !== STORE_KEY) return;
+
+          const rn = row.ReviewerName || "";
+          if (rn === "__STATS__") {
+            const parsedTotal = parseInt(row.Comment || "", 10);
+            const parsedAvg = parseFloat(row.CreateTime || "");
+            if (Number.isFinite(parsedTotal) && Number.isFinite(parsedAvg)) {
+              totalVal = parsedTotal;
+              avgVal = parsedAvg;
+              hasStats = true;
+            }
+            return;
+          }
+
+          const comment = row.Comment || "";
+          if (!comment || comment.length < 10) return;
+          const name = rn || "Customer";
+          const dateStr = row.CreateTime || "";
+          reviewsPool.push({ name, comment, date: dateStr });
+        });
+
+        setReviews(reviewsPool.slice(0, 6));
+        if (hasStats && totalVal !== null && avgVal !== null) {
+          setReviewsStats({ total: totalVal, avg: avgVal });
+        }
+        setReviewsLoading(false);
+      })
+      .catch((err) => {
+        console.warn("Reviews fetch failed:", err);
+        setReviewsLoading(false);
+      });
+  }, []);
+
+  /* ── 2. Build Featured Strains ── */
+  useEffect(() => {
+    const pool = [...__liveFlowers].filter((f) => f.image);
+    // Shuffle pool securely
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    const picked: typeof pool = [];
+    const tierCounts: Record<string, number> = {};
+
+    for (const f of pool) {
+      if (picked.length >= 8) break;
+      const tc = tierCounts[f.tier] || 0;
+      if (tc >= 2) continue; // max 2 per tier
+      if (picked.some((p) => p.name === f.name)) continue; // avoid exact duplicates
+      picked.push(f);
+      tierCounts[f.tier] = tc + 1;
+    }
+
+    setFeaturedStrains(picked);
+  }, [__liveFlowers]);
+
+  return (
+    <main className={styles.main}>
+      <Navbar />
+      <HomeTitleBlock />
+      <FleetAnnouncementBanner />
+      <HomepageTopNotices />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_WEBPAGE_SCHEMA).replace(/</g, "\\u003c") }} />
+      {/* ── NAVBAR ── */}
+
+      <HiringCallout />
+
+      {/* ── BENTO MOSAIC HERO ── */}
+      <section className={styles.hero}>
+        <div className={styles.heroBg} />
+        <div className={styles.heroOverlay} />
+        <div className={styles.heroStars} />
+
+        <div className={styles.heroContent}>
+          <div className={styles.deliveryHeroShell}>
+            <div className={styles.deliveryHeroCopy}>
+              <div className={styles.brandBlock}>
+                <img src="/storeFavicon.webp" alt="P60 Cannabis Icon" className={styles.brandLogo} />
+                <span className={styles.deliveryKicker}>1938 Weston Rd / York</span>
+                <p className={styles.brandTitle}>{HOME_TITLE}</p>
+            <CohortDeliveryActions variant="hero" />
+                <p className={styles.brandSub}>A 24-hour cannabis store at 1938 Weston Rd in York, Ontario. Visit us any time or explore the site for store information, cannabis categories and delivery details.</p>
+                <div className={styles.brandBadge}>Open 24 hours</div>
+              </div>
+
+              <div className={styles.deliveryFacts}>
+                <span>1938 Weston Rd</span>
+                <span>Store information</span>
+                <span>Adults 19+</span>
+              </div>
+
+              <aside className={styles.homeDeliveryNotice} aria-labelledby="home-delivery-title">
+                <h2 id="home-delivery-title">Delivery Information</h2>
+                <p>P60 Cannabis has a dedicated page for delivery information, including the published delivery hours and service areas.</p>
+              </aside>
+              <div className={styles.heroActions} aria-label="P60 Cannabis information">
+                <Link href="/weed-dispensary-york" className={styles.heroPrimary}>Visit Our York Store</Link>
+                <Link href="/weed-delivery-york" className={styles.heroSecondary}>Delivery Information</Link>
+              </div>
+            </div>
+
+            {hasWelcomeBanner && !welcomeBannerError && (
+              <Link
+                href="/weed-delivery-york"
+                className={styles.deliveryHeroMedia}
+                aria-label="Open the P60 Cannabis Weed Delivery menu"
+              >
+                <Image
+                  src={welcomeBannerSrc}
+                  alt="P60 Cannabis Dispensary Weed Delivery"
+                  width={1774}
+                  height={887}
+                  priority
+                  sizes="(max-width: 1024px) calc(100vw - 28px), 58vw"
+                  className={styles.deliveryHeroImg}
+                  onError={() => setWelcomeBannerError(true)}
+                />
+              </Link>
+            )}
+          </div>
+
+          <div className={styles.deliveryPromiseGrid}>
+            <div><strong>Visit Us</strong><span>1938 Weston Rd</span></div>
+            <div><strong>Open 24 Hours</strong><span>Every day</span></div>
+            <div><strong>Weston Rd</strong><span>York, ON M9N 1W2</span></div>
+            <div><strong>Call Us</strong><span>(289) 217-2763</span></div>
+          </div>
+
+          <div className={styles.bentoHeader}>
+            <span>Weed Flower Tiers</span>
+            <p>Choose by tier, then browse the current menu.</p>
+          </div>
+
+          <div className={styles.bentoGrid}>
+            {BENTO_TIERS.map((tier) => (
+              <Link
+                key={tier.slug}
+                href={`/${tier.slug}`}
+                className={`${styles.bentoTile} ${tier.className}`}
+              >
+                <div
+                  className={styles.bentoTileBg}
+                  style={{ backgroundImage: `url('${tier.banner}')` }}
+                />
+                <div className={styles.bentoTileOverlay} />
+                <div className={styles.bentoTileContent}>
+                  <span className={styles.bentoLabel}>{tier.name}</span>
+                  <span className={styles.bentoPrice}>{tier.price}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <HomeDeliverySection />
+
+      {/* ── EXPLORE CATEGORIES ── */}
+      <section className={styles.categoriesSection} id="menu">
+        <div className={styles.container}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Explore Categories</h2>
+            <p className={styles.sectionSubtitle}>
+              Compare Nicotine Vape and THC Vape as separate categories, plus concentrates, accessories, and cigarettes.
+            </p>
+          </div>
+
+          <div className={styles.categoriesGrid}>
+            {EXPLORE_CATEGORIES.map((cat) => (
+              <Link
+                key={cat.slug}
+                href={`/${cat.slug}`}
+                className={styles.categoryCard}
+              >
+                <div
+                  className={styles.categoryCardBg}
+                  style={{ backgroundImage: `url('${cat.banner}')` }}
+                />
+                <div className={styles.categoryCardOverlay} />
+                <div className={styles.categoryCardContent}>
+                  <h3 className={styles.categoryCardName}>
+                    {cat.icon} {cat.name} <span className={styles.categoryCardArrow}>→</span>
+                  </h3>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURED PRODUCTS ── */}
+      <section className={styles.featuredSection}>
+        <div className={styles.container}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Featured Strains</h2>
+            <p className={styles.sectionSubtitle}>
+              A rotating sample from the current flower menu.
+            </p>
+          </div>
+
+          <div className={styles.featuredScroll}>
+            {featuredStrains.map((strain, i) => (
+              <div key={`${strain.sku}-${i}`} className={styles.scrollItem}>
+                <FlowerCard flower={strain} tierKey={strain.tier} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── STORE INFORMATION ── */}
+      <section className={styles.seoSection}>
+        <div className={styles.container}>
+          <div className={styles.seoPanel}>
+            <h2 className={styles.seoPanelTitle}>Visit P60 Cannabis in York</h2>
+            <p className={styles.seoPanelText}>
+              P60 Cannabis is located at <strong>1938 Weston Rd, York, ON M9N 1W2</strong>.
+            </p>
+            <p className={styles.seoPanelText}>
+              We are <strong>open 24 hours</strong>.
+            </p>
+            <p className={styles.seoPanelText}>
+              Questions before your visit? Call <a href="tel:+12892172763">(289) 217-2763</a> or view our <Link href="/weed-dispensary-york">York store details</Link>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CLIENT-SIDE GOOGLE REVIEWS SHOWCASE ── */}
+      <section className={styles.reviewsSection}>
+        <div className={styles.container}>
+          <div className={styles.reviewsHeader}>
+            <h2 className={styles.sectionTitle}>What Our Customers Say</h2>
+            {reviewsStats && (
+              <div className={styles.reviewsStarsSummary}>
+                <span className={styles.reviewsStars}>★★★★★</span>
+                <span className={styles.reviewsAvg}>
+                  {reviewsStats.avg.toFixed(1)}
+                </span>
+                <span className={styles.reviewsCount}>
+                  ({reviewsStats.total} Google reviews)
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.reviewsGrid}>
+            {reviewsLoading ? (
+              <div className={styles.reviewsLoading}>Loading reviews...</div>
+            ) : reviews.length === 0 ? (
+              <div className={styles.reviewsLoading}>
+                Reviews are not available right now.
+              </div>
+            ) : (
+              reviews.map((rv, idx) => (
+                <div key={idx} className={styles.rvCard}>
+                  <div className={styles.rvTop}>
+                    <div className={styles.rvAvatar}>
+                      {rv.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className={styles.rvMeta}>
+                      <span className={styles.rvName}>{rv.name}</span>
+                      {rv.date && (
+                        <span className={styles.rvDate}>
+                          {new Date(rv.date).toLocaleDateString("en-CA", {
+                            year: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <span className={styles.rvStars}>★★★★★</span>
+                  </div>
+                  <p className={styles.rvText}>
+                    {rv.comment.length > 180 ? `${rv.comment.substring(0, 177)}...` : rv.comment}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className={styles.reviewCtaRow}>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQS SECTION ── */}
+      <section className={styles.faqSection}>
+        <div className={styles.faqContainer}>
+          <h2 className={styles.sectionTitle} style={{ textAlign: "center", marginBottom: "32px" }}>
+            Frequently Asked Questions
+          </h2>
+          {LOCAL_FAQS.map((faq, i) => (
+            <details key={i} className={styles.faqItem}>
+              <summary className={styles.faqQuestion}>{faq.q}</summary>
+              <p className={styles.faqAnswer}>{faq.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      {/* ── STORE LOCATION GRID ── */}
+      <section className={styles.storeSection} id="contact">
+        <div className={styles.container}>
+          <div className={styles.storeGrid}>
+            <div className={styles.storeCard}>
+              <span className={styles.storeIcon}>📍</span>
+              <h3 className={styles.storeCardTitle}>Location</h3>
+              <p className={styles.storeCardText}>
+                1938 Weston Rd
+                <br />
+                York, ON M9N 1W2
+                <br />
+              </p>
+            </div>
+            <div className={styles.storeCard}>
+              <span className={styles.storeIcon}>🕒</span>
+              <h3 className={styles.storeCardTitle}>Hours</h3>
+              <p className={styles.storeCardText}>
+                Open 7 Days a Week
+                <br />
+                <span className={styles.storeHighlight}>Open 24 hours daily</span>
+              </p>
+            </div>
+            <div className={styles.storeCard}>
+              <span className={styles.storeIcon}>🔥</span>
+              <h3 className={styles.storeCardTitle}>Walk In</h3>
+              <p className={styles.storeCardText}>
+                No appointment needed
+                <br />
+                <span className={styles.storeHighlight}>1938 Weston Rd, York</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Map wrapper */}
+          <div className={styles.mapWrap}>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <NearMeFaq id="local-near-me" q={nearMeFaq.home.q} a={nearMeFaq.home.a} />
+      <Footer />
+    </main>
+  );
+}

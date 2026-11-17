@@ -7,7 +7,7 @@ import PinnedNavClearance from "./components/PinnedNavClearance";
 import { getCigaretteSnapshot, toPublicCigaretteState } from "./lib/cigaretteFeed";
 import { CODED_BANNERS } from "./lib/fleet/config";
 import { getFleetContent } from "./lib/fleetContent";
-import { HOME_DOC_TITLE } from "./lib/homeDelivery";
+import { ROOT_INHERITED_TITLE } from "./lib/homeDelivery";
 import type { Metadata } from "next";
 import "./globals.css";
 import DeliveryAnnouncement from "./components/DeliveryAnnouncement";
@@ -17,7 +17,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.p60cannabis.com"),
   title: {
-    default: HOME_DOC_TITLE,
+    default: ROOT_INHERITED_TITLE,
     template: "%s | P60 Cannabis",
   },
   description:
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     locale: "en_CA",
     url: "https://www.p60cannabis.com/",
     siteName: "P60 Cannabis",
-    title: HOME_DOC_TITLE,
+    title: ROOT_INHERITED_TITLE,
     description:
       "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: [
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: HOME_DOC_TITLE,
+    title: ROOT_INHERITED_TITLE,
     description: "Visit P60 Cannabis at 1938 Weston Rd, York, ON M9N 1W2. Open 24 hours. Find store information, cannabis categories and delivery details.",
     images: ["https://www.p60cannabis.com/wp-content/uploads/2026/04/46Oi5.jpg"],
   },
