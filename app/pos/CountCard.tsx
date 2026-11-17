@@ -327,8 +327,8 @@ export default function CountCard({
   const recountModal = recountLines ? (
     <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="recount-title" data-testid="recount-modal">
       <div className={styles.ruleSheet}>
-        <h2 id="recount-title">Recount these SKUs once</h2>
-        <p>These did not match. Count them again without seeing the expected quantity.</p>
+        <h2 id="recount-title">Please recount these SKUs</h2>
+        <p>Please recount these SKUs to make sure the stock count is accurate.</p>
         <div className={styles.countList} data-testid="recount-list">
           {recountLines.map((line) => (
             <label key={line.sku} className={styles.countListRow}>
@@ -342,7 +342,7 @@ export default function CountCard({
             </label>
           ))}
         </div>
-        <button className={styles.primary} type="button" disabled={busy} data-testid="recount-submit" onClick={() => void submitRecount()}>Save recount</button>
+        <button className={styles.primary} type="button" disabled={busy} data-testid="recount-submit" onClick={() => void submitRecount()}>Save updated counts</button>
       </div>
     </div>
   ) : null;
