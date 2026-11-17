@@ -80,6 +80,7 @@ type View = {
   categories?: string[];
   products?: Product[];
   count_lines?: CountLine[];
+  catalog_lines?: CountLine[];
   incoming?: PendingRefill[];
   tickets?: Ticket[];
   pending_count?: number;
@@ -832,7 +833,7 @@ export default function PosApp({
                 compact
                 purpose="closing"
                 allowExtra
-                knownLines={(view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
+                knownLines={(view.catalog_lines ?? view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
                 lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
                 busy={busy || Boolean(view.master)}
                 onSave={saveCloseCount}
@@ -857,7 +858,7 @@ export default function PosApp({
       {sheet === "close" ? (
         <CloseShift
           lines={closeSnap?.lines ?? view.close_lines ?? []}
-          knownLines={closeSnap?.knownLines ?? (view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
+          knownLines={closeSnap?.knownLines ?? (view.catalog_lines ?? view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
           totals={closeSnap?.totals ?? {
             sales_cents: view.totals?.sales_cents ?? 0,
             cash_sales_cents: view.totals?.cash_sales_cents ?? view.totals?.sales_cents ?? 0,

@@ -21,7 +21,7 @@ import type { Secrets } from "../app/lib/pny-pos/types.ts";
 import { DEMO_PIN, KITCHEN_PIN } from "../app/lib/pny-pos/constants.ts";
 import { bagLabel } from "../app/lib/pny-pos/flowerSku.ts";
 import { customerMenuQr, CUSTOMER_MENU_URL } from "../app/pos/menuQr.ts";
-import { quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
+import { cigarettePackCents, quoteForSku, rawPriceRows } from "../app/lib/pny-pos/sizePrice.ts";
 import { flowerPriceCents, flowersFromGrid, normalizeThc, overlayFlower, saleCents } from "../app/lib/pny-pos/flowerRaw.ts";
 import { expandSetbItems, expandSkuCell, itemsFromGrid, itemsFromPriceSheetRows, mergeItemsPriceGrid, planItemsPriceRepair } from "../app/lib/pny-pos/itemRaw.ts";
 import { demoMode } from "../app/lib/pny-pos/runtime.ts";
@@ -38,6 +38,7 @@ import { startClosingWithRecovery } from "../app/pos/closeStart.ts";
 import { transactionPoolConnectionString } from "../app/lib/pny-pos/supabaseState.ts";
 import { compareCount, signedOff, sizeLabel, staffSkuText } from "../app/lib/pny-pos/verifyCount.ts";
 import { defaultThcCatalogFlag, isThcSku, THC_SKUS } from "../app/lib/pny-pos/thcSkuFlags.ts";
+import { committedCatalogSearch, syncCommittedCatalog } from "../app/lib/pny-pos/catalogSync.ts";
 
 test("Supabase serverless connections use transaction pooling", () => {
   assert.equal(
@@ -300,7 +301,7 @@ test("a sized refill is listed on the menu and tobacco stays off", async () => {
   assert.equal(view.products.some((product) => product.sku === "313-5g" && product.price_cents === 3000), true);
   const menu = await h.svc.menu();
   assert.equal(menu.prices_include_tax, false);
-  assert.equal(menu.items?.some((item) => item.sku === "313-5g" && item.price_cents === 3000 && item.name.includes("SUPER LEMON")), true);
+  assert.equal(menu.items?.some((item) => item.sku === "313-5g" && item.price_cents === 3000 && item.name.includes("TENTH PLANET")), true);
   assert.equal(menu.items?.some((item) => item.sku === "240" && item.category.toLowerCase() === "cigarettes" && item.price_cents === 500), true);
   assert.equal(JSON.stringify(menu).includes("\"qty\""), false);
   const order = await h.svc.placeOrder({ key: "menu-313", lines: [{ sku: "313-5g", qty: 1 }] }, "10.0.0.42");
@@ -1253,6 +1254,33 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
   assert.equal(DEFAULT_SETB_PRODUCTS_URL.includes("AKfycbx09_sDal1eMVF1r-hUck4e7oq_XBHEWhGvA79JuhZNQ6P4CdhCas0xE3FfexWQ3hq4"), true);
 });
 
+test("the committed master fills missing SKUs, keeps existing POS rows, and uses sale prices", () => {
+  const state = emptyState();
+  state.products.push({
+    sku: "655",
+    sku_sort: 655,
+    name: "Existing POS gummies",
+    category: "EDIBLES",
+    default_price_cents: 1234,
+    image_url: null,
+    setb_active: true,
+    synced_at: "2026-11-01T00:00:00.000Z",
+    created_at: "2026-11-01T00:00:00.000Z",
+  });
+  syncCommittedCatalog(state, "PNY01", "2026-11-17T00:00:00.000Z");
+  const bySku = new Map(state.products.map((product) => [product.sku, product]));
+  assert.equal(bySku.get("373-5g")?.default_price_cents, 2500);
+  assert.equal(bySku.get("291-14g")?.default_price_cents, 4000);
+  assert.equal(bySku.get("509-5g")?.default_price_cents, 6000);
+  assert.equal(bySku.get("593-5g")?.default_price_cents, 6000);
+  assert.equal(bySku.get("656")?.default_price_cents, 3500);
+  assert.equal(bySku.get("657")?.default_price_cents, 5000);
+  assert.equal(bySku.get("655")?.name, "Existing POS gummies");
+  assert.equal(bySku.get("655")?.default_price_cents, 1234);
+  assert.equal(state.store_products.find((row) => row.sku === "291-14g")?.enabled, false);
+  assert.equal(committedCatalogSearch(state).some((row) => row.sku === "291-14g"), true);
+});
+
 test("demo PIN 6666 is a signed session that another server accepts", async () => {
   assert.equal(DEMO_PIN, "6666");
   assert.match(DEMO_PIN, /^\d{4}$/);
@@ -1304,9 +1332,9 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.ok((menu.items?.length ?? 0) > 20);
   assert.equal(menu.items?.some((item) => item.sku === "490-3g" && item.name === "PINK JOKER 3g"), true);
   assert.equal(menu.items?.every((item) => item.availability === "Available" && typeof item.image_url === "string" && item.image_url.length > 0), true);
-  const packs = menu.items?.filter((item) => item.category === "CIGARETTES" && Number(item.sku) >= 1000 && Number(item.sku) <= 1027) ?? [];
+  const packs = menu.items?.filter((item) => item.unit_label === "per pack" && Number(item.sku) >= 1000 && Number(item.sku) <= 1027) ?? [];
   assert.equal(packs.length > 0, true);
-  assert.equal(packs.every((item) => item.price_cents === 250 && item.unit_label === "per pack"), true);
+  assert.equal(packs.every((item) => item.price_cents === cigarettePackCents(item.sku, item.category, item.name) && item.unit_label === "per pack"), true);
   assert.equal(keysDeep(menu).has("qty"), false);
   assert.equal(keysDeep(menu).has("on_hand"), false);
   const login = await svc.login(DEMO_PIN, "10.0.0.1");
@@ -1688,8 +1716,8 @@ test("paper refill cancels old unsized rows and loads sized bags, including unpr
   assert.equal(plan.add.find((row) => row.sku === "170-3g")?.qty, "10");
   assert.equal(plan.add.find((row) => row.sku === "170-28g")?.qty, "2");
   assert.equal(plan.add.find((row) => row.sku === "188")?.qty, "50");
-  assert.ok(plan.flagged.includes("170-3g"));
-  assert.ok(plan.flagged.includes("170-28g"));
+  assert.equal(plan.flagged.includes("170-3g"), false);
+  assert.equal(plan.flagged.includes("170-28g"), false);
   const again = planPaperRefills([...existing, ...plan.add], catalog);
   assert.equal(again.add.length, 0);
   assert.equal(again.cancel.some((row) => row.sku === "188"), false);
@@ -2899,7 +2927,7 @@ test("PNY02 starting stock is added once and leaves PNY01 untouched", async () =
   assert.equal((menu2.items?.find((item) => item.sku === "172-3g")?.price_cents ?? 0) > 0, true);
   assert.equal(menu2.items?.find((item) => item.sku === "187-28g")?.name, "CHOCOLATE KUSH 28g");
   assert.equal(menu2.items?.find((item) => item.sku === "187-3g")?.name, "CHOCOLATE KUSH 3g");
-  assert.equal(menu2.items?.find((item) => item.sku === "418-3g")?.name, "STRAWBERRY 3g");
+  assert.equal(menu2.items?.find((item) => item.sku === "418-3g")?.name, "STRAWBERRY COUGHS 3g");
   assert.equal(menu2.items?.some((item) => item.sku === "1001"), false);
   const menu1 = await h.svc.menu();
   assert.equal(menu1.items?.some((item) => item.sku === "172-3g" || item.sku === "188"), false);

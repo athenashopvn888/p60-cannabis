@@ -13,7 +13,9 @@ const TICKET_B = "44444444-4444-4444-8444-444444444444";
 const DEMO_QTY = [8, 6, 10, 4, 0, 3, 5, 2, 7, 1];
 
 function demoCatalog(): SetbProduct[] {
-  return catalogFromFeed(readCommittedPnyCatalog()).sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
+  return catalogFromFeed(readCommittedPnyCatalog())
+    .filter((product) => Boolean(product.image_url))
+    .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
 }
 
 /** Sample PNY01 till. Every name is marked DEMO. Stock here is not the public store menu. */

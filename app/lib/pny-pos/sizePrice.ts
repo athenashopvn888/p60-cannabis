@@ -99,6 +99,8 @@ export function quoteForSku(sku: string): PriceQuote | null {
   const catalog = catalogFromFeed(readCommittedPnyCatalog());
   const parsed = parseFlowerSku(sku);
   if (parsed) {
+    const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
+    if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
     const fromSheet = sheetQuote(parsed.base, parsed.size);
     if (fromSheet) return fromSheet;
     const onSheet = sheetRows.some((item) => item.sku === parsed.base);
@@ -109,8 +111,6 @@ export function quoteForSku(sku: string): PriceQuote | null {
     const category = tier || seriesCategory(parsed.base);
     const image = sheetRows.find((item) => item.sku === parsed.base)?.image || flower?.image || null;
     if (!onSheet) {
-      const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
-      if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
       const packKey = `price${parsed.size}` as "price3g" | "price5g" | "price14g" | "price28g";
       const pack = flower ? packCents(flower[packKey] ?? null) : null;
       if (pack != null) return { cents: pack, source: "SETB", name, category, image };
@@ -121,10 +121,10 @@ export function quoteForSku(sku: string): PriceQuote | null {
   }
   const pack = cigarettePackQuote(sku, catalog);
   if (pack) return pack;
-  const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
-  if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
   const pos = posUnitPrice(sku);
   if (pos) return { cents: pos.cents, source: "Tri standard", name: pos.name, category: pos.category, image: null };
+  const listed = catalog.find((row) => row.sku === sku && row.price_cents > 0);
+  if (listed) return { cents: listed.price_cents, source: "SETB", name: listed.name, category: listed.category, image: listed.image_url };
   return null;
 }
 

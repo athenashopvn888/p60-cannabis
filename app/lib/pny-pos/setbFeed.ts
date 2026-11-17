@@ -1,5 +1,4 @@
-import flowers from "../flowers.json" with { type: "json" };
-import items from "../items.json" with { type: "json" };
+import catalog from "./pnyCatalog.json" with { type: "json" };
 
 /** Same Apps Script as app/lib/tvStock.js. Read-only product master for PNY01. On-hand is never read. */
 export const DEFAULT_SETB_PRODUCTS_URL =
@@ -16,15 +15,13 @@ export type SetbProduct = {
   active: boolean;
 };
 
-type PackPrice = { regular?: number | null; sale?: number | null } | null;
-
 export function defaultSetbProductsUrl() {
   const configured = process.env.SETB_PRODUCTS_URL?.trim();
   return configured || DEFAULT_SETB_PRODUCTS_URL;
 }
 
-export function readCommittedPnyCatalog(): { flowers: unknown[]; items: unknown[] } {
-  return { flowers: flowers as unknown[], items: items as unknown[] };
+export function readCommittedPnyCatalog(): { products: unknown[] } {
+  return { products: catalog as unknown[] };
 }
 
 function text(value: unknown) {

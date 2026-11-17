@@ -6,6 +6,7 @@ import { SheetDb } from "./sheetStore.ts";
 import { lockedStore } from "./singleStore.ts";
 import { sheetFromEnv } from "./sheets.ts";
 import { createSupabaseStateDb } from "./supabaseState.ts";
+import { syncCommittedCatalog } from "./catalogSync.ts";
 import type { State, Secrets } from "./types.ts";
 
 const DEMO_SECRETS: Secrets = {
@@ -84,6 +85,9 @@ async function boot() {
     if (!url) throw new Error("POS_SUPABASE_DB_URL is required when STORE_CODE or POS_STATE_BACKEND=supabase is set");
     const code = locked?.code ?? "PNY01";
     const db = createSupabaseStateDb(url, code);
+    await db.transaction(async (tx) => {
+      syncCommittedCatalog(tx.state, code);
+    });
     if (demoMode()) {
       await db.transaction(async (tx) => {
         if (tx.state.shifts.length === 0 && tx.state.products.length === 0) {

@@ -2,11 +2,10 @@ import { STORE_CODE } from "./constants.ts";
 import { PNY2_STOCK_HEADERS } from "./storeProfile.ts";
 import { SheetUnavailable } from "./errors.ts";
 import { emptyState, type PosDb, type Tx } from "./memory.ts";
-import { skuSortKey } from "./flowerSku.ts";
 import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
-import { defaultThcCatalogFlag } from "./thcSkuFlags.ts";
+import { syncCommittedCatalog } from "./catalogSync.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
 
@@ -60,33 +59,7 @@ function stateFromStaffRows(rows: SheetRow[]): State | null {
 
 /** Add missing catalog SKUs. Does not create on-hand. */
 function mergeCatalog(state: State) {
-  const at = new Date().toISOString();
-  let added = 0;
-  for (const product of catalogFromFeed(readCommittedPnyCatalog())) {
-    if (state.products.some((row) => row.sku === product.sku)) continue;
-    added += 1;
-    state.products.push({
-      sku: product.sku,
-      thc_flag: defaultThcCatalogFlag(product),
-      sku_sort: skuSortKey(product.sku),
-      name: product.name,
-      category: product.category,
-      default_price_cents: product.price_cents,
-      image_url: product.image_url,
-      setb_active: product.active,
-      synced_at: at,
-      created_at: at,
-    });
-    state.store_products.push({
-      store_code: STORE_CODE,
-      sku: product.sku,
-      enabled: product.active,
-      price_override_cents: null,
-      created_at: at,
-      updated_at: at,
-    });
-  }
-  return added > 0;
+  return syncCommittedCatalog(state, STORE_CODE) > 0;
 }
 
 function mergeKitchenRefills(state: State, rows: SheetRow[]) {

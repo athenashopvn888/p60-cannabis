@@ -32,7 +32,6 @@ import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
-import { isCigaretteCategory } from "../siteConfig.ts";
 import { parseFlowerSku, skuSortKey } from "./flowerSku.ts";
 import { formatDepositCode, nextDepositSeq } from "./depositCode.ts";
 import type { DemoDraft } from "./demoDraft.ts";
@@ -40,6 +39,7 @@ import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } f
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
+import { committedCatalogSearch } from "./catalogSync.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
@@ -1253,7 +1253,7 @@ function ensureQuotedProduct(state: State, sku: string, at: string) {
       created_at: at,
       updated_at: at,
     });
-  } else if (!storeProduct.enabled && !isCigaretteCategory(product.category)) {
+  } else if (!storeProduct.enabled && qtyOf(state, sku) > 0) {
     storeProduct.enabled = true;
     storeProduct.updated_at = at;
   }
@@ -2191,6 +2191,7 @@ export class PosService {
         categories: inStockCategories(products),
         products,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
+        catalog_lines: committedCatalogSearch(tx.state),
         opening_lines: openingLines.map((line) => ({
           ...line,
           counted_qty: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.opening_counts?.find((row) => row.sku === line.sku)?.counted_qty ?? null,
@@ -3268,7 +3269,7 @@ export class PosService {
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const sku = input.sku.trim();
       const plan = shiftClosePlan(tx.state, shift.id);
-      if (!plan.some((line) => line.sku === sku) && !countSkus(tx.state, shift).includes(sku)) {
+      if (!plan.some((line) => line.sku === sku) && !tx.state.products.some((product) => product.sku === sku && product.setb_active)) {
         throw new PosError(400, "BAD_SKU", "That SKU is not in this store catalog.");
       }
       if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
