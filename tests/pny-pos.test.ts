@@ -1802,6 +1802,7 @@ test("refill sheet OCR parser tolerates split-photo header and common printed-sh
 
 test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history editing and staff handoff", () => {
   const app = readFileSync("app/pos/kitchen/KitchenApp.tsx", "utf8");
+  const previewPage = readFileSync("app/pos/kitchen-preview/page.tsx", "utf8");
   const css = readFileSync("app/pos/kitchen/kitchen.module.css", "utf8");
   const service = readFileSync("app/lib/pny-pos/service.ts", "utf8");
   assert.match(app, /data-testid="kitchen-login"/);
@@ -1836,6 +1837,7 @@ test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history e
   assert.match(app, /data-testid="kitchen-scan-review"/);
   assert.match(app, /Photos are not stored/);
   assert.match(app, /Add another photo/);
+  assert.match(previewPage, /screen === "scan"/);
   assert.match(app, /setScanPhotoCount\(\(count\) => count \+ 1\)/);
   assert.match(app, /CHECK duplicate/);
   assert.match(app, /setScanLines\(\(current\) =>/);
