@@ -14,7 +14,7 @@ function clean(value: string) {
 function normalizedHeader(value: string) {
   const token = clean(value).replace(/o/g, "0");
   if (token === "3g" || token === "39") return "3g";
-  if (token === "5g" || token === "59") return "5g";
+  if (token === "5g" || token === "59" || token === "60" || token === "69") return "5g";
   if (token === "14g" || token === "149") return "14g";
   if (token === "28g" || token === "289") return "28g";
   if (token === "qty" || token === "aty" || token === "oty") return "qty";
@@ -22,12 +22,38 @@ function normalizedHeader(value: string) {
 }
 
 function normalizedNumber(value: string, minDigits = 1) {
-  const token = clean(value).replace(/[o]/g, "0").replace(/[il]/g, "1").replace(/c/g, "0");
+  const token = clean(value).replace(/[o]/g, "0").replace(/[il]/g, "1").replace(/[cs]/g, (match) => match === "s" ? "5" : "0");
   return new RegExp(`^\\d{${minDigits},4}$`).test(token) ? token : null;
 }
 
 function center(word: OcrWord) {
   return { x: (word.bbox.x0 + word.bbox.x1) / 2, y: (word.bbox.y0 + word.bbox.y1) / 2 };
+}
+
+function headerAnchors(word: OcrWord) {
+  const label = normalizedHeader(word.text);
+  if (label) return [{ label, ...center(word) }];
+  const token = clean(word.text).replace(/[og]/g, "0");
+  if (/^14.{1,4}(?:28|20|29|00)/.test(token)) {
+    const width = word.bbox.x1 - word.bbox.x0;
+    const y = center(word).y;
+    return [
+      { label: "14g", x: word.bbox.x0 + width * 0.28, y },
+      { label: "28g", x: word.bbox.x0 + width * 0.72, y },
+    ];
+  }
+  return [];
+}
+
+function resolveProductBase(value: string, productBases: Set<string>) {
+  const token = clean(value).replace(/[o]/g, "0").replace(/[il]/g, "1").replace(/[cs]/g, (match) => match === "s" ? "5" : "0");
+  const exact = [...productBases].filter((base) => token === base || (base.length === 4 && token.startsWith(base)));
+  if (exact.length === 1) return exact[0];
+  if (!/^\d{3,4}$/.test(token)) return null;
+  const fuzzy = [...productBases].filter((base) => base.length === token.length
+    && base[0] === token[0]
+    && [...base].filter((digit, index) => digit !== token[index]).length === 1);
+  return fuzzy.length === 1 ? fuzzy[0] : null;
 }
 
 function productFor(products: CatalogProduct[], base: string, size: string) {
@@ -45,19 +71,16 @@ function productFor(products: CatalogProduct[], base: string, size: string) {
  */
 export function parseRefillSheetWords(words: OcrWord[], products: CatalogProduct[]): RefillSheetDraftLine[] {
   const usable = words.filter((word) => word.text.trim() && word.confidence >= 20);
-  const headerCandidates = usable.flatMap((word) => {
-    const label = normalizedHeader(word.text);
-    return label ? [{ label, ...center(word) }] : [];
-  });
+  const headerCandidates = usable.flatMap(headerAnchors);
   const headerRows = headerCandidates.map((anchor) => headerCandidates.filter((candidate) => Math.abs(candidate.y - anchor.y) <= 35));
   const selectedHeaderRow = headerRows.sort((left, right) => new Set(right.map((item) => item.label)).size - new Set(left.map((item) => item.label)).size)[0] ?? [];
   const headers = [...new Map(selectedHeaderRow.sort((left, right) => left.x - right.x).map((header) => [header.label, header])).values()];
   if (headers.length < 3) return [];
   const firstColumnX = Math.min(...headers.map((header) => header.x));
-  const productBases = new Set(products.map((product) => product.sku.match(/^\d+/)?.[0]).filter(Boolean));
+  const productBases = new Set(products.map((product) => product.sku.match(/^\d+/)?.[0]).filter((base): base is string => Boolean(base)));
   const rowSkus = usable.filter((word) => {
-    const base = normalizedNumber(word.text, 3);
-    return Boolean(base && productBases.has(base) && center(word).x < firstColumnX - 6);
+    const base = resolveProductBase(word.text, productBases);
+    return Boolean(base && center(word).x < firstColumnX - 6);
   });
   const results: RefillSheetDraftLine[] = [];
   const sortedHeaderX = headers.map((header) => header.x).sort((a, b) => a - b);
@@ -65,7 +88,7 @@ export function parseRefillSheetWords(words: OcrWord[], products: CatalogProduct
   const tolerance = Math.max(35, Math.min(80, (gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] ?? 90) * 0.46));
 
   for (const skuWord of rowSkus) {
-    const base = normalizedNumber(skuWord.text, 3)!;
+    const base = resolveProductBase(skuWord.text, productBases)!;
     const skuCenter = center(skuWord);
     const rowHeight = Math.max(18, (skuWord.bbox.y1 - skuWord.bbox.y0) * 1.7);
     const numeric = usable.filter((word) => {
