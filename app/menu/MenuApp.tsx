@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bagLabel, groupByStrain } from "../lib/pny-pos/flowerSku";
 import { categoryChipLabel, defaultCategory, formatMoney, layoutMenuCategoryChips, sortCategories } from "../lib/pny-pos/money";
+import { menuPriceText } from "./menuPrice";
 import { ProductPhoto } from "../pos/ProductPhoto";
 import styles from "./menu.module.css";
+import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 
 type Item = { sku: string; name: string; category: string; price_cents: number; image_url?: string | null; availability: string; unit_label?: string; carton_note?: string; flower_type?: string; thc?: string };
 type Menu = {
@@ -43,20 +45,24 @@ function chooseLayout(next: Layout) {
 export default function MenuApp({
   menuApi = "/api/menu",
   label = "PNY01",
+  previewMenu,
 }: {
   menuApi?: string;
   label?: string;
+  previewMenu?: Menu;
 } = {}) {
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menu, setMenu] = useState<Menu | null>(previewMenu ?? null);
   const [cart, setCart] = useState<Record<string, number>>({});
   const [ticket, setTicket] = useState<{ code: string; total_cents: number; expires_at: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
   const [category, setCategory] = useState("");
+  const [commandKeys] = useState(() => new DurableCommandKeys());
   const layout = useSyncExternalStore(subscribeLayout, readLayout, () => "grid" as Layout);
 
   useEffect(() => {
+    if (previewMenu) return;
     let stop = false;
     const load = () => {
       void fetch(menuApi, { cache: "no-store" })
@@ -71,7 +77,7 @@ export default function MenuApp({
       stop = true;
       window.clearInterval(timer);
     };
-  }, [menuApi]);
+  }, [menuApi, previewMenu]);
 
   const items = menu?.items ?? [];
   const categories = useMemo(
@@ -112,14 +118,17 @@ export default function MenuApp({
   async function place() {
     setError("");
     setBusy(true);
+    const body = { lines: lines.map(([sku, qty]) => ({ sku, qty })) };
+    const key = commandKeys.key("menu-order", body);
     try {
       const response = await fetch(`${menuApi}/orders`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
-        body: JSON.stringify({ lines: lines.map(([sku, qty]) => ({ sku, qty })) }),
+        headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify(body),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not place the order");
+      commandKeys.complete("menu-order", key);
       setPaid(false);
       setTicket({ code: data.code, total_cents: data.total_cents, expires_at: data.expires_at });
       setCart({});
@@ -186,7 +195,7 @@ export default function MenuApp({
                     return (
                       <div key={item.sku} className={styles.sizePick}>
                         <button type="button" className={qty > 0 ? styles.sizeOn : styles.sizeBtn} data-add={item.sku} data-size={size} aria-label={`${block.name} ${size}`} disabled={!menu?.ordering || qty >= 20} onClick={() => setCart({ ...cart, [item.sku]: qty + 1 })}>
-                          {size} {formatMoney(item.price_cents)}{qty > 0 ? ` ×${qty}` : ""}
+                          {size} {menuPriceText(item)}{qty > 0 ? ` ×${qty}` : ""}
                         </button>
                         {qty > 0 ? <button type="button" className={styles.sizeMinus} aria-label={`Decrease ${item.name}`} onClick={() => setCart({ ...cart, [item.sku]: qty - 1 })}>−</button> : null}
                       </div>
@@ -198,12 +207,14 @@ export default function MenuApp({
           }
           const item = block.item;
           const qty = cart[item.sku] ?? 0;
+          const priceText = menuPriceText(item);
+          const unit = priceText === "2 for $5" || !item.unit_label ? "" : ` ${item.unit_label}`;
           if (layout === "list") {
             return (
               <article key={item.sku} className={styles.listRow}>
                 <div className={styles.listCopy}>
                   <div className={styles.name}>{item.name}</div>
-                  <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+                  <div className={styles.price}>{priceText}{unit}</div>
                   {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
                 </div>
                 <div className={styles.compact}>
@@ -218,7 +229,7 @@ export default function MenuApp({
             <article key={item.sku} className={styles.card}>
               <ProductPhoto src={item.image_url} alt={item.name} className={styles.hero} placeholderClassName={styles.heroPh} />
               <div className={styles.name}>{item.name}</div>
-              <div className={styles.price}>{formatMoney(item.price_cents)}{item.unit_label ? ` ${item.unit_label}` : ""}</div>
+              <div className={styles.price}>{priceText}{unit}</div>
               {item.carton_note ? <div className={styles.note}>{item.carton_note}</div> : null}
               <span className={styles.available}>{item.availability}</span>
               <div className={styles.stepper}>

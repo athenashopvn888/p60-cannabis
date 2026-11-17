@@ -4,15 +4,18 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { formatMoney } from "../../lib/pny-pos/money";
 import styles from "../till.module.css";
+import { pos2RouteFromLocation } from "../posPath";
+import { parseTillResponse, readTillState } from "../softState";
 import { usePosPoll } from "../usePosPoll";
 import DepositSlip from "../DepositSlip";
 import VerifyBanner, { useVerifyOpen } from "../VerifyBanner";
+import { DurableCommandKeys } from "../../lib/pny-pos/durableCommand";
 
 type View = {
   authenticated?: boolean;
   demo?: boolean;
   demo_label?: string | null;
-  demo_pin?: string | null;
+  demo_login_enabled?: boolean;
   shift?: { staff_name: string };
   master?: boolean;
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number };
@@ -26,13 +29,7 @@ async function post(url: string, body: unknown, key?: string) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers["idempotency-key"] = key;
   const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
-  const data = await response.json();
-  if (!response.ok) {
-    const failure = new Error(data.error || "Request failed") as Error & { code?: string };
-    failure.code = typeof data.code === "string" ? data.code : undefined;
-    throw failure;
-  }
-  return data;
+  return parseTillResponse(response);
 }
 
 export default function TillApp({
@@ -51,13 +48,22 @@ export default function TillApp({
   const [slipCode, setSlipCode] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
+  const [commandKeys] = useState(() => new DurableCommandKeys());
+  const forced = pos2RouteFromLocation();
+  const storeApi = forced?.apiBase ?? apiBase;
+  const storeHome = forced?.homeHref ?? homeHref;
 
   const load = useCallback(async () => {
-    const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
-    const data = (await response.json()) as View;
+    const result = await readTillState(storeApi);
+    if (result.keep) {
+      setError(result.message);
+      setView((current) => current ?? { authenticated: false });
+      return;
+    }
+    const data = result.data as View;
     setView(data);
     if (!data.authenticated && data.error) setError(data.code ? `${data.error} (${data.code})` : data.error);
-  }, [apiBase]);
+  }, [storeApi]);
 
   usePosPoll(load);
   const verifyOpen = useVerifyOpen(view?.verify?.show_banner ? view.verify.deadline_at ?? null : null, load);
@@ -66,9 +72,9 @@ export default function TillApp({
     setError("");
     setBusy(true);
     try {
-      await post(`${apiBase}/login`, { pin });
+      await post(`${storeApi}/login`, { pin });
       setPin("");
-      const response = await fetch(`${apiBase}/state`, { cache: "no-store", credentials: "same-origin" });
+      const response = await fetch(`${storeApi}/state`, { cache: "no-store", credentials: "same-origin" });
       const data = (await response.json()) as View;
       setView(data);
       setViewOnly(Boolean(data.master));
@@ -85,7 +91,7 @@ export default function TillApp({
     setError("");
     setBusy(true);
     try {
-      const result = await post(`${apiBase}/till/unlock`, { pin });
+      const result = await post(`${storeApi}/till/unlock`, { pin });
       setPin("");
       setViewOnly(Boolean(result.view_only));
       setUnlocked(true);
@@ -101,8 +107,18 @@ export default function TillApp({
     setError("");
     const cents = Math.round(Number(deposit) * 100);
     setBusy(true);
+    const body = { amount_cents: cents };
+    const key = commandKeys.key("deposit", body);
     try {
-      const saved = await post(`${apiBase}/deposits`, { amount_cents: cents }, crypto.randomUUID());
+      let saved;
+      try {
+        saved = await post(`${storeApi}/deposits`, body, key);
+      } catch (err) {
+        const code = err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+        if (code !== "NEAR_DUPLICATE_DEPOSIT" || !window.confirm("A deposit for this amount was just recorded. Is this a different physical bag?")) throw err;
+        saved = await post(`${storeApi}/deposits`, { ...body, confirm_near_duplicate: true }, key);
+      }
+      commandKeys.complete("deposit", key);
       setDeposit("");
       setOpen(false);
       if (typeof saved.deposit_code === "string") setSlipCode(saved.deposit_code);
@@ -130,18 +146,18 @@ export default function TillApp({
   if (!view.authenticated) {
     return (
       <main className={styles.shell} data-testid="pos-till-login">
-        {view.demo ? <div className={styles.demo}>{view.demo_label} · PIN {view.demo_pin}</div> : null}
+        {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>Staff till</h1>
-          <p>Enter the same 4-digit shift PIN. Five wrong tries lock the shift.</p>
+          <p>Enter the 4-digit staff PIN or an authorized login PIN. Five wrong staff PIN tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           {pinPad((digit) => {
             if (digit === "Clear") setPin("");
             else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-            else setPin((current) => (current + digit).slice(0, 4));
+            else setPin((current) => (current + digit).slice(0, 6));
           })}
-          <button className={styles.primary} type="button" disabled={pin.length !== 4 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
+          <button className={styles.primary} type="button" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void signIn()} style={{ width: "100%", marginTop: 12 }}>
             Sign in
           </button>
         </section>
@@ -155,18 +171,17 @@ export default function TillApp({
         {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
         <section className={styles.pin}>
           <h1 className={styles.brand}>Till</h1>
-          <p>Enter the shift PIN to open the till. Five wrong tries lock the shift.</p>
+          <p>Enter the 4-digit staff PIN or the authorized master PIN. Five wrong staff PIN tries lock the shift.</p>
           <div className={styles.pinDisplay} aria-live="polite">{pin.replace(/./g, "•") || " "}</div>
           {error ? <p className={styles.error}>{error}</p> : null}
           {pinPad((digit) => {
             if (digit === "Clear") setPin("");
             else if (digit === "⌫") setPin((current) => current.slice(0, -1));
-            else setPin((current) => (current + digit).slice(0, 4));
+            else setPin((current) => (current + digit).slice(0, 6));
           })}
-          <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length !== 4 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
+          <button className={styles.primary} type="button" data-testid="till-unlock" disabled={pin.length < 1 || pin.length > 6 || busy} onClick={() => void unlock()} style={{ width: "100%", marginTop: 12 }}>
             Open till
           </button>
-          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref} style={{ color: "#1c1917", marginTop: 12 }}>Back to POS</Link>
         </section>
       </main>
     );
@@ -176,11 +191,11 @@ export default function TillApp({
     <main className={styles.shell} data-testid="pos-till">
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
       {verifyOpen && view.verify?.deadline_at ? (
-        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = homeHref; }} />
+        <VerifyBanner deadline={view.verify.deadline_at} onOpen={() => { window.location.href = storeHome; }} />
       ) : null}
       <header className={styles.header}>
         <div className={styles.headerTop}>
-          <Link className={styles.backLink} href={homeHref === "/pos" ? "/pos" : homeHref}>Back</Link>
+          <Link className={styles.backLink} href={storeHome}>Back</Link>
           <div className={styles.brand}>Till · {view.shift?.staff_name}{viewOnly ? " · Master view" : ""}</div>
         </div>
       </header>

@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       key: idempotencyKey(request, body),
       amount_cents: Number(body.amount_cents),
       note: body.note == null ? undefined : String(body.note),
+      confirm_near_duplicate: body.confirm_near_duplicate === true,
     }));
   } catch (error) {
     return toResponse(error);

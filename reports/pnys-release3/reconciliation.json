@@ -1,0 +1,85 @@
+{
+  "release": "PNYS Release 3",
+  "scope": "isolated in-memory PNYS preview fixture; no production or preview database rows persisted",
+  "shift_id": "SIMULATED-PNYS-RELEASE3",
+  "mode": {
+    "scope": "STORE",
+    "default": "WEED",
+    "final": "NO_WEED",
+    "survives_shift_close": true,
+    "thc_sale_blocked": true
+  },
+  "customer_sale": {
+    "recorded": true,
+    "subtotal_cents": 5000,
+    "discount_cents": 1000,
+    "total_cents": 4000,
+    "coupon": "DRY10",
+    "phone_last4": "0199"
+  },
+  "refill": {
+    "batch_id": "release3-refill",
+    "sku": "9902",
+    "sent": 3,
+    "confirmed": 3
+  },
+  "second_sale": {
+    "recorded": true,
+    "total_cents": 500,
+    "payment_method": "DEBIT"
+  },
+  "stock": [
+    {
+      "sku": "9901-3g",
+      "name": "Dry Run Flower",
+      "opening": 6,
+      "refills": 0,
+      "sales": 0,
+      "expected": 6,
+      "counted": 6,
+      "variance": 0,
+      "unit_price_cents": 2000
+    },
+    {
+      "sku": "9902",
+      "name": "Dry Run Paper",
+      "opening": 10,
+      "refills": 3,
+      "sales": 2,
+      "expected": 11,
+      "counted": 10,
+      "variance": -1,
+      "unit_price_cents": 2500
+    },
+    {
+      "sku": "9903",
+      "name": "Dry Run Lighter",
+      "opening": 5,
+      "refills": 0,
+      "sales": 1,
+      "expected": 4,
+      "counted": 4,
+      "variance": 0,
+      "unit_price_cents": 500
+    }
+  ],
+  "cash": {
+    "cash_sales_cents": 4000,
+    "debit_sales_cents": 500,
+    "gross_sales_cents": 5500,
+    "coupon_discount_cents": 1000,
+    "net_sales_cents": 4500,
+    "deposited_cents": 4000,
+    "end_float_cents": 0,
+    "direct_variance_cents": 0
+  },
+  "closing": {
+    "shortage_cents": 2500,
+    "overage_cents": 0,
+    "final_deposit_cents": 4000,
+    "float_cents": 0,
+    "manager_report_found": true
+  },
+  "opening_float_formula": "ACCOUNTANT DECISION REQUIRED — placeholder only; no formula selected",
+  "cleanup": "The fixture uses MemoryDb and disappears when the process exits. The undo SQL is a guarded no-op for the preview database unless RELEASE3- rows are ever explicitly persisted."
+}

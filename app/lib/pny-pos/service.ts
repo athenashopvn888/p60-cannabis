@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   DEMO_LABEL,
-  DEMO_PIN,
-  KITCHEN_PIN,
-  MASTER_PIN,
   VERIFY_RELEASE,
   FULL_SCAN_MS,
+  IDEMPOTENCY_TTL_MS,
   IMPORT_DEBOUNCE_MS,
   IMPORT_OVERLAP_ROWS,
   MAX_ORDER_LINES,
@@ -15,6 +13,7 @@ import {
   OUTBOX_ERROR_ATTEMPTS,
   OUTBOX_TAB_ORDER,
   PIN_REPLAY_TTL_MS,
+  PIN_FAILURE_WINDOW_MS,
   PIN_TTL_MS,
   SCCX_ACK_LATE_MS,
   SCHEMA_VERSION,
@@ -27,7 +26,8 @@ import {
 import { decryptJson, encryptJson, hashPin, newToken, randomPin, readStaffSession, safeEqual, sha256, signStaffSession, stableStringify, verifyPin } from "./crypto.ts";
 import type { DemoJournalOrder } from "./demoJournal.ts";
 import { PosError, SheetUnavailable } from "./errors.ts";
-import type { PosDb } from "./memory.ts";
+import type { PosDb, Tx } from "./memory.ts";
+import { closingSummaryView } from "./closingSummary.ts";
 import { closingBalance, lineVariance } from "./closing.ts";
 import { RAW_PRICE_TTL_MS, cartonNotesFromRawRows, unitPricesFromRawRows } from "./rawPrice.ts";
 import { centsToSheet, depositAboveCash, formatMoney, formatStoreTime, inStockCategories, roundCents } from "./money.ts";
@@ -38,20 +38,31 @@ import type { DemoDraft } from "./demoDraft.ts";
 import { arrangeOff, compareCount, sizeLabel, staffSkuText, VERIFY_WINDOW_MS } from "./verifyCount.ts";
 import { fetchPublishedFlowerGrid, flowerPriceCents, flowersFromGrid, overlayFlower, type FlowerIndex } from "./flowerRaw.ts";
 import { itemsFromPriceSheetRows, lookupItem, syncItemsRawPrice, type ItemIndex, type ItemRecord } from "./itemRaw.ts";
+import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
+import { specialPinMatches } from "./pinAuth.ts";
 import { cigarettePackCents, quoteForSku } from "./sizePrice.ts";
 import { summaryPlainText } from "./summary.ts";
 import { currentStore } from "./storeContext.ts";
 import { queueStockHistory, takeStockHistory } from "./stockHistory.ts";
 import { adoptStockLabels, queueCloseSnapshot, stampCloseLabel, takeCloseSnapshots, takeNewStockLabels, type StockLabelRow } from "./stockLabel.ts";
+import { issueShiftReference } from "./shiftReference.ts";
 import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
+import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
+import { OUTBOX_BATCH_SIZE, OUTBOX_LEASE_MS, outboxBackoffMs, outboxErrorMessage } from "./outbox.ts";
+import type { IntegrationChannel, IntegrationLease } from "./controls.ts";
+import { closingEmailPayload, ensureRefillId, refillEmailPayload } from "./accountantEmail.ts";
+import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "./accountantEmailDelivery.ts";
 import type { SheetClient } from "./sheets.ts";
-import { SheetDb } from "./sheetStore.ts";
+import type { SignalGateway } from "./signalGateway.ts";
+import { POS_TAB_SPECS } from "./sheetStore.ts";
 import type {
   ClosingLine,
   ClosingRow,
   IncomingRow,
+  RefillReceiptRow,
   MovementType,
+  ProductRow,
   Secrets,
   ShiftRow,
   State,
@@ -59,27 +70,70 @@ import type {
 } from "./types.ts";
 
 export const END_SHIFT_MESSAGE = "Summary will post to BOT HUB within 5 min.";
-const BACKOFF_MIN = [1, 2, 5, 10, 15];
-
+const POST_CLOSE_ACCESS_MS = 2 * 60 * 60 * 1000;
 type Json = Record<string, unknown>;
 
 export type PosDeps = {
   now?: () => Date;
   sheet: SheetClient;
   secrets: Secrets;
-  demo?: { pin: string; label: string } | null;
+  demo?: { pinHash: string | null; label: string } | null;
+  signal?: SignalGateway;
 };
 
 function iso(date: Date) {
   return date.toISOString();
 }
 
+function torontoDateTime(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(value));
+}
+
 function audit(state: State, action: string, refType: string | null, refId: string | null, actor: string | null, detail: Json, at: string) {
   state.audit.push({ id: randomUUID(), action, ref_type: refType, ref_id: refId, actor, detail, created_at: at });
 }
 
+function customerPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  throw new PosError(400, "BAD_PHONE", "Enter a valid 10-digit customer phone number.");
+}
+
+function customerEmail(value?: string | null) {
+  const email = value?.trim().toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new PosError(400, "BAD_EMAIL", "Enter a valid email or leave it blank.");
+  return email;
+}
+
+function couponCode(value: string) {
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{3,20}$/.test(code)) throw new PosError(400, "BAD_COUPON", "Coupon codes use 3-20 letters, numbers or dashes.");
+  return code;
+}
+
+function couponDiscount(total: number, coupon: NonNullable<State["coupons"]>[number]) {
+  if (total < coupon.min_spend_cents) throw new PosError(409, "COUPON_MINIMUM", `This coupon needs a minimum spend of ${formatMoney(coupon.min_spend_cents)}.`);
+  const raw = coupon.discount_type === "PERCENT" ? Math.floor(total * coupon.discount_value / 100) : coupon.discount_value;
+  return Math.max(0, Math.min(total, raw));
+}
+
 function tillCode() {
   return currentStore().code;
+}
+
+/** SCCx keeps the public PNY01 store code after the PNYS cutover. */
+function matchesTillInput(store?: string) {
+  const requested = store || tillCode();
+  return requested === tillCode() || (tillCode() === "PNYS" && requested === "PNY01");
 }
 
 const TONIGHT_DISPLAY_NAME = "Anom";
@@ -87,6 +141,7 @@ const TONIGHT_NAME_MARK = "PNY01-TONIGHT";
 
 /** Rename the staff member on the open PNY01 shift once. Does not touch the PIN. */
 function nameLiveShift(state: State, at: string) {
+  if (process.env.STORE_CODE?.trim()) return;
   if (tillCode() !== "PNY01") return;
   if (state.audit.some((row) => row.action === "DISPLAY_NAME" && row.ref_id === TONIGHT_NAME_MARK)) return;
   const shift = state.shifts.find((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING"));
@@ -104,6 +159,8 @@ function nameLiveShift(state: State, at: string) {
     queued.status = "queued";
     queued.sent_at = null;
     queued.next_attempt_at = at;
+    queued.lease_id = null;
+    queued.lease_expires_at = null;
   }
   audit(state, "DISPLAY_NAME", "staff", TONIGHT_NAME_MARK, staff.staff_uid, { from: previous, to: TONIGHT_DISPLAY_NAME }, at);
 }
@@ -118,6 +175,9 @@ function enqueue(state: State, tab: string, rowId: string, payload: Record<strin
     existing.attempts = 0;
     existing.last_error = null;
     existing.next_attempt_at = at;
+    existing.lease_id = null;
+    existing.lease_expires_at = null;
+    existing.last_attempt_at = null;
     return;
   }
   state.outbox.push({
@@ -308,10 +368,28 @@ function requestHash(body: Json) {
   delete copy.key;
   delete copy.token;
   delete copy.adminToken;
+  // Confirmation is the second step of the same durable command, not a new command.
+  delete copy.confirm_near_duplicate;
   return sha256(stableStringify(copy));
 }
 
+function purgeExpiredIdempotency(state: State, now: Date) {
+  const nowMs = now.getTime();
+  state.idempotency = state.idempotency.filter((row) => {
+    const explicit = row.purge_at ? Date.parse(row.purge_at) : NaN;
+    const fallback = Date.parse(row.created_at) + IDEMPOTENCY_TTL_MS;
+    if (Number.isFinite(explicit) && explicit <= nowMs && row.response_json?.startsWith("v1.")) {
+      row.response_json = null;
+      row.purge_at = iso(new Date(fallback));
+      return fallback > nowMs;
+    }
+    const expires = Number.isFinite(explicit) ? explicit : fallback;
+    return !Number.isFinite(expires) || expires > nowMs;
+  });
+}
+
 function remember(state: State, scope: string, key: string, body: Json, result: Json, now: Date, secret: string, encrypt = false) {
+  purgeExpiredIdempotency(state, now);
   const publicBody = { ...result };
   delete publicBody.pin;
   state.idempotency.push({
@@ -321,19 +399,19 @@ function remember(state: State, scope: string, key: string, body: Json, result: 
     response_json: encrypt ? encryptJson(result, secret) : JSON.stringify(result),
     public_json: publicBody,
     status_code: 200,
-    purge_at: encrypt ? iso(new Date(now.getTime() + PIN_REPLAY_TTL_MS)) : null,
+    purge_at: iso(new Date(now.getTime() + (encrypt ? PIN_REPLAY_TTL_MS : IDEMPOTENCY_TTL_MS))),
     created_at: iso(now),
   });
 }
 
 function replay(state: State, scope: string, key: string, body: Json, now: Date, secret: string): Json | null {
   if (!key) throw new PosError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+  purgeExpiredIdempotency(state, now);
   const existing = state.idempotency.find((row) => row.scope === scope && row.key === key);
   if (!existing) return null;
   if (existing.request_hash !== requestHash(body)) {
     throw new PosError(409, "IDEMPOTENCY_CONFLICT", "This idempotency key was already used with a different request.");
   }
-  if (existing.purge_at && Date.parse(existing.purge_at) <= now.getTime()) existing.response_json = null;
   if (!existing.response_json) {
     return { ...(existing.public_json as Json), ok: true, replay: true, pin: null, pin_purged: true };
   }
@@ -354,11 +432,18 @@ function shiftTotals(state: State, shiftId: string) {
   const cashSales = sales.filter((sale) => sale.payment_method !== "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
   const debitSales = sales.filter((sale) => sale.payment_method === "DEBIT").reduce((sum, sale) => sum + sale.total_cents, 0);
   const deposited = deposits.reduce((sum, deposit) => sum + deposit.amount_cents, 0);
+  const saleIds = new Set(sales.map((sale) => sale.id));
+  const cigarettePacks = state.sale_lines.reduce((sum, line) => {
+    if (!saleIds.has(line.sale_id)) return sum;
+    const product = state.products.find((row) => row.sku === line.sku);
+    return cigarettePackCents(line.sku, product?.category, product?.name) == null ? sum : sum + line.qty;
+  }, 0);
   return {
     sales_total_cents: cashSales + debitSales,
     cash_sales_cents: cashSales,
     debit_sales_cents: debitSales,
     sale_count: sales.length,
+    cigarette_packs: cigarettePacks,
     void_count: voids.length,
     deposited_cents: deposited,
     cash_on_hand_cents: cashSales - deposited,
@@ -400,24 +485,70 @@ function presentCatalogItem<T extends { sku: string; name: string; category: str
   };
 }
 
+let catalogImages: Map<string, string> | null = null;
+
+function hostedImage(sku: string) {
+  if (!catalogImages) {
+    catalogImages = new Map();
+    for (const row of catalogFromFeed(readCommittedPnyCatalog())) {
+      if (row.image_url) catalogImages.set(row.sku, row.image_url);
+    }
+  }
+  return catalogImages.get(sku) ?? null;
+}
+
+type MasterProduct = { product: ProductRow; enabled: boolean; override: number | null };
+
 function stockedCatalogRows(state: State, items: ItemIndex | null) {
   if (!items || items.size === 0) return [];
-  const rows: { sku: string; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number }[] = [];
   for (const balance of state.balances) {
-    if (balance.qty <= 0 || parseFlowerSku(balance.sku)) continue;
+    if (balance.qty <= 0 || !balanceForStore(balance) || parseFlowerSku(balance.sku)) continue;
     const record = lookupItem(items, balance.sku);
     if (!record) continue;
     const cents = pricedItem(balance.sku, record);
     if (cents <= 0) continue;
-    rows.push({ sku: balance.sku, name: record.name, category: record.category, price_cents: cents, image_url: record.image, qty: balance.qty });
+    rows.push({ sku: balance.sku, sku_sort: skuSortKey(balance.sku), name: record.name, category: record.category, price_cents: cents, image_url: record.image || hostedImage(balance.sku), qty: balance.qty });
   }
   return rows;
 }
 
-function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null) {
+/** On-hand rows that are not already in this till's product list. Prices and photos come from the sheet catalog the old till uses. */
+function stockedMasterRows(state: State, masters: Map<string, MasterProduct>, flowers: FlowerIndex | null, items: ItemIndex | null) {
+  const rows: { sku: string; sku_sort: number; name: string; category: string; price_cents: number; image_url: string | null; qty: number; flower_type: string; thc: string; price_source: "RAW_UNIT" }[] = [];
+  for (const balance of state.balances) {
+    if (balance.qty <= 0 || !balanceForStore(balance)) continue;
+    if (state.products.some((product) => product.sku === balance.sku)) continue;
+    const hit = masters.get(balance.sku);
+    if (!hit?.product.setb_active || !hit.enabled) continue;
+    const shown = presentCatalogItem({
+      sku: hit.product.sku,
+      sku_sort: hit.product.sku_sort,
+      name: hit.product.name,
+      category: hit.product.category,
+      price_cents: hit.override ?? hit.product.default_price_cents,
+      image_url: hit.product.image_url || hostedImage(balance.sku),
+      qty: balance.qty,
+      flower_type: "",
+      thc: "",
+    }, flowers, items);
+    if (shown.price_cents <= 0) continue;
+    rows.push({ ...shown, qty: balance.qty, price_source: "RAW_UNIT" });
+  }
+  return rows;
+}
+
+function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?: FlowerIndex | null, items?: ItemIndex | null, masters?: Map<string, MasterProduct>) {
   const product = state.products.find((item) => item.sku === sku);
   const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === sku);
   const record = lookupItem(items, sku);
+  const master = !product ? masters?.get(sku) : undefined;
+  if (master?.product.setb_active && master.enabled) {
+    const fromFlower = flowerPriceCents(flowers, sku);
+    const pack = cigarettePackCents(sku, master.product.category, master.product.name);
+    const cents = fromFlower ?? pack ?? raw?.get(sku) ?? master.override ?? master.product.default_price_cents;
+    if (cents > 0) return { cents, source: fromFlower != null || pack != null || raw?.get(sku) != null ? "RAW_UNIT" as const : "SETB_DEFAULT" as const, product: master.product };
+  }
   if (!product?.setb_active || !storeProduct?.enabled) {
     if (!record) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
     const cents = pricedItem(sku, record);
@@ -483,12 +614,35 @@ function draftsOf(state: State) {
 }
 
 /** Opening count: on-hand stock, plus a kitchen row that is still waiting to be received. */
-function openingPlan(state: State, raw?: Map<string, number>) {
+function weedAnswerRequired(shift: ShiftRow) {
+  return shift.store_code === "PNY01" && shift.weed_gate_required === true && shift.weed_in_store == null;
+}
+
+function noWeedShift(state: State, shift: ShiftRow | undefined) {
+  if (shift?.store_code === "PNYS") return state.stores.find((row) => row.code === "PNYS")?.weed_in_store === false;
+  return shift?.weed_gate_required === true && shift.weed_in_store === false;
+}
+
+function thcForState(state: State, sku: string) {
+  const product = state.products.find((row) => row.sku === sku);
+  return product ? isThcCatalogProduct(product) : isThcSku(sku);
+}
+
+function visibleForShift(state: State, shift: ShiftRow | undefined, sku: string) {
+  return !noWeedShift(state, shift) || !thcForState(state, sku);
+}
+
+function requireWeedAnswer(shift: ShiftRow) {
+  if (weedAnswerRequired(shift)) throw new PosError(409, "WEED_ANSWER_REQUIRED", "Answer WEED in store this shift? YES / NO first.");
+}
+
+function openingPlan(state: State, raw?: Map<string, number>, shift?: ShiftRow) {
   const incoming = state.incoming.filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0 && (!row.store_code || row.store_code === tillCode()));
   const skus = new Set<string>();
   for (const balance of state.balances) if (balance.qty > 0 && balanceForStore(balance)) skus.add(balance.sku);
   for (const row of incoming) if (!row.store_code || row.store_code === tillCode()) skus.add(row.sku);
   return [...skus]
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => ({
       sku,
@@ -501,6 +655,9 @@ function openingPlan(state: State, raw?: Map<string, number>) {
 
 /** SKUs that had stock this shift: opening on-hand plus confirmed refills and allocations. */
 function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>) {
+  const shift = state.shifts.find((row) => row.id === shiftId);
+  const draft = draftsOf(state).find((row) => row.shift_id === shiftId);
+  const addedSkus = new Set((draft?.counts ?? []).map((row) => row.sku));
   const opening = state.counts.find((row) => row.shift_id === shiftId && row.kind === "OPENING");
   const openingLines = opening ? state.count_lines.filter((row) => row.count_id === opening.id) : [];
   const saleIds = new Set(state.sales.filter((sale) => sale.shift_id === shiftId && sale.status === "COMPLETED").map((sale) => sale.id));
@@ -515,8 +672,10 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
     ...state.balances.filter((row) => balanceForStore(row)).map((row) => row.sku),
     ...openingLines.map((row) => row.sku),
     ...state.incoming.filter((row) => row.confirmed_shift_id === shiftId).map((row) => row.sku),
+    ...addedSkus,
   ]);
   return [...skus]
+    .filter((sku) => shift?.store_code === "PNYS" || visibleForShift(state, shift, sku))
     .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
     .map((sku) => {
       const received = receivedQty(sku);
@@ -534,7 +693,7 @@ function shiftClosePlan(state: State, shiftId: string, raw?: Map<string, number>
         expected_qty: openingQty + received - sold,
       };
     })
-    .filter((line) => line.opening_qty + line.received_qty > 0);
+    .filter((line) => line.opening_qty + line.received_qty > 0 || addedSkus.has(line.sku));
 }
 
 function issueDepositCode(state: State) {
@@ -546,10 +705,49 @@ function issueDepositCode(state: State) {
   try {
     const seq = nextDepositSeq(state.deposit_seq, existing);
     state.deposit_seq = seq;
-    return formatDepositCode(seq);
+    return formatDepositCode(seq, currentStore().depositPrefix);
   } catch {
     throw new PosError(503, "DEPOSIT_CODE", "Could not assign a deposit number. Try again.");
   }
+}
+
+const NEAR_DUPLICATE_DEPOSIT_MS = 10 * 60 * 1000;
+
+function assertStoreUniqueDepositCode(state: State, code: string, reservedForShiftId?: string) {
+  if (state.deposits.some((row) => row.deposit_code === code)) {
+    throw new PosError(409, "DUPLICATE_DEPOSIT_REF", "That deposit bag reference is already recorded.", { deposit_code: code });
+  }
+  const otherReservation = draftsOf(state).find((row) => row.final_deposit_code === code && row.shift_id !== reservedForShiftId);
+  if (otherReservation) {
+    throw new PosError(409, "DUPLICATE_DEPOSIT_REF", "That deposit bag reference is reserved by another shift.", { deposit_code: code });
+  }
+}
+
+function nearDuplicateDeposit(state: State, shift: ShiftRow, amountCents: number, now: Date) {
+  const earliest = now.getTime() - NEAR_DUPLICATE_DEPOSIT_MS;
+  return state.deposits
+    .filter((row) => {
+      const owner = state.shifts.find((candidate) => candidate.id === row.shift_id);
+      const created = Date.parse(row.created_at);
+      return owner?.store_code === shift.store_code
+        && row.amount_cents === amountCents
+        && Number.isFinite(created)
+        && created >= earliest
+        && created <= now.getTime();
+    })
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+}
+
+function requireNearDuplicateConfirmation(state: State, shift: ShiftRow, amountCents: number, now: Date, confirmed?: boolean) {
+  if (confirmed) return null;
+  const duplicate = nearDuplicateDeposit(state, shift, amountCents, now);
+  if (!duplicate) return null;
+  throw new PosError(409, "NEAR_DUPLICATE_DEPOSIT", "A deposit for the same amount was recorded in the last 10 minutes. Confirm that this is a different physical bag.", {
+    confirm_required: true,
+    amount_cents: amountCents,
+    existing_deposit_code: duplicate.deposit_code ?? null,
+    existing_at: duplicate.created_at,
+  });
 }
 
 function issuePny2DepositCode(state: State) {
@@ -577,7 +775,7 @@ function releaseTailDepositCode(state: State, code: string | null | undefined) {
     state.deposit_seq_pny02 = seq - 1;
     return true;
   }
-  const match = /^(?:PNY-)?D(\d{4})$/.exec(code);
+  const match = /^(?:[A-Z0-9]+-)?D(\d{4})$/.exec(code);
   if (!match) return false;
   const seq = Number(match[1]);
   if (state.deposit_seq !== seq) return false;
@@ -642,9 +840,10 @@ function expectedAtSubmit(state: State, shift: ShiftRow, sku: string, untilMs: n
 }
 
 function verifySkuList(state: State, shiftId: string) {
-  const skus = new Set(openingPlan(state).map((line) => line.sku));
+  const shift = state.shifts.find((row) => row.id === shiftId);
+  const skus = new Set(openingPlan(state, undefined, shift).map((line) => line.sku));
   const draft = draftsOf(state).find((row) => row.shift_id === shiftId);
-  for (const row of draft?.opening_counts ?? []) skus.add(row.sku);
+  for (const row of draft?.opening_counts ?? []) if (visibleForShift(state, shift, row.sku)) skus.add(row.sku);
   return sortCountSkus(state, skus);
 }
 
@@ -670,6 +869,13 @@ function startStaffVerify(shift: ShiftRow, at: string) {
   if (shift.verify_release === VERIFY_RELEASE && shift.verify_opened_at) return;
   shift.verify_opened_at = at;
   shift.verify_release = VERIFY_RELEASE;
+}
+
+/** Manager Opening count ON means the non-blocking verification count shown over the open till. */
+function startOpeningVerification(state: State, shift: ShiftRow, at: string) {
+  if (!openingCountRequired(state, shift)) return;
+  startStaffVerify(shift, at);
+  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
 }
 
 function denyMaster(session: { master?: boolean }) {
@@ -724,7 +930,40 @@ function staffOffLine(state: State, sku: string, off: number) {
   return { sku, text: staffSkuText(sku, size), off };
 }
 
+function shelfCents(state: State, sku: string, raw?: Map<string, number>) {
+  const priced = sellingPriceCents(state, sku, raw);
+  if (priced > 0) return priced;
+  return quoteForSku(sku)?.cents ?? 0;
+}
+
+function pricedOff(state: State, sku: string, off: number, raw?: Map<string, number>) {
+  const price = shelfCents(state, sku, raw);
+  return { ...staffOffLine(state, sku, off), cents: off * price };
+}
+
 function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
+  if (!openingCountRequired(state, shift)) {
+    return {
+      verify: {
+        show_banner: false,
+        deadline_at: null,
+        waiting: false,
+        cleared: 0,
+        total: 0,
+        reveal: false,
+        submitted: true,
+        lines: [],
+        opening_off: 0,
+        opening_lines: [],
+      },
+      stock_check: {
+        opening: { offCount: 0, ready: true, lines: [] },
+        closing: { offCount: 0, ready: false, lines: [] },
+        refills: refillIssues(state, shift.id, raw),
+      },
+      verify_admin: demo ? { opening: [], closing: [] } : undefined,
+    };
+  }
   if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
@@ -739,14 +978,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   const opening = skus.flatMap((sku) => {
     const row = draft?.opening_counts?.find((entry) => entry.sku === sku);
     if (!row || row.accepted_as_is || row.expected_qty == null) return [];
-    return [staffOffLine(state, sku, row.counted_qty - row.expected_qty)];
+    return [pricedOff(state, sku, row.counted_qty - row.expected_qty, raw)];
   });
   const openingLines = arrangeOff(opening, skus).filter((line) => line.off !== 0);
   const closePlan = [...shiftClosePlan(state, shift.id, raw)].sort((a, b) => compareCount(countMeta(state, a.sku), countMeta(state, b.sku)));
   const closing = closePlan.flatMap((line) => {
     const counted = draft?.counts.find((row) => row.sku === line.sku)?.counted_qty;
     if (counted == null) return [];
-    return [staffOffLine(state, line.sku, counted - line.expected_qty)];
+    return [pricedOff(state, line.sku, counted - line.expected_qty, raw)];
   });
   const closingUsesEdit = Boolean(draft?.counts.some((row) => row.edited_at || row.accepted_as_is));
   const closingSubmitted = Boolean(draft?.closing_submitted_at);
@@ -754,14 +993,14 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
     const row = draft?.counts.find((entry) => entry.sku === line.sku);
     if (!row || row.accepted_as_is) return [];
     const expected = row.edited_at ? (row.expected_qty ?? line.expected_qty) : line.expected_qty;
-    return [staffOffLine(state, line.sku, row.counted_qty - expected)];
+    return [pricedOff(state, line.sku, row.counted_qty - expected, raw)];
   });
   const closingSource = closingUsesEdit ? closingCompared : closing;
   const closingAll = arrangeOff(closingSource, closePlan.map((line) => line.sku));
   const closingReady = closingSubmitted || (!closingUsesEdit && closePlan.length > 0 && closing.length === closePlan.length);
   const closingLines = closingReady ? closingAll.filter((line) => line.off !== 0) : [];
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
-  const refills = refillIssues(state, shift.id);
+  const refills = refillIssues(state, shift.id, raw);
   return {
     verify: {
       show_banner: showBanner,
@@ -811,7 +1050,7 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   };
 }
 
-function refillIssues(state: State, shiftId: string) {
+function refillIssues(state: State, shiftId: string, raw?: Map<string, number>) {
   const grouped = new Map<string, { sent: number; received: number }>();
   for (const row of state.incoming) {
     if (row.confirmed_shift_id !== shiftId) continue;
@@ -826,19 +1065,42 @@ function refillIssues(state: State, shiftId: string) {
     if (!totals || totals.received === totals.sent) return [];
     const product = state.products.find((row) => row.sku === sku);
     const size = sizeLabel(sku, product?.category, product?.name);
-    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff: totals.received - totals.sent }];
+    const diff = totals.received - totals.sent;
+    return [{ sku, text: staffSkuText(sku, size), sent: totals.sent, received: totals.received, diff, cents: diff * shelfCents(state, sku, raw) }];
   });
   return { count: lines.length, lines };
 }
 
-function countSkus(state: State) {
+function previousClosing(state: State, shift: ShiftRow) {
+  const previous = state.shifts
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at && row.ended_at <= shift.started_at)
+    .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
+  if (!previous) return null;
+  return state.closings.find((row) => row.shift_id === previous.id) ?? null;
+}
+
+function floatCheck(state: State, shift: ShiftRow) {
+  const previous = previousClosing(state, shift);
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
+  return {
+    required: true,
+    done: draft?.float_found_cents != null,
+    expected_cents: previous?.float_cents ?? 0,
+    found_cents: draft?.float_found_cents ?? null,
+    difference_cents: draft?.float_difference_cents ?? null,
+    adjusted_by: draft?.float_adjusted_by ?? null,
+    adjusted_at: draft?.float_adjusted_at ?? null,
+  };
+}
+
+function countSkus(state: State, shift?: ShiftRow) {
   const skus = new Set<string>();
   for (const balance of state.balances) skus.add(balance.sku);
   for (const product of state.products) {
     const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
     if (product.setb_active && storeProduct?.enabled) skus.add(product.sku);
   }
-  return [...skus].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...skus].filter((sku) => visibleForShift(state, shift, sku)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
 function revokeSessions(state: State, shiftId: string, at: string) {
@@ -865,21 +1127,27 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   const more = left.length > 15 ? " · (top 15, full list in sheet)" : "";
   return [
     `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`,
+    shift.weed_in_store == null ? "" : `WEED in store this shift: ${shift.weed_in_store ? "WEED" : "NO WEED"}`,
     `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
     `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
+    closing.opening_float_counted_cents != null
+      ? `Opening cash: ${formatMoney(closing.opening_float_counted_cents)} · Previous close: ${formatMoney(closing.opening_float_expected_cents ?? 0)} · Adjustment: ${formatMoney(closing.opening_float_difference_cents ?? 0)}${closing.opening_float_adjusted_by ? ` by ${closing.opening_float_adjusted_by}` : ""}`
+      : "",
+    closing.shift_ref ? `Shift ref: ${closing.shift_ref}` : "",
     `Left: ${shown}${more}`,
     closing.close_label ? `Close: ${closing.close_label}` : "",
     closing.no_count ? "No count taken" : "",
   ].filter(Boolean).join("\n");
 }
 
-function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0): ClosingRow {
+function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCount: boolean, at: string, finalDepositCents = 0, floatCents = 0, shiftRef?: string): ClosingRow {
   const totals = shiftTotals(state, shift.id);
   const tickets = ticketStats(state, shift.id);
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
   const shortage = lines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
   const overage = lines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+  const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
   const base = {
     shift_id: shift.id,
     sales_total_cents: totals.sales_total_cents,
@@ -890,6 +1158,12 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     cash_on_hand_cents: totals.cash_on_hand_cents,
     deposited_cents: totals.deposited_cents,
     final_deposit_cents: finalDepositCents,
+    float_cents: floatCents,
+    opening_float_expected_cents: draft?.float_expected_cents ?? null,
+    opening_float_counted_cents: draft?.float_found_cents ?? null,
+    opening_float_difference_cents: draft?.float_difference_cents ?? null,
+    opening_float_adjusted_by: draft?.float_adjusted_by ?? null,
+    opening_float_adjusted_at: draft?.float_adjusted_at ?? null,
     shortage_cents: shortage,
     overage_cents: overage,
     balance_cents: closingBalance({
@@ -897,6 +1171,8 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
       shortage_cents: shortage,
       overage_cents: overage,
       deposited_cents: totals.deposited_cents,
+      opening_float_cents: draft?.float_found_cents ?? 0,
+      closing_float_cents: floatCents,
     }),
     tickets_total: tickets.total,
     tickets_cashed_out: tickets.cashed,
@@ -907,16 +1183,21 @@ function buildClosing(state: State, shift: ShiftRow, lines: ClosingLine[], noCou
     no_count: noCount,
     created_at: at,
     close_label: stampCloseLabel(state, shift, at).close_label,
+    shift_ref: shiftRef || issueShiftReference(state, shift.store_code),
   };
   return { ...base, summary_text: summaryText({ ...shift, ended_at: shift.ended_at ?? at }, staff?.pos_id ?? "", base) };
 }
 
 function finishShift(state: State, shift: ShiftRow, reason: string, at: string, closing: ClosingRow) {
   expireTickets(state, Date.parse(at), shift.id);
-  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0);
+  const fresh = buildClosing(state, shift, closing.closing_lines, closing.no_count, at, closing.final_deposit_cents ?? 0, closing.float_cents ?? 0, closing.shift_ref);
   shift.status = "ENDED";
   shift.ended_at = at;
   shift.end_reason = reason;
+  if (tillCode() === "PNYS" && reason === "POS_END" && shift.pin_hash) {
+    shift.closing_access_pin_hash = shift.pin_hash;
+    shift.closing_access_expires_at = iso(new Date(Date.parse(at) + POST_CLOSE_ACCESS_MS));
+  }
   shift.pin_hash = null;
   shift.pin_expires_at = at;
   revokeSessions(state, shift.id, at);
@@ -928,8 +1209,8 @@ function finishShift(state: State, shift: ShiftRow, reason: string, at: string, 
   return fresh;
 }
 
-function noCountLines(state: State): ClosingLine[] {
-  return countSkus(state).map((sku) => ({ sku, name: productName(state, sku), left: qtyOf(state, sku), system_qty: qtyOf(state, sku) }));
+function noCountLines(state: State, shift: ShiftRow): ClosingLine[] {
+  return countSkus(state, shift).map((sku) => ({ sku, name: productName(state, sku), left: qtyOf(state, sku), system_qty: qtyOf(state, sku) }));
 }
 
 function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
@@ -986,6 +1267,8 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
       .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
       .join(" | "),
   }, at);
+  const email = closingEmailPayload(state, shift, closing, at);
+  enqueue(state, "S_EmailOutbox", email.row_id, email, at);
   queueSnapshot(state, at);
 }
 
@@ -1020,14 +1303,17 @@ function queueSnapshot(state: State, at: string) {
   }, at);
 }
 
-function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): Record<string, string> {
+function receiptPayload(state: State, row: IncomingRow, shiftSccx: string, staffPos: string): Record<string, string> {
   const received = row.qty_received;
   const status = row.status === "CANCELLED_BY_KITCHEN" ? "CANCEL_ACK" : row.status === "PENDING_CONFIRM" ? "IMPORTED" : row.status;
   return {
     row_id: `R-${row.kitchen_row_id}`,
     kitchen_row_id: row.kitchen_row_id,
+    refill_id: row.refill_id ?? "",
+    batch_id: row.batch_id,
     store_code: tillCode(),
     sku: row.sku,
+    name: productName(state, row.sku),
     qty_sent: String(row.qty_sent),
     qty_received: received == null ? "" : String(received),
     variance: received == null ? "" : String(received - row.qty_sent),
@@ -1035,17 +1321,49 @@ function receiptPayload(row: IncomingRow, shiftSccx: string, staffPos: string): 
     status,
     shift_id: shiftSccx,
     staff_pos_id: staffPos,
+    sent_by: row.sent_by ?? "Kitchen",
+    received_by: row.received_by ?? staffPos,
+    sent_at: row.kitchen_created_at ?? row.created_at,
     confirmed_at: row.confirmed_at ?? "",
   };
+}
+
+function enqueueSignalNotice(state: State, eventId: string, eventType: "KITCHEN_SENT" | "KITCHEN_RECEIPT", batchId: string, message: string, at: string) {
+  enqueue(state, "SIGNAL_GROUP", eventId, {
+    event_id: eventId,
+    event_type: eventType,
+    store_code: tillCode(),
+    batch_id: batchId,
+    message,
+    dry_run: process.env.VERCEL_ENV === "production" ? "false" : "true",
+  }, at);
+}
+
+function kitchenSentMessage(batchId: string, sentBy: string, sentAt: string, lines: { sku: string; name: string; qty: number; approval_required?: boolean }[]) {
+  const detail = lines.map((line) => `${line.sku} ${line.name} ×${line.qty}${line.approval_required ? " · approval required" : ""}`).join("\n");
+  const total = lines.reduce((sum, line) => sum + line.qty, 0);
+  return `KITCHEN SENT\nStore: ${tillCode()}\nBatch: ${batchId}\nSent by: ${sentBy}\nSent: ${torontoDateTime(sentAt)} Toronto\n${detail}\nTotal: ${total} units`;
+}
+
+function kitchenReceiptMessage(receipt: RefillReceiptRow) {
+  const detail = receipt.lines.map((line) => `${line.sku} ${line.name} · sent ${line.qty_sent} · received ${line.qty_received} · variance ${line.variance}${line.reason ? ` · ${line.reason}` : ""}`).join("\n");
+  return `KITCHEN REFILL ${receipt.status}\nStore: ${receipt.store_code}\nBatch: ${receipt.batch_id}\nSent by: ${receipt.sent_by}\nReceived by: ${receipt.received_by}\nSent: ${torontoDateTime(receipt.sent_at)} Toronto\nReceived: ${torontoDateTime(receipt.received_at)} Toronto\n${detail}`;
 }
 
 function openShifts(state: State) {
   return state.shifts.filter((shift) => shift.store_code === tillCode() && shift.status !== "ENDED");
 }
 
+function postCloseAccessError(state: State, shift: ShiftRow, now: Date) {
+  if (shift.status !== "ENDED" || !shift.ended_at) return "This closing is not available.";
+  if (!shift.closing_access_expires_at || Date.parse(shift.closing_access_expires_at) <= now.getTime()) return "The redo window has expired.";
+  const laterShift = state.shifts.some((row) => row.store_code === shift.store_code && Date.parse(row.started_at) > Date.parse(shift.ended_at!));
+  return laterShift ? "The next shift has opened." : null;
+}
+
 function requireSession(state: State, token: string, now: Date, opts?: { demo: boolean; secret: string; gate?: "pos" | "kitchen" | "any" }) {
   const want = opts?.gate ?? "pos";
-  if (opts?.demo && token.startsWith("v1.")) {
+  if (opts && token.startsWith("v1.")) {
     const ticket = readStaffSession(token, opts.secret, now.getTime());
     if (!ticket || ticket.store !== tillCode()) {
       throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
@@ -1054,6 +1372,42 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
     if (want !== "any" && gate !== want) {
       throw new PosError(401, "SESSION_REJECTED", "This sign-in is for a different screen.");
     }
+    if (ticket.kind === "kitchen") {
+      const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
+      if (!session) throw new PosError(401, "NO_SESSION", "Sign in with the kitchen PIN.");
+      const at = iso(now);
+      return {
+        session,
+        shift: {
+          id: "KITCHEN",
+          sccx_shift_id: "KITCHEN",
+          staff_uid: ticket.staff,
+          store_code: tillCode(),
+          ticket_letter: "K",
+          ticket_seq: 0,
+          pin_hash: null,
+          pin_expires_at: session.expires_at,
+          pin_failed_attempts: 0,
+          status: "ACTIVE",
+          started_at: session.created_at,
+          ended_at: null,
+          end_reason: null,
+          opening_confirmed_at: at,
+          refill_confirmed_at: null,
+          created_at: session.created_at,
+        } as ShiftRow,
+        staff: {
+          staff_uid: ticket.staff,
+          sccx_id: "KITCHEN",
+          pos_id: "KITCHEN",
+          display_name: "Kitchen",
+          active: true,
+          updated_at: session.created_at,
+          created_at: session.created_at,
+        },
+      };
+    }
+    if (!opts.demo) throw new PosError(401, "SESSION_REJECTED", "The till session was not accepted. Sign in again.");
     const shift = state.shifts.find((row) => row.sccx_shift_id === ticket.shift || row.id === ticket.shift);
     if (!shift || shift.store_code !== tillCode()) throw new PosError(401, "NO_SHIFT", "No demo shift is open on this server. Sign in again.");
     if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
@@ -1071,8 +1425,12 @@ function requireSession(state: State, token: string, now: Date, opts?: { demo: b
   const session = state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at && Date.parse(row.expires_at) > now.getTime());
   if (session) {
     const shift = state.shifts.find((row) => row.id === session.shift_id);
-    if (!shift || shift.store_code !== tillCode() || (!session.master && shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
+    if (!shift || shift.store_code !== tillCode() || (!session.master && !session.closing_only && shift.status !== "ACTIVE" && shift.status !== "CLOSING")) {
       throw new PosError(401, "SHIFT_ENDED", "This shift has ended. Sign in again.");
+    }
+    if (session.closing_only) {
+      const blocked = postCloseAccessError(state, shift, now);
+      if (blocked) throw new PosError(401, blocked.startsWith("The next") ? "NEXT_SHIFT_OPEN" : "CLOSE_WINDOW_EXPIRED", blocked);
     }
     const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
     if (!staff || (!session.master && !staff.active)) throw new PosError(401, "NO_SESSION", "Staff record is inactive.");
@@ -1087,14 +1445,21 @@ function requireAdmin(state: State, token: string, now: Date) {
   return session;
 }
 
-function sellingBlocked(_state: State, shift: ShiftRow) {
+function openingCountRequired(state: State, shift?: ShiftRow) {
+  if (shift?.opening_count_required != null) return shift.opening_count_required;
+  return state.stores.find((store) => store.code === (shift?.store_code ?? tillCode()))?.opening_count_required === true;
+}
+
+function sellingBlocked(state: State, shift: ShiftRow) {
   if (shift.status !== "ACTIVE") return "SHIFT_NOT_ACTIVE";
+  if (weedAnswerRequired(shift)) return "WEED_ANSWER_REQUIRED";
+  if (openingCountRequired(state, shift) && !shift.opening_confirmed_at) return "OPENING_COUNT_REQUIRED";
   return null;
 }
 
-/** Selling does not wait on an opening count. Pending refills stay pending until staff receive them. */
-function openTillWithoutCount(shift: ShiftRow, at: string) {
-  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+/** Stores with opening count OFF open directly. Required counts remain blocking. */
+function openTillWithoutCount(state: State, shift: ShiftRow, at: string) {
+  if (!openingCountRequired(state, shift) && !shift.opening_confirmed_at) shift.opening_confirmed_at = at;
 }
 
 function ensureQuotedProduct(state: State, sku: string, at: string) {
@@ -1120,7 +1485,7 @@ function ensureQuotedProduct(state: State, sku: string, at: string) {
     product.category = quote.category;
     product.setb_active = true;
   }
-  let storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === sku);
+  const storeProduct = state.store_products.find((row) => row.store_code === tillCode() && row.sku === sku);
   if (!storeProduct) {
     state.store_products.push({
       store_code: tillCode(),
@@ -1134,6 +1499,26 @@ function ensureQuotedProduct(state: State, sku: string, at: string) {
     storeProduct.enabled = true;
     storeProduct.updated_at = at;
   }
+}
+
+function ensurePublishedFlowerProduct(state: State, sku: string, flowers: FlowerIndex | null, at: string) {
+  if (state.products.some((row) => row.sku === sku)) return true;
+  const parsed = parseFlowerSku(sku);
+  const record = parsed ? flowers?.get(parsed.base) : null;
+  const cents = flowerPriceCents(flowers, sku);
+  if (!parsed || !record || cents == null || cents <= 0) return false;
+  state.products.push({
+    sku,
+    sku_sort: skuSortKey(sku),
+    name: record.strain ? `${record.strain} ${parsed.size}` : sku,
+    category: record.tier || "Flower",
+    default_price_cents: cents,
+    image_url: record.image,
+    setb_active: true,
+    synced_at: at,
+    created_at: at,
+  });
+  return true;
 }
 
 function mergeLines(lines: { sku?: string; qty?: number }[]) {
@@ -1246,10 +1631,13 @@ export class PosService {
   private hits = new Map<string, number[]>();
   private kitchenFails = 0;
   private kitchenLocked = false;
+  private managerFails = 0;
+  private managerLocked = false;
   private rawPriceCache: { at: number; map: Map<string, number>; notes: Map<string, string>; items: ItemIndex } | null = null;
   private rawPriceFlight: Promise<Map<string, number>> | null = null;
   private flowerCache: { at: number; index: FlowerIndex } | null = null;
   private flowerFlight: Promise<FlowerIndex> | null = null;
+  private masterCache: { at: number; map: Map<string, MasterProduct> } | null = null;
   private db: PosDb;
   private deps: PosDeps;
 
@@ -1269,6 +1657,23 @@ export class PosService {
 
   private now() {
     return this.deps.now?.() ?? new Date();
+  }
+
+  async assertIntegrationOwner(channel: IntegrationChannel) {
+    if (!this.db.assertIntegrationOwner) {
+      return { channel, owner_store_code: tillCode(), generation: 1, cutover_id: "LEGACY" } satisfies IntegrationLease;
+    }
+    return this.db.assertIntegrationOwner(channel);
+  }
+
+  async integrationEventDelivered(channel: IntegrationChannel, cutoverId: string, eventId: string) {
+    if (!this.db.deliveredIntegrationEvents) return false;
+    return (await this.db.deliveredIntegrationEvents(channel, cutoverId, [eventId])).has(eventId);
+  }
+
+  async recordIntegrationDelivery(lease: IntegrationLease, eventId: string, receipt: Record<string, unknown> = {}) {
+    if (!this.db.recordIntegrationDelivery) return true;
+    return this.db.recordIntegrationDelivery(lease, eventId, receipt);
   }
 
   /**
@@ -1361,6 +1766,32 @@ export class PosService {
     return index;
   }
 
+  /** Product names, photos, and tier prices from the sheet catalog. Read only. On-hand stays in this till. */
+  private async sheetMasters() {
+    const now = this.now().getTime();
+    if (this.masterCache && now - this.masterCache.at < RAW_PRICE_TTL_MS) return this.masterCache.map;
+    const map = new Map<string, MasterProduct>();
+    if (!this.deps.sheet.configured) return map;
+    try {
+      const rows = await this.deps.sheet.readRows("POS_Staff");
+      const parts = rows
+        .filter((row) => row.record_type === "STATE" && String(row.row_id ?? "").startsWith("STATE-") && row.doc)
+        .sort((a, b) => String(a.row_id).localeCompare(String(b.row_id)));
+      if (parts.length === 0) return map;
+      const parsed = JSON.parse(parts.map((row) => row.doc).join("")) as State;
+      const code = tillCode();
+      for (const product of parsed.products ?? []) {
+        const store = (parsed.store_products ?? []).find((item) => item.sku === product.sku && (code === "PNY01" ? !item.store_code || item.store_code === "PNY01" : item.store_code === code));
+        if (store && !store.enabled) continue;
+        map.set(product.sku, { product, enabled: true, override: store?.price_override_cents ?? null });
+      }
+    } catch {
+      return this.masterCache?.map ?? map;
+    }
+    this.masterCache = { at: now, map };
+    return map;
+  }
+
   /** Non-flower names, prices, and pictures from Items_raw_price. An empty sheet keeps the current catalog. */
   private async itemIndex() {
     await this.rawUnitPrices();
@@ -1368,16 +1799,22 @@ export class PosService {
   }
 
   private demoPinAllowed() {
-    return Boolean(this.deps.demo);
+    return Boolean(this.deps.demo?.pinHash);
   }
 
   private session(state: State, token: string, now: Date, gate: "pos" | "kitchen" | "any" = "pos") {
     this.ensurePny2(state, iso(now));
-    return requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
+    const current = requireSession(state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate });
+    if (!current.session.master && !current.session.closing_only && !weedAnswerRequired(current.shift)) {
+      nameLiveShift(state, iso(now));
+      openTillWithoutCount(state, current.shift, iso(now));
+    }
+    return current;
   }
 
   private reopenDemoShift(state: State, now: Date) {
     if (tillCode() === "PNY02") return this.reopenPny2Demo(state, now);
+    if (tillCode() === "PNYS") return this.reopenPnysDemo(state, now);
     const shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-1")
       ?? state.shifts.find((row) => row.store_code === tillCode());
     if (!shift) return null;
@@ -1388,6 +1825,64 @@ export class PosService {
       shift.end_reason = null;
       shift.pin_failed_attempts = 0;
       if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+    }
+    if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
+      shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
+    }
+    return shift;
+  }
+
+  /** Preview-only PNYS test staff/shift. Catalog and balances stay the cloned PNYS data. */
+  private reopenPnysDemo(state: State, now: Date) {
+    const at = iso(now);
+    let staff = state.staff.find((row) => row.staff_uid === "staff-demo-pnys");
+    if (!staff) {
+      staff = {
+        staff_uid: "staff-demo-pnys",
+        sccx_id: "demo-sccx-pnys",
+        pos_id: "DEMO1",
+        display_name: "Demo Budtender",
+        active: true,
+        updated_at: at,
+        created_at: at,
+      };
+      state.staff.push(staff);
+    }
+
+    let shift = state.shifts.find((row) => row.store_code === "PNYS" && row.sccx_shift_id === "demo-shift-pnys");
+    if (!shift) {
+      const store = state.stores.find((row) => row.code === "PNYS");
+      const letter = TICKET_LETTERS[(store?.ticket_letter_seq ?? 0) % TICKET_LETTERS.length];
+      if (store) store.ticket_letter_seq += 1;
+      shift = {
+        id: randomUUID(),
+        sccx_shift_id: "demo-shift-pnys",
+        staff_uid: staff.staff_uid,
+        store_code: "PNYS",
+        ticket_letter: letter,
+        ticket_seq: 0,
+        pin_hash: this.deps.demo?.pinHash ?? null,
+        pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        pin_failed_attempts: 0,
+        status: "ACTIVE",
+        started_at: at,
+        ended_at: null,
+        end_reason: null,
+        opening_confirmed_at: at,
+        refill_confirmed_at: at,
+        created_at: at,
+      };
+      state.shifts.push(shift);
+    }
+
+    if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") {
+      shift.status = "ACTIVE";
+      shift.started_at = at;
+      shift.ended_at = null;
+      shift.end_reason = null;
+      shift.pin_failed_attempts = 0;
+      shift.opening_confirmed_at = shift.opening_confirmed_at ?? at;
+      shift.refill_confirmed_at = shift.refill_confirmed_at ?? at;
     }
     if (!shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
       shift.pin_expires_at = iso(new Date(now.getTime() + PIN_TTL_MS));
@@ -1426,7 +1921,8 @@ export class PosService {
         state.balances.push({ ...row, store_code: "PNY02" });
       }
     }
-    let shift = state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
+    let shift = state.shifts.find((row) => row.store_code === "PNY02" && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      ?? state.shifts.find((row) => row.sccx_shift_id === "demo-shift-pny2");
     const staff = state.staff.find((row) => row.staff_uid === "staff-demo-tri") ?? state.staff[0];
     if (!shift && staff) {
       const store = state.stores.find((row) => row.code === "PNY02");
@@ -1439,7 +1935,7 @@ export class PosService {
         store_code: "PNY02",
         ticket_letter: letter,
         ticket_seq: 0,
-        pin_hash: hashPin(DEMO_PIN),
+        pin_hash: this.deps.demo?.pinHash ?? null,
         pin_expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
         pin_failed_attempts: 0,
         status: "ACTIVE",
@@ -1482,14 +1978,31 @@ export class PosService {
     this.hits.set(bucket, recent);
   }
 
+  /** Detached state for GET/poll paths. Mutating this snapshot never commits it. */
+  private async readState() {
+    const state = this.db.peek
+      ? await this.db.peek()
+      : await this.db.transaction(async (tx) => structuredClone(tx.state) as State);
+    return structuredClone(state) as State;
+  }
+
   bootstrap() {
     return {
       ok: true,
       store: tillCode(),
       demo: Boolean(this.deps.demo),
-      demo_label: this.deps.demo?.label ?? null,
-      demo_pin: this.deps.demo?.pin ?? null,
+      demo_label: this.deps.demo ? DEMO_LABEL : null,
+      demo_login_enabled: this.demoPinAllowed(),
     };
+  }
+
+  /** Read-only. A one-store till with no approved opening stock is waiting, never a demo. */
+  async publicStatus() {
+    if (!this.db.peek) return { waiting_for_opening: false };
+    const state = await this.db.peek();
+    const open = state.shifts.some((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
+    const cloneReady = this.db.isReady ? await this.db.isReady() : false;
+    return { waiting_for_opening: !state.opening_stock_at && !cloneReady && !open };
   }
 
   async startShift(input: { key: string; store?: string; staff_ref?: string; pos_id?: string; shift_id?: string }) {
@@ -1498,7 +2011,7 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "shift_start", input.key, body, now, this.deps.secrets.shift);
       if (seen) return seen;
-      if ((input.store ?? tillCode()) !== tillCode()) throw new PosError(404, "STORE", "This till is PNY01 only.");
+      if (!matchesTillInput(input.store)) throw new PosError(404, "STORE", "This request is for another store.");
       const staff = tx.state.staff.find((row) => row.staff_uid === input.staff_ref || row.sccx_id === input.staff_ref);
       if (!staff?.active) throw new PosError(403, "STAFF_INACTIVE", "Staff is not active.");
       if (!input.shift_id) throw new PosError(400, "SHIFT_ID", "shift_id is required.");
@@ -1509,7 +2022,7 @@ export class PosService {
       }
       const at = iso(now);
       for (const previous of openShifts(tx.state)) {
-        const closing = buildClosing(tx.state, previous, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, previous, noCountLines(tx.state, previous), true, at);
         finishShift(tx.state, previous, "REPLACED", at, closing);
         queueClosingSheets(tx.state, previous, tx.state.closings.find((row) => row.shift_id === previous.id) ?? closing, at);
       }
@@ -1518,6 +2031,7 @@ export class PosService {
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
       const pin = randomPin();
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: input.shift_id,
@@ -1532,8 +2046,15 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
+        ...(tillCode() === "PNY01" ? {
+          weed_gate_required: true,
+          weed_in_store: null,
+          weed_answered_at: null,
+          weed_answered_by: null,
+        } : {}),
         created_at: at,
       };
       tx.state.shifts.push(shift);
@@ -1625,6 +2146,7 @@ export class PosService {
       if (!store) throw new PosError(404, "STORE", "Store is missing.");
       const letter = TICKET_LETTERS[store.ticket_letter_seq % TICKET_LETTERS.length];
       store.ticket_letter_seq += 1;
+      const requiresOpeningCount = openingCountRequired(tx.state);
       const shift: ShiftRow = {
         id: randomUUID(),
         sccx_shift_id: sccxId,
@@ -1639,8 +2161,15 @@ export class PosService {
         started_at: at,
         ended_at: null,
         end_reason: null,
-        opening_confirmed_at: null,
+        opening_confirmed_at: requiresOpeningCount || tillCode() === "PNY01" ? null : at,
+        opening_count_required: requiresOpeningCount,
         refill_confirmed_at: null,
+        ...(tillCode() === "PNY01" ? {
+          weed_gate_required: true,
+          weed_in_store: null,
+          weed_answered_at: null,
+          weed_answered_by: null,
+        } : {}),
         created_at: at,
       };
       tx.state.shifts.push(shift);
@@ -1666,14 +2195,14 @@ export class PosService {
       const now = this.now();
       const seen = replay(tx.state, "shift_end", input.key, body, now, this.deps.secrets.shift);
       if (seen) return seen;
-      if ((input.store ?? tillCode()) !== tillCode()) throw new PosError(404, "STORE", "This till is PNY01 only.");
+      if (!matchesTillInput(input.store)) throw new PosError(404, "STORE", "This request is for another store.");
       const shift = tx.state.shifts.find((row) => row.sccx_shift_id === input.shift_id || row.id === input.shift_id);
       if (!shift) throw new PosError(404, "SHIFT", "Shift was not found.");
       const at = iso(now);
       if (shift.status !== "ENDED") {
         const reason = input.reason === "SCCX_AUTOCLOSE" ? "SCCX_AUTOCLOSE" : "SCCX_OFF";
         expireTickets(tx.state, now.getTime(), shift.id);
-        const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
         finishShift(tx.state, shift, reason, at, closing);
         const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
         queueClosingSheets(tx.state, shift, saved, at);
@@ -1686,12 +2215,16 @@ export class PosService {
   }
 
   async login(pin: string, ip: string) {
-    this.hit(`login:${ip || "unknown"}`, 8, 15 * 60 * 1000);
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    this.hit(`login:${ip || "unknown"}`, 8, PIN_FAILURE_WINDOW_MS);
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
+    if (specialPinMatches("kitchen", pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    const demoPin = this.demoPinAllowed() && specialPinMatches("demo", pin);
+    const masterPin = specialPinMatches("master", pin);
+    if (!demoPin && !masterPin && !/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
-      if (this.demoPinAllowed() && safeEqual(pin, DEMO_PIN)) {
+      if (demoPin) {
         const shift = this.reopenDemoShift(tx.state, now);
         if (!shift?.pin_expires_at) {
           return { ok: false as const, status: 401, code: "NO_SHIFT", message: "Demo till is not seeded on this server. Reload and try again." };
@@ -1705,7 +2238,7 @@ export class PosService {
           demo: true,
           gate: "pos",
         }, this.deps.secrets.session);
-        startStaffVerify(shift, at);
+        if (!weedAnswerRequired(shift)) startOpeningVerification(tx.state, shift, at);
         tx.state.sessions.push({
           id: randomUUID(),
           shift_id: shift.id,
@@ -1719,11 +2252,11 @@ export class PosService {
       }
       for (const shift of openShifts(tx.state)) {
         if (shift.pin_expires_at && Date.parse(shift.pin_expires_at) <= now.getTime()) {
-          const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+          const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
-      const master = safeEqual(pin, MASTER_PIN);
+      const master = masterPin;
       let shift = tx.state.shifts.find((row) => row.store_code === tillCode() && (row.status === "ACTIVE" || row.status === "CLOSING" || row.status === "LOCKED"));
       if (!shift && master) {
         shift = tx.state.shifts
@@ -1744,28 +2277,57 @@ export class PosService {
           return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
         }
       }
+      if (!shift && !master && tillCode() === "PNYS") {
+        const candidates = tx.state.shifts
+          .filter((row) => row.store_code === tillCode() && row.status === "ENDED" && row.closing_access_pin_hash)
+          .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""));
+        const closed = candidates.find((row) => !postCloseAccessError(tx.state, row, now) && verifyPin(pin, row.closing_access_pin_hash!));
+        if (closed?.closing_access_expires_at) {
+          const token = newToken();
+          tx.state.sessions.push({
+            id: randomUUID(),
+            shift_id: closed.id,
+            token_hash: sha256(token),
+            expires_at: closed.closing_access_expires_at,
+            revoked_at: null,
+            created_at: at,
+            closing_only: true,
+          });
+          const staff = tx.state.staff.find((row) => row.staff_uid === closed.staff_uid);
+          audit(tx.state, "POST_CLOSE_LOGIN", "shift", closed.id, closed.staff_uid, { expires_at: closed.closing_access_expires_at }, at);
+          return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "", closing_only: true };
+        }
+      }
       if (!shift) return { ok: false as const, status: 401, code: "NO_SHIFT", message: "No shift is active." };
       if (shift.status === "LOCKED") return { ok: false as const, status: 423, code: "LOCKED", message: "Shift is locked. An admin must reissue the PIN." };
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN has expired." };
       }
+      const failureActor = `pin:${sha256(ip || "unknown").slice(0, 16)}`;
+      const recentFailures = tx.state.audit.filter((row) =>
+        row.action === "PIN_LOGIN_FAILED"
+        && row.ref_id === shift.id
+        && row.actor === failureActor
+        && now.getTime() - Date.parse(row.created_at) < PIN_FAILURE_WINDOW_MS,
+      ).length;
+      if (!master && recentFailures >= MAX_PIN_FAILURES) {
+        return { ok: false as const, status: 429, code: "RATE_LIMITED", message: "Too many wrong PINs. Wait 15 minutes and try again." };
+      }
       if (!master && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
-        if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
-        const locked = shift.status === "LOCKED";
+        audit(tx.state, "PIN_LOGIN_FAILED", "shift", shift.id, failureActor, { attempt: recentFailures + 1 }, at);
+        const cooledDown = recentFailures + 1 >= MAX_PIN_FAILURES;
         return {
           ok: false as const,
-          status: locked ? 423 : 401,
-          code: locked ? "LOCKED" : "BAD_PIN",
-          message: locked
-            ? "Shift is locked after 5 wrong PINs. An admin must reissue the PIN."
-            : this.demoPinAllowed()
-              ? "That PIN is not correct. This demo uses PIN 6666. Five wrong tries lock the shift."
-              : "That PIN is not correct.",
+          status: cooledDown ? 429 : 401,
+          code: cooledDown ? "RATE_LIMITED" : "BAD_PIN",
+          message: cooledDown
+            ? "Too many wrong PINs. Wait 15 minutes and try again."
+            : "That PIN is not correct.",
         };
       }
       shift.pin_failed_attempts = 0;
-      if (!master) startStaffVerify(shift, at);
+      if (!master && !weedAnswerRequired(shift)) startOpeningVerification(tx.state, shift, at);
       const token = newToken();
       tx.state.sessions.push({
         id: randomUUID(),
@@ -1779,51 +2341,74 @@ export class PosService {
       nameLiveShift(tx.state, at);
       const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
       return { ok: true as const, token, staff_name: staff?.display_name ?? "", pos_id: staff?.pos_id ?? "" };
-    });
+    }, { kind: "AUTH_SESSION" });
     if (!result.ok) throw new PosError(result.status, result.code, result.message);
     return result;
   }
 
   async kitchenLogin(pin: string, ip: string) {
     this.hit(`kitchen:${ip || "unknown"}`, 8, 15 * 60 * 1000);
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit kitchen PIN.");
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid kitchen PIN.");
     if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
-      if (!(this.demoPinAllowed() && safeEqual(pin, KITCHEN_PIN))) return { ok: false as const, fail: true as const };
-      const shift = this.reopenDemoShift(tx.state, now);
-      if (!shift?.pin_expires_at) {
-        return { ok: false as const, fail: false as const, status: 401, code: "NO_SHIFT", message: "Demo kitchen is not seeded on this server. Reload and try again." };
-      }
+      if (!specialPinMatches("kitchen", pin)) return { ok: false as const, fail: true as const };
+      const expiresAt = iso(new Date(now.getTime() + PIN_TTL_MS));
       const token = signStaffSession({
         v: 1,
         store: tillCode(),
-        shift: shift.sccx_shift_id,
-        staff: shift.staff_uid,
-        exp: Math.floor(Date.parse(shift.pin_expires_at) / 1000),
-        demo: true,
+        shift: "KITCHEN",
+        staff: "KITCHEN",
+        exp: Math.floor(Date.parse(expiresAt) / 1000),
+        demo: Boolean(this.deps.demo),
+        kind: "kitchen",
         gate: "kitchen",
       }, this.deps.secrets.session);
       tx.state.sessions.push({
         id: randomUUID(),
-        shift_id: shift.id,
+        shift_id: "KITCHEN",
         token_hash: sha256(token),
-        expires_at: shift.pin_expires_at,
+        expires_at: expiresAt,
         revoked_at: null,
         created_at: at,
       });
-      const staff = tx.state.staff.find((row) => row.staff_uid === shift.staff_uid);
-      return { ok: true as const, token, staff_name: staff?.display_name ?? "Demo Budtender" };
-    });
+      audit(tx.state, "KITCHEN_LOGIN", "store", tillCode(), "KITCHEN", { preview: process.env.VERCEL_ENV === "preview" }, at);
+      return { ok: true as const, token, staff_name: "Kitchen" };
+    }, { kind: "AUTH_SESSION" });
     if (!result.ok && result.fail) {
       this.kitchenFails += 1;
       if (this.kitchenFails >= MAX_PIN_FAILURES) this.kitchenLocked = true;
       if (this.kitchenLocked) throw new PosError(423, "LOCKED", "Kitchen is locked after 5 wrong PINs.");
       throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     }
-    if (!result.ok) throw new PosError(result.status, result.code, result.message);
     this.kitchenFails = 0;
+    return result;
+  }
+
+  async managerLogin(pin: string, ip: string) {
+    this.hit(`manager:${ip || "unknown"}`, 8, 15 * 60 * 1000);
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid Manager PIN.");
+    if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      if (!specialPinMatches("master", pin)) return { ok: false as const };
+      const token = newToken();
+      tx.state.admin_sessions.push({
+        id: randomUUID(),
+        token_hash: sha256(token),
+        expires_at: iso(new Date(now.getTime() + PIN_TTL_MS)),
+        created_at: iso(now),
+      });
+      return { ok: true as const, token };
+    }, { kind: "AUTH_SESSION" });
+    if (!result.ok) {
+      this.managerFails += 1;
+      if (this.managerFails >= MAX_PIN_FAILURES) this.managerLocked = true;
+      if (this.managerLocked) throw new PosError(423, "LOCKED", "Manager is locked after 5 wrong PINs.");
+      throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
+    }
+    this.managerFails = 0;
     return result;
   }
 
@@ -1831,25 +2416,102 @@ export class PosService {
     await this.db.transaction(async (tx) => {
       const session = tx.state.sessions.find((row) => row.token_hash === sha256(token) && !row.revoked_at);
       if (session) session.revoked_at = iso(this.now());
-    });
+    }, { kind: "AUTH_SESSION" });
     return { ok: true };
   }
 
-  async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+  /** Save or change the PNY01 WEED setting without changing stock, sales, counts, refills, or the PIN. */
+  async answerWeedInStore(token: string, weedInStore: boolean) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
-      if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      const actor = session.master ? "MASTER" : staff.staff_uid;
+      if (tillCode() !== "PNY01" || shift.store_code !== "PNY01" || shift.weed_gate_required !== true) {
+        throw new PosError(404, "WEED_GATE", "This question is only used by new PNY01 shifts.");
+      }
+      if (shift.status !== "ACTIVE") {
+        throw new PosError(409, "WEED_TOGGLE_CLOSED", "WEED cannot be changed after closing starts.");
+      }
+      const initialAnswer = shift.weed_in_store == null;
+      if (!initialAnswer && shift.weed_in_store === weedInStore) {
+        return { ok: true as const, changed: false, weed_in_store: shift.weed_in_store, answered_at: shift.weed_answered_at, shift_id: shift.sccx_shift_id };
+      }
+      const closingDraft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      if (!initialAnswer && closingDraft?.closing_started_at) {
+        throw new PosError(409, "WEED_TOGGLE_CLOSED", "WEED cannot be changed after the closing count starts.");
+      }
+      const stockBefore = JSON.stringify(tx.state.balances);
+      const salesBefore = JSON.stringify(tx.state.sales);
+      const countsBefore = JSON.stringify(tx.state.counts);
+      const refillsBefore = JSON.stringify(tx.state.incoming);
+      const pinBefore = shift.pin_hash;
+      const previousAnswer = shift.weed_in_store;
+      shift.weed_in_store = weedInStore;
+      shift.weed_answered_at = at;
+      shift.weed_answered_by = actor;
+      if (initialAnswer) {
+        startOpeningVerification(tx.state, shift, at);
+        openTillWithoutCount(tx.state, shift, at);
+      }
+      audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, actor, {
+        shift_id: shift.sccx_shift_id,
+        previous_answer: previousAnswer == null ? null : previousAnswer ? "WEED" : "NO WEED",
+        answer: weedInStore ? "WEED" : "NO WEED",
+        answered_at: at,
+      }, at);
+      if (
+        JSON.stringify(tx.state.balances) !== stockBefore
+        || JSON.stringify(tx.state.sales) !== salesBefore
+        || JSON.stringify(tx.state.counts) !== countsBefore
+        || JSON.stringify(tx.state.incoming) !== refillsBefore
+        || shift.pin_hash !== pinBefore
+      ) throw new PosError(409, "WEED_GATE_WRITE", "Saving the answer must not change till data.");
+      return { ok: true as const, changed: true, weed_in_store: weedInStore, answered_at: at, shift_id: shift.sccx_shift_id };
+    });
+  }
+
+  async state(token: string, journal?: DemoJournalOrder[], gate: "pos" | "kitchen" = "pos") {
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
+    const tx: Tx = { state: await this.readState() };
+      const now = this.now();
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
       const { shift, staff, session } = this.session(tx.state, token, now, gate);
+      if (session.closing_only) {
+        const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+        if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+        return {
+          ok: true,
+          closing_only: true,
+          phase: "closed",
+          shift: {
+            id: shift.id,
+            sccx_shift_id: shift.sccx_shift_id,
+            staff_name: staff.display_name,
+            pos_id: staff.pos_id,
+            started_at: shift.started_at,
+            ended_at: shift.ended_at,
+            status: shift.status,
+          },
+          post_close: {
+            expires_at: shift.closing_access_expires_at,
+            version: closing.version ?? 1,
+            reclosed: Boolean(closing.reclosed_at),
+            closing,
+            deposits: tx.state.deposits
+              .filter((row) => row.shift_id === shift.id)
+              .map((row) => ({ code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
+          },
+        };
+      }
       const master = Boolean(session.master);
-      if (!master) {
+      if (!master && !weedAnswerRequired(shift)) {
         nameLiveShift(tx.state, iso(now));
-        openTillWithoutCount(shift, iso(now));
+        openTillWithoutCount(tx.state, shift, iso(now));
       }
       const totals = shiftTotals(tx.state, shift.id);
-      const products = tx.state.products
+      let products = tx.state.products
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
@@ -1862,20 +2524,41 @@ export class PosService {
         })
         .sort((a, b) => a.sku_sort - b.sku_sort || a.sku.localeCompare(b.sku));
       const seen = new Set(products.map((product) => product.sku));
-      for (const extra of stockedCatalogRows(tx.state, items)) {
+      for (const extra of [...stockedCatalogRows(tx.state, items), ...stockedMasterRows(tx.state, masters, flowers, items)]) {
         if (seen.has(extra.sku)) continue;
-        products.push({ ...extra, sku_sort: skuSortKey(extra.sku), price_source: "RAW_UNIT" });
+        seen.add(extra.sku);
+        products.push({ ...extra, sku_sort: extra.sku_sort ?? skuSortKey(extra.sku), price_source: "RAW_UNIT" });
       }
+      const scanProducts = products.map((product) => ({
+        sku: product.sku,
+        thc_hidden: !visibleForShift(tx.state, shift, product.sku),
+      }));
+      products = products.filter((product) => visibleForShift(tx.state, shift, product.sku));
       const incoming = tx.state.incoming
-        .filter((row) => row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
+        .filter((row) => row.store_code === tillCode() && row.status === "PENDING_CONFIRM" && row.qty_sent > 0)
         .map((row) => {
           const product = tx.state.products.find((item) => item.sku === row.sku);
           const size = sizeLabel(row.sku, product?.category, product?.name);
-          return { kitchen_row_id: row.kitchen_row_id, sku: row.sku, text: staffSkuText(row.sku, size), qty_sent: row.qty_sent, kind: row.kind };
+          return {
+            kitchen_row_id: row.kitchen_row_id,
+            batch_id: row.batch_id,
+            refill_id: row.refill_id ?? row.batch_id,
+            store_code: row.store_code,
+            sku: row.sku,
+            text: staffSkuText(row.sku, size),
+            name: productName(tx.state, row.sku),
+            qty_sent: row.qty_sent,
+            kind: row.kind,
+            sent_by: row.created_by ?? row.sent_by ?? "Kitchen",
+            sent_at: row.kitchen_created_at ?? row.created_at,
+            sent_at_toronto: torontoDateTime(row.kitchen_created_at ?? row.created_at),
+            approval_required: Boolean(row.approval_required),
+          };
         })
         .sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)) || a.kitchen_row_id.localeCompare(b.kitchen_row_id));
       const tickets = tx.state.tickets
         .filter((ticket) => ticket.shift_id === shift.id && (ticket.status === "PENDING" || ticket.status === "OPEN"))
+        .filter((ticket) => tx.state.ticket_lines.filter((line) => line.ticket_id === ticket.id).every((line) => visibleForShift(tx.state, shift, line.sku)))
         .map((ticket) => ({
           id: ticket.id,
           code: ticket.code,
@@ -1888,11 +2571,11 @@ export class PosService {
           })),
         }));
       const pendingCount = tickets.filter((ticket) => ticket.status === "PENDING").length;
-      const openingLines = [...openingPlan(tx.state, raw)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
-      const phase = shift.status === "CLOSING" ? "end" : "sell";
+      const openingLines = [...openingPlan(tx.state, raw, shift)].sort((a, b) => compareCount(countMeta(tx.state, a.sku), countMeta(tx.state, b.sku)));
+      const phase = weedAnswerRequired(shift) ? "weed" : openingCountRequired(tx.state, shift) && !shift.opening_confirmed_at ? "opening" : shift.status === "CLOSING" ? "end" : "sell";
       const counted = collectVerify(tx.state, shift, staff.staff_uid, now, raw, false, !master);
       const oldestQueued = tx.state.outbox
-        .filter((row) => row.status === "queued")
+        .filter((row) => row.status !== "sent")
         .map((row) => Date.parse(row.created_at))
         .sort((a, b) => a - b)[0];
       return {
@@ -1907,12 +2590,19 @@ export class PosService {
         shift: {
           id: shift.id,
           sccx_shift_id: shift.sccx_shift_id,
+          started_at: shift.started_at,
           staff_name: staff.display_name,
           pos_id: staff.pos_id,
           ticket_letter: shift.ticket_letter,
           status: shift.status,
           opening_confirmed: Boolean(shift.opening_confirmed_at),
           pin_expires_at: shift.pin_expires_at,
+          weed_in_store: shift.weed_in_store ?? null,
+        },
+        weed_gate: {
+          required: weedAnswerRequired(shift),
+          answer: shift.weed_in_store ?? null,
+          answered_at: shift.weed_answered_at ?? null,
         },
         totals: {
           sales_cents: totals.sales_total_cents,
@@ -1920,6 +2610,8 @@ export class PosService {
           debit_sales_cents: totals.debit_sales_cents,
           cash_on_hand_cents: totals.cash_on_hand_cents,
           deposited_cents: totals.deposited_cents,
+          sale_count: totals.sale_count,
+          cigarette_packs: totals.cigarette_packs,
         },
         deposits: tx.state.deposits
           .filter((row) => row.shift_id === shift.id)
@@ -1927,6 +2619,7 @@ export class PosService {
           .map((row) => ({ id: row.id, deposit_code: row.deposit_code ?? null, amount_cents: row.amount_cents, created_at: row.created_at })),
         categories: inStockCategories(products),
         products,
+        scan_products: scanProducts,
         count_lines: countSkus(tx.state).map((sku) => ({ sku, name: productName(tx.state, sku), system_qty: qtyOf(tx.state, sku) })),
         opening_lines: openingLines.map((line) => ({
           ...line,
@@ -1971,6 +2664,8 @@ export class PosService {
         stock_check: counted.stock_check,
         verify_admin: counted.verify_admin,
         final_deposit_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_cents ?? null,
+        float_cents: draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.float_cents ?? 0,
+        float_check: floatCheck(tx.state, shift),
         incoming,
         tickets,
         pending_count: pendingCount,
@@ -1988,7 +2683,624 @@ export class PosService {
         prices_include_tax: false,
         end_shift_message: END_SHIFT_MESSAGE,
       };
+  }
+
+  async startClosingRedo(token: string) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      if (!session.closing_only) throw new PosError(403, "CLOSING_ONLY", "This action is only available after your shift closes.");
+      const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+      if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+      audit(tx.state, "CLOSING_REDO_OPENED", "shift", shift.id, staff.staff_uid, { version: closing.version ?? 1 }, at);
+      return {
+        ok: true,
+        version: closing.version ?? 1,
+        counts: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, counted_qty: line.left })),
+        final_deposit_cents: closing.final_deposit_cents ?? 0,
+        float_cents: closing.float_cents ?? 0,
+      };
+    }, { kind: "CLOSE_REDO" });
+  }
+
+  async submitClosingRedo(token: string, input: { key: string; counts: { sku: string; counted_qty: number }[]; final_deposit_cents: number; float_cents: number }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      if (!session.closing_only) throw new PosError(403, "CLOSING_ONLY", "This action is only available after your shift closes.");
+      const replayed = replay(tx.state, "closing_redo", input.key, body, now, this.deps.secrets.session);
+      if (replayed) return replayed;
+      const closing = tx.state.closings.find((row) => row.shift_id === shift.id);
+      if (!closing) throw new PosError(404, "CLOSING", "Closing was not found.");
+      const bySku = new Map(input.counts.map((row) => [row.sku.trim(), row.counted_qty]));
+      if (bySku.size !== closing.closing_lines.length || closing.closing_lines.some((line) => !bySku.has(line.sku))) {
+        throw new PosError(400, "COUNT_INCOMPLETE", "Every closing SKU must be included.");
+      }
+      const finalDeposit = roundCents(input.final_deposit_cents);
+      const floatCents = roundCents(input.float_cents);
+      if (!Number.isFinite(finalDeposit) || finalDeposit < 0 || !Number.isFinite(floatCents) || floatCents < 0) {
+        throw new PosError(400, "BAD_AMOUNT", "Deposit and till cash must be valid amounts.");
+      }
+      const before = structuredClone(closing) as ClosingRow;
+      const oldVersion = closing.version ?? 1;
+      tx.state.closing_versions ??= [];
+      if (!tx.state.closing_versions.some((row) => row.shift_id === shift.id && row.version === oldVersion)) {
+        tx.state.closing_versions.push({ id: randomUUID(), shift_id: shift.id, version: oldVersion, closing: before, actor: staff.staff_uid, created_at: at });
+      }
+
+      const countId = randomUUID();
+      const newLines = closing.closing_lines.map((line) => {
+        const counted = bySku.get(line.sku)!;
+        if (!Number.isInteger(counted) || counted < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
+        const expected = line.expected_qty ?? line.system_qty;
+        const variance = lineVariance({ expected_qty: expected, counted_qty: counted, price_cents: line.price_cents ?? 0 });
+        const delta = counted - line.left;
+        tx.state.count_lines.push({ id: randomUUID(), count_id: countId, sku: line.sku, system_qty: line.left, counted_qty: counted, variance_reason: "Re-closed by staff" });
+        if (delta !== 0) {
+          const next = balanceAdd(tx.state, line.sku, delta, at, true);
+          if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Count would take stock below zero.");
+          ledger(tx.state, line.sku, delta, "ADJUSTMENT", "closing_redo", `${shift.id}:v${oldVersion + 1}`, staff.staff_uid, "Re-closed by staff", shift.id, at);
+        }
+        return { ...line, left: counted, system_qty: line.left, variance_qty: variance.variance_qty, shortage_cents: variance.shortage_cents, overage_cents: variance.overage_cents };
+      });
+      tx.state.counts.push({ id: countId, shift_id: shift.id, kind: "CLOSING", confirmed_at: at, created_at: at });
+
+      const finalRowIndex = tx.state.deposits.findIndex((row) => row.shift_id === shift.id && row.note === "final deposit");
+      if (finalRowIndex >= 0 && finalDeposit === 0) tx.state.deposits.splice(finalRowIndex, 1);
+      else if (finalRowIndex >= 0) tx.state.deposits[finalRowIndex]!.amount_cents = finalDeposit;
+      else if (finalDeposit > 0) tx.state.deposits.push({
+        id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit,
+        note: "final deposit", deposit_code: issueDepositCode(tx.state), created_at: at,
+      });
+
+      const totals = shiftTotals(tx.state, shift.id);
+      const shortage = newLines.reduce((sum, line) => sum + (line.shortage_cents ?? 0), 0);
+      const overage = newLines.reduce((sum, line) => sum + (line.overage_cents ?? 0), 0);
+      Object.assign(closing, {
+        cash_on_hand_cents: totals.cash_on_hand_cents,
+        deposited_cents: totals.deposited_cents,
+        final_deposit_cents: finalDeposit,
+        float_cents: floatCents,
+        shortage_cents: shortage,
+        overage_cents: overage,
+        balance_cents: closingBalance({ cash_sales_cents: totals.cash_sales_cents, shortage_cents: shortage, overage_cents: overage, deposited_cents: totals.deposited_cents }),
+        closing_lines: newLines,
+        version: oldVersion + 1,
+        reclosed_at: at,
+        reclosed_by: staff.staff_uid,
+      });
+      closing.summary_text = `${summaryText(shift, staff.pos_id, closing)}\nRe-closed · version ${closing.version}`;
+      tx.state.closing_versions.push({ id: randomUUID(), shift_id: shift.id, version: closing.version!, closing: structuredClone(closing), actor: staff.staff_uid, created_at: at });
+      audit(tx.state, "CLOSING_REPLACED", "shift", shift.id, staff.staff_uid, {
+        from_version: oldVersion,
+        to_version: closing.version,
+        before: { counts: before.closing_lines.map((line) => ({ sku: line.sku, qty: line.left })), final_deposit_cents: before.final_deposit_cents ?? 0, float_cents: before.float_cents ?? 0 },
+        after: { counts: newLines.map((line) => ({ sku: line.sku, qty: line.left })), final_deposit_cents: finalDeposit, float_cents: floatCents },
+      }, at);
+      const result = { ok: true, closing, version: closing.version, reclosed: true };
+      remember(tx.state, "closing_redo", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    }, { kind: "CLOSE_REDO" });
+  }
+
+  /** Read-only Kitchen dashboard data. This never advances or rewrites till state. */
+  async kitchenState(token: string) {
+    const state = await this.readState();
+    const now = this.now();
+    this.session(state, token, now, "kitchen");
+    return this.kitchenStateView(state, now);
+  }
+
+  /** Validate the central Kitchen session before crossing into another store. */
+  async assertKitchenSession(token: string) {
+    const state = await this.readState();
+    const { staff } = this.session(state, token, this.now(), "kitchen");
+    return { staff_uid: staff.staff_uid, display_name: staff.display_name || "Kitchen" };
+  }
+
+  /** Server-only target-store read. The calling route must validate Kitchen first. */
+  async kitchenStateTrusted() {
+    return this.kitchenStateView(await this.readState(), this.now());
+  }
+
+  private kitchenStateView(state: State, now: Date) {
+    const since = now.getTime() - 24 * 60 * 60 * 1000;
+    const saleIds = new Set(state.sales
+      .filter((sale) => sale.status === "COMPLETED" && Date.parse(sale.created_at) >= since)
+      .filter((sale) => state.shifts.some((shift) => shift.id === sale.shift_id && shift.store_code === tillCode()))
+      .map((sale) => sale.id));
+    const sold24h = new Map<string, number>();
+    const soldDay = new Map<string, number>();
+    const soldNight = new Map<string, number>();
+    for (const line of state.sale_lines) {
+      if (!saleIds.has(line.sale_id)) continue;
+      sold24h.set(line.sku, (sold24h.get(line.sku) ?? 0) + line.qty);
+      const sale = state.sales.find((row) => row.id === line.sale_id);
+      const hour = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "2-digit", hourCycle: "h23" }).format(new Date(sale?.created_at ?? now)));
+      const bucket = hour >= 6 && hour < 18 ? soldDay : soldNight;
+      bucket.set(line.sku, (bucket.get(line.sku) ?? 0) + line.qty);
+    }
+    const pending = new Map<string, number>();
+    for (const row of state.incoming) {
+      if (row.store_code !== tillCode() || row.status !== "PENDING_CONFIRM") continue;
+      pending.set(row.sku, (pending.get(row.sku) ?? 0) + row.qty_sent);
+    }
+    const requested = new Map<string, number>();
+    for (const row of state.stock_requests ?? []) {
+      if (row.store_code !== tillCode() || row.status !== "REQUESTED") continue;
+      requested.set(row.sku, (requested.get(row.sku) ?? 0) + row.qty);
+    }
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .map((product) => {
+        const onHand = qtyOf(state, product.sku);
+        const sold = sold24h.get(product.sku) ?? 0;
+        const pendingQty = pending.get(product.sku) ?? 0;
+        const enabled = state.store_products.some((row) => row.store_code === tillCode() && row.sku === product.sku && row.enabled);
+        return {
+          sku: product.sku,
+          name: product.name,
+          category: product.category,
+          size: sizeLabel(product.sku, product.category, product.name),
+          price_cents: sellingPriceCents(state, product.sku),
+          on_hand: onHand,
+          sold_24h: sold,
+          sold_day: soldDay.get(product.sku) ?? 0,
+          sold_night: soldNight.get(product.sku) ?? 0,
+          pending_qty: pendingQty,
+          suggested_refill_qty: Math.max(0, sold * 2 - onHand - pendingQty),
+          requested_qty: requested.get(product.sku) ?? 0,
+          enabled,
+          approval_required: !enabled,
+        };
+      })
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const history = [...state.incoming]
+      .filter((row) => row.store_code === tillCode())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        size: sizeLabel(row.sku, state.products.find((product) => product.sku === row.sku)?.category, productName(state, row.sku)),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        variance_reason: row.variance_reason,
+        sent_by: row.sent_by ?? "Kitchen",
+        received_by: row.received_by ?? null,
+        approval_required: Boolean(row.approval_required),
+        created_at: row.created_at,
+        sent_at_toronto: torontoDateTime(row.kitchen_created_at ?? row.created_at),
+        received_at_toronto: row.confirmed_at ? torontoDateTime(row.confirmed_at) : null,
+      }));
+    const receipts = [...(state.refill_receipts ?? [])]
+      .filter((row) => row.store_code === tillCode())
+      .sort((a, b) => b.received_at.localeCompare(a.received_at))
+      .slice(0, 50)
+      .map((row) => ({
+        ...row,
+        sent_at_toronto: torontoDateTime(row.sent_at),
+        received_at_toronto: torontoDateTime(row.received_at),
+      }));
+    const currentStore = state.stores.find((row) => row.code === tillCode());
+    return {
+      authenticated: true as const,
+      store_code: tillCode(),
+      stores: [{ code: tillCode(), name: currentStore?.name || tillCode() }],
+      products,
+      history,
+      receipts,
+    };
+  }
+
+  /** Read-only Manager dashboard. Operational writes stay unavailable until backup/undo confirmation is implemented. */
+  async managerState(token: string, selectedStore = tillCode(), readSelectedStore?: () => Promise<State>) {
+    const localState = await this.readState();
+    const now = this.now();
+    requireAdmin(localState, token, now);
+    const storeCode = selectedStore === "PNY01" ? "PNY01" : "PNYS";
+    const state = storeCode === tillCode()
+      ? localState
+      : readSelectedStore
+        ? await readSelectedStore()
+        : (() => { throw new PosError(503, "STORE_UNAVAILABLE", `${storeCode} read-only data is unavailable.`); })();
+    // Customers and coupons are central records. Keep the authenticated PNYS
+    // hub data even while the operational view is switched to PNY01.
+    state.customers = localState.customers ?? [];
+    state.customer_consents = localState.customer_consents ?? [];
+    state.customer_visits = localState.customer_visits ?? [];
+    state.coupons = localState.coupons ?? [];
+    state.coupon_redemptions = localState.coupon_redemptions ?? [];
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const isToday = (value: string) => new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value)) === day;
+    const liveShift = [...state.shifts]
+      .filter((row) => row.store_code === storeCode && (row.status === "ACTIVE" || row.status === "CLOSING"))
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+    const todaySales = state.sales
+      .filter((row) => row.status === "COMPLETED" && isToday(row.created_at))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const last24SaleIds = new Set(state.sales
+      .filter((row) => row.status === "COMPLETED" && Date.parse(row.created_at) >= now.getTime() - 24 * 60 * 60 * 1000)
+      .filter((row) => state.shifts.some((shift) => shift.id === row.shift_id && shift.store_code === storeCode))
+      .map((row) => row.id));
+    const sold24 = new Map<string, number>();
+    for (const line of state.sale_lines) if (last24SaleIds.has(line.sale_id)) sold24.set(line.sku, (sold24.get(line.sku) ?? 0) + line.qty);
+    const refillComing = new Map<string, number>();
+    for (const row of state.incoming) if (row.store_code === storeCode && row.status === "PENDING_CONFIRM") refillComing.set(row.sku, (refillComing.get(row.sku) ?? 0) + row.qty_sent);
+    const products = state.products
+      .filter((product) => product.setb_active)
+      .flatMap((product) => {
+        const storeProduct = state.store_products.find((row) => row.store_code === storeCode && row.sku === product.sku);
+        if (!storeProduct?.enabled) return [];
+        return [{
+          sku: product.sku,
+          name: product.name,
+          category: product.category,
+          size: sizeLabel(product.sku, product.category, product.name),
+          on_hand: qtyOf(state, product.sku),
+          sold_24h: sold24.get(product.sku) ?? 0,
+          refill_coming: refillComing.get(product.sku) ?? 0,
+          price_cents: storeProduct.price_override_cents ?? product.default_price_cents,
+          enabled: storeProduct.enabled,
+        }];
+      })
+      .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
+    const refills = [...state.incoming]
+      .filter((row) => row.store_code === storeCode)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        kitchen_row_id: row.kitchen_row_id,
+        batch_id: row.batch_id,
+        sku: row.sku,
+        name: productName(state, row.sku),
+        qty_sent: row.qty_sent,
+        qty_received: row.qty_received,
+        status: row.status,
+        kitchen_sent_at: row.kitchen_created_at ?? row.created_at,
+        staff_confirmed_at: row.confirmed_at,
+        sent_by: row.sent_by ?? "Kitchen",
+        received_by: row.received_by ?? null,
+      }));
+    const refillBatches = [...new Set(refills.map((row) => row.batch_id))].map((batchId) => {
+      const lines = refills.filter((row) => row.batch_id === batchId);
+      const first = lines[0]!;
+      return {
+        batch_id: batchId,
+        sent_at: first.kitchen_sent_at,
+        sent_by: first.sent_by,
+        received_by: lines.find((row) => row.received_by)?.received_by ?? null,
+        status: lines.every((row) => row.staff_confirmed_at) ? "CONFIRMED" : "PENDING",
+        lines,
+      };
+    }).sort((a, b) => b.sent_at.localeCompare(a.sent_at));
+    const closings = [...state.closings]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((closing) => {
+        const shift = state.shifts.find((row) => row.id === closing.shift_id);
+        const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+        return {
+          shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+          staff_name: staff?.display_name ?? "Staff",
+          ended_at: shift?.ended_at ?? closing.created_at,
+          sales_total_cents: closing.sales_total_cents,
+          deposited_cents: closing.deposited_cents,
+          final_deposit_cents: closing.final_deposit_cents ?? 0,
+          shortage_cents: closing.shortage_cents ?? 0,
+          overage_cents: closing.overage_cents ?? 0,
+          balance_cents: closing.balance_cents ?? closingBalance({
+            cash_sales_cents: closing.cash_sales_cents ?? closing.sales_total_cents - (closing.debit_sales_cents ?? 0),
+            shortage_cents: closing.shortage_cents ?? 0,
+            overage_cents: closing.overage_cents ?? 0,
+            deposited_cents: closing.deposited_cents,
+          }),
+          no_count: closing.no_count,
+          version: closing.version ?? 1,
+          reclosed_at: closing.reclosed_at ?? null,
+          versions: (state.closing_versions ?? [])
+            .filter((row) => row.shift_id === closing.shift_id)
+            .sort((a, b) => a.version - b.version)
+            .map((row) => ({
+              version: row.version,
+              actor: row.actor,
+              created_at: row.created_at,
+              final_deposit_cents: row.closing.final_deposit_cents ?? 0,
+              float_cents: row.closing.float_cents ?? 0,
+              shortage_cents: row.closing.shortage_cents ?? 0,
+              overage_cents: row.closing.overage_cents ?? 0,
+              balance_cents: row.closing.balance_cents ?? closingBalance({
+                cash_sales_cents: row.closing.cash_sales_cents ?? row.closing.sales_total_cents - (row.closing.debit_sales_cents ?? 0),
+                shortage_cents: row.closing.shortage_cents ?? 0,
+                overage_cents: row.closing.overage_cents ?? 0,
+                deposited_cents: row.closing.deposited_cents,
+              }),
+              counts: row.closing.closing_lines.map((line) => ({ sku: line.sku, counted_qty: line.left })),
+            })),
+        };
+      });
+    const auditLog = [...state.audit]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 100)
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        actor: row.actor,
+        ref_type: row.ref_type,
+        ref_id: row.ref_id,
+        detail: row.detail,
+        created_at: row.created_at,
+      }));
+    const customers = [...(state.customers ?? [])]
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map((customer) => {
+        const visits = (state.customer_visits ?? []).filter((row) => row.customer_id === customer.id);
+        const consent = [...(state.customer_consents ?? [])]
+          .filter((row) => row.customer_id === customer.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        return {
+          id: customer.id,
+          name: customer.display_name,
+          phone: customer.phone_e164,
+          email: customer.email,
+          consent: consent ? { type: consent.consent_type, date: consent.consented_at, source: consent.source, unsubscribed_at: consent.unsubscribed_at } : null,
+          visit_count: visits.length,
+          spend_cents: visits.reduce((sum, row) => sum + row.spend_cents, 0),
+          last_visit_at: visits.sort((a, b) => b.visited_at.localeCompare(a.visited_at))[0]?.visited_at ?? null,
+        };
+      });
+    const coupons = [...(state.coupons ?? [])]
+      .filter((row) => row.store_code === storeCode)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((row) => ({ ...row, redemption_count: (state.coupon_redemptions ?? []).filter((item) => item.coupon_id === row.id).length }));
+    const stockSnapshots = [{
+      id: "CURRENT",
+      label: "Current stock",
+      at: now.toISOString(),
+      staff_name: liveShift ? state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff" : "No active shift",
+      rows: products.map((row) => ({ sku: row.sku, name: row.name, size: row.size, on_hand: row.on_hand, sold: row.sold_24h, refill_coming: row.refill_coming })),
+    }, ...state.closings.map((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      const staff = shift ? state.staff.find((row) => row.staff_uid === shift.staff_uid) : undefined;
+      return {
+        id: closing.shift_id,
+        label: shift?.sccx_shift_id ?? closing.shift_id,
+        at: shift?.ended_at ?? closing.created_at,
+        staff_name: staff?.display_name ?? "Staff",
+        rows: closing.closing_lines.map((line) => ({ sku: line.sku, name: line.name, size: sizeLabel(line.sku, state.products.find((row) => row.sku === line.sku)?.category, line.name), on_hand: line.left, sold: line.sold_qty ?? 0, refill_coming: 0 })),
+      };
+    }).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 99)];
+    const store = state.stores.find((row) => row.code === storeCode);
+    const latestBackup = [...state.audit]
+      .filter((row) => row.action === "WEED_MODE_BACKUP" && row.ref_type === "store" && row.ref_id === storeCode)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .find((row) => !state.audit.some((item) => item.action === "WEED_MODE_UNDONE" && item.detail.backup_id === row.id));
+    return {
+      authenticated: true as const,
+      store_code: storeCode,
+      stores: [
+        { code: "PNY01", name: "PNY01 · P60 Cannabis" },
+        { code: "PNYS", name: "PNYS · Test Store" },
+      ],
+      read_only: storeCode === "PNY01",
+      data_source: storeCode === "PNY01" ? "LIVE_READ_ONLY" as const : "PNYS_PREVIEW" as const,
+      live_shift: liveShift ? {
+        shift_id: liveShift.sccx_shift_id,
+        status: liveShift.status,
+        staff_name: state.staff.find((row) => row.staff_uid === liveShift.staff_uid)?.display_name ?? "Staff",
+        started_at: liveShift.started_at,
+      } : null,
+      today: {
+        date: day,
+        sale_count: todaySales.length,
+        sales_total_cents: todaySales.reduce((sum, row) => sum + row.total_cents, 0),
+        cash_cents: todaySales.filter((row) => row.payment_method === "CASH").reduce((sum, row) => sum + row.total_cents, 0),
+        debit_cents: todaySales.filter((row) => row.payment_method === "DEBIT").reduce((sum, row) => sum + row.total_cents, 0),
+      },
+      products,
+      refills,
+      refill_batches: refillBatches,
+      stock_snapshots: stockSnapshots,
+      closings,
+      audit_log: auditLog,
+      customers,
+      coupons,
+      weed_mode: {
+        current: store?.weed_in_store !== false ? "WEED" as const : "NO_WEED" as const,
+        shift_id: liveShift?.sccx_shift_id ?? null,
+        can_change: storeCode === "PNYS",
+        thc_sku_count: state.products.filter((product) => isThcCatalogProduct(product)).length,
+        undo_backup_id: latestBackup?.id ?? null,
+      },
+      opening_policy: {
+        opening_count_required: store?.opening_count_required === true,
+        closing_count_required: true as const,
+        can_change: storeCode === "PNYS",
+        applies_to: "NEXT_SHIFT" as const,
+      },
+      write_actions: { enabled: false as const, reason: storeCode === "PNY01"
+        ? "PNY01 is connected read-only. Price, stock, expense, mode and coupon changes are locked."
+        : "Backup, undo and exact-change confirmation are required before Manager writes are exposed." },
+    };
+  }
+
+  async managerSetOpeningCountPolicy(adminToken: string, input: { key: string; opening_count_required: boolean; confirm: boolean }) {
+    const now = this.now();
+    const state = await this.readState();
+    requireAdmin(state, adminToken, now);
+    if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Opening count policy is enabled on PNYS preview only.");
+    if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact opening count change before saving.");
+    if (!this.db.setOpeningCountPolicy) throw new PosError(503, "POLICY_UNAVAILABLE", "Store policy storage is unavailable.");
+    const result = await this.db.setOpeningCountPolicy("PNYS", input.opening_count_required, "MANAGER", input.key, iso(now));
+    return {
+      ok: true as const,
+      changed: result.changed,
+      opening_count_required: input.opening_count_required,
+      closing_count_required: true as const,
+      from: result.previous ? "ON" as const : "OFF" as const,
+      to: input.opening_count_required ? "ON" as const : "OFF" as const,
+      applies_to: "NEXT_SHIFT" as const,
+    };
+  }
+
+  async managerSetWeedMode(adminToken: string, input: { key: string; weed_in_store: boolean; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_mode", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact WEED mode change before saving.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
+      const store = tx.state.stores.find((row) => row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "PNYS store settings are unavailable.");
+      const current = store.weed_in_store !== false;
+      if (current === input.weed_in_store) {
+        const unchanged = { ok: true as const, changed: false as const, weed_in_store: current, shift_id: shift?.sccx_shift_id ?? null, backup_id: null };
+        remember(tx.state, "manager_weed_mode", input.key, body, unchanged, now, this.deps.secrets.session);
+        return unchanged;
+      }
+      const protectedBefore = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      const backupId = randomUUID();
+      tx.state.audit.push({ id: backupId, action: "WEED_MODE_BACKUP", ref_type: "store", ref_id: store.code, actor: "MANAGER", detail: {
+        backup_id: backupId,
+        shift_id: shift?.sccx_shift_id ?? null,
+        previous_weed_in_store: store.weed_in_store ?? true,
+        target: input.weed_in_store ? "WEED" : "NO_WEED",
+      }, created_at: at });
+      const from = current ? "WEED" : "NO_WEED";
+      const to = input.weed_in_store ? "WEED" : "NO_WEED";
+      store.weed_in_store = input.weed_in_store;
+      audit(tx.state, "WEED_MODE_CHANGED", "store", store.code, "MANAGER", { backup_id: backupId, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
+      const protectedAfter = stableStringify({
+        balances: tx.state.balances,
+        sales: tx.state.sales,
+        counts: tx.state.counts,
+        incoming: tx.state.incoming,
+        pins: tx.state.shifts.map((row) => ({ id: row.id, pin_hash: row.pin_hash })),
+        closing_drafts: tx.state.closing_drafts,
+      });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "WEED mode must not change operational data.");
+      const changed = { ok: true as const, changed: true as const, weed_in_store: input.weed_in_store, shift_id: shift?.sccx_shift_id ?? null, backup_id: backupId, from, to };
+      remember(tx.state, "manager_weed_mode", input.key, body, changed, now, this.deps.secrets.session);
+      return changed;
     });
+    this.bumpMenu();
+    return result;
+  }
+
+  async managerUndoWeedMode(adminToken: string, input: { key: string; backup_id: string; confirm: boolean }) {
+    const body = input as unknown as Json;
+    const result = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_weed_undo", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Manager WEED mode is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact undo before saving.");
+      const backup = tx.state.audit.find((row) => row.id === input.backup_id && row.action === "WEED_MODE_BACKUP");
+      if (!backup) throw new PosError(404, "BACKUP", "The WEED mode backup was not found.");
+      if (tx.state.audit.some((row) => row.action === "WEED_MODE_UNDONE" && row.detail.backup_id === backup.id)) throw new PosError(409, "UNDO_USED", "That backup was already restored.");
+      const store = tx.state.stores.find((row) => row.code === backup.ref_id && row.code === "PNYS");
+      if (!store) throw new PosError(409, "STORE", "The backed-up PNYS store is unavailable.");
+      const shift = tx.state.shifts.find((row) => row.store_code === "PNYS" && row.status === "ACTIVE");
+      const protectedBefore = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      const from = store.weed_in_store === false ? "NO_WEED" : "WEED";
+      const previous = backup.detail.previous_weed_in_store;
+      store.weed_in_store = previous == null ? true : Boolean(previous);
+      const to = store.weed_in_store === false ? "NO_WEED" : "WEED";
+      audit(tx.state, "WEED_MODE_UNDONE", "store", store.code, "MANAGER", { backup_id: backup.id, shift_id: shift?.sccx_shift_id ?? null, from, to }, at);
+      const protectedAfter = stableStringify({ balances: tx.state.balances, sales: tx.state.sales, counts: tx.state.counts, incoming: tx.state.incoming, closing_drafts: tx.state.closing_drafts });
+      if (protectedAfter !== protectedBefore) throw new PosError(409, "WEED_MODE_SCOPE", "Undo must not change operational data.");
+      const restored = { ok: true as const, changed: true as const, weed_in_store: store.weed_in_store !== false, shift_id: shift?.sccx_shift_id ?? null, backup_id: backup.id, from, to };
+      remember(tx.state, "manager_weed_undo", input.key, body, restored, now, this.deps.secrets.session);
+      return restored;
+    });
+    this.bumpMenu();
+    return result;
+  }
+
+  async managerCreateCoupon(adminToken: string, input: { key: string; code: string; label: string; discount_type: "FIXED" | "PERCENT"; discount_value: number; min_spend_cents: number; max_redemptions_per_customer: number; confirm: boolean }) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const at = iso(now);
+      requireAdmin(tx.state, adminToken, now);
+      const seen = replay(tx.state, "manager_coupon_create", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      if (tillCode() !== "PNYS") throw new PosError(409, "STORE", "Coupon Manager is enabled on PNYS preview only.");
+      if (input.confirm !== true) throw new PosError(400, "CONFIRM_REQUIRED", "Confirm the exact coupon before saving.");
+      const code = couponCode(input.code);
+      const label = input.label.trim();
+      if (!label || label.length > 80) throw new PosError(400, "BAD_LABEL", "Enter a coupon label up to 80 characters.");
+      if (input.discount_type !== "FIXED" && input.discount_type !== "PERCENT") throw new PosError(400, "BAD_DISCOUNT", "Choose fixed dollars or percent.");
+      const value = Math.round(input.discount_value);
+      if (value <= 0 || (input.discount_type === "PERCENT" && value > 100) || (input.discount_type === "FIXED" && value > 100000)) throw new PosError(400, "BAD_DISCOUNT", "Enter a valid coupon discount.");
+      const minimum = Math.max(0, Math.round(input.min_spend_cents));
+      const limit = Math.round(input.max_redemptions_per_customer);
+      if (limit < 1 || limit > 99) throw new PosError(400, "BAD_LIMIT", "Redemption limit must be between 1 and 99.");
+      if ((tx.state.coupons ?? []).some((row) => row.code === code)) throw new PosError(409, "COUPON_EXISTS", "That coupon code already exists.");
+      const id = randomUUID();
+      audit(tx.state, "COUPON_CREATE_BACKUP", "coupon", id, "MANAGER", { previous: null, exact_change: { store_code: tillCode(), code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true } }, at);
+      const coupon = { id, store_code: tillCode(), code, label, active: true, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, created_by: "MANAGER", created_at: at, updated_at: at } as const;
+      (tx.state.coupons ??= []).push(coupon);
+      audit(tx.state, "COUPON_CREATED", "coupon", id, "MANAGER", { code, label, discount_type: input.discount_type, discount_value: value, min_spend_cents: minimum, max_redemptions_per_customer: limit, active: true }, at);
+      const result = { ok: true as const, coupon: { ...coupon, redemption_count: 0 } };
+      remember(tx.state, "manager_coupon_create", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    });
+  }
+
+  async customerLookup(token: string, phoneInput: string) {
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.store_code !== tillCode()) throw new PosError(403, "STORE", "Customer lookup is limited to this store.");
+    const phone = customerPhone(phoneInput);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === phone);
+    if (!customer) return { found: false as const };
+    return { found: true as const, customer: { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } };
+  }
+
+  async couponQuote(token: string, input: { lines: { sku: string; qty: number }[]; coupon_code: string; customer_phone: string }) {
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
+    const state = await this.readState();
+    const { shift } = this.session(state, token, this.now());
+    if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Coupons need an active shift.");
+    const normalizedPhone = customerPhone(input.customer_phone);
+    const customer = (state.customers ?? []).find((row) => row.phone_e164 === normalizedPhone);
+    const coupon = (state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code) && row.active);
+    if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+    const used = customer ? (state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon.id && row.customer_id === customer.id).length : 0;
+    if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+    const total = mergeLines(input.lines).reduce((sum, line) => sum + priceOf(state, line.sku, raw, flowers, items, masters).cents * line.qty, 0);
+    const discount = couponDiscount(total, coupon);
+    return { ok: true as const, code: coupon.code, label: coupon.label, subtotal_cents: total, discount_cents: discount, total_cents: total - discount };
   }
 
   async openingCount(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[] }) {
@@ -1999,9 +3311,10 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
       if (shift.opening_confirmed_at) throw new PosError(409, "OPENING_DONE", "Opening count is already confirmed.");
-      const expected = openingPlan(tx.state).map((line) => line.sku);
+      const expected = openingPlan(tx.state, undefined, shift).map((line) => line.sku);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
       if (expected.some((sku) => !bySku.has(sku))) throw new PosError(400, "INCOMPLETE_COUNT", "Count every SKU that has stock or an incoming refill.");
       const at = iso(now);
@@ -2042,7 +3355,13 @@ export class PosService {
     return result;
   }
 
-  async confirmIncoming(token: string, input: { key: string; lines: { kitchen_row_id: string; qty_received: number; variance_reason?: string }[] }) {
+  async confirmIncoming(token: string, input: {
+    key: string;
+    batch_id?: string;
+    action?: "ACCEPT" | "REJECT";
+    reason?: string;
+    lines: { kitchen_row_id: string; qty_received: number; variance_reason?: string }[];
+  }) {
     const body = input as unknown as Json;
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
@@ -2050,32 +3369,96 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "Shift is not open.");
-      if (input.lines.length === 0) throw new PosError(400, "EMPTY", "Nothing to confirm.");
+      const action = input.action === "REJECT" ? "REJECT" : "ACCEPT";
+      const batchRows = input.batch_id
+        ? tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === input.batch_id && row.status === "PENDING_CONFIRM")
+        : input.lines.flatMap((line) => {
+            const row = tx.state.incoming.find((item) => item.store_code === tillCode() && item.kitchen_row_id === line.kitchen_row_id && item.status === "PENDING_CONFIRM");
+            return row ? [row] : [];
+          });
+      if (batchRows.length === 0) throw new PosError(409, "ALREADY_CONFIRMED", "That refill batch is not waiting for this store.");
+      const batchId = input.batch_id ?? batchRows[0]!.batch_id;
+      if (batchRows.some((row) => row.batch_id !== batchId)) throw new PosError(400, "BATCH_REQUIRED", "Receive one refill batch at a time.");
+      if (action === "ACCEPT" && input.lines.length !== batchRows.length) throw new PosError(400, "INCOMPLETE_BATCH", "Enter the received quantity for every line in this batch.");
+      if (action === "REJECT" && !input.reason?.trim()) throw new PosError(400, "REASON_REQUIRED", "Enter a reason for rejecting this batch.");
+      const submitted = new Map(input.lines.map((line) => [line.kitchen_row_id, line]));
       const at = iso(now);
-      for (const line of input.lines) {
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id);
-        if (!row || row.status !== "PENDING_CONFIRM") throw new PosError(409, "ALREADY_CONFIRMED", "That incoming row is not waiting.");
-        if (!Number.isInteger(line.qty_received) || line.qty_received < 0) throw new PosError(400, "BAD_QTY", "Received quantity must be a whole number.");
+      for (const row of batchRows) {
+        const line = submitted.get(row.kitchen_row_id);
+        const received = action === "REJECT" ? 0 : line?.qty_received;
+        if (!Number.isInteger(received) || Number(received) < 0) throw new PosError(400, "BAD_QTY", "Received quantity must be a whole number.");
+        const reason = action === "REJECT" ? input.reason?.trim() : line?.variance_reason?.trim();
+        if (received !== row.qty_sent && !reason) throw new PosError(400, "REASON_REQUIRED", `Enter a reason for the ${row.sku} quantity difference.`);
       }
-      for (const line of input.lines) {
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === line.kitchen_row_id)!;
-        row.qty_received = line.qty_received;
-        row.variance_reason = line.variance_reason?.trim() || null;
+      for (const row of batchRows) {
+        const line = submitted.get(row.kitchen_row_id);
+        const received = action === "REJECT" ? 0 : Number(line!.qty_received);
+        if (!row.batch_id) row.batch_id = row.kitchen_row_id;
+        if (!row.refill_id) row.refill_id = ensureRefillId(tx.state, row.batch_id, row.store_code);
+        row.qty_received = received;
+        row.variance_reason = (action === "REJECT" ? input.reason : line?.variance_reason)?.trim() || null;
         row.confirmed_at = at;
         row.confirmed_shift_id = shift.id;
-        row.status = line.qty_received === 0 ? "REJECTED" : line.qty_received === row.qty_sent ? "CONFIRMED" : "PARTIAL";
-        if (line.qty_received > 0) {
-          const next = balanceAdd(tx.state, row.sku, line.qty_received, at, true);
+        row.received_by = staff.display_name || staff.pos_id;
+        row.status = received === 0 ? "REJECTED" : received === row.qty_sent ? "CONFIRMED" : "PARTIAL";
+        if (received > 0) {
+          if (row.approval_required) {
+            const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === row.sku);
+            if (storeProduct) {
+              storeProduct.enabled = true;
+              storeProduct.updated_at = at;
+            } else {
+              tx.state.store_products.push({ store_code: tillCode(), sku: row.sku, enabled: true, price_override_cents: null, created_at: at, updated_at: at });
+            }
+            audit(tx.state, "STORE_SKU_APPROVED_FROM_REFILL", "product", row.sku, staff.staff_uid, { batch_id: batchId }, at);
+          }
+          const next = balanceAdd(tx.state, row.sku, received, at, true);
           if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive stock.");
-          const entry = ledger(tx.state, row.sku, line.qty_received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
+          const entry = ledger(tx.state, row.sku, received, "INCOMING_CONFIRM", "incoming", row.kitchen_row_id, staff.staff_uid, row.variance_reason, shift.id, at);
           row.linked_ledger_id = entry.id;
           ensureQuotedProduct(tx.state, row.sku, at);
         }
-        enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
+        enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(tx.state, row, shift.sccx_shift_id, staff.pos_id), at);
       }
-      if (!tx.state.incoming.some((row) => row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
-      const resultBody = { ok: true };
+      if (!tx.state.incoming.some((row) => row.store_code === tillCode() && row.status === "PENDING_CONFIRM")) shift.refill_confirmed_at = at;
+      const receipt: RefillReceiptRow = {
+        id: randomUUID(),
+        batch_id: batchId,
+        refill_id: batchRows[0]?.refill_id ?? batchId,
+        store_code: tillCode(),
+        status: batchRows.every((row) => row.status === "REJECTED") ? "REJECTED" : batchRows.every((row) => row.status === "CONFIRMED") ? "CONFIRMED" : "PARTIAL",
+        sent_by: batchRows[0]?.sent_by ?? "Kitchen",
+        received_by: staff.display_name || staff.pos_id,
+        sent_at: batchRows.map((row) => row.kitchen_created_at ?? row.created_at).sort()[0] ?? at,
+        received_at: at,
+        lines: batchRows.map((row) => ({
+          kitchen_row_id: row.kitchen_row_id,
+          sku: row.sku,
+          name: productName(tx.state, row.sku),
+          qty_sent: row.qty_sent,
+          qty_received: row.qty_received ?? 0,
+          variance: (row.qty_received ?? 0) - row.qty_sent,
+          reason: row.variance_reason,
+          approval_required: Boolean(row.approval_required),
+        })),
+      };
+      tx.state.refill_receipts ??= [];
+      tx.state.refill_receipts.push(receipt);
+      const email = refillEmailPayload(tx.state, batchRows, "RECEIVED", at, staff.display_name || staff.pos_id);
+      enqueue(tx.state, "S_EmailOutbox", email.row_id, email, at);
+      enqueueSignalNotice(tx.state, `SIG-KRECEIPT-${batchId}`, "KITCHEN_RECEIPT", batchId, kitchenReceiptMessage(receipt), at);
+      audit(tx.state, "KITCHEN_REFILL_RECEIVED", "incoming_batch", batchId, staff.staff_uid, { status: receipt.status, line_count: receipt.lines.length }, at);
+      const resultBody = {
+        ok: true,
+        receipt: {
+          ...receipt,
+          sent_at_toronto: torontoDateTime(receipt.sent_at),
+          received_at_toronto: torontoDateTime(receipt.received_at),
+          signal_notice: process.env.VERCEL_ENV === "production" ? "QUEUED" : "DRY_RUN",
+        },
+      };
       remember(tx.state, "incoming_confirm", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
     });
@@ -2084,61 +3467,251 @@ export class PosService {
   }
 
   async sendRefill(token: string, input: { key: string; kind?: "ALLOCATION" | "REFILL"; lines: { sku: string; qty: number }[] }) {
+    void token;
+    void input;
+    throw new PosError(410, "LEGACY_REFILL_DISABLED", "Use Kitchen send and store acceptance. Stock cannot be added directly.");
+  }
+
+  /** Staff request stock for Kitchen. This never changes on-hand or creates a refill. */
+  async requestStock(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
     const body = input as unknown as Json;
-    const kind = input.kind === "ALLOCATION" ? "ALLOCATION" : "REFILL";
-    const result = await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const now = this.now();
-      const seen = replay(tx.state, "kitchen_refill", input.key, body, now, this.deps.secrets.session);
+      const seen = replay(tx.state, "stock_request", input.key, body, now, this.deps.secrets.session);
       if (seen) return seen;
-      const { shift, staff, session } = this.session(tx.state, token, now, "any");
+      if (!["PNYS", "ACD01"].includes(tillCode())) {
+        throw new PosError(409, "STORE", "Stock requests are not enabled for this store.");
+      }
+      const { shift, staff, session } = requireSession(tx.state, token, now, { demo: this.demoPinAllowed(), secret: this.deps.secrets.session, gate: "pos" });
       denyMaster(session);
-      if (!shift.opening_confirmed_at) throw new PosError(409, "OPENING_REQUIRED", "Confirm the original stock first.");
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (!lines.length) throw new PosError(400, "EMPTY", "Enter at least one requested quantity.");
+      const at = iso(now);
+      tx.state.stock_requests ??= [];
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        if (!tx.state.products.some((row) => row.sku === line.sku && row.setb_active)) throw new PosError(404, "SKU", `SKU ${line.sku} is not in the catalog.`);
+        tx.state.stock_requests.push({ id: randomUUID(), store_code: tillCode(), shift_id: shift.id, staff_uid: staff.staff_uid, staff_name: staff.display_name, sku: line.sku, qty: line.qty, status: "REQUESTED", requested_at: at, sent_batch_id: null, sent_at: null });
+      }
+      audit(tx.state, "STOCK_REQUESTED", "shift", shift.id, staff.staff_uid, { lines }, at);
+      const result = { ok: true, requested_at: at, line_count: lines.length, total_units: lines.reduce((sum, line) => sum + line.qty, 0) };
+      remember(tx.state, "stock_request", input.key, body, result, now, this.deps.secrets.session);
+      return result;
+    }, { kind: "STOCK_REQUEST" });
+  }
+
+  /** Kitchen sends stock to the store; staff acceptance is the only stock write. */
+  async queueKitchenRefill(token: string, input: { key: string; lines: { sku: string; qty: number }[] }) {
+    return this.queueKitchenRefillForActor(input, null, token);
+  }
+
+  /** Server-only target-store write. The calling route must validate Kitchen first. */
+  async queueKitchenRefillTrusted(input: { key: string; lines: { sku: string; qty: number }[] }, actor: { staff_uid: string; display_name: string }) {
+    return this.queueKitchenRefillForActor(input, actor);
+  }
+
+  async editKitchenRefill(token: string, input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] }) {
+    return this.editKitchenRefillForActor(input, null, token);
+  }
+
+  async editKitchenRefillTrusted(input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] }, actor: { staff_uid: string; display_name: string }) {
+    return this.editKitchenRefillForActor(input, actor);
+  }
+
+  private async editKitchenRefillForActor(
+    input: { key: string; batch_id: string; lines: { sku: string; qty: number }[] },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_edit_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
+      const batchId = input.batch_id.trim();
+      if (!batchId) throw new PosError(400, "BATCH_REQUIRED", "Choose a refill batch to edit.");
+      const batchRows = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId);
+      if (!batchRows.length) throw new PosError(404, "BATCH_NOT_FOUND", "That refill batch was not found.");
+      if (batchRows.some((row) => ["CONFIRMED", "PARTIAL", "REJECTED"].includes(row.status))) {
+        throw new PosError(409, "BATCH_LOCKED", "This refill was already received or closed and cannot be changed.");
+      }
+      const lines = input.lines.filter((line) => line.qty > 0);
+      if (!lines.length) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item, or delete the refill.");
+      if (new Set(lines.map((line) => line.sku)).size !== lines.length) throw new PosError(400, "DUPLICATE_SKU", "Each SKU can appear only once.");
+      for (const line of lines) {
+        if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
+        if (!tx.state.products.some((item) => item.sku === line.sku && item.setb_active)) throw new PosError(404, "SKU", `SKU ${line.sku} is not in the catalog.`);
+      }
+      const at = iso(now);
+      const before = batchRows.filter((row) => row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      const refillId = batchRows[0]?.refill_id ?? ensureRefillId(tx.state, batchId, tillCode());
+      const createdBy = batchRows[0]?.created_by ?? batchRows[0]?.sent_by ?? staff.display_name ?? "Kitchen";
+      const requestedBySku = new Map(lines.map((line) => [line.sku, line.qty]));
+      for (const row of batchRows.filter((item) => item.status === "PENDING_CONFIRM")) {
+        const nextQty = requestedBySku.get(row.sku);
+        if (nextQty == null) {
+          row.status = "CANCELLED_BY_KITCHEN";
+          row.qty_received = 0;
+          row.confirmed_at = at;
+          row.received_by = staff.display_name || "Kitchen";
+          for (const request of tx.state.stock_requests ?? []) {
+            if (request.store_code === tillCode() && request.sent_batch_id === batchId && request.sku === row.sku && request.status === "SENT") {
+              request.status = "REQUESTED";
+              request.sent_batch_id = null;
+              request.sent_at = null;
+            }
+          }
+        } else {
+          row.qty_sent = nextQty;
+          requestedBySku.delete(row.sku);
+        }
+      }
+      for (const [sku, qty] of requestedBySku) {
+        const product = tx.state.products.find((item) => item.sku === sku && item.setb_active)!;
+        const enabled = tx.state.store_products.some((item) => item.store_code === tillCode() && item.sku === sku && item.enabled);
+        tx.state.incoming.push({
+          kitchen_row_id: randomUUID(), batch_id: batchId, refill_id: refillId, created_by: createdBy, store_code: tillCode(), sku, qty_sent: qty, kind: "REFILL",
+          kitchen_created_at: at, imported_at: at, status: "PENDING_CONFIRM", qty_received: null, variance_reason: null,
+          confirmed_shift_id: null, confirmed_at: null, linked_ledger_id: null, sent_by: staff.display_name || "Kitchen",
+          received_by: null, approval_required: !enabled, created_at: at,
+        });
+        void product;
+      }
+      const after = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId && row.status === "PENDING_CONFIRM").map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      const updatedEmail = refillEmailPayload(tx.state, tx.state.incoming.filter((row) => row.batch_id === batchId && row.status === "PENDING_CONFIRM"), "SENT", at);
+      enqueue(tx.state, "S_EmailOutbox", updatedEmail.row_id, updatedEmail, at);
+      audit(tx.state, "KITCHEN_REFILL_EDITED", "incoming_batch", batchId, staff.staff_uid, { before, after }, at);
+      const resultBody = { ok: true, batch_id: batchId, lines: after };
+      remember(tx.state, "kitchen_edit_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    }, { kind: "KITCHEN_REFILL" });
+  }
+
+  async deleteKitchenRefill(token: string, input: { key: string; batch_id: string }) {
+    return this.deleteKitchenRefillForActor(input, null, token);
+  }
+
+  async deleteKitchenRefillTrusted(input: { key: string; batch_id: string }, actor: { staff_uid: string; display_name: string }) {
+    return this.deleteKitchenRefillForActor(input, actor);
+  }
+
+  private async deleteKitchenRefillForActor(
+    input: { key: string; batch_id: string },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_delete_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
+      const batchId = input.batch_id.trim();
+      const batchRows = tx.state.incoming.filter((row) => row.store_code === tillCode() && row.batch_id === batchId);
+      if (!batchRows.length) throw new PosError(404, "BATCH_NOT_FOUND", "That refill batch was not found.");
+      if (batchRows.some((row) => ["CONFIRMED", "PARTIAL", "REJECTED"].includes(row.status))) {
+        throw new PosError(409, "BATCH_LOCKED", "This refill was already received or closed and cannot be changed.");
+      }
+      const pendingRows = batchRows.filter((row) => row.status === "PENDING_CONFIRM");
+      if (!pendingRows.length) throw new PosError(409, "ALREADY_DELETED", "This refill is already deleted.");
+      const at = iso(now);
+      for (const row of pendingRows) {
+        row.status = "CANCELLED_BY_KITCHEN";
+        row.qty_received = 0;
+        row.confirmed_at = at;
+        row.received_by = staff.display_name || "Kitchen";
+      }
+      for (const request of tx.state.stock_requests ?? []) {
+        if (request.store_code === tillCode() && request.sent_batch_id === batchId && request.status === "SENT") {
+          request.status = "REQUESTED";
+          request.sent_batch_id = null;
+          request.sent_at = null;
+        }
+      }
+      const deleted = pendingRows.map((row) => ({ sku: row.sku, qty: row.qty_sent }));
+      audit(tx.state, "KITCHEN_REFILL_DELETED", "incoming_batch", batchId, staff.staff_uid, { lines: deleted }, at);
+      const resultBody = { ok: true, batch_id: batchId, deleted: true };
+      remember(tx.state, "kitchen_delete_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      return resultBody;
+    }, { kind: "KITCHEN_REFILL" });
+  }
+
+  private async queueKitchenRefillForActor(
+    input: { key: string; lines: { sku: string; qty: number }[] },
+    trustedActor: { staff_uid: string; display_name: string } | null,
+    token = "",
+  ) {
+    const body = input as unknown as Json;
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const seen = replay(tx.state, "kitchen_queue_refill", input.key, body, now, this.deps.secrets.session);
+      if (seen) return seen;
+      const staff = trustedActor ?? this.session(tx.state, token, now, "kitchen").staff;
       const lines = input.lines.filter((line) => line.qty > 0);
       if (lines.length === 0) throw new PosError(400, "EMPTY", "Enter a quantity for at least one item.");
       const at = iso(now);
-      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string }[] = [];
+      const refillId = ensureRefillId(tx.state, input.key, tillCode());
+      const created: { kitchen_row_id: string; sku: string; name: string; qty: number; status: string; approval_required: boolean }[] = [];
       for (const line of lines) {
         if (!Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999) throw new PosError(400, "BAD_QTY", "Quantity must be a whole number from 1 to 999.");
         const product = tx.state.products.find((item) => item.sku === line.sku && item.setb_active);
-        if (!product) throw new PosError(404, "SKU", "That SKU is not in the PNY catalog.");
+        const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === line.sku);
+        if (!product) throw new PosError(404, "SKU", "That SKU is not in the catalog.");
+        const approvalRequired = !storeProduct?.enabled;
         const kitchenRowId = randomUUID();
         tx.state.incoming.push({
           kitchen_row_id: kitchenRowId,
           batch_id: input.key,
+          refill_id: refillId,
+          created_by: staff.display_name || "Kitchen",
           store_code: tillCode(),
           sku: line.sku,
           qty_sent: line.qty,
-          kind,
+          kind: "REFILL",
           kitchen_created_at: at,
           imported_at: at,
-          status: "CONFIRMED",
-          qty_received: line.qty,
+          status: "PENDING_CONFIRM",
+          qty_received: null,
           variance_reason: null,
-          confirmed_shift_id: shift.id,
-          confirmed_at: at,
+          confirmed_shift_id: null,
+          confirmed_at: null,
           linked_ledger_id: null,
+          sent_by: staff.display_name || "Kitchen",
+          received_by: null,
+          approval_required: approvalRequired,
           created_at: at,
         });
-        const next = balanceAdd(tx.state, line.sku, line.qty, at, true);
-        if (next == null) throw new PosError(409, "OUT_OF_STOCK", "Could not receive the refill.");
-        const entry = ledger(tx.state, line.sku, line.qty, "INCOMING_CONFIRM", "incoming", kitchenRowId, staff.staff_uid, null, shift.id, at);
-        const row = tx.state.incoming.find((item) => item.kitchen_row_id === kitchenRowId)!;
-        row.linked_ledger_id = entry.id;
-        enqueue(tx.state, "S_Receipts", `R-${kitchenRowId}`, receiptPayload(row, shift.sccx_shift_id, staff.pos_id), at);
-        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "CONFIRMED" });
+        created.push({ kitchen_row_id: kitchenRowId, sku: line.sku, name: product.name, qty: line.qty, status: "PENDING_CONFIRM", approval_required: approvalRequired });
+        for (const request of tx.state.stock_requests ?? []) {
+          if (request.store_code === tillCode() && request.sku === line.sku && request.status === "REQUESTED") {
+            request.status = "SENT";
+            request.sent_batch_id = input.key;
+            request.sent_at = at;
+          }
+        }
       }
-      shift.refill_confirmed_at = at;
-      const resultBody = { ok: true, lines: created };
-      remember(tx.state, "kitchen_refill", input.key, body, resultBody, now, this.deps.secrets.session);
+      const sentRows = tx.state.incoming.filter((row) => row.batch_id === input.key);
+      const sentEmail = refillEmailPayload(tx.state, sentRows, "SENT", at);
+      enqueue(tx.state, "S_EmailOutbox", sentEmail.row_id, sentEmail, at);
+      enqueueSignalNotice(tx.state, `SIG-KSEND-${input.key}`, "KITCHEN_SENT", input.key, kitchenSentMessage(input.key, staff.display_name || "Kitchen", at, created), at);
+      audit(tx.state, "KITCHEN_REFILL_SENT", "incoming_batch", input.key, staff.staff_uid, { line_count: created.length, total_units: created.reduce((sum, line) => sum + line.qty, 0) }, at);
+      const resultBody = { ok: true, batch_id: input.key, refill_id: refillId, lines: created };
+      remember(tx.state, "kitchen_queue_refill", input.key, body, resultBody, now, this.deps.secrets.session);
       return resultBody;
-    });
-    this.bumpMenu();
-    return result;
+    }, { kind: "KITCHEN_REFILL" });
   }
 
-  async cashout(token: string, input: { key: string; lines: { sku: string; qty: number; unit_price_cents?: number }[]; ticket_id?: string | null; payment_method?: string | null }, journal?: DemoJournalOrder[]) {
+  async cashout(token: string, input: {
+    key: string;
+    lines: { sku: string; qty: number; unit_price_cents?: number }[];
+    ticket_id?: string | null;
+    payment_method?: string | null;
+    customer?: { phone: string; name?: string; email?: string; consent_type?: "EXPRESS" | "IMPLIED"; consented_at?: string; consent_source?: string; unsubscribe?: boolean } | null;
+    coupon_code?: string | null;
+  }, journal?: DemoJournalOrder[]) {
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -2164,10 +3737,49 @@ export class PosService {
         if (ticket.status !== "PENDING" && ticket.status !== "OPEN") throw new PosError(409, "BAD_TICKET", "That ticket is not open.");
       }
       const lines = mergeLines(input.lines);
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+        throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable on a NO WEED shift.");
+      }
       const priced = lines.map((line) => {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         return { ...line, ...price, line_total_cents: price.cents * line.qty };
       });
+      const subtotal = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      let customer = null as NonNullable<State["customers"]>[number] | null;
+      if (input.customer?.phone?.trim()) {
+        const phone = customerPhone(input.customer.phone);
+        customer = (tx.state.customers ?? []).find((row) => row.phone_e164 === phone) ?? null;
+        const name = input.customer.name?.trim() || customer?.display_name || "";
+        if (!customer && !name) throw new PosError(400, "CUSTOMER_NAME", "Enter the customer name for a new phone number.");
+        const email = customerEmail(input.customer.email ?? customer?.email);
+        if (!customer) {
+          customer = { id: randomUUID(), phone_e164: phone, display_name: name, email, created_store_code: tillCode(), created_at: at, updated_at: at };
+          (tx.state.customers ??= []).push(customer);
+          audit(tx.state, "CUSTOMER_CREATED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), phone_last4: phone.slice(-4) }, at);
+        } else {
+          customer.display_name = name || customer.display_name;
+          customer.email = email;
+          customer.updated_at = at;
+        }
+        if (input.customer.unsubscribe) {
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type ?? "IMPLIED", consented_at: input.customer.consented_at || at, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: at, created_at: at });
+          audit(tx.state, "CUSTOMER_UNSUBSCRIBED", "customer", customer.id, staff.staff_uid, { store_code: tillCode(), source: input.customer.consent_source?.trim() || "IN_STORE" }, at);
+        } else if (input.customer.consent_type) {
+          const consentedAt = input.customer.consented_at ? new Date(input.customer.consented_at).toISOString() : at;
+          (tx.state.customer_consents ??= []).push({ id: randomUUID(), customer_id: customer.id, consent_type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode(), unsubscribed_at: null, created_at: at });
+          audit(tx.state, "CUSTOMER_CONSENT_RECORDED", "customer", customer.id, staff.staff_uid, { type: input.customer.consent_type, consented_at: consentedAt, source: input.customer.consent_source?.trim() || "IN_STORE", store_code: tillCode() }, at);
+        }
+      }
+      let coupon = null as NonNullable<State["coupons"]>[number] | null;
+      let discount = 0;
+      if (input.coupon_code?.trim()) {
+        if (!customer) throw new PosError(400, "CUSTOMER_REQUIRED", "A customer phone is required to redeem a coupon.");
+        coupon = (tx.state.coupons ?? []).find((row) => row.store_code === tillCode() && row.code === couponCode(input.coupon_code!) && row.active) ?? null;
+        if (!coupon) throw new PosError(404, "COUPON", "That coupon is not active for this store.");
+        const used = (tx.state.coupon_redemptions ?? []).filter((row) => row.coupon_id === coupon!.id && row.customer_id === customer!.id).length;
+        if (used >= coupon.max_redemptions_per_customer) throw new PosError(409, "COUPON_LIMIT", "This customer already used the coupon as many times as allowed.");
+        discount = couponDiscount(subtotal, coupon);
+      }
       let stockout = false;
       const saleId = randomUUID();
       for (const line of priced) {
@@ -2176,7 +3788,7 @@ export class PosService {
         if (next === 0) stockout = true;
         ledger(tx.state, line.sku, -line.qty, "SALE", "sale", saleId, staff.staff_uid, null, shift.id, at);
       }
-      const total = priced.reduce((sum, line) => sum + line.line_total_cents, 0);
+      const total = subtotal - discount;
       const taxIncluded = priced.some((line) => line.source !== "RAW_UNIT");
       const method = paymentOf(input.payment_method);
       const ref = nextOrderRef(tx.state);
@@ -2193,6 +3805,9 @@ export class PosService {
         void_reason: null,
         voided_by: null,
         created_at: at,
+        customer_id: customer?.id ?? null,
+        coupon_id: coupon?.id ?? null,
+        discount_cents: discount,
       });
       for (const line of priced) {
         tx.state.sale_lines.push({
@@ -2209,6 +3824,13 @@ export class PosService {
         const ticket = tx.state.tickets.find((row) => row.id === input.ticket_id);
         if (ticket) ticket.status = "CASHED_OUT";
       }
+      if (customer) {
+        (tx.state.customer_visits ??= []).push({ id: randomUUID(), customer_id: customer.id, store_code: tillCode(), sale_id: saleId, shift_id: shift.id, spend_cents: total, visited_at: at });
+      }
+      if (coupon && customer) {
+        (tx.state.coupon_redemptions ??= []).push({ id: randomUUID(), coupon_id: coupon.id, customer_id: customer.id, store_code: tillCode(), shift_id: shift.id, sale_id: saleId, discount_cents: discount, redeemed_at: at });
+        audit(tx.state, "COUPON_REDEEMED", "sale", saleId, staff.staff_uid, { coupon_id: coupon.id, code: coupon.code, customer_id: customer.id, discount_cents: discount, store_code: tillCode() }, at);
+      }
       const payload = salePayload(tx.state, saleId);
       if (payload) enqueue(tx.state, "S_Sales", payload.row_id, payload, at);
       const resultBody = {
@@ -2216,6 +3838,10 @@ export class PosService {
         sale_id: saleId,
         ref_no: ref,
         total_cents: total,
+        subtotal_cents: subtotal,
+        discount_cents: discount,
+        coupon_code: coupon?.code ?? null,
+        customer: customer ? { name: customer.display_name, phone_last4: customer.phone_e164.slice(-4) } : null,
         prices_tax_included: taxIncluded,
         payment_method: method,
         lines: priced.map((line) => ({ sku: line.sku, qty: line.qty, unit_price_cents: line.cents, line_total_cents: line.line_total_cents })),
@@ -2229,7 +3855,7 @@ export class PosService {
     return result.body;
   }
 
-  async deposit(token: string, input: { key: string; amount_cents: number; note?: string }) {
+  async deposit(token: string, input: { key: string; amount_cents: number; note?: string; confirm_near_duplicate?: boolean }) {
     const body = input as unknown as Json;
     return this.db.transaction(async (tx) => {
       const now = this.now();
@@ -2237,13 +3863,24 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" || !shift.opening_confirmed_at) throw new PosError(409, "SHIFT_NOT_ACTIVE", "Deposits need an open, counted shift.");
       const amount = roundCents(input.amount_cents);
       if (!Number.isFinite(amount) || amount <= 0) throw new PosError(400, "BAD_AMOUNT", "Enter a deposit greater than zero.");
+      const nearDuplicate = nearDuplicateDeposit(tx.state, shift, amount, now);
+      requireNearDuplicateConfirmation(tx.state, shift, amount, now, input.confirm_near_duplicate);
       const at = iso(now);
       const deposit_code = issueDepositCode(tx.state);
+      assertStoreUniqueDepositCode(tx.state, deposit_code);
       tx.state.deposits.push({ id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: amount, note: input.note?.trim() || null, deposit_code, created_at: at });
       const deposit = tx.state.deposits[tx.state.deposits.length - 1]!;
+      if (nearDuplicate && input.confirm_near_duplicate) {
+        audit(tx.state, "NEAR_DUPLICATE_DEPOSIT_CONFIRMED", "deposit", deposit.id, staff.staff_uid, {
+          amount_cents: amount,
+          existing_deposit_code: nearDuplicate.deposit_code ?? null,
+          new_deposit_code: deposit_code,
+        }, at);
+      }
       enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
         row_id: `D-${deposit.id}`,
         deposit_id: deposit.id,
@@ -2296,7 +3933,9 @@ export class PosService {
    * Keeps the current session and does not change the stored PIN.
    */
   async unlockTill(token: string, pin: string) {
-    if (!/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter the 4-digit shift PIN.");
+    if (!/^\d{1,6}$/.test(pin)) throw new PosError(401, "BAD_PIN", "Enter a valid PIN.");
+    const masterPin = specialPinMatches("master", pin);
+    if (!masterPin && !/^\d{4}$/.test(pin)) throw new PosError(401, "BAD_PIN", "That PIN is not correct.");
     const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
@@ -2304,7 +3943,6 @@ export class PosService {
       if (!shift.pin_hash || !shift.pin_expires_at || Date.parse(shift.pin_expires_at) <= now.getTime()) {
         return { ok: false as const, status: 401, code: "PIN_EXPIRED", message: "That PIN is expired." };
       }
-      const masterPin = safeEqual(pin, MASTER_PIN);
       if (!masterPin && !verifyPin(pin, shift.pin_hash)) {
         shift.pin_failed_attempts += 1;
         if (shift.pin_failed_attempts >= MAX_PIN_FAILURES) shift.status = "LOCKED";
@@ -2330,16 +3968,10 @@ export class PosService {
    */
   async salesFeed(since: string | null, limit = 50) {
     const pageSize = Math.min(50, Math.max(1, Math.trunc(limit) || 50));
-    return this.db.transaction(async (tx) => {
-      const before = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      const allRows = tx.state.sales
+    const state = await this.readState();
+      const allRows = state.sales
         .filter((sale) => {
-          const shift = tx.state.shifts.find((row) => row.id === sale.shift_id);
+          const shift = state.shifts.find((row) => row.id === sale.shift_id);
           return !shift || shift.store_code === tillCode();
         })
         .map((sale, index) => ({ sale, index, cursor: `${sale.created_at}|${sale.id}` }))
@@ -2351,16 +3983,18 @@ export class PosService {
       const selected = !cursor
         ? []
         : cursorIndex >= 0
-          ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize)
-          : rows.filter((row) => row.cursor > cursor).slice(0, pageSize);
-      const sales = selected.map(({ sale, index: saleIndex }) => {
-        const staff = tx.state.staff.find((row) => row.staff_uid === sale.staff_uid);
-        const ticket = sale.ticket_id ? tx.state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
-        const items = tx.state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
-          const product = tx.state.products.find((row) => row.sku === line.sku);
+          ? allRows.slice(cursorIndex + 1).filter((row) => row.sale.status === "COMPLETED").slice(0, pageSize + 1)
+          : rows.filter((row) => row.cursor > cursor).slice(0, pageSize + 1);
+      const hasMore = selected.length > pageSize;
+      const page = selected.slice(0, pageSize);
+      const sales = page.map(({ sale, index: saleIndex }) => {
+        const staff = state.staff.find((row) => row.staff_uid === sale.staff_uid);
+        const ticket = sale.ticket_id ? state.tickets.find((row) => row.id === sale.ticket_id) : undefined;
+        const items = state.sale_lines.filter((line) => line.sale_id === sale.id).map((line) => {
+          const product = state.products.find((row) => row.sku === line.sku);
           return {
             sku: line.sku,
-            name: product?.name ?? productName(tx.state, line.sku),
+            name: product?.name ?? productName(state, line.sku),
             size: sizeLabel(line.sku, product?.category, product?.name),
             qty: line.qty,
             line_price_cents: line.line_total_cents,
@@ -2386,21 +4020,38 @@ export class PosService {
           store: tillCode(),
         };
       });
-      const after = JSON.stringify({
-        sales: tx.state.sales,
-        lines: tx.state.sale_lines,
-        balances: tx.state.balances,
-        shifts: tx.state.shifts,
-      });
-      if (after !== before) throw new PosError(500, "FEED_WRITE", "The sales feed must not change the till.");
       return {
         ok: true as const,
         store: tillCode(),
         sales,
-        next_cursor: selected.at(-1)?.cursor ?? (cursor || latest),
+        next_cursor: page.at(-1)?.cursor ?? (cursor || latest),
+        has_more: hasMore,
         bootstrap: !cursor,
       };
-    });
+  }
+
+  /**
+   * Read-only stock feed for trusted internal consumers such as Kitchen.
+   * This deliberately reads the authoritative till balances and never queues
+   * a sheet write or rewrites live_state.
+   */
+  async stockFeed() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const products = state.balances
+        .filter((balance) => balanceForStore(balance))
+        .map((balance) => {
+          const product = state.products.find((row) => row.sku === balance.sku);
+          return {
+            sku: balance.sku,
+            name: product?.name ?? "",
+            category: product?.category ?? "",
+            on_hand: balance.qty,
+          };
+        })
+        .sort((left, right) => skuSortKey(left.sku) - skuSortKey(right.sku) || left.sku.localeCompare(right.sku));
+    const activeShift = state.shifts.some((shift) => shift.store_code === tillCode() && shift.status === "ACTIVE");
+    return { ok: true as const, store_code: tillCode(), generated_at: iso(this.now()), active_shift: activeShift, products };
   }
 
   /** Read the open shift's sales. Does not change stock, sales, counts, refills, or the PIN. */
@@ -2474,6 +4125,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status === "ACTIVE") shift.status = "CLOSING";
       if (shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       return { ok: true, status: shift.status, message: END_SHIFT_MESSAGE };
@@ -2486,6 +4138,7 @@ export class PosService {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const status = shift.status;
       const pin = shift.pin_hash;
@@ -2502,6 +4155,7 @@ export class PosService {
       const now = this.now();
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       lockUnverified(tx.state, shift, staff.staff_uid, now);
       if (verifyAnchorMs(shift) == null || now.getTime() >= (verifyAnchorMs(shift) as number) + VERIFY_WINDOW_MS) {
@@ -2543,6 +4197,7 @@ export class PosService {
       const now = this.now();
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       const anchor = verifyAnchorMs(shift);
       if (anchor == null || now.getTime() >= anchor + VERIFY_WINDOW_MS) {
@@ -2559,6 +4214,7 @@ export class PosService {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be counted.");
       lockUnverified(tx.state, shift, "staff", now);
       const anchor = verifyAnchorMs(shift);
@@ -2918,6 +4574,8 @@ export class PosService {
             opening_counts: draft.opening_counts ?? [],
             closing_started_at: draft.closing_started_at ?? null,
             closing_submitted_at: draft.closing_submitted_at ?? null,
+            closing_recount_skus: draft.closing_recount_skus ?? [],
+            closing_recount_started_at: draft.closing_recount_started_at ?? null,
             final_deposit_cents: draft.final_deposit_cents ?? null,
             final_deposit_code: draft.final_deposit_code ?? null,
             updated_at: draft.updated_at || iso(this.now()),
@@ -2935,19 +4593,25 @@ export class PosService {
       opening_counts: row.opening_counts ?? [],
       closing_started_at: row.closing_started_at ?? null,
       closing_submitted_at: row.closing_submitted_at ?? null,
+      closing_recount_skus: row.closing_recount_skus ?? [],
+      closing_recount_started_at: row.closing_recount_started_at ?? null,
       final_deposit_cents: row.final_deposit_cents,
       final_deposit_code: row.final_deposit_code ?? null,
       updated_at: row.updated_at,
     })));
   }
 
-  async saveClosingCount(token: string, input: { sku: string; counted_qty: number }) {
+  async saveClosingCount(token: string, input: { sku: string; counted_qty: number; confirm_unusual?: boolean }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
+      const sku = input.sku.trim();
       const plan = shiftClosePlan(tx.state, shift.id);
-      if (!plan.some((line) => line.sku === input.sku)) throw new PosError(400, "BAD_SKU", "That SKU is not in this close.");
+      if (!plan.some((line) => line.sku === sku) && !countSkus(tx.state, shift).includes(sku)) {
+        throw new PosError(400, "BAD_SKU", "That SKU is not in this store catalog.");
+      }
       if (!Number.isInteger(input.counted_qty) || input.counted_qty < 0) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
       const drafts = draftsOf(tx.state);
       let draft = drafts.find((row) => row.shift_id === shift.id);
@@ -2957,38 +4621,153 @@ export class PosService {
       }
       if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
       const at = iso(this.now());
-      const expected = expectedAtSubmit(tx.state, shift, input.sku, this.now().getTime());
-      const existing = draft.counts.find((row) => row.sku === input.sku);
+      const expected = expectedAtSubmit(tx.state, shift, sku, this.now().getTime());
+      const skuNumber = Number.parseInt(sku, 10);
+      const unusual = Math.abs(input.counted_qty - expected) >= 10 || (Number.isFinite(skuNumber) && input.counted_qty === skuNumber);
+      if (unusual && !input.confirm_unusual) {
+        throw new PosError(409, "COUNT_CONFIRM_REQUIRED", "This count is unusual. Check the bag and confirm the number before saving.", {
+          sku,
+          counted_qty: input.counted_qty,
+        });
+      }
+      const existing = draft.counts.find((row) => row.sku === sku);
+      const wasRecount = draft.closing_recount_skus?.includes(sku) === true;
+      const previousCount = existing?.counted_qty;
       if (existing) {
         existing.counted_qty = input.counted_qty;
         existing.edited_at = at;
         existing.expected_qty = expected;
         existing.accepted_as_is = false;
-      } else draft.counts.push({ sku: input.sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
+      } else draft.counts.push({ sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
+      if (wasRecount) {
+        draft.closing_recount_skus = (draft.closing_recount_skus ?? []).filter((pending) => pending !== sku);
+        audit(tx.state, "CLOSING_RECOUNT_SAVED", "sku", sku, shift.staff_uid, {
+          shift_id: shift.sccx_shift_id,
+          before: previousCount ?? null,
+          after: input.counted_qty,
+        }, at);
+      }
       draft.updated_at = iso(this.now());
-      const done = plan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
-      return { ok: true, done, total: plan.length };
+      const updatedPlan = shiftClosePlan(tx.state, shift.id);
+      const done = updatedPlan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
+      return { ok: true, done, total: updatedPlan.length };
     });
   }
 
-  /** Finish the closing count. Blank SKUs are accepted as-is and do not change stock. */
-  async submitClosingCount(token: string) {
-    return this.db.transaction(async (tx) => {
+  /** Finish the closing count. Every SKU must be typed; an explicit confirmation records every blank as zero. */
+  async submitClosingCount(token: string, input: { confirm_blanks_zero?: boolean } = {}) {
+    const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const draft = ensureDraft(tx.state, shift.id, now);
-      if (draft.closing_submitted_at) return { ok: true, closing_submitted_at: draft.closing_submitted_at };
+      if (draft.closing_submitted_at) return { ok: true as const, closing_submitted_at: draft.closing_submitted_at };
       const at = iso(now);
       if (!draft.closing_started_at) draft.closing_started_at = at;
+      const plan = shiftClosePlan(tx.state, shift.id);
+      const blankSkus = plan
+        .filter((line) => {
+          const saved = draft.counts.find((row) => row.sku === line.sku);
+          return !saved || saved.accepted_as_is;
+        })
+        .map((line) => line.sku);
+      if (blankSkus.length && !input.confirm_blanks_zero) {
+        throw new PosError(
+          409,
+          "COUNT_INCOMPLETE",
+          `${blankSkus.length} items were not counted. Go back and count, or confirm as 0.`,
+          { blank_skus: blankSkus },
+        );
+      }
+      for (const sku of blankSkus) {
+        const expected = expectedAtSubmit(tx.state, shift, sku, now.getTime());
+        const saved = draft.counts.find((row) => row.sku === sku);
+        if (saved) {
+          saved.counted_qty = 0;
+          saved.edited_at = at;
+          saved.expected_qty = expected;
+          saved.accepted_as_is = false;
+        } else {
+          draft.counts.push({ sku, counted_qty: 0, edited_at: at, expected_qty: expected, accepted_as_is: false });
+        }
+      }
+      if (draft.closing_recount_skus?.length) {
+        const recountLines = draft.closing_recount_skus.map((sku) => ({ sku, text: staffSkuText(sku, sizeLabel(sku, tx.state.products.find((row) => row.sku === sku)?.category, productName(tx.state, sku))) }));
+        return { ok: false as const, code: "COUNT_RECOUNT_INCOMPLETE", error: "Recount every listed SKU once before closing.", details: { recount_lines: recountLines } };
+      }
+      if (!draft.closing_recount_started_at) {
+        const mismatches = plan.filter((line) => {
+          const saved = draft.counts.find((row) => row.sku === line.sku);
+          return saved && saved.counted_qty !== (saved.expected_qty ?? line.expected_qty);
+        });
+        if (mismatches.length) {
+          draft.closing_recount_started_at = at;
+          draft.closing_recount_skus = mismatches.map((line) => line.sku);
+          audit(tx.state, "CLOSING_RECOUNT_REQUIRED", "shift", shift.id, shift.staff_uid, {
+            shift_id: shift.sccx_shift_id,
+            skus: mismatches.map((line) => line.sku),
+            first_counts: mismatches.map((line) => {
+              const saved = draft.counts.find((row) => row.sku === line.sku)!;
+              return { sku: line.sku, counted_qty: saved.counted_qty, expected_qty: saved.expected_qty ?? line.expected_qty };
+            }),
+          }, at);
+          const recountLines = mismatches.map((line) => ({ sku: line.sku, text: staffSkuText(line.sku, sizeLabel(line.sku, tx.state.products.find((row) => row.sku === line.sku)?.category, productName(tx.state, line.sku))) }));
+          return { ok: false as const, code: "COUNT_RECOUNT_REQUIRED", error: "Some stock does not match. Recount only the listed SKUs once.", details: { recount_lines: recountLines } };
+        }
+      }
       draft.closing_submitted_at = at;
       draft.updated_at = at;
-      return { ok: true, closing_submitted_at: at };
+      return { ok: true as const, closing_submitted_at: at, recorded_as_zero: blankSkus };
+    });
+    if (!result.ok) throw new PosError(409, result.code, result.error, result.details);
+    return result;
+  }
+
+  async saveOpeningFloat(token: string, input: { found_cents: number; confirm_adjustment?: boolean }) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      const { shift, staff, session } = this.session(tx.state, token, now);
+      denyMaster(session);
+      if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot check the float.");
+      const found = roundCents(input.found_cents);
+      if (!Number.isFinite(found) || found < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the cash left in the till.");
+      const previous = previousClosing(tx.state, shift);
+      const expected = previous?.float_cents ?? 0;
+      const difference = found - expected;
+      if (difference !== 0 && !input.confirm_adjustment) {
+        throw new PosError(409, "FLOAT_ADJUST_CONFIRM_REQUIRED", "The opening cash does not match the previous close. Confirm the adjustment.", {
+          expected_cents: expected,
+          found_cents: found,
+          difference_cents: difference,
+        });
+      }
+      const draft = ensureDraft(tx.state, shift.id, now);
+      if (draft.float_found_cents != null) {
+        if (draft.float_found_cents === found) return { ok: true, replay: true, expected_cents: expected, found_cents: found, gap_cents: difference };
+        throw new PosError(409, "FLOAT_ALREADY_CONFIRMED", "Opening cash was already confirmed for this shift.");
+      }
+      const at = iso(now);
+      draft.float_found_cents = found;
+      draft.float_expected_cents = expected;
+      draft.float_difference_cents = difference;
+      draft.float_adjusted_by = difference === 0 ? null : staff.display_name || staff.pos_id || staff.staff_uid;
+      draft.float_adjusted_at = difference === 0 ? null : at;
+      draft.updated_at = at;
+      audit(tx.state, difference === 0 ? "OPENING_FLOAT_CONFIRMED" : "OPENING_FLOAT_ADJUSTED", "shift", shift.id, staff.staff_uid, {
+        previous_closing_cash_cents: expected,
+        opening_count_cents: found,
+        difference_cents: difference,
+        adjusted_amount_cents: found,
+        staff_name: staff.display_name,
+        recorded_at: at,
+      }, at);
+      return { ok: true, expected_cents: expected, found_cents: found, gap_cents: difference };
     });
   }
 
-  async saveFinalDeposit(token: string, input: { amount_cents: number }) {
+  async saveFinalDeposit(token: string, input: { amount_cents: number; float_cents?: number }) {
     return this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
@@ -3003,6 +4782,11 @@ export class PosService {
         drafts.push(draft);
       }
       draft.final_deposit_cents = amount;
+      if (input.float_cents != null) {
+        const floatCents = roundCents(input.float_cents);
+        if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
+        draft.float_cents = floatCents;
+      }
       if (amount > 0) {
         draft.final_deposit_code = draft.final_deposit_code || issueDepositCode(tx.state);
       } else if (draft.final_deposit_code) {
@@ -3011,11 +4795,11 @@ export class PosService {
         releaseTailDepositCode(tx.state, issued);
       }
       draft.updated_at = iso(this.now());
-      return { ok: true, final_deposit_cents: amount, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
+      return { ok: true, final_deposit_cents: amount, float_cents: draft.float_cents ?? 0, deposit_code: draft.final_deposit_code ?? null, cash_on_hand_cents: totals.cash_on_hand_cents };
     });
   }
 
-  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number }) {
+  async endShiftFromPos(token: string, input: { key: string; lines: { sku: string; counted_qty: number; variance_reason?: string }[]; final_deposit_cents?: number; float_cents?: number; confirm_near_duplicate?: boolean }) {
     const body = input as unknown as Json;
     const raw = await this.rawUnitPrices();
     const knownLabels = await this.deps.sheet.readStockLabels?.().catch(() => [] as StockLabelRow[]) ?? [];
@@ -3026,18 +4810,34 @@ export class PosService {
       if (seen) return seen;
       const { shift, staff, session } = this.session(tx.state, token, now);
       denyMaster(session);
+      requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const plan = shiftClosePlan(tx.state, shift.id, raw);
       const bySku = new Map(input.lines.map((line) => [line.sku, line]));
       const draft = draftsOf(tx.state).find((row) => row.shift_id === shift.id);
+      if (!draft?.closing_submitted_at) {
+        throw new PosError(409, "COUNT_REQUIRED", "Submit the closing stock count before ending the shift.");
+      }
       const finalDeposit = roundCents(input.final_deposit_cents ?? 0);
       if (!Number.isFinite(finalDeposit) || finalDeposit < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the final deposit.");
+      const floatCents = roundCents(input.float_cents ?? draft?.float_cents ?? 0);
+      if (!Number.isFinite(floatCents) || floatCents < 0) throw new PosError(400, "BAD_AMOUNT", "Enter the float left in the till.");
       const at = iso(now);
       if (finalDeposit > 0) {
+        const nearDuplicate = nearDuplicateDeposit(tx.state, shift, finalDeposit, now);
+        requireNearDuplicateConfirmation(tx.state, shift, finalDeposit, now, input.confirm_near_duplicate);
         const reserved = draftsOf(tx.state).find((row) => row.shift_id === shift.id)?.final_deposit_code;
         const deposit_code = reserved || issueDepositCode(tx.state);
+        assertStoreUniqueDepositCode(tx.state, deposit_code, shift.id);
         const deposit = { id: randomUUID(), shift_id: shift.id, staff_uid: staff.staff_uid, amount_cents: finalDeposit, note: "final deposit", deposit_code, created_at: at };
         tx.state.deposits.push(deposit);
+        if (nearDuplicate && input.confirm_near_duplicate) {
+          audit(tx.state, "NEAR_DUPLICATE_DEPOSIT_CONFIRMED", "deposit", deposit.id, staff.staff_uid, {
+            amount_cents: finalDeposit,
+            existing_deposit_code: nearDuplicate.deposit_code ?? null,
+            new_deposit_code: deposit_code,
+          }, at);
+        }
         enqueue(tx.state, "S_Deposits", `D-${deposit.id}`, {
           row_id: `D-${deposit.id}`,
           deposit_id: deposit.id,
@@ -3055,21 +4855,12 @@ export class PosService {
       for (const item of plan) {
         const saved = draft?.counts.find((row) => row.sku === item.sku);
         const editedAt = saved && !saved.accepted_as_is && saved.edited_at ? Date.parse(saved.edited_at) : NaN;
-        const client = bySku.get(item.sku);
-        let counted: number;
-        let expected: number;
-        if (Number.isFinite(editedAt) && saved) {
-          const after = salesAfter(tx.state, shift.id, item.sku, editedAt);
-          expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after;
-          counted = saved.counted_qty - after;
-        } else if (!draft?.closing_submitted_at && client) {
-          counted = client.counted_qty;
-          expected = item.expected_qty;
-        } else {
-          const onHand = qtyOf(tx.state, item.sku);
-          counted = onHand;
-          expected = onHand;
+        if (!saved || saved.accepted_as_is || !Number.isFinite(editedAt)) {
+          throw new PosError(409, "COUNT_REQUIRED", "Every SKU must be counted before ending the shift.");
         }
+        const after = salesAfter(tx.state, shift.id, item.sku, editedAt);
+        const expected = (saved.expected_qty ?? expectedAtSubmit(tx.state, shift, item.sku, editedAt)) - after;
+        const counted = saved.counted_qty - after;
         if (!Number.isInteger(counted) || counted < 0 || !Number.isInteger(expected)) throw new PosError(400, "BAD_QTY", "Counted quantity must be a whole number.");
         const variance = lineVariance({ expected_qty: expected, counted_qty: counted, price_cents: item.price_cents });
         closingLines.push({
@@ -3106,11 +4897,11 @@ export class PosService {
         }
       }
       expireTickets(tx.state, now.getTime(), shift.id);
-      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit);
+      const closing = buildClosing(tx.state, shift, closingLines, false, at, finalDeposit, floatCents);
       finishShift(tx.state, shift, "POS_END", at, closing);
       const saved = tx.state.closings.find((row) => row.shift_id === shift.id) ?? closing;
       queueClosingSheets(tx.state, shift, saved, at);
-      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, closing: saved };
+      const result = { ok: true, message: END_SHIFT_MESSAGE, no_count: false, summary_text: saved.summary_text, close_label: saved.close_label ?? null, shift_ref: saved.shift_ref ?? null, closing: saved };
       remember(tx.state, "pos_end", input.key, body, result, now, this.deps.secrets.session);
       return result;
     });
@@ -3133,20 +4924,33 @@ export class PosService {
       }
     };
     let rows: SheetRow[] = [];
+    let legacyCount = 0;
+    let refillCount = 0;
     try {
       const [legacy, refills] = await Promise.all([readTab("K_Allocations"), readTab("POS_Refills")]);
-      rows = [
-        ...legacy,
-        ...refills.filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED"),
-      ];
+      legacyCount = legacy.length;
+      refillCount = refills.length;
+      const byId = new Map<string, SheetRow>();
+      const withoutId: SheetRow[] = [];
+      const add = (row: SheetRow) => row.row_id ? byId.set(row.row_id, row) : withoutId.push(row);
+      refills
+        .filter((row) => row.record_type !== "POS" && row.record_type !== "STATE" && row.record_type !== "STATE_RETIRED")
+        .forEach(add);
+      // K_Allocations is Kitchen's canonical row. It must win over a stale
+      // mirrored POS_Refills copy carrying the same row_id.
+      legacy.forEach(add);
+      rows = [...byId.values(), ...withoutId];
     } catch (error) {
       if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
       throw error;
     }
-    return this.importRows(rows);
+    const flowers = await this.flowerIndex().catch(() => new Map());
+    const result = await this.importRows(rows, flowers, Boolean(opts.force));
+    if (opts.force) console.info(`[sheet-import] legacy=${legacyCount} refills=${refillCount} imported=${result.imported} full=${result.full}`);
+    return result;
   }
 
-  private async importRows(rows: SheetRow[]) {
+  private async importRows(rows: SheetRow[], flowers: FlowerIndex | null = null, forceFull = false) {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       const at = iso(now);
@@ -3156,17 +4960,23 @@ export class PosService {
         cursor = { tab: "K_Allocations", last_row_number: 0, last_polled_at: null, last_ok_at: null, last_full_scan_at: null };
         state.cursors.push(cursor);
       }
-      const full = !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
+      // K_Allocations and POS_Refills have independent sheet row numbers. A
+      // forced refresh (the cron/recovery path) must therefore rescan all rows
+      // instead of applying K_Allocations' cursor to POS_Refills.
+      const full = forceFull || !cursor.last_full_scan_at || now.getTime() - Date.parse(cursor.last_full_scan_at) >= FULL_SCAN_MS;
       const minRow = full ? 0 : Math.max(0, cursor.last_row_number - IMPORT_OVERLAP_ROWS);
       let imported = 0;
       let maxRow = cursor.last_row_number;
+      const touchedBatches = new Set<string>();
       for (const row of rows) {
         const sheetRow = Number(row._sheet_row ?? 0);
         if (sheetRow < minRow) continue;
         maxRow = Math.max(maxRow, sheetRow);
         if ((row.store_code ?? "").trim() !== tillCode()) continue;
-        const problem = this.kitchenProblem(state, row);
+        const problem = this.kitchenProblem(state, row, flowers);
+        const recent = Boolean(row.created_at && now.getTime() - Date.parse(row.created_at) < 24 * 60 * 60 * 1000);
         if (problem) {
+          if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=rejected reason=${problem}`);
           const badId = row.row_id && isUuid(row.row_id) ? `R-${row.row_id}` : `R-BAD-${sheetRow}`;
           enqueue(state, "S_Receipts", badId, {
             row_id: badId,
@@ -3185,7 +4995,11 @@ export class PosService {
           audit(state, "ROW_REJECTED", "sheet", row.row_id || String(sheetRow), "system", { reason: problem }, at);
           continue;
         }
+        if (!state.products.some((product) => product.sku === row.sku)) {
+          if (!ensurePublishedFlowerProduct(state, row.sku, flowers, at)) ensureQuotedProduct(state, row.sku, at);
+        }
         const existing = state.incoming.find((item) => item.kitchen_row_id === row.row_id);
+        if (forceFull && recent) console.info(`[sheet-import-line] sku=${row.sku ?? ""} result=${existing?.status ?? "new"}`);
         const qty = Number(row.qty);
         const kitchenStatus = (row.kitchen_status ?? "ACTIVE").toUpperCase();
         if (!existing) {
@@ -3193,9 +5007,13 @@ export class PosService {
           if (state.incoming.some((item) => item.batch_id === (row.batch_id ?? "") && item.sku === row.sku && item.qty_sent === qty && item.kitchen_created_at && Math.abs(Date.parse(item.kitchen_created_at) - Date.parse(created)) < 5 * 60 * 1000)) {
             audit(state, "DUPLICATE_BATCH_WINDOW", "incoming", row.row_id, "system", { batch_id: row.batch_id, sku: row.sku, qty }, at);
           }
+          const batchId = row.batch_id || row.row_id;
+          const refillId = ensureRefillId(state, batchId, tillCode());
           const incoming: IncomingRow = {
             kitchen_row_id: row.row_id,
-            batch_id: row.batch_id ?? "",
+            batch_id: batchId,
+            refill_id: refillId,
+            created_by: row.created_by || row.sent_by || "Kitchen",
             store_code: tillCode(),
             sku: row.sku,
             qty_sent: qty,
@@ -3211,15 +5029,29 @@ export class PosService {
             created_at: at,
           };
           state.incoming.push(incoming);
+          touchedBatches.add(batchId);
           imported += 1;
-          enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(incoming, "", ""), at);
+          enqueue(state, "S_Receipts", `R-${incoming.kitchen_row_id}`, receiptPayload(state, incoming, "", ""), at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, incoming, at);
         } else if (qty !== existing.qty_sent) {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
           audit(state, "QTY_CHANGED_AFTER_IMPORT", "incoming", existing.kitchen_row_id, "system", { sheet_qty: qty, imported_qty: existing.qty_sent }, at);
           if (kitchenStatus === "CANCELLED") this.applyCancel(state, existing, at);
         } else if (kitchenStatus === "CANCELLED") {
           this.applyCancel(state, existing, at);
+        } else if (existing.status === "CANCELLED_BY_KITCHEN") {
+          if (!existing.refill_id) existing.refill_id = ensureRefillId(state, existing.batch_id || existing.kitchen_row_id, existing.store_code);
+          existing.status = "PENDING_CONFIRM";
+          existing.qty_received = null;
+          existing.confirmed_at = null;
+          enqueue(state, "S_Receipts", `R-${existing.kitchen_row_id}`, receiptPayload(state, existing, "", ""), at);
+          audit(state, "KITCHEN_ROW_REOPENED", "incoming", existing.kitchen_row_id, "system", { source: "K_Allocations" }, at);
         }
+      }
+      for (const batchId of touchedBatches) {
+        const batchRows = state.incoming.filter((row) => row.batch_id === batchId);
+        const email = refillEmailPayload(state, batchRows, "SENT", at);
+        enqueue(state, "S_EmailOutbox", email.row_id, email, at);
       }
       cursor.last_row_number = Math.max(cursor.last_row_number, maxRow);
       cursor.last_polled_at = at;
@@ -3229,9 +5061,12 @@ export class PosService {
     });
   }
 
-  private kitchenProblem(state: State, row: SheetRow) {
+  private kitchenProblem(state: State, row: SheetRow, flowers: FlowerIndex | null = null) {
     if (!row.row_id || !isUuid(row.row_id)) return "row_id must be a UUID";
-    if (!state.products.some((product) => product.sku === row.sku)) return "SKU does not exist";
+    const known = state.products.some((product) => product.sku === row.sku)
+      || flowerPriceCents(flowers, row.sku) != null
+      || quoteForSku(row.sku) != null;
+    if (!known) return "SKU does not exist";
     if (!/^[1-9]\d*$/.test(row.qty ?? "")) return "qty must be an integer greater than 0";
     const kind = (row.kind ?? "ALLOCATION").toUpperCase();
     if (kind !== "ALLOCATION" && kind !== "REFILL") return "kind must be ALLOCATION or REFILL";
@@ -3243,7 +5078,7 @@ export class PosService {
       row.status = "CANCELLED_BY_KITCHEN";
       row.confirmed_at = at;
       row.qty_received = 0;
-      enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, "", ""), at);
+      enqueue(state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(state, row, "", ""), at);
       return;
     }
     if (row.status === "CONFIRMED" || row.status === "PARTIAL") {
@@ -3251,71 +5086,295 @@ export class PosService {
     }
   }
 
-  async drainOutbox() {
+  async outboxStatus() {
     const now = this.now();
-    const batch = await this.db.transaction(async (tx) => tx.state.outbox.filter((row) => row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime()));
-    if (batch.length === 0) return { ok: true, sent: 0 };
+    const state = await this.readState();
+    const pending = state.outbox.filter((row) => row.tab !== "SIGNAL_GROUP" && row.status !== "sent");
+    const signalPending = state.outbox.filter((row) => row.tab === "SIGNAL_GROUP" && row.status !== "sent");
+    const oldest = pending.map((row) => Date.parse(row.created_at)).filter(Number.isFinite).sort((a, b) => a - b)[0];
+    const failures = pending
+      .filter((row) => row.status === "error" || Boolean(row.last_error))
+      .sort((a, b) => (b.last_attempt_at ?? b.created_at).localeCompare(a.last_attempt_at ?? a.created_at))
+      .slice(0, 20)
+      .map((row) => ({
+        id: row.id,
+        tab: row.tab,
+        row_id: row.row_id,
+        status: row.status,
+        attempts: row.attempts,
+        last_error: row.last_error,
+        last_attempt_at: row.last_attempt_at ?? null,
+        next_attempt_at: row.next_attempt_at,
+      }));
+    return {
+      queued: pending.filter((row) => row.status === "queued").length,
+      sending: pending.filter((row) => row.status === "sending").length,
+      errors: pending.filter((row) => row.status === "error").length,
+      oldest_pending_at: oldest == null ? null : iso(new Date(oldest)),
+      delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
+      alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
+      failures,
+      signal: {
+        enabled: Boolean(this.deps.signal?.enabled),
+        dry_run: Boolean(this.deps.signal?.dryRun),
+        pending: signalPending.length,
+        errors: signalPending.filter((row) => row.status === "error").length,
+      },
+    };
+  }
+
+  async drainOutbox() {
+    let owner = await this.assertIntegrationOwner("SHEET_OUTBOX");
+    const now = this.now();
+    const emailOnly = process.env.PNY_SHEET_READ_ONLY === "1" && process.env.PNY_EMAIL_OUTBOX_ENABLED === "1";
+    const leaseId = randomUUID();
+    const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
+    const batch = await this.db.transaction(async (tx) => {
+      const at = iso(now);
+      for (const row of tx.state.outbox) {
+        if (row.status !== "sending") continue;
+        const expires = Date.parse(row.lease_expires_at ?? row.next_attempt_at);
+        if (Number.isFinite(expires) && expires > now.getTime()) continue;
+        const expiredLease = row.lease_id ?? "unknown";
+        row.status = "queued";
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        row.next_attempt_at = at;
+        row.last_error = "Previous outbox worker lease expired before acknowledgement.";
+        audit(tx.state, "OUTBOX_LEASE_EXPIRED", "sheet_outbox", row.id, "cron", { row_id: row.row_id, tab: row.tab, lease_id: expiredLease }, at);
+      }
+      const due = tx.state.outbox
+        .filter((row) => row.tab !== "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime() && (!emailOnly || row.tab === "S_EmailOutbox"))
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .slice(0, OUTBOX_BATCH_SIZE);
+      for (const row of due) {
+        row.status = "sending";
+        row.lease_id = leaseId;
+        row.lease_expires_at = leaseExpiresAt;
+        row.next_attempt_at = leaseExpiresAt;
+        row.last_attempt_at = at;
+      }
+      return structuredClone(due);
+    });
+    if (batch.length === 0) return { ok: true, sent: 0, ...(await this.outboxStatus()) };
+    owner = await this.assertIntegrationOwner("SHEET_OUTBOX");
+    const delivered = this.db.deliveredIntegrationEvents
+      ? await this.db.deliveredIntegrationEvents("SHEET_OUTBOX", owner.cutover_id, batch.map((row) => row.row_id))
+      : new Set<string>();
+    if (delivered.size) {
+      await this.db.transaction(async (tx) => {
+        for (const row of tx.state.outbox) {
+          if (row.status !== "sending" || row.lease_id !== leaseId || !delivered.has(row.row_id)) continue;
+          row.status = "sent";
+          row.sent_at ??= iso(this.now());
+          row.last_error = null;
+          row.lease_id = null;
+          row.lease_expires_at = null;
+        }
+      });
+    }
+    const unsentBatch = batch.filter((row) => !delivered.has(row.row_id));
+    if (unsentBatch.length === 0) return { ok: true, sent: 0, replayed: delivered.size, ...(await this.outboxStatus()) };
+    const directEmail = accountantEmailWebhookConfigured();
+    if (!emailOnly || !directEmail) {
+      await this.deps.sheet.ensureTabs(emailOnly ? POS_TAB_SPECS.filter((spec) => spec.title === "S_EmailOutbox") : POS_TAB_SPECS);
+    }
     const groups = new Map<string, typeof batch>();
-    for (const row of batch) {
+    for (const row of unsentBatch) {
       const list = groups.get(row.tab) ?? [];
       list.push(row);
       groups.set(row.tab, list);
     }
     const tabs = [...OUTBOX_TAB_ORDER.filter((tab) => groups.has(tab)), ...[...groups.keys()].filter((tab) => !OUTBOX_TAB_ORDER.includes(tab as (typeof OUTBOX_TAB_ORDER)[number]))];
-    try {
-      for (const tab of tabs) {
-        const rows = groups.get(tab) ?? [];
-        if (rows.length) await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
-      }
-      await this.db.transaction(async (tx) => {
-        const at = iso(this.now());
-        for (const row of batch) {
-          const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status !== "queued") continue;
-          current.status = "sent";
-          current.sent_at = at;
-          current.last_error = null;
+    let sent = 0;
+    for (const tab of tabs) {
+      const rows = groups.get(tab) ?? [];
+      if (!rows.length) continue;
+      try {
+        if (tab === "S_EmailOutbox" && directEmail) {
+          for (const row of rows) await deliverAccountantEmail(row.payload);
+        } else {
+          await this.deps.sheet.upsert(tab, rows.map((row) => ({ ...row.payload, row_id: row.row_id })));
         }
-      });
-      return { ok: true, sent: batch.length };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Sheet write failed";
-      await this.db.transaction(async (tx) => {
-        for (const row of batch) {
+        for (const row of rows) await this.recordIntegrationDelivery(owner, row.row_id, { tab: row.tab });
+        const acknowledged = await this.db.transaction(async (tx) => {
+          const at = iso(this.now());
+          let count = 0;
+          for (const row of rows) {
+            const current = tx.state.outbox.find((item) => item.id === row.id);
+            if (!current || current.status !== "sending" || current.lease_id !== leaseId) continue;
+            current.status = "sent";
+            current.sent_at = at;
+            current.last_error = null;
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            count += 1;
+          }
+          return count;
+        });
+        sent += acknowledged;
+      } catch (error) {
+        const message = outboxErrorMessage(error);
+        const failedIds = new Set(rows.map((row) => row.id));
+        await this.db.transaction(async (tx) => {
+          const failedAt = this.now();
+          const at = iso(failedAt);
+          let holdUntil = at;
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId && failedIds.has(row.id))) {
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.attempts += 1;
+            current.last_error = message;
+            current.last_attempt_at = at;
+            current.next_attempt_at = iso(new Date(failedAt.getTime() + outboxBackoffMs(current.attempts)));
+            if (current.next_attempt_at > holdUntil) holdUntil = current.next_attempt_at;
+            current.status = current.attempts >= OUTBOX_ERROR_ATTEMPTS ? "error" : "queued";
+            audit(tx.state, current.status === "error" ? "OUTBOX_DEAD" : "OUTBOX_RETRY_SCHEDULED", "sheet_outbox", current.id, "cron", {
+              row_id: current.row_id,
+              tab: current.tab,
+              attempts: current.attempts,
+              next_attempt_at: current.next_attempt_at,
+            }, at);
+          }
+          for (const current of tx.state.outbox.filter((row) => row.status === "sending" && row.lease_id === leaseId)) {
+            current.status = "queued";
+            current.lease_id = null;
+            current.lease_expires_at = null;
+            current.next_attempt_at = holdUntil;
+          }
+        });
+        return {
+          ok: false,
+          sent,
+          failed: rows.length,
+          sheet_down: error instanceof SheetUnavailable,
+          error: message,
+          ...(await this.outboxStatus()),
+        };
+      }
+    }
+    return { ok: true, sent, ...(await this.outboxStatus()) };
+  }
+
+  /** Deliver Kitchen group notices through the owned SCCx Signal route exactly once. */
+  async drainSignalOutbox() {
+    const signal = this.deps.signal;
+    if (!signal?.enabled) return { ok: true, enabled: false, sent: 0, dry_run: Boolean(signal?.dryRun) };
+    let owner = await this.assertIntegrationOwner("SIGNAL");
+    const now = this.now();
+    const leaseId = randomUUID();
+    const leaseExpiresAt = iso(new Date(now.getTime() + OUTBOX_LEASE_MS));
+    const batch = await this.db.transaction(async (tx) => {
+      const at = iso(now);
+      for (const row of tx.state.outbox) {
+        if (row.tab !== "SIGNAL_GROUP" || row.status !== "sending") continue;
+        if (Date.parse(row.lease_expires_at ?? row.next_attempt_at) > now.getTime()) continue;
+        row.status = "queued";
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        row.next_attempt_at = at;
+      }
+      const due = tx.state.outbox
+        .filter((row) => row.tab === "SIGNAL_GROUP" && row.status === "queued" && Date.parse(row.next_attempt_at) <= now.getTime())
+        .sort((left, right) => left.created_at.localeCompare(right.created_at))
+        .slice(0, OUTBOX_BATCH_SIZE);
+      for (const row of due) {
+        row.status = "sending";
+        row.lease_id = leaseId;
+        row.lease_expires_at = leaseExpiresAt;
+        row.next_attempt_at = leaseExpiresAt;
+        row.last_attempt_at = at;
+      }
+      return structuredClone(due);
+    });
+    if (!batch.length) return { ok: true, enabled: true, sent: 0, dry_run: signal.dryRun };
+    owner = await this.assertIntegrationOwner("SIGNAL");
+    const delivered = this.db.deliveredIntegrationEvents
+      ? await this.db.deliveredIntegrationEvents("SIGNAL", owner.cutover_id, batch.map((row) => row.row_id))
+      : new Set<string>();
+    let sent = 0;
+    for (const row of batch) {
+      try {
+        let receipt: Record<string, unknown> = { status: "replayed" };
+        if (!delivered.has(row.row_id)) {
+          receipt = await signal.send({ event_id: row.row_id, message: row.payload.message ?? "" });
+          await this.recordIntegrationDelivery(owner, row.row_id, receipt);
+        }
+        await this.db.transaction(async (tx) => {
           const current = tx.state.outbox.find((item) => item.id === row.id);
-          if (!current || current.status === "sent") continue;
+          if (!current || current.status !== "sending" || current.lease_id !== leaseId) return;
+          current.status = "sent";
+          current.sent_at = iso(this.now());
+          current.last_error = null;
+          current.lease_id = null;
+          current.lease_expires_at = null;
+          audit(tx.state, signal.dryRun ? "SIGNAL_DRY_RUN" : "SIGNAL_SENT", "signal_outbox", current.row_id, "cron", { batch_id: current.payload.batch_id, status: receipt.status ?? "sent" }, current.sent_at);
+        });
+        sent += delivered.has(row.row_id) ? 0 : 1;
+      } catch (error) {
+        const message = outboxErrorMessage(error);
+        await this.db.transaction(async (tx) => {
+          const current = tx.state.outbox.find((item) => item.id === row.id);
+          if (!current || current.status !== "sending" || current.lease_id !== leaseId) return;
+          const failedAt = this.now();
+          current.status = current.attempts + 1 >= OUTBOX_ERROR_ATTEMPTS ? "error" : "queued";
           current.attempts += 1;
           current.last_error = message;
-          const delay = BACKOFF_MIN[Math.min(current.attempts, BACKOFF_MIN.length) - 1] * 60 * 1000;
-          current.next_attempt_at = iso(new Date(this.now().getTime() + delay));
-          if (current.attempts >= OUTBOX_ERROR_ATTEMPTS) current.status = "error";
-        }
-      });
-      if (error instanceof SheetUnavailable) return { ok: false, sheet_down: true };
-      return { ok: false, error: message };
+          current.last_attempt_at = iso(failedAt);
+          current.next_attempt_at = iso(new Date(failedAt.getTime() + outboxBackoffMs(current.attempts)));
+          current.lease_id = null;
+          current.lease_expires_at = null;
+        });
+        return { ok: false, enabled: true, sent, failed: 1, dry_run: signal.dryRun, error: message };
+      }
     }
+    return { ok: true, enabled: true, sent, replayed: delivered.size, dry_run: signal.dryRun };
+  }
+
+  async retryOutboxFailures(adminToken: string, rowIds: string[] = []) {
+    return this.db.transaction(async (tx) => {
+      const now = this.now();
+      requireAdmin(tx.state, adminToken, now);
+      const at = iso(now);
+      const wanted = new Set(rowIds.map((value) => value.trim()).filter(Boolean));
+      const recovered: string[] = [];
+      for (const row of tx.state.outbox) {
+        const expiredSending = row.status === "sending" && Date.parse(row.lease_expires_at ?? row.next_attempt_at) <= now.getTime();
+        if (row.status !== "error" && !expiredSending) continue;
+        if (wanted.size > 0 && !wanted.has(row.id) && !wanted.has(row.row_id)) continue;
+        row.status = "queued";
+        row.attempts = 0;
+        row.last_error = null;
+        row.next_attempt_at = at;
+        row.lease_id = null;
+        row.lease_expires_at = null;
+        recovered.push(row.row_id);
+      }
+      audit(tx.state, "OUTBOX_MANUAL_RETRY", "sheet_outbox", null, "admin", { recovered }, at);
+      return { ok: true, recovered: recovered.length, row_ids: recovered };
+    });
   }
 
   async menu() {
     const nowMs = this.now().getTime();
     if (this.menuCache && this.menuCache.store === tillCode() && this.menuCache.gen === this.menuGen && nowMs - this.menuCache.at < MENU_CACHE_MS) return this.menuCache.body;
-    const [raw, flowers, itemCatalog] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, itemCatalog, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     const notes = await this.rawCartonNotes();
-    const body = await this.db.transaction(async (tx) => {
+    const body = await (async () => {
+      const tx: Tx = { state: await this.readState() };
       const now = iso(this.now());
-      if (tillCode() === "PNY02" && this.db instanceof SheetDb) await this.db.pullPny2Stock(tx.state);
       this.ensurePny2(tx.state, now);
       const shift = tx.state.shifts.find((row) => row.store_code === tillCode() && row.status === "ACTIVE");
       if (shift) {
         nameLiveShift(tx.state, now);
-        openTillWithoutCount(shift, now);
+        openTillWithoutCount(tx.state, shift, now);
       }
       const open = shift && shift.opening_confirmed_at && sellingBlocked(tx.state, shift) == null;
       const items = tx.state.products
         .filter((product) => product.setb_active)
         .flatMap((product) => {
           const storeProduct = tx.state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
-          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0) return [];
+          if (!storeProduct?.enabled || qtyOf(tx.state, product.sku) <= 0 || !visibleForShift(tx.state, shift, product.sku)) return [];
           const pack = cigarettePackCents(product.sku, product.category, product.name);
           const cents = pack ?? raw.get(product.sku) ?? storeProduct.price_override_cents ?? product.default_price_cents;
           if (cents <= 0) return [];
@@ -3337,8 +5396,9 @@ export class PosService {
         })
         .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
       const seen = new Set(items.map((item) => item.sku));
-      for (const extra of stockedCatalogRows(tx.state, itemCatalog)) {
-        if (seen.has(extra.sku) || extra.qty <= 0) continue;
+      for (const extra of [...stockedCatalogRows(tx.state, itemCatalog), ...stockedMasterRows(tx.state, masters, flowers, itemCatalog)]) {
+        if (seen.has(extra.sku) || extra.qty <= 0 || !visibleForShift(tx.state, shift, extra.sku)) continue;
+        seen.add(extra.sku);
         const carton = notes.get(extra.sku);
         items.push({
           sku: extra.sku,
@@ -3347,6 +5407,8 @@ export class PosService {
           price_cents: extra.price_cents,
           image_url: extra.image_url,
           availability: "Available" as const,
+          ...("flower_type" in extra && extra.flower_type ? { flower_type: extra.flower_type } : {}),
+          ...("thc" in extra && extra.thc ? { thc: extra.thc } : {}),
           ...(carton ? { carton_note: carton } : {}),
         });
       }
@@ -3359,7 +5421,7 @@ export class PosService {
         prices_include_tax: false,
         items,
       };
-    });
+    })();
     this.menuCache = { gen: this.menuGen, at: nowMs, store: tillCode(), body };
     return body;
   }
@@ -3367,7 +5429,7 @@ export class PosService {
   async placeOrder(input: { key: string; lines: { sku: string; qty: number }[] }, ip: string, journal?: DemoJournalOrder[]) {
     this.hit(`order:${ip || "unknown"}`, 10, 60 * 1000);
     const body = input as unknown as Json;
-    const [raw, flowers, items] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex()]);
+    const [raw, flowers, items, masters] = await Promise.all([this.rawUnitPrices(), this.flowerIndex(), this.itemIndex(), this.sheetMasters()]);
     return this.db.transaction(async (tx) => {
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
@@ -3378,9 +5440,12 @@ export class PosService {
       const pending = tx.state.tickets.filter((ticket) => ticket.shift_id === shift.id && ticket.status === "PENDING").length;
       if (pending >= MAX_PENDING_TICKETS) throw new PosError(429, "TICKET_LIMIT", "The till queue is full. Please see staff.");
       const lines = mergeLines(input.lines);
+      if (noWeedShift(tx.state, shift) && lines.some((line) => thcForState(tx.state, line.sku))) {
+        throw new PosError(409, "THC_HIDDEN", "THC SKUs are unavailable while PNYS is in NO WEED mode.");
+      }
       for (const line of lines) {
         try {
-          priceOf(tx.state, line.sku, raw, flowers, items);
+          priceOf(tx.state, line.sku, raw, flowers, items, masters);
         } catch {
           throw new PosError(400, "ITEM_UNAVAILABLE", "An item in that order is unavailable.");
         }
@@ -3405,7 +5470,7 @@ export class PosService {
       });
       let total = 0;
       for (const line of lines) {
-        const price = priceOf(tx.state, line.sku, raw, flowers, items);
+        const price = priceOf(tx.state, line.sku, raw, flowers, items, masters);
         total += price.cents * line.qty;
         tx.state.ticket_lines.push({ id: randomUUID(), ticket_id: ticketId, sku: line.sku, qty: line.qty, unit_price_cents_snapshot: price.cents });
       }
@@ -3423,7 +5488,7 @@ export class PosService {
   }
 
   async ticketStatus(code: string, journal?: DemoJournalOrder[]) {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const now = this.now();
       absorbDemoJournal(tx.state, journal);
       expireTickets(tx.state, now.getTime());
@@ -3444,7 +5509,6 @@ export class PosService {
         total_cents: lines.reduce((sum, line) => sum + line.qty * line.unit_price_cents_snapshot, 0),
         journal_order: journalFromTicket(tx.state, ticket.id),
       };
-    });
   }
 
   async expireDue() {
@@ -3454,7 +5518,7 @@ export class PosService {
       const expired = expireTickets(tx.state, now.getTime());
       for (const shift of openShifts(tx.state)) {
         if (shift.pin_expires_at && Date.parse(shift.pin_expires_at) <= now.getTime()) {
-          const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+          const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
           finishShift(tx.state, shift, "EXPIRED", at, closing);
         }
       }
@@ -3464,7 +5528,7 @@ export class PosService {
 
   /** Read-only closings for the current store. Does not increment SCCx attempts. */
   async readClosings() {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
       const code = tillCode();
       const closings = tx.state.closings.flatMap((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
@@ -3493,17 +5557,16 @@ export class PosService {
         }];
       });
       return { ok: true as const, store: code, closings };
-    });
   }
 
   async closedShifts() {
-    return this.db.transaction(async (tx) => {
+    const tx: Tx = { state: await this.readState() };
+      const code = tillCode();
       const rows = tx.state.closings.filter((closing) => {
         if (closing.sccx_ack_at) return false;
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
-        return !shift || shift.store_code === "PNY01";
+        return !shift || shift.store_code === code;
       });
-      for (const closing of rows) closing.sccx_attempts += 1;
       const closings = rows.map((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         const staff = tx.state.staff.find((row) => row.staff_uid === shift?.staff_uid);
@@ -3544,7 +5607,42 @@ export class PosService {
         };
       });
       return { ok: true, closings };
+  }
+
+  /**
+   * Preview-only accountant backfill reader. This deliberately requires the
+   * database peek surface so reading old closings cannot rewrite live_state or
+   * increment SCCx delivery counters.
+   */
+  async closingHistoryReadOnly() {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    if (!peek) throw new PosError(503, "READ_ONLY", "A read-only closing history source is not available.");
+    const state = await peek();
+    const code = tillCode();
+    const closings = state.closings.flatMap((closing) => {
+      const shift = state.shifts.find((row) => row.id === closing.shift_id);
+      if (shift?.store_code && shift.store_code !== code) return [];
+      const staff = state.staff.find((row) => row.staff_uid === shift?.staff_uid);
+      return [{
+        store_code: code,
+        shift_id: shift?.sccx_shift_id ?? closing.shift_id,
+        internal_shift_id: closing.shift_id,
+        staff_name: staff?.display_name ?? staff?.pos_id ?? shift?.staff_uid ?? "Staff",
+        started_at: shift?.started_at ?? null,
+        ended_at: shift?.ended_at ?? closing.created_at,
+        closing,
+      }];
     });
+    return { ok: true as const, store: code, closings };
+  }
+
+  /** Read-only. Does not count an SCCx poll and does not change the till. */
+  async closingSummary(sccxShiftId: string) {
+    const peek = (this.db as { peek?: () => Promise<State> }).peek;
+    const state = peek ? await peek() : await this.db.transaction(async (tx) => tx.state);
+    const view = closingSummaryView(state, sccxShiftId, tillCode());
+    if (!view) throw new PosError(404, "CLOSING", "Closing was not found.");
+    return view;
   }
 
   async ackClosedShift(sccxShiftId: string, input: { key: string }) {
@@ -3600,7 +5698,7 @@ export class PosService {
         }
         if (!staff.active) {
           for (const shift of tx.state.shifts.filter((row) => row.staff_uid === staff!.staff_uid && row.status !== "ENDED")) {
-            const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+            const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
             finishShift(tx.state, shift, "UNLINKED", at, closing);
           }
         }
@@ -3628,12 +5726,13 @@ export class PosService {
         else if (typeof raw.price === "number") price = Math.round(raw.price * 100);
         let product = tx.state.products.find((item) => item.sku === sku);
         if (!product) {
-          product = { sku, sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
+          product = { sku, thc_flag: defaultThcCatalogFlag({ sku, name, category }), sku_sort: skuSortKey(sku), name, category, default_price_cents: price ?? 0, image_url: image, setb_active: active, synced_at: at, created_at: at };
           tx.state.products.push(product);
           tx.state.store_products.push({ store_code: tillCode(), sku, enabled: active, price_override_cents: null, created_at: at, updated_at: at });
         } else {
           product.name = name;
           product.category = category;
+          product.thc_flag = defaultThcCatalogFlag({ sku, name, category });
           product.setb_active = active;
           if (price != null) product.default_price_cents = price;
           if (image != null) product.image_url = image;
@@ -3915,7 +6014,7 @@ export class PosService {
       if (!shift) throw new PosError(404, "SHIFT", "Shift was not found.");
       const at = iso(now);
       if (shift.status !== "ENDED") {
-        const closing = buildClosing(tx.state, shift, noCountLines(tx.state), true, at);
+        const closing = buildClosing(tx.state, shift, noCountLines(tx.state, shift), true, at);
         finishShift(tx.state, shift, "ADMIN", at, closing);
       }
       const result = { ok: true, status: shift.status };
@@ -3972,7 +6071,7 @@ export class PosService {
         row.qty_received = Math.abs(entry.qty_delta);
         row.variance_reason = "LINKED_TO_ADJUSTMENT";
       }
-      enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(row, "", "admin"), at);
+      enqueue(tx.state, "S_Receipts", `R-${row.kitchen_row_id}`, receiptPayload(tx.state, row, "", "admin"), at);
       const result = { ok: true, qty: qtyOf(tx.state, row.sku), unchanged: qtyOf(tx.state, row.sku) === before, status: row.status };
       remember(tx.state, "link_adjustment", input.key, body, result, now, this.deps.secrets.admin);
       return result;
@@ -3983,7 +6082,7 @@ export class PosService {
     return this.db.transaction(async (tx) => {
       const now = this.now();
       requireAdmin(tx.state, adminToken, now);
-      const oldest = tx.state.outbox.filter((row) => row.status === "queued").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
+      const oldest = tx.state.outbox.filter((row) => row.status !== "sent").map((row) => Date.parse(row.created_at)).sort((a, b) => a - b)[0];
       const closings = tx.state.closings.flatMap((closing) => {
         const shift = tx.state.shifts.find((row) => row.id === closing.shift_id);
         if (!shift?.ended_at) return [];
@@ -4005,7 +6104,17 @@ export class PosService {
         sheet_sync_delayed: oldest != null && now.getTime() - oldest >= SHEET_DELAY_MS,
         sheet_alert: oldest != null && now.getTime() - oldest >= SHEET_ALERT_MS,
         sccx_not_acked: closings.some((row) => row.late),
-        outbox: tx.state.outbox.map((row) => ({ id: row.id, tab: row.tab, row_id: row.row_id, status: row.status, attempts: row.attempts, last_error: row.last_error })),
+        outbox: tx.state.outbox.map((row) => ({
+          id: row.id,
+          tab: row.tab,
+          row_id: row.row_id,
+          status: row.status,
+          attempts: row.attempts,
+          last_error: row.last_error,
+          last_attempt_at: row.last_attempt_at ?? null,
+          next_attempt_at: row.next_attempt_at,
+          lease_expires_at: row.lease_expires_at ?? null,
+        })),
         closings,
         shifts: tx.state.shifts.map((shift) => ({
           id: shift.id,

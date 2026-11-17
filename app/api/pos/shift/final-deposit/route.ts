@@ -10,7 +10,8 @@ export async function POST(request: Request) {
     const service = await getService();
     await beginDemoRequest(service);
     try {
-      return json(await service.saveFinalDeposit(await staffToken(), { amount_cents: Number(body.amount_cents) }));
+      const float = body.float_cents == null || body.float_cents === "" ? undefined : Number(body.float_cents);
+      return json(await service.saveFinalDeposit(await staffToken(), { amount_cents: Number(body.amount_cents), float_cents: float }));
     } finally {
       await endDemoRequest(service);
     }

@@ -1,6 +1,6 @@
 import styles from "./till.module.css";
 
-export type OffLine = { sku: string; text: string; off: number };
+export type OffLine = { sku: string; text: string; off: number; cents?: number };
 
 /** One SKU per row. Left is `#200 5g`. Right is the signed amount, red when short and green when over. */
 export default function SkuOffList({ lines, testId }: { lines: OffLine[]; testId?: string }) {

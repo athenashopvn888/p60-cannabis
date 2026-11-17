@@ -1,11 +1,14 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { lockedStore } from "./singleStore.ts";
 import { PNY01_STORE, type StoreProfile } from "./storeProfile.ts";
 
 const current = new AsyncLocalStorage<StoreProfile>();
 
-/** PNY01 when a request did not choose a store. */
+/** A one-store site ignores the other store. p60cannabis.com is unchanged when STORE_CODE is unset. */
 export function currentStore(): StoreProfile {
-  return current.getStore() ?? PNY01_STORE;
+  // Explicit route scope wins so one central deployment can serve the isolated
+  // ACD01 till without changing the deployment's default PNY01/PNYS store.
+  return current.getStore() ?? lockedStore() ?? PNY01_STORE;
 }
 
 export function runStore<T>(store: StoreProfile, fn: () => T): T {

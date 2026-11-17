@@ -40,7 +40,8 @@ export type StaffTicket = {
   shift: string;
   staff: string;
   exp: number;
-  demo: true;
+  demo: boolean;
+  kind?: "demo" | "kitchen";
   gate?: "pos" | "kitchen";
 };
 
@@ -60,7 +61,9 @@ export function readStaffSession(token: string, secret: string, nowMs: number): 
   if (!safeEqual(sig, expected)) return null;
   try {
     const ticket = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as StaffTicket;
-    if (ticket.v !== 1 || ticket.demo !== true || !ticket.shift || !ticket.exp) return null;
+    if (ticket.v !== 1 || typeof ticket.demo !== "boolean" || !ticket.shift || !ticket.exp) return null;
+    if (ticket.kind === "kitchen" && ticket.gate !== "kitchen") return null;
+    if (ticket.kind !== "kitchen" && ticket.demo !== true) return null;
     if (ticket.exp * 1000 <= nowMs) return null;
     return ticket;
   } catch {
