@@ -18,7 +18,7 @@ test("V2.1 tier owners use Tier Name + Weed and direct canonical links", async (
     read("app/[tier]/page.tsx"),
     read("app/components/Navbar.tsx"),
     read("app/components/Footer.tsx"),
-    read("app/page.tsx"),
+    read("app/HomePage.tsx"),
     read("app/sitemap.ts"),
     read("next.config.ts"),
   ]);
@@ -44,7 +44,7 @@ test("qualified Weed Delivery has one canonical owner and a direct legacy redire
     read("app/delivery/DeliveryCatalog.tsx"),
     read("app/components/Navbar.tsx"),
     read("app/components/Footer.tsx"),
-    read("app/page.tsx"),
+    read("app/HomePage.tsx"),
     read("app/layout.tsx"),
     read("app/sitemap.ts"),
     read("next.config.ts"),
@@ -68,7 +68,7 @@ test("Nicotine Vape and THC Vape remain separate without moving routes", async (
     read("app/lib/products.ts"),
     read("app/components/Navbar.tsx"),
     read("app/components/Footer.tsx"),
-    read("app/page.tsx"),
+    read("app/HomePage.tsx"),
     read("app/lib/seoPages.ts"),
   ]);
 
@@ -106,7 +106,7 @@ test("Weed resource family owns weed-bearing paths and legacy paths redirect onc
 test("protected owner and volatile public-copy corrections remain bounded", async () => {
   const [owner, home, root] = await Promise.all([
     read("app/components/GBPLandingPage.tsx"),
-    read("app/page.tsx"),
+    read("app/HomePage.tsx"),
     read("app/layout.tsx"),
   ]);
 
@@ -127,7 +127,7 @@ test("post-live cleanup normalizes the broad canonical and removes audited publi
     read("app/lib/products.ts"),
   ]);
 
-  assert(ownerPage.includes('title: { absolute: "Weed Dispensary York | P60 Cannabis" }'));
+  assert(ownerPage.includes('title: { absolute: "Weed Dispensary York | P60 Cannabis | Dispensary near me" }'));
   assert(ownerPage.includes('canonical: "https://www.p60cannabis.com/weed-dispensary-york"'));
   assert(!ownerPage.includes('${gbpLocation.slug}/`'));
 

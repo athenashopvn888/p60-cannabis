@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const home = readFileSync("app/page.tsx", "utf8");
+const home = readFileSync("app/HomePage.tsx", "utf8");
 const homeCss = readFileSync("app/page.module.css", "utf8");
 const landing = readFileSync("app/components/GBPLandingPage.tsx", "utf8");
 const landingCss = readFileSync("app/components/GBPLandingPage.module.css", "utf8");

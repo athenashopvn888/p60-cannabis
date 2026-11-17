@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { HOME_DELIVERY_CARDS, HOME_DELIVERY_FAQS, HOME_DELIVERY_HREF, HOME_MENU_HREF, HOME_TITLE } from "../app/lib/homeDelivery.ts";
+import { HOME_DELIVERY_CARDS, HOME_DELIVERY_FAQS, HOME_DELIVERY_HREF, HOME_DOC_TITLE, HOME_MENU_HREF, HOME_TITLE, ROOT_INHERITED_TITLE } from "../app/lib/homeDelivery.ts";
 
-const home = fs.readFileSync("app/page.tsx", "utf8");
+const home = fs.readFileSync("app/HomePage.tsx", "utf8");
+const homeMeta = fs.readFileSync("app/page.tsx", "utf8");
 const navbar = fs.readFileSync("app/components/Navbar.tsx", "utf8");
 const navbarCss = fs.readFileSync("app/components/Navbar.module.css", "utf8");
 
 test("locked Cohort B title and paths", () => {
   assert.equal(HOME_TITLE, "P60 Cannabis Dispensary Weed Delivery");
+  assert.equal(HOME_DOC_TITLE, "P60 Cannabis Dispensary near me | Weed Delivery | Weston Rd, York");
+  assert.equal(ROOT_INHERITED_TITLE, "P60 Cannabis Dispensary Weed Delivery | Weston Rd, York");
+  assert.match(homeMeta, /title: \{ absolute: HOME_DOC_TITLE \}/);
   assert.equal(HOME_TITLE.match(/Dispensary/g)?.length, 1);
   assert.match(home, /alt="P60 Cannabis Dispensary Weed Delivery"/);
   assert.doesNotMatch(HOME_TITLE, /Cannabis Delivery/);

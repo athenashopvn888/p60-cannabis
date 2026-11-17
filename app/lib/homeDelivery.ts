@@ -26,5 +26,8 @@ export const HOME_DELIVERY_FAQS = [
   { q: "Is the delivery information limited to York?", a: "This homepage describes the York delivery context only. The current delivery page confirms whether a specific address can be served." },
 ] as const;
 
-// Document <title> only (exact Google name | area). H1 keeps HOME_TITLE.
-export const HOME_DOC_TITLE = "P60 Cannabis Dispensary Weed Delivery | Weston Rd, York";
+// Document <title> for `/` only. H1 keeps HOME_TITLE.
+export const HOME_DOC_TITLE = "P60 Cannabis Dispensary near me | Weed Delivery | Weston Rd, York";
+
+// Previous homepage document title. Root fallback and inherited og:title / twitter:title.
+export const ROOT_INHERITED_TITLE = "P60 Cannabis Dispensary Weed Delivery | Weston Rd, York";
