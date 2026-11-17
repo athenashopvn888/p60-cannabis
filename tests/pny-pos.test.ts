@@ -133,8 +133,9 @@ async function rejects(run: () => Promise<unknown>, code: string) {
   });
 }
 
-async function readyTill(stock = { "1001": 2, "1002": 5 }) {
+async function readyTill(stock = { "1001": 2, "1002": 5 }, openingVerify = false) {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: openingVerify };
   await h.svc.syncSetb([
     { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
     { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
@@ -166,7 +167,17 @@ async function submitClosingValues(svc: PosService, token: string, values: Recor
       counted_qty: values[line.sku] ?? line.system_qty,
     });
   }
-  await svc.submitClosingCount(token);
+  try {
+    await svc.submitClosingCount(token);
+  } catch (error) {
+    if (!(error instanceof PosError) || error.code !== "COUNT_RECOUNT_REQUIRED") throw error;
+    const recount = (error.details.recount_lines ?? []) as { sku: string }[];
+    for (const line of recount) {
+      const first = view.close_lines.find((row: { sku: string }) => row.sku === line.sku);
+      await svc.saveClosingCount(token, { sku: line.sku, counted_qty: values[line.sku] ?? first.system_qty });
+    }
+    await svc.submitClosingCount(token);
+  }
 }
 
 function qty(db: MemoryDb, sku: string) {
@@ -621,6 +632,7 @@ test("16. editing an imported kitchen qty does not change PNY stock and raises a
 
 test("17. sales, deposits and counts succeed while the sheet is down and the outbox catches up once", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1500, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "ob", sku: "1001", qty: 4 });
@@ -1502,6 +1514,8 @@ test("PNYS post-close PIN is closing-only, versions a redo, and applies stock di
     await h.svc.state(active.token);
     await h.svc.startClosingCount(active.token);
     await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
+    await rejects(() => h.svc.submitClosingCount(active.token), "COUNT_RECOUNT_REQUIRED");
+    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
     await h.svc.submitClosingCount(active.token);
     await h.svc.endShiftFromPos(active.token, { key: "pnys-close-end", lines: [{ sku: "240", counted_qty: 1 }], final_deposit_cents: 0, float_cents: 1000 });
     assert.equal(qty(h.db, "240"), 1);
@@ -2115,6 +2129,26 @@ test("Manager opening-count policy is per store, audited, next-shift only, and k
   assert.equal((await runStore(PNYS_STORE, () => svc.managerState(manager.token))).opening_policy.opening_count_required, true);
 });
 
+test("Manager Opening count OFF suppresses the staff verification count without blocking sales", async () => {
+  const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: false };
+  await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
+  const admin = await h.svc.adminLogin(secrets.admin);
+  await h.svc.openingBalance(admin.token, { key: "opening-off-stock", sku: "1001", qty: 2 });
+  await h.svc.importRoster({ key: "opening-off-roster", staff: [{ staff_uid: "staff-off", pos_id: "OFF1", display_name: "Off Staff", active: true }] });
+  const started = await h.svc.startShift({ key: "opening-off-start", store: "PNY01", staff_ref: "staff-off", shift_id: "opening-off-shift" });
+  const login = await h.svc.login(String(started.pin), "10.7.4.9");
+  await h.svc.answerWeedInStore(login.token, true);
+  const view = await h.svc.state(login.token);
+  const shift = h.db.state.shifts.find((row) => row.id === started.shift_id)!;
+  assert.equal(view.can_sell, true);
+  assert.equal(view.phase, "sell");
+  assert.equal(view.verify.show_banner, false);
+  assert.equal(view.verify.total, 0);
+  assert.deepEqual(view.verify.lines, []);
+  assert.equal(shift.verify_opened_at ?? null, null);
+});
+
 test("Manager mobile UI exposes confirmed opening-count control and keeps closing mandatory", () => {
   const app = readFileSync("app/pos/manager/ManagerApp.tsx", "utf8");
   assert.match(app, /data-testid="manager-opening-policy"/);
@@ -2443,6 +2477,8 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
   assert.equal(draft.final_deposit_cents, 1000);
   assert.equal(draft.totals.cash_on_hand_cents, 1500);
+  await rejects(() => resumed.submitClosingCount(login.token), "COUNT_RECOUNT_REQUIRED");
+  await resumed.saveClosingCount(login.token, { sku: "1001", counted_qty: 0 });
   await resumed.submitClosingCount(login.token);
 
   const ended = await resumed.endShiftFromPos(login.token, {
@@ -2884,7 +2920,7 @@ test("verify count order, size label, and the staff discrepancy row", () => {
 });
 
 test("sell 2 then verify-count the remainder is 0, and a later sale does not change it", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 5 });
+  const h = await readyTill({ "1001": 10, "1002": 5 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -2938,7 +2974,7 @@ test("sell 2 then verify-count the remainder is 0, and a later sale does not cha
 });
 
 test("moving between SKUs keeps blanks open, and Submit accepts them without changing stock", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 });
+  const h = await readyTill({ "1001": 10, "1002": 5, "1003": 2 }, true);
   await h.svc.syncSetb([
     { sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true },
     { sku: "1002", name: "Gummy", category: "Edible", price_cents: 500, active: true },
@@ -2969,7 +3005,7 @@ test("moving between SKUs keeps blanks open, and Submit accepts them without cha
 });
 
 test("reading state leaves an in-progress verify draft and the deadline alone", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.ok(shift);
   const opened = shift.verify_opened_at;
@@ -3001,7 +3037,7 @@ test("reading state leaves an in-progress verify draft and the deadline alone", 
 });
 
 test("undoing a submitted verify restores pre-count stock and leaves the deadline", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -3141,7 +3177,7 @@ test("voiding the goose carton sale leaves the other sales and deposits", async 
 });
 
 test("restarting the verify deadline changes only the clock", async () => {
-  const h = await readyTill({ "1001": 4, "1002": 2 });
+  const h = await readyTill({ "1001": 4, "1002": 2 }, true);
   const shift = h.db.state.shifts.find((row) => row.id === h.shiftId || row.sccx_shift_id === h.shiftId);
   assert.ok(shift);
   shift.verify_opened_at = "2026-11-04T17:38:18.755Z";
@@ -3165,7 +3201,7 @@ test("restarting the verify deadline changes only the clock", async () => {
 });
 
 test("a count on zero stock is flagged and does not invent quantity", async () => {
-  const h = await readyTill({ "1001": 2, "1002": 0 });
+  const h = await readyTill({ "1001": 2, "1002": 0 }, true);
   const savedQty = qty(h.db, "1002");
   await h.svc.saveOpeningCount(h.token, { sku: "1002", counted_qty: 3 });
   assert.equal(qty(h.db, "1002"), savedQty);
@@ -3176,7 +3212,7 @@ test("a count on zero stock is flagged and does not invent quantity", async () =
 });
 
 test("after two hours the verify card closes and uncounted SKUs are accepted with no discrepancy", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -3235,7 +3271,7 @@ test("after two hours the verify card closes and uncounted SKUs are accepted wit
 });
 
 test("verify expected uses only received refills, and a short receipt is a refill issue", async () => {
-  const h = await readyTill({ "1001": 10, "1002": 4 });
+  const h = await readyTill({ "1001": 10, "1002": 4 }, true);
   h.db.state.closings.push({
     shift_id: "previous",
     sales_total_cents: 0,
@@ -3293,6 +3329,7 @@ test("verify expected uses only received refills, and a short receipt is a refil
 
 test("master login does not start the verify window and cannot change the shift", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "1001", name: "Flower", category: "Flower", price_cents: 1000, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "ob-master", sku: "1001", qty: 2 });
@@ -3819,6 +3856,8 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.deepEqual(open.closing?.lines?.map((line) => line.sku), open.close_lines?.map((line) => line.sku));
   await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 4 });
   await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
+  await rejects(() => h.svc.submitClosingCount(h.token), "COUNT_RECOUNT_REQUIRED");
+  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
   await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === shift.id);
   assert.equal(draft?.closing_submitted_at != null, true);
@@ -3928,8 +3967,29 @@ test("closing count requires every SKU and explicit confirmation records blanks 
     "COUNT_REQUIRED",
   );
 
-  const submitted = await h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true });
-  assert.deepEqual(submitted.recorded_as_zero, ["1002"]);
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true }),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_RECOUNT_REQUIRED");
+      assert.deepEqual(error.details.recount_lines, [{ sku: "1002", text: "#1002 each" }]);
+      assert.equal(JSON.stringify(error.details).includes("expected"), false);
+      assert.equal(JSON.stringify(error.details).includes("counted"), false);
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => h.svc.submitClosingCount(h.token),
+    (error: unknown) => {
+      assert.ok(error instanceof PosError);
+      assert.equal(error.code, "COUNT_RECOUNT_INCOMPLETE");
+      assert.equal(JSON.stringify(error.details).includes("expected"), false);
+      assert.equal(JSON.stringify(error.details).includes("counted"), false);
+      return true;
+    },
+  );
+  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 0 });
+  await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
   const zero = draft?.counts.find((row) => row.sku === "1002");
   assert.equal(zero?.counted_qty, 0);
@@ -4050,6 +4110,7 @@ test("PNY01 NO WEED hides flagged SKUs, preserves their stock through refills, a
   assert.equal(defaultThcCatalogFlag({ sku: "1082", name: "New nicotine device", category: "Vape Pens" }), false);
 
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([
     { sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true },
     { sku: "710", name: "Raw paper", category: "Add Ons", price_cents: 250, active: true },
@@ -4174,6 +4235,7 @@ test("PNY01 staff cannot change WEED after the closing count starts", async () =
 
 test("a legacy PNY01 shift without the WEED fields still shows THC", async () => {
   const h = harness();
+  h.db.state.stores[0] = { ...h.db.state.stores[0]!, opening_count_required: true };
   await h.svc.syncSetb([{ sku: "188", name: "Pink Animal pre-roll", category: "Add Ons", price_cents: 500, active: true }]);
   const admin = await h.svc.adminLogin(secrets.admin);
   await h.svc.openingBalance(admin.token, { key: "legacy-weed-stock", sku: "188", qty: 2 });

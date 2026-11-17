@@ -867,6 +867,13 @@ function startStaffVerify(shift: ShiftRow, at: string) {
   shift.verify_release = VERIFY_RELEASE;
 }
 
+/** Manager Opening count ON means the non-blocking verification count shown over the open till. */
+function startOpeningVerification(state: State, shift: ShiftRow, at: string) {
+  if (!openingCountRequired(state, shift)) return;
+  startStaffVerify(shift, at);
+  if (!shift.opening_confirmed_at) shift.opening_confirmed_at = at;
+}
+
 function denyMaster(session: { master?: boolean }) {
   if (session.master) throw new PosError(403, "MASTER_VIEW", "Master login is view-only. Use the staff PIN to record the shift.");
 }
@@ -931,6 +938,28 @@ function pricedOff(state: State, sku: string, off: number, raw?: Map<string, num
 }
 
 function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
+  if (!openingCountRequired(state, shift)) {
+    return {
+      verify: {
+        show_banner: false,
+        deadline_at: null,
+        waiting: false,
+        cleared: 0,
+        total: 0,
+        reveal: false,
+        submitted: true,
+        lines: [],
+        opening_off: 0,
+        opening_lines: [],
+      },
+      stock_check: {
+        opening: { offCount: 0, ready: true, lines: [] },
+        closing: { offCount: 0, ready: false, lines: [] },
+        refills: refillIssues(state, shift.id, raw),
+      },
+      verify_admin: demo ? { opening: [], closing: [] } : undefined,
+    };
+  }
   if (lock) lockUnverified(state, shift, actor, now);
   const skus = verifySkuList(state, shift.id);
   const draft = draftsOf(state).find((row) => row.shift_id === shift.id);
@@ -2179,7 +2208,7 @@ export class PosService {
           demo: true,
           gate: "pos",
         }, this.deps.secrets.session);
-        if (!weedAnswerRequired(shift)) startStaffVerify(shift, at);
+        if (!weedAnswerRequired(shift)) startOpeningVerification(tx.state, shift, at);
         tx.state.sessions.push({
           id: randomUUID(),
           shift_id: shift.id,
@@ -2268,7 +2297,7 @@ export class PosService {
         };
       }
       shift.pin_failed_attempts = 0;
-      if (!master && !weedAnswerRequired(shift)) startStaffVerify(shift, at);
+      if (!master && !weedAnswerRequired(shift)) startOpeningVerification(tx.state, shift, at);
       const token = newToken();
       tx.state.sessions.push({
         id: randomUUID(),
@@ -2392,7 +2421,7 @@ export class PosService {
       shift.weed_answered_at = at;
       shift.weed_answered_by = actor;
       if (initialAnswer) {
-        startStaffVerify(shift, at);
+        startOpeningVerification(tx.state, shift, at);
         openTillWithoutCount(tx.state, shift, at);
       }
       audit(tx.state, initialAnswer ? "WEED_SHIFT_ANSWER" : "WEED_SHIFT_TOGGLE", "shift", shift.id, actor, {
@@ -4352,6 +4381,8 @@ export class PosService {
             opening_counts: draft.opening_counts ?? [],
             closing_started_at: draft.closing_started_at ?? null,
             closing_submitted_at: draft.closing_submitted_at ?? null,
+            closing_recount_skus: draft.closing_recount_skus ?? [],
+            closing_recount_started_at: draft.closing_recount_started_at ?? null,
             final_deposit_cents: draft.final_deposit_cents ?? null,
             final_deposit_code: draft.final_deposit_code ?? null,
             updated_at: draft.updated_at || iso(this.now()),
@@ -4369,6 +4400,8 @@ export class PosService {
       opening_counts: row.opening_counts ?? [],
       closing_started_at: row.closing_started_at ?? null,
       closing_submitted_at: row.closing_submitted_at ?? null,
+      closing_recount_skus: row.closing_recount_skus ?? [],
+      closing_recount_started_at: row.closing_recount_started_at ?? null,
       final_deposit_cents: row.final_deposit_cents,
       final_deposit_code: row.final_deposit_code ?? null,
       updated_at: row.updated_at,
@@ -4405,12 +4438,22 @@ export class PosService {
         });
       }
       const existing = draft.counts.find((row) => row.sku === sku);
+      const wasRecount = draft.closing_recount_skus?.includes(sku) === true;
+      const previousCount = existing?.counted_qty;
       if (existing) {
         existing.counted_qty = input.counted_qty;
         existing.edited_at = at;
         existing.expected_qty = expected;
         existing.accepted_as_is = false;
       } else draft.counts.push({ sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
+      if (wasRecount) {
+        draft.closing_recount_skus = (draft.closing_recount_skus ?? []).filter((pending) => pending !== sku);
+        audit(tx.state, "CLOSING_RECOUNT_SAVED", "sku", sku, shift.staff_uid, {
+          shift_id: shift.sccx_shift_id,
+          before: previousCount ?? null,
+          after: input.counted_qty,
+        }, at);
+      }
       draft.updated_at = iso(this.now());
       const updatedPlan = shiftClosePlan(tx.state, shift.id);
       const done = updatedPlan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
@@ -4420,14 +4463,14 @@ export class PosService {
 
   /** Finish the closing count. Every SKU must be typed; an explicit confirmation records every blank as zero. */
   async submitClosingCount(token: string, input: { confirm_blanks_zero?: boolean } = {}) {
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const now = this.now();
       const { shift, session } = this.session(tx.state, token, now);
       denyMaster(session);
       requireWeedAnswer(shift);
       if (shift.status !== "ACTIVE" && shift.status !== "CLOSING") throw new PosError(409, "SHIFT_NOT_ACTIVE", "This shift cannot be closed.");
       const draft = ensureDraft(tx.state, shift.id, now);
-      if (draft.closing_submitted_at) return { ok: true, closing_submitted_at: draft.closing_submitted_at };
+      if (draft.closing_submitted_at) return { ok: true as const, closing_submitted_at: draft.closing_submitted_at };
       const at = iso(now);
       if (!draft.closing_started_at) draft.closing_started_at = at;
       const plan = shiftClosePlan(tx.state, shift.id);
@@ -4457,10 +4500,36 @@ export class PosService {
           draft.counts.push({ sku, counted_qty: 0, edited_at: at, expected_qty: expected, accepted_as_is: false });
         }
       }
+      if (draft.closing_recount_skus?.length) {
+        const recountLines = draft.closing_recount_skus.map((sku) => ({ sku, text: staffSkuText(sku, sizeLabel(sku, tx.state.products.find((row) => row.sku === sku)?.category, productName(tx.state, sku))) }));
+        return { ok: false as const, code: "COUNT_RECOUNT_INCOMPLETE", error: "Recount every listed SKU once before closing.", details: { recount_lines: recountLines } };
+      }
+      if (!draft.closing_recount_started_at) {
+        const mismatches = plan.filter((line) => {
+          const saved = draft.counts.find((row) => row.sku === line.sku);
+          return saved && saved.counted_qty !== (saved.expected_qty ?? line.expected_qty);
+        });
+        if (mismatches.length) {
+          draft.closing_recount_started_at = at;
+          draft.closing_recount_skus = mismatches.map((line) => line.sku);
+          audit(tx.state, "CLOSING_RECOUNT_REQUIRED", "shift", shift.id, shift.staff_uid, {
+            shift_id: shift.sccx_shift_id,
+            skus: mismatches.map((line) => line.sku),
+            first_counts: mismatches.map((line) => {
+              const saved = draft.counts.find((row) => row.sku === line.sku)!;
+              return { sku: line.sku, counted_qty: saved.counted_qty, expected_qty: saved.expected_qty ?? line.expected_qty };
+            }),
+          }, at);
+          const recountLines = mismatches.map((line) => ({ sku: line.sku, text: staffSkuText(line.sku, sizeLabel(line.sku, tx.state.products.find((row) => row.sku === line.sku)?.category, productName(tx.state, line.sku))) }));
+          return { ok: false as const, code: "COUNT_RECOUNT_REQUIRED", error: "Some stock does not match. Recount only the listed SKUs once.", details: { recount_lines: recountLines } };
+        }
+      }
       draft.closing_submitted_at = at;
       draft.updated_at = at;
-      return { ok: true, closing_submitted_at: at, recorded_as_zero: blankSkus };
+      return { ok: true as const, closing_submitted_at: at, recorded_as_zero: blankSkus };
     });
+    if (!result.ok) throw new PosError(409, result.code, result.error, result.details);
+    return result;
   }
 
   async saveOpeningFloat(token: string, input: { found_cents: number; confirm_adjustment?: boolean }) {

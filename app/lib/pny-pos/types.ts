@@ -385,6 +385,9 @@ export type ClosingDraftRow = {
   /** Set when staff choose Yes on End Shift. Missing means the closing count has not started. */
   closing_started_at?: string | null;
   closing_submitted_at?: string | null;
+  /** SKUs whose first closing count differed and must be physically recounted once. */
+  closing_recount_skus?: string[];
+  closing_recount_started_at?: string | null;
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   /** Cash left in the drawer when this shift closes. Not a deposit. */

@@ -57,6 +57,8 @@ export default function CountCard({
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
+  const [recountLines, setRecountLines] = useState<CountCardLine[] | null>(null);
+  const [recountDrafts, setRecountDrafts] = useState<Record<string, string>>({});
   const knownSkuListId = useId();
 
   useEffect(() => {
@@ -138,7 +140,42 @@ export default function CountCard({
       }
       await onSubmit?.(false);
     } catch (err) {
+      const failure = err as Error & { code?: string; details?: { recount_lines?: unknown } };
+      if (failure.code === "COUNT_RECOUNT_REQUIRED" || failure.code === "COUNT_RECOUNT_INCOMPLETE") {
+        const rows = Array.isArray(failure.details?.recount_lines)
+          ? failure.details.recount_lines.flatMap((row) => {
+              if (!row || typeof row !== "object") return [];
+              const candidate = row as { sku?: unknown; text?: unknown };
+              if (typeof candidate.sku !== "string" || typeof candidate.text !== "string") return [];
+              return [{ sku: candidate.sku, text: candidate.text, counted_qty: null }];
+            })
+          : [];
+        if (rows.length) {
+          setRecountLines(rows);
+          setRecountDrafts({});
+          setLocalError("");
+          return;
+        }
+      }
       setLocalError(err instanceof Error ? err.message : "Count was not submitted");
+    }
+  }
+
+  async function submitRecount() {
+    if (!recountLines) return;
+    const missing = recountLines.filter((line) => !/^\d+$/.test(recountDrafts[line.sku] ?? ""));
+    if (missing.length) {
+      setLocalError(`Recount all ${recountLines.length} listed SKUs.`);
+      return;
+    }
+    setLocalError("");
+    try {
+      for (const line of recountLines) await onSave(line.sku, Number(recountDrafts[line.sku]));
+      setRecountLines(null);
+      setRecountDrafts({});
+      await onSubmit?.(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Recount was not saved");
     }
   }
 
@@ -287,6 +324,28 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const recountModal = recountLines ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="recount-title" data-testid="recount-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="recount-title">Please recount these SKUs</h2>
+        <p>Please recount these SKUs to make sure the stock count is accurate.</p>
+        <div className={styles.countList} data-testid="recount-list">
+          {recountLines.map((line) => (
+            <label key={line.sku} className={styles.countListRow}>
+              <strong>{line.text}</strong>
+              <input
+                inputMode="numeric"
+                aria-label={`Recount ${line.text}`}
+                value={recountDrafts[line.sku] ?? ""}
+                onChange={(event) => setRecountDrafts((currentDrafts) => ({ ...currentDrafts, [line.sku]: event.target.value.replace(/[^\d]/g, "") }))}
+              />
+            </label>
+          ))}
+        </div>
+        <button className={styles.primary} type="button" disabled={busy} data-testid="recount-submit" onClick={() => void submitRecount()}>Save updated counts</button>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
@@ -296,6 +355,7 @@ export default function CountCard({
         {error}
         {ruleModal}
         {blankModal}
+        {recountModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -333,6 +393,7 @@ export default function CountCard({
       {error}
       {ruleModal}
       {blankModal}
+      {recountModal}
     </div>
   );
 }
