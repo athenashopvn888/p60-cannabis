@@ -395,6 +395,10 @@ export type ClosingDraftRow = {
   /** SKUs whose first closing count differed and must be physically recounted once. */
   closing_recount_skus?: string[];
   closing_recount_started_at?: string | null;
+  /** Number of mismatched entries already rejected for each closing SKU. */
+  closing_count_attempts?: Record<string, number>;
+  /** SKUs accepted after the third mismatched physical count. */
+  closing_variance_reviewed_skus?: string[];
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   /** Cash left in the drawer when this shift closes. Not a deposit. */

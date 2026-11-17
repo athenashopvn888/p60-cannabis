@@ -62,6 +62,8 @@ export default function CountCard({
   const [recountLines, setRecountLines] = useState<CountCardLine[] | null>(() => initialRecountLines.length ? initialRecountLines : null);
   const [recountDrafts, setRecountDrafts] = useState<Record<string, string>>({});
   const [missingSkuPrompt, setMissingSkuPrompt] = useState(false);
+  const [missingSkuAsked, setMissingSkuAsked] = useState(false);
+  const [confirmBlanksAfterMissing, setConfirmBlanksAfterMissing] = useState(false);
   const knownSkuListId = useId();
 
   useEffect(() => {
@@ -97,6 +99,15 @@ export default function CountCard({
       if (/^\d+$/.test(qty)) await onSave(current.sku, Number(qty));
       if (index < lines.length - 1) setIndex(index + 1);
     } catch (err) {
+      const failure = err as Error & { code?: string };
+      if (failure.code === "COUNT_RETRY_REQUIRED") {
+        setQty("");
+        setDrafts((currentDrafts) => {
+          const next = { ...currentDrafts };
+          delete next[current.sku];
+          return next;
+        });
+      }
       setLocalError(err instanceof Error ? err.message : "Count was not saved");
     }
   }
@@ -127,6 +138,18 @@ export default function CountCard({
       try {
         await onSave(line.sku, counted);
       } catch (err) {
+        const failure = err as Error & { code?: string };
+        if (failure.code === "COUNT_RETRY_REQUIRED") {
+          setDrafts((currentDrafts) => {
+            const next = { ...currentDrafts };
+            delete next[line.sku];
+            return next;
+          });
+          const nextIndex = lines.findIndex((row) => row.sku === line.sku);
+          if (nextIndex >= 0) setIndex(nextIndex);
+          setExpanded(false);
+          setQty("");
+        }
         setLocalError(err instanceof Error ? err.message : "Count was not saved");
         throw err;
       }
@@ -147,6 +170,11 @@ export default function CountCard({
       const blanks = await saveTypedCounts();
       if (purpose === "closing" && blanks.length) {
         setBlankLines(blanks);
+        return;
+      }
+      if (purpose === "closing" && !missingSkuAsked) {
+        setConfirmBlanksAfterMissing(false);
+        setMissingSkuPrompt(true);
         return;
       }
       await onSubmit?.(false);
@@ -192,9 +220,14 @@ export default function CountCard({
 
   async function confirmBlanksAsZero() {
     setLocalError("");
+    setBlankLines(null);
+    if (!missingSkuAsked) {
+      setConfirmBlanksAfterMissing(true);
+      setMissingSkuPrompt(true);
+      return;
+    }
     try {
       await onSubmit?.(true);
-      setBlankLines(null);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Count was not submitted");
     }
@@ -363,8 +396,8 @@ export default function CountCard({
         <h2 id="missing-sku-title">Any SKU not listed?</h2>
         <p>Is there any stock you counted that was missing from the first list?</p>
         <div className={styles.askActions}>
-          <button className={styles.primary} type="button" data-testid="missing-sku-add" onClick={() => { setMissingSkuPrompt(false); openList(); }}>Yes, add SKU</button>
-          <button className={styles.secondary} type="button" disabled={busy} data-testid="missing-sku-none" onClick={() => { setMissingSkuPrompt(false); void onSubmit?.(false); }}>No, continue</button>
+          <button className={styles.primary} type="button" data-testid="missing-sku-add" onClick={() => { setMissingSkuAsked(true); setConfirmBlanksAfterMissing(false); setMissingSkuPrompt(false); openList(); }}>Yes, add SKU</button>
+          <button className={styles.secondary} type="button" disabled={busy} data-testid="missing-sku-none" onClick={() => { setMissingSkuAsked(true); setMissingSkuPrompt(false); void onSubmit?.(confirmBlanksAfterMissing); }}>No, continue</button>
         </div>
       </div>
     </div>

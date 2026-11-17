@@ -4587,6 +4587,8 @@ export class PosService {
             closing_submitted_at: draft.closing_submitted_at ?? null,
             closing_recount_skus: draft.closing_recount_skus ?? [],
             closing_recount_started_at: draft.closing_recount_started_at ?? null,
+            closing_count_attempts: draft.closing_count_attempts ?? {},
+            closing_variance_reviewed_skus: draft.closing_variance_reviewed_skus ?? [],
             final_deposit_cents: draft.final_deposit_cents ?? null,
             final_deposit_code: draft.final_deposit_code ?? null,
             updated_at: draft.updated_at || iso(this.now()),
@@ -4606,6 +4608,8 @@ export class PosService {
       closing_submitted_at: row.closing_submitted_at ?? null,
       closing_recount_skus: row.closing_recount_skus ?? [],
       closing_recount_started_at: row.closing_recount_started_at ?? null,
+      closing_count_attempts: row.closing_count_attempts ?? {},
+      closing_variance_reviewed_skus: row.closing_variance_reviewed_skus ?? [],
       final_deposit_cents: row.final_deposit_cents,
       final_deposit_code: row.final_deposit_code ?? null,
       updated_at: row.updated_at,
@@ -4613,7 +4617,7 @@ export class PosService {
   }
 
   async saveClosingCount(token: string, input: { sku: string; counted_qty: number; confirm_unusual?: boolean }) {
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const { shift, session } = this.session(tx.state, token, this.now());
       denyMaster(session);
       requireWeedAnswer(shift);
@@ -4633,16 +4637,28 @@ export class PosService {
       if (draft.closing_submitted_at) throw new PosError(409, "COUNT_CLOSED", "The closing count is already submitted.");
       const at = iso(this.now());
       const expected = expectedAtSubmit(tx.state, shift, sku, this.now().getTime());
-      const skuNumber = Number.parseInt(sku, 10);
-      const unusual = Math.abs(input.counted_qty - expected) >= 10 || (Number.isFinite(skuNumber) && input.counted_qty === skuNumber);
-      if (unusual && !input.confirm_unusual) {
-        throw new PosError(409, "COUNT_CONFIRM_REQUIRED", "This count is unusual. Check the bag and confirm the number before saving.", {
-          sku,
+      const attempts = draft.closing_count_attempts ?? (draft.closing_count_attempts = {});
+      const priorMismatchAttempts = attempts[sku] ?? 0;
+      if (input.counted_qty !== expected && priorMismatchAttempts < 2) {
+        attempts[sku] = priorMismatchAttempts + 1;
+        draft.updated_at = at;
+        // Retire any older submit-time recount state when a shift resumes on the
+        // immediate-feedback workflow.
+        draft.closing_recount_skus = (draft.closing_recount_skus ?? []).filter((row) => row !== sku);
+        audit(tx.state, "CLOSING_COUNT_RETRY_REQUIRED", "sku", sku, shift.staff_uid, {
+          shift_id: shift.sccx_shift_id,
+          attempt: attempts[sku],
           counted_qty: input.counted_qty,
-        });
+          expected_qty: expected,
+        }, at);
+        return {
+          ok: false as const,
+          code: "COUNT_RETRY_REQUIRED",
+          error: "Quantity does not match. Please count this SKU again.",
+          details: { sku, attempts_used: attempts[sku], attempts_remaining: 2 - attempts[sku] },
+        };
       }
       const existing = draft.counts.find((row) => row.sku === sku);
-      const wasRecount = draft.closing_recount_skus?.includes(sku) === true;
       const previousCount = existing?.counted_qty;
       if (existing) {
         existing.counted_qty = input.counted_qty;
@@ -4650,12 +4666,19 @@ export class PosService {
         existing.expected_qty = expected;
         existing.accepted_as_is = false;
       } else draft.counts.push({ sku, counted_qty: input.counted_qty, edited_at: at, expected_qty: expected, accepted_as_is: false });
-      if (wasRecount) {
-        draft.closing_recount_skus = (draft.closing_recount_skus ?? []).filter((pending) => pending !== sku);
-        audit(tx.state, "CLOSING_RECOUNT_SAVED", "sku", sku, shift.staff_uid, {
+      draft.closing_recount_skus = (draft.closing_recount_skus ?? []).filter((pending) => pending !== sku);
+      if (input.counted_qty === expected) {
+        delete attempts[sku];
+      } else {
+        const reviewed = draft.closing_variance_reviewed_skus ?? (draft.closing_variance_reviewed_skus = []);
+        if (!reviewed.includes(sku)) reviewed.push(sku);
+        attempts[sku] = priorMismatchAttempts + 1;
+        audit(tx.state, "CLOSING_VARIANCE_ACCEPTED_AFTER_RECOUNT", "sku", sku, shift.staff_uid, {
           shift_id: shift.sccx_shift_id,
           before: previousCount ?? null,
           after: input.counted_qty,
+          expected_qty: expected,
+          attempt: attempts[sku],
         }, at);
       }
       draft.updated_at = iso(this.now());
@@ -4663,6 +4686,15 @@ export class PosService {
       const done = updatedPlan.filter((line) => draft.counts.some((row) => row.sku === line.sku)).length;
       return { ok: true, done, total: updatedPlan.length };
     });
+    if (result.ok === false) {
+      throw new PosError(
+        409,
+        result.code ?? "COUNT_RETRY_REQUIRED",
+        result.error ?? "Quantity does not match. Please count this SKU again.",
+        result.details ?? {},
+      );
+    }
+    return result;
   }
 
   /** Finish the closing count. Every SKU must be typed; an explicit confirmation records every blank as zero. */
@@ -4704,35 +4736,15 @@ export class PosService {
           draft.counts.push({ sku, counted_qty: 0, edited_at: at, expected_qty: expected, accepted_as_is: false });
         }
       }
-      if (draft.closing_recount_skus?.length) {
-        const recountLines = draft.closing_recount_skus.map((sku) => ({ sku, text: staffSkuText(sku, sizeLabel(sku, tx.state.products.find((row) => row.sku === sku)?.category, productName(tx.state, sku))) }));
-        return { ok: false as const, code: "COUNT_RECOUNT_INCOMPLETE", error: "Recount every listed SKU once before closing.", details: { recount_lines: recountLines } };
-      }
-      if (!draft.closing_recount_started_at) {
-        const mismatches = plan.filter((line) => {
-          const saved = draft.counts.find((row) => row.sku === line.sku);
-          return saved && saved.counted_qty !== (saved.expected_qty ?? line.expected_qty);
-        });
-        if (mismatches.length) {
-          draft.closing_recount_started_at = at;
-          draft.closing_recount_skus = mismatches.map((line) => line.sku);
-          audit(tx.state, "CLOSING_RECOUNT_REQUIRED", "shift", shift.id, shift.staff_uid, {
-            shift_id: shift.sccx_shift_id,
-            skus: mismatches.map((line) => line.sku),
-            first_counts: mismatches.map((line) => {
-              const saved = draft.counts.find((row) => row.sku === line.sku)!;
-              return { sku: line.sku, counted_qty: saved.counted_qty, expected_qty: saved.expected_qty ?? line.expected_qty };
-            }),
-          }, at);
-          const recountLines = mismatches.map((line) => ({ sku: line.sku, text: staffSkuText(line.sku, sizeLabel(line.sku, tx.state.products.find((row) => row.sku === line.sku)?.category, productName(tx.state, line.sku))) }));
-          return { ok: false as const, code: "COUNT_RECOUNT_REQUIRED", error: "Some stock does not match. Recount only the listed SKUs once.", details: { recount_lines: recountLines } };
-        }
-      }
+      // Older builds queued all mismatches for a second pass after Submit.
+      // Immediate per-SKU feedback supersedes that state and prevents a resumed
+      // close from being trapped in the retired bulk-recount screen.
+      draft.closing_recount_skus = [];
+      draft.closing_recount_started_at = null;
       draft.closing_submitted_at = at;
       draft.updated_at = at;
       return { ok: true as const, closing_submitted_at: at, recorded_as_zero: blankSkus };
     });
-    if (!result.ok) throw new PosError(409, result.code, result.error, result.details);
     return result;
   }
 

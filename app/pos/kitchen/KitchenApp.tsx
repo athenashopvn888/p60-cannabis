@@ -34,7 +34,7 @@ const copy = {
     sent: "đã gửi", received: "đã nhận", sentHeading: "Đã gửi hàng bổ sung đến", statusHelp: "Trạng thái: PENDING_CONFIRM. Nhân viên cửa hàng phải xác nhận số lượng đã nhận trước khi tồn kho thay đổi.",
     dashboard: "Trang chính", back: "Quay lại", sendToStore: "Gửi đến cửa hàng", done: "Xong", refillList: "DANH SÁCH BỔ SUNG", totalStock: "TỔNG TỒN KHO", refillTotal: "BỔ SUNG", qtyShort: "SL",
     edit: "Sửa", delete: "Xóa", saveChanges: "Lưu thay đổi", deleteTitle: "Xóa lô bổ sung?", deleteHelp: "Nhân viên cửa hàng sẽ không còn thấy lô này. Tồn kho chưa thay đổi.", deleted: "Đã xóa",
-    scanSheet: "Chụp phiếu", scanTitle: "Kiểm tra dữ liệu từ ảnh", scanHelp: "Có thể chụp nhiều phần của phiếu. Kiểm tra và sửa tất cả SKU, số lượng trước khi dùng. Ảnh không được lưu.", addPhoto: "Thêm ảnh", photosRead: "ảnh đã đọc", useDraft: "Dùng bản nháp", addRow: "Thêm dòng", remove: "Bỏ", check: "Kiểm tra", readingPhoto: "Đang đọc ảnh", noScan: "Không đọc được dòng nào. Chụp lại ảnh rõ hơn hoặc thêm dòng thủ công.",
+    scanSheet: "Chụp phiếu", scanTitle: "Kiểm tra dữ liệu từ ảnh", scanHelp: "Có thể chụp nhiều phần của phiếu. Kiểm tra và sửa tất cả SKU, số lượng trước khi dùng. Ảnh không được lưu.", addPhoto: "Thêm ảnh", photosRead: "ảnh đã đọc", useDraft: "Dùng bản nháp", addRow: "Thêm dòng", remove: "Bỏ", check: "Cần kiểm tra", confirmRow: "Đúng", rowsNeedCheck: "dòng cần kiểm tra. Không thể dùng bản nháp cho đến khi xác nhận.", readingPhoto: "Đang đọc ảnh", noScan: "Không đọc được dòng nào. Chụp lại ảnh rõ hơn hoặc thêm dòng thủ công.",
   },
   en: {
     enterPin: "Enter the Kitchen PIN.", signIn: "Sign in", logout: "Logout", testStore: "TEST STORE",
@@ -47,7 +47,7 @@ const copy = {
     sent: "sent", received: "received", sentHeading: "Refill sent to", statusHelp: "Status: PENDING_CONFIRM. Store staff must confirm the received quantities before stock changes.",
     dashboard: "Dashboard", back: "Back", sendToStore: "Send to store", done: "Done", refillList: "REFILL LIST", totalStock: "TOTAL STOCK", refillTotal: "REFILL", qtyShort: "QTY",
     edit: "Edit", delete: "Delete", saveChanges: "Save changes", deleteTitle: "Delete refill batch?", deleteHelp: "Store staff will no longer see this batch. Stock has not changed.", deleted: "Deleted",
-    scanSheet: "Scan sheet", scanTitle: "Check photo data", scanHelp: "You can photograph the sheet in several sections. Check and edit every SKU and quantity before using the draft. Photos are not stored.", addPhoto: "Add another photo", photosRead: "photos read", useDraft: "Use draft", addRow: "Add row", remove: "Remove", check: "Check", readingPhoto: "Reading photo", noScan: "No rows were read. Take a clearer photo or add rows manually.",
+    scanSheet: "Scan sheet", scanTitle: "Check photo data", scanHelp: "You can photograph the sheet in several sections. Check and edit every SKU and quantity before using the draft. Photos are not stored.", addPhoto: "Add another photo", photosRead: "photos read", useDraft: "Use draft", addRow: "Add row", remove: "Remove", check: "Needs check", confirmRow: "Looks right", rowsNeedCheck: "rows need checking. The draft stays locked until they are confirmed.", readingPhoto: "Reading photo", noScan: "No rows were read. Take a clearer photo or add rows manually.",
   },
 } as const;
 
@@ -78,7 +78,7 @@ async function preprocessRefillPhoto(file: File) {
     analysis.width = Math.max(1, Math.round(bitmap.width * analysisScale));
     analysis.height = Math.max(1, Math.round(bitmap.height * analysisScale));
     const analysisContext = analysis.getContext("2d", { willReadFrequently: true });
-    if (!analysisContext) return file;
+    if (!analysisContext) return [file];
     analysisContext.drawImage(bitmap, 0, 0, analysis.width, analysis.height);
     const pixels = analysisContext.getImageData(0, 0, analysis.width, analysis.height).data;
     let minX = analysis.width, minY = analysis.height, maxX = 0, maxY = 0, found = 0;
@@ -101,7 +101,7 @@ async function preprocessRefillPhoto(file: File) {
     output.width = Math.max(1, Math.round(cropWidth * outputScale));
     output.height = Math.max(1, Math.round(cropHeight * outputScale));
     const context = output.getContext("2d", { willReadFrequently: true });
-    if (!context) return file;
+    if (!context) return [file];
     context.drawImage(bitmap, cropX, cropY, cropWidth, cropHeight, 0, 0, output.width, output.height);
     const image = context.getImageData(0, 0, output.width, output.height);
     for (let index = 0; index < image.data.length; index += 4) {
@@ -110,7 +110,19 @@ async function preprocessRefillPhoto(file: File) {
       image.data[index] = adjusted; image.data[index + 1] = adjusted; image.data[index + 2] = adjusted;
     }
     context.putImageData(image, 0, 0);
-    return await new Promise<Blob>((resolve) => output.toBlob((blob) => resolve(blob ?? file), "image/jpeg", 0.92));
+    const contrast = await new Promise<Blob>((resolve) => output.toBlob((blob) => resolve(blob ?? file), "image/jpeg", 0.92));
+    const binary = document.createElement("canvas");
+    binary.width = output.width; binary.height = output.height;
+    const binaryContext = binary.getContext("2d", { willReadFrequently: true });
+    if (!binaryContext) return [contrast];
+    const binaryImage = context.getImageData(0, 0, output.width, output.height);
+    for (let index = 0; index < binaryImage.data.length; index += 4) {
+      const value = binaryImage.data[index] < 188 ? 0 : 255;
+      binaryImage.data[index] = value; binaryImage.data[index + 1] = value; binaryImage.data[index + 2] = value;
+    }
+    binaryContext.putImageData(binaryImage, 0, 0);
+    const threshold = await new Promise<Blob>((resolve) => binary.toBlob((blob) => resolve(blob ?? contrast), "image/jpeg", 0.95));
+    return [contrast, threshold];
   } finally {
     bitmap.close();
   }
@@ -369,19 +381,30 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     setScreen("scan"); setBusy(true); setError(""); setScanProgress(0);
     let worker: Awaited<ReturnType<(typeof import("tesseract.js"))["createWorker"]>> | null = null;
     try {
-      const { createWorker, OEM } = await import("tesseract.js");
+      const { createWorker, OEM, PSM } = await import("tesseract.js");
       worker = await createWorker("eng", OEM.DEFAULT, { logger: (message) => {
-        if (message.status === "recognizing text") setScanProgress(Math.round(message.progress * 100));
+        if (message.status === "recognizing text") setScanProgress((current) => Math.max(current, Math.round(message.progress * 45)));
       } });
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
       const prepared = await preprocessRefillPhoto(file);
-      const result = await worker.recognize(prepared, { rotateAuto: true }, { text: true, blocks: true });
-      const words = (result.data.words ?? []).map((word) => ({ text: word.text, confidence: word.confidence, bbox: word.bbox })) as OcrWord[];
-      const detected = parseRefillSheetWords(words, allProducts);
+      const combinedWords: OcrWord[] = [];
+      for (const [index, image] of prepared.entries()) {
+        const result = await worker.recognize(image, { rotateAuto: true }, { text: true, blocks: true });
+        const words = (result.data.words ?? []).map((word) => ({ text: word.text, confidence: word.confidence, bbox: word.bbox })) as OcrWord[];
+        combinedWords.push(...words);
+        setScanProgress(45 + Math.round(((index + 1) / prepared.length) * 45));
+      }
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, tessedit_char_whitelist: "0123456789" });
+      const digitResult = await worker.recognize(prepared.at(-1) ?? prepared[0], { rotateAuto: true }, { text: true, blocks: true });
+      combinedWords.push(...(digitResult.data.words ?? []).map((word) => ({ text: word.text, confidence: word.confidence, bbox: word.bbox })) as OcrWord[]);
+      const detected = parseRefillSheetWords(combinedWords, allProducts);
       setScanLines((current) => {
         const merged = new Map(current.map((line) => [line.sku, line]));
         for (const line of detected) {
           const existing = merged.get(line.sku);
           if (!existing) { merged.set(line.sku, line); continue; }
+          if (existing.qty === 0 && line.qty > 0) { merged.set(line.sku, { ...line, id: existing.id }); continue; }
+          if (line.qty === 0 && existing.qty > 0) continue;
           if (existing.qty === line.qty) {
             merged.set(line.sku, existing.confidence >= line.confidence ? existing : { ...line, id: existing.id });
             continue;
@@ -391,6 +414,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
             id: existing.id,
             confidence: 0,
             source: `CHECK duplicate: ${existing.qty} / ${line.qty}`,
+            needsReview: true,
           });
         }
         return [...merged.values()].sort((left, right) => left.sku.localeCompare(right.sku, "en", { numeric: true }));
@@ -407,12 +431,19 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   }
 
   function updateScanLine(id: string, patch: Partial<RefillSheetDraftLine>) {
-    setScanLines((current) => current.map((line) => line.id === id ? { ...line, ...patch } : line));
+    setScanLines((current) => current.map((line) => line.id === id ? { ...line, ...patch, needsReview: true, confidence: 0, source: "Edited — confirm this row" } : line));
+  }
+
+  function confirmScanLine(id: string) {
+    const validSkus = new Set(allProducts.map((product) => product.sku));
+    setScanLines((current) => current.map((line) => line.id === id && validSkus.has(line.sku) && Number.isInteger(line.qty) && line.qty > 0 && line.qty <= 999
+      ? { ...line, needsReview: false, confidence: 100, source: "Checked manually" }
+      : line));
   }
 
   function useScanDraft() {
     const validSkus = new Set(allProducts.map((product) => product.sku));
-    if (!scanLines.length || scanLines.some((line) => !validSkus.has(line.sku) || !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999)) {
+    if (!scanLines.length || scanLines.some((line) => line.needsReview || !validSkus.has(line.sku) || !Number.isInteger(line.qty) || line.qty < 1 || line.qty > 999)) {
       setError("Check every SKU and quantity before using this draft."); return;
     }
     if (new Set(scanLines.map((line) => line.sku)).size !== scanLines.length) {
@@ -454,6 +485,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   </main>;
 
   const batchLines = screen === "sent" ? sentLines : refillLines;
+  const scanReviewCount = scanLines.filter((line) => line.needsReview).length;
   const batchTotal = batchLines.reduce((sum, line) => sum + line.qty, 0);
   const deletingRows = historyBatches.find((batch) => batch.batch_id === deletingBatch)?.rows.filter((row) => row.status === "PENDING_CONFIRM") ?? [];
   return <main className={styles.shell} data-testid="kitchen-shell" data-kitchen-screen={screen}>
@@ -485,7 +517,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       </section> : null}
       {screen === "confirm" ? <section className={styles.confirm} data-testid="kitchen-confirm"><h1>{text.confirmTitle}</h1><p>{text.confirmHelp}</p><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><div><strong>{line.sku} · {line.size}</strong><span>{line.name}</span>{line.approval_required ? <em>{text.approval}</em> : null}</div><strong>{line.qty}</strong></article>)}</div><div className={styles.total}><span>{batchLines.length} {text.skus}</span><strong>{batchTotal} {text.totalUnits}</strong></div></section> : null}
       {screen === "history" ? <section data-testid="kitchen-history"><h1>{text.refillHistory}</h1><div className={styles.history}>{historyBatches.map((batch) => <article className={styles.historyBatch} key={batch.batch_id}><header><div><strong>{text.batch} {batch.batch_id}</strong><small>{batch.rows[0]?.sent_at_toronto ? `${batch.rows[0].sent_at_toronto} Toronto` : ""} · {text.sentBy} {batch.rows[0]?.sent_by ?? "Kitchen"}</small></div>{batch.pending ? <div className={styles.batchActions}><button type="button" onClick={() => beginEdit(batch.batch_id, batch.rows)}>{text.edit}</button><button type="button" className={styles.deleteButton} onClick={() => askDelete(batch.batch_id)}>{text.delete}</button></div> : null}</header><div className={styles.historyLines}>{batch.rows.filter((row) => row.status !== "CANCELLED_BY_KITCHEN").map((row) => <div key={row.kitchen_row_id}><span><strong>{row.sku} · {row.size}</strong><small>{row.name}</small></span><span><strong>{row.qty_sent} {text.sent}{row.qty_received == null ? "" : ` · ${row.qty_received} ${text.received}`}</strong><small className={row.status === "PENDING_CONFIRM" ? styles.pending : styles.confirmed}>{row.status === "PENDING_CONFIRM" ? text.waiting : row.status}</small>{row.variance_reason ? <small>{text.reason}: {row.variance_reason}</small> : null}</span></div>)}</div></article>)}</div></section> : null}
-      {screen === "scan" ? <section className={styles.scanReview} data-testid="kitchen-scan-review"><h1>{text.scanTitle}</h1><p>{text.scanHelp}</p><div className={styles.scanPhotoTools}><strong>{scanPhotoCount} {text.photosRead}</strong><button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>{text.addPhoto}</button></div>{busy ? <div className={styles.scanProgress}><strong>{text.readingPhoto} · {scanProgress}%</strong><progress max="100" value={scanProgress}/></div> : null}{!busy && !scanLines.length ? <p className={styles.empty}>{text.noScan}</p> : null}<datalist id="kitchen-scan-skus">{allProducts.map((product) => <option key={product.sku} value={product.sku}>{product.name} · {product.size}</option>)}</datalist><div className={styles.scanRows}>{scanLines.map((line) => <article key={line.id}><label><span>SKU</span><input list="kitchen-scan-skus" value={line.sku} onChange={(event) => updateScanLine(line.id, { sku: event.target.value.trim() })}/></label><label><span>{text.qtyShort}</span><input inputMode="numeric" value={line.qty || ""} onChange={(event) => updateScanLine(line.id, { qty: Number(event.target.value.replace(/[^\d]/g, "")) })}/></label><div><small>{line.source}</small>{line.confidence < 70 ? <em>{text.check}</em> : <strong>{line.confidence}%</strong>}</div><button type="button" onClick={() => setScanLines((current) => current.filter((item) => item.id !== line.id))}>{text.remove}</button></article>)}</div><button type="button" className={styles.addRow} onClick={() => setScanLines((current) => [...current, { id: crypto.randomUUID(), sku: "", qty: 0, confidence: 0, source: "Manual" }])}>{text.addRow}</button></section> : null}
+      {screen === "scan" ? <section className={styles.scanReview} data-testid="kitchen-scan-review"><h1>{text.scanTitle}</h1><p>{text.scanHelp}</p><div className={styles.scanPhotoTools}><strong>{scanPhotoCount} {text.photosRead}</strong><button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>{text.addPhoto}</button></div>{busy ? <div className={styles.scanProgress}><strong>{text.readingPhoto} · {scanProgress}%</strong><progress max="100" value={scanProgress}/></div> : null}{scanReviewCount ? <p className={styles.scanWarning}><strong>{scanReviewCount}</strong> {text.rowsNeedCheck}</p> : null}{!busy && !scanLines.length ? <p className={styles.empty}>{text.noScan}</p> : null}<datalist id="kitchen-scan-skus">{allProducts.map((product) => <option key={product.sku} value={product.sku}>{product.name} · {product.size}</option>)}</datalist><div className={styles.scanRows}>{scanLines.map((line) => <article key={line.id} data-review={line.needsReview ? "required" : "complete"}><label><span>SKU</span><input list="kitchen-scan-skus" value={line.sku} onChange={(event) => updateScanLine(line.id, { sku: event.target.value.trim() })}/></label><label><span>{text.qtyShort}</span><input inputMode="numeric" value={line.qty || ""} onChange={(event) => updateScanLine(line.id, { qty: Number(event.target.value.replace(/[^\d]/g, "")) })}/></label><div><small>{line.source}</small>{line.needsReview ? <button type="button" onClick={() => confirmScanLine(line.id)}>{text.confirmRow}</button> : <strong>✓</strong>}</div><button type="button" onClick={() => setScanLines((current) => current.filter((item) => item.id !== line.id))}>{text.remove}</button></article>)}</div><button type="button" className={styles.addRow} onClick={() => setScanLines((current) => [...current, { id: crypto.randomUUID(), sku: "", qty: 0, confidence: 0, source: "Manual", needsReview: true }])}>{text.addRow}</button></section> : null}
       {screen === "delete" ? <section className={styles.deleteConfirm} data-testid="kitchen-delete-confirm"><h1>{text.deleteTitle}</h1><p>{text.deleteHelp}</p><strong>{deletingBatch}</strong><div className={styles.batch}>{deletingRows.map((row) => <article key={row.kitchen_row_id}><span>{row.sku} · {row.size}</span><strong>{row.qty_sent}</strong></article>)}</div></section> : null}
       {screen === "sent" ? <section className={styles.sent} data-testid="kitchen-sent"><div className={styles.sentIcon}>✓</div><h1>{text.sentHeading} {selectedStore === "PNY01_TEST" ? "PNY01 TEST RECEIVER" : selectedStore}</h1><div className={styles.batch}>{batchLines.map((line) => <article key={line.sku}><span>{line.sku} · {line.size}</span><strong>{line.qty}</strong></article>)}</div><strong>{batchTotal} {text.totalUnits}</strong><p>{text.statusHelp}</p>{selectedStore === "PNY01_TEST" ? <Link className={styles.receiverLink} href="/pos/pny01-refill-preview">PNY01 TEST RECEIVER</Link> : <button type="button" onClick={() => setScreen("history")}>{text.refillHistory}</button>}</section> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
@@ -495,7 +527,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
       {screen === "refill" ? <><button type="button" className={styles.secondary} onClick={() => setScreen("history")}>{text.history}</button><button type="button" className={styles.scan} disabled={busy} onClick={() => { setScanLines([]); setScanPhotoCount(0); fileInput.current?.click(); }}>{text.scanSheet}</button><button type="button" className={styles.primary} disabled={busy || totalUnits === 0} onClick={reviewBatch}>{text.refillList} · {totalUnits}</button></> : null}
       {screen === "confirm" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>{text.back}</button><button type="button" className={styles.primary} disabled={busy} onClick={() => void sendRefill()}>{editingBatch ? text.saveChanges : text.sendToStore} · {batchTotal}</button></> : null}
       {screen === "history" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.dashboard}</button> : null}
-      {screen === "scan" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>{text.back}</button><button type="button" className={styles.primary} disabled={busy || scanLines.length === 0} onClick={useScanDraft}>{text.useDraft}</button></> : null}
+      {screen === "scan" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("refill")}>{text.back}</button><button type="button" className={styles.primary} disabled={busy || scanLines.length === 0 || scanReviewCount > 0} onClick={useScanDraft}>{text.useDraft}</button></> : null}
       {screen === "delete" ? <><button type="button" className={styles.secondary} disabled={busy} onClick={() => setScreen("history")}>{text.back}</button><button type="button" className={styles.danger} disabled={busy} onClick={() => void deleteRefill()}>{text.delete}</button></> : null}
       {screen === "sent" ? <button type="button" className={styles.primary} onClick={() => setScreen("refill")}>{text.done}</button> : null}
     </footer>

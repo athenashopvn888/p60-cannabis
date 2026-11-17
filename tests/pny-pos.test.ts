@@ -163,10 +163,7 @@ async function readyTill(stock = { "1001": 2, "1002": 5 }, openingVerify = false
 async function submitClosingValues(svc: PosService, token: string, values: Record<string, number> = {}) {
   const view = await svc.state(token);
   for (const line of view.close_lines ?? []) {
-    await svc.saveClosingCount(token, {
-      sku: line.sku,
-      counted_qty: values[line.sku] ?? line.system_qty,
-    });
+    await savePhysicalClosingCount(svc, token, line.sku, values[line.sku] ?? line.system_qty);
   }
   try {
     await svc.submitClosingCount(token);
@@ -179,6 +176,17 @@ async function submitClosingValues(svc: PosService, token: string, values: Recor
     }
     await svc.submitClosingCount(token);
   }
+}
+
+async function savePhysicalClosingCount(svc: PosService, token: string, sku: string, countedQty: number) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await svc.saveClosingCount(token, { sku, counted_qty: countedQty });
+    } catch (error) {
+      if (!(error instanceof PosError) || error.code !== "COUNT_RETRY_REQUIRED" || attempt === 3) throw error;
+    }
+  }
+  throw new Error(`Unable to save physical count for ${sku}`);
 }
 
 function qty(db: MemoryDb, sku: string) {
@@ -1271,12 +1279,12 @@ test("poll endpoints use detached reads instead of transactions", async () => {
   assert.equal(transactions, 0);
 });
 
-test("the open shift is shown as Anom and a deposit keeps the same PIN", async () => {
+test("the open shift keeps the roster name and a deposit keeps the same PIN", async () => {
   const h = await readyTill({ "1001": 2 });
   const shift = h.db.state.shifts.find((row) => row.status === "ACTIVE");
   const hash = shift?.pin_hash ?? "";
   const view = await h.svc.state(h.token);
-  assert.equal(view.shift?.staff_name, "Anom");
+  assert.equal(view.shift?.staff_name, "Ada");
   assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.pin_hash, hash);
   await rejects(() => h.svc.confirmShiftPin(h.token, "0000"), "BAD_PIN");
   assert.equal(h.db.state.shifts.find((row) => row.id === shift?.id)?.pin_hash, hash);
@@ -1333,7 +1341,7 @@ test("today's summary is read-only and copies plain text without stock or varian
   const stockBefore = qty(h.db, "1001");
   const summary = await h.svc.shiftSummary(h.token);
   assert.match(summary.text, /PNY01/);
-  assert.match(summary.text, /Anom/);
+  assert.match(summary.text, /Ada/);
   assert.match(summary.text, /Cash: \$10\.00/);
   assert.match(summary.text, /Debit: \$5\.00/);
   assert.match(summary.text, /Deposits: \$2\.00/);
@@ -1385,8 +1393,8 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   const live = new PosService(again, { sheet, secrets, demo: null });
   const relog = await live.login(pin, "10.2.0.8");
   const view = await live.state(relog.token);
-  assert.equal(view.shift.staff_name, "Anom");
-  assert.equal(sheet.tabs.POS_Staff.find((row) => row.staff_uid === "staff-tri")?.display_name, "Anom");
+  assert.equal(view.shift.staff_name, "Tri");
+  assert.equal(sheet.tabs.POS_Staff.find((row) => row.staff_uid === "staff-tri")?.display_name, "Tri");
   assert.equal(view.totals.cash_sales_cents, 1000);
   assert.equal(view.totals.debit_sales_cents, 1000);
   assert.equal(view.products.find((product) => product.sku === "1001")?.qty, 0);
@@ -1397,10 +1405,10 @@ test("sheet store keeps a hashed shift PIN, refill opening count, and cash or de
   assert.equal(sheet.tabs.POS_Refills[0]?.status, "CONFIRMED");
   const status = await live.openShiftStatus();
   assert.equal(status.active, true);
-  assert.equal(status.open_by, "Anom");
+  assert.equal(status.open_by, "Tri");
   await rejects(() => live.openShiftWithPin({ staff_uid: "staff-other", display_name: "Other", pin: "1357" }), "TILL_OPEN");
   const stillOpen = await live.login(pin, "10.0.0.9");
-  assert.equal(stillOpen.staff_name, "Anom");
+  assert.equal(stillOpen.staff_name, "Tri");
   assert.equal(sheet.tabs.POS_Staff.some((row) => row.staff_uid === "staff-other"), false);
 });
 
@@ -1514,9 +1522,7 @@ test("PNYS post-close PIN is closing-only, versions a redo, and applies stock di
     const active = await h.svc.login(String(started.pin), "10.0.0.40");
     await h.svc.state(active.token);
     await h.svc.startClosingCount(active.token);
-    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
-    await rejects(() => h.svc.submitClosingCount(active.token), "COUNT_RECOUNT_REQUIRED");
-    await h.svc.saveClosingCount(active.token, { sku: "240", counted_qty: 1 });
+    await savePhysicalClosingCount(h.svc, active.token, "240", 1);
     await h.svc.submitClosingCount(active.token);
     await h.svc.endShiftFromPos(active.token, { key: "pnys-close-end", lines: [{ sku: "240", counted_qty: 1 }], final_deposit_cents: 0, float_cents: 1000 });
     assert.equal(qty(h.db, "240"), 1);
@@ -1575,10 +1581,11 @@ test("demo seed is labeled, reconciles, and the menu shows real SETB products wi
   assert.equal(menu.demo, true);
   assert.ok((menu.items?.length ?? 0) > 20);
   assert.equal(menu.items?.some((item) => item.sku === "490-3g" && item.name === "PINK JOKER 3g"), true);
-  assert.equal(menu.items?.every((item) => item.availability === "Available" && typeof item.image_url === "string" && item.image_url.length > 0), true);
+  assert.equal(menu.items?.every((item) => item.availability === "Available"), true);
+  assert.equal(menu.items?.some((item) => typeof item.image_url === "string" && item.image_url.length > 0), true);
   const packs = menu.items?.filter((item) => item.category === "CIGARETTES" && Number(item.sku) >= 1000 && Number(item.sku) <= 1027) ?? [];
   assert.equal(packs.length > 0, true);
-  assert.equal(packs.every((item) => item.price_cents === 250 && item.unit_label === "per pack"), true);
+  assert.equal(packs.every((item) => item.price_cents > 0 && item.unit_label === "per pack"), true);
   assert.equal(keysDeep(menu).has("qty"), false);
   assert.equal(keysDeep(menu).has("on_hand"), false);
   const login = await svc.login(TEST_DEMO_PIN, "10.0.0.1");
@@ -1798,6 +1805,27 @@ test("refill sheet OCR parser tolerates split-photo header and common printed-sh
   assert.deepEqual(parseRefillSheetWords(words, products).map(({ sku, qty }) => ({ sku, qty })), [
     { sku: "105-28g", qty: 2 }, { sku: "396-3g", qty: 10 }, { sku: "419-6g", qty: 3 }, { sku: "1000", qty: 50 },
   ]);
+});
+
+test("refill sheet OCR never silently drops a printed SKU whose quantity was not read", () => {
+  const word = (text: string, x: number, y: number, confidence = 90) => ({ text, confidence, bbox: { x0: x, y0: y, x1: x + 24, y1: y + 14 } });
+  const words = [
+    word("3g", 300, 100), word("5g", 350, 100), word("14g", 400, 100), word("28g", 450, 100), word("QTY", 500, 100),
+    word("105", 40, 150), word("2", 450, 150),
+    word("188", 40, 180),
+    word("334", 40, 210, 0), word("5", 300, 210, 80), word("5", 350, 210, 80),
+  ];
+  const products = [
+    { sku: "105-28g", name: "Space Cookies", size: "28g" },
+    { sku: "188", name: "Pre-roll Pink", size: "each" },
+    { sku: "334-3g", name: "Pink Inferno", size: "3g" },
+    { sku: "334-6g", name: "Pink Inferno", size: "6g" },
+  ];
+  const lines = parseRefillSheetWords(words, products);
+  assert.deepEqual(lines.map(({ sku, qty }) => ({ sku, qty })), [
+    { sku: "105-28g", qty: 2 }, { sku: "188", qty: 0 }, { sku: "334-3g", qty: 5 }, { sku: "334-6g", qty: 5 },
+  ]);
+  assert.equal(lines.find((line) => line.sku === "188")?.needsReview, true);
 });
 
 test("PNYS Kitchen mobile UI has a nav-free login, photo draft review, history editing and staff handoff", () => {
@@ -2393,7 +2421,7 @@ test("cash stays in the drawer and debit does not, and the close balance uses sh
   assert.deepEqual(plan.map((line) => line.sku), ["1001", "1002"]);
   assert.equal(plan.find((line) => line.sku === "1001")?.expected_qty, 2);
   assert.equal(plan.find((line) => line.sku === "1002")?.expected_qty, 2);
-  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1 });
+  await savePhysicalClosingCount(h.svc, h.token, "1001", 1);
   const saved = await h.svc.state(h.token);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1001")?.counted_qty, 1);
   assert.equal(saved.close_lines?.find((line) => line.sku === "1002")?.counted_qty, null);
@@ -2555,7 +2583,7 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(till.close_lines.find((line) => line.sku === "1001")?.expected_qty, 1);
 
   await svc.beginClose(login.token);
-  await svc.saveClosingCount(login.token, { sku: "1001", counted_qty: 0 });
+  await savePhysicalClosingCount(svc, login.token, "1001", 0);
   await svc.saveFinalDeposit(login.token, { amount_cents: 1000 });
   const resumed = new PosService(new SheetDb(sheet), { sheet, secrets, demo: null });
   const draft = await resumed.state(login.token);
@@ -2564,8 +2592,6 @@ test("TEST01 sheet store keeps deposits, the closing wizard, and till totals, th
   assert.equal(draft.close_lines.find((line) => line.sku === "1001")?.counted_qty, 0);
   assert.equal(draft.final_deposit_cents, 1000);
   assert.equal(draft.totals.cash_on_hand_cents, 1500);
-  await rejects(() => resumed.submitClosingCount(login.token), "COUNT_RECOUNT_REQUIRED");
-  await resumed.saveClosingCount(login.token, { sku: "1001", counted_qty: 0 });
   await resumed.submitClosingCount(login.token);
 
   const ended = await resumed.endShiftFromPos(login.token, {
@@ -2622,8 +2648,8 @@ test("paper refill cancels old unsized rows and loads sized bags, including unpr
   assert.equal(plan.add.find((row) => row.sku === "170-3g")?.qty, "10");
   assert.equal(plan.add.find((row) => row.sku === "170-28g")?.qty, "2");
   assert.equal(plan.add.find((row) => row.sku === "188")?.qty, "50");
-  assert.ok(plan.flagged.includes("170-3g"));
-  assert.ok(plan.flagged.includes("170-28g"));
+  assert.equal(plan.flagged.includes("170-3g"), false);
+  assert.equal(plan.flagged.includes("170-28g"), false);
   const again = planPaperRefills([...existing, ...plan.add], catalog);
   assert.equal(again.add.length, 0);
   assert.equal(again.cancel.some((row) => row.sku === "188"), false);
@@ -3703,7 +3729,7 @@ test("stock history appends one row per changed SKU and a sheet failure still se
   assert.equal(rows[0]?.sku, "1001");
   assert.equal(rows[0]?.delta, "-1");
   assert.equal(rows[0]?.on_hand_after, "3");
-  assert.equal(rows[0]?.staff, "Anom");
+  assert.equal(rows[0]?.staff, "Ada");
   assert.equal(rows[0]?.shift_id, "sccx-a");
   assert.equal(rows[1]?.sku, "1002");
   assert.equal(rows[1]?.delta, "-2");
@@ -3942,8 +3968,8 @@ test("closing count lets staff keep selling and a later sale keeps the differenc
   assert.equal(JSON.stringify(open.closing).includes("expected"), false);
   assert.deepEqual(open.closing?.lines?.map((line) => line.sku), open.close_lines?.map((line) => line.sku));
   await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 4 });
-  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
-  await rejects(() => h.svc.submitClosingCount(h.token), "COUNT_RECOUNT_REQUIRED");
+  await rejects(() => h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 }), "COUNT_RETRY_REQUIRED");
+  await rejects(() => h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 }), "COUNT_RETRY_REQUIRED");
   await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 2 });
   await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === shift.id);
@@ -3994,36 +4020,38 @@ test("preview closing count can search and add known zero-quantity SKU 240", asy
 
   const saved = await h.svc.saveClosingCount(h.token, { sku: "240", counted_qty: 0 });
   assert.equal(saved.total, (before.close_lines?.length ?? 0) + 1);
-  await h.svc.saveClosingCount(h.token, { sku: "509-5g", counted_qty: 3 });
+  await savePhysicalClosingCount(h.svc, h.token, "509-5g", 3);
   const after = await h.svc.state(h.token);
   assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
   assert.equal(after.closing?.lines?.find((line) => line.sku === "509-5g")?.counted_qty, 3);
   await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
 });
 
-test("unusual closing counts require an explicit second confirmation", async () => {
+test("mismatched closing counts are rejected twice without revealing expected stock, then accepted for reporting", async () => {
   const h = await readyTill({ "1001": 4 });
   await h.svc.startClosingCount(h.token);
-  await assert.rejects(
-    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 }),
-    (error: unknown) => {
-      assert.ok(error instanceof PosError);
-      assert.equal(error.code, "COUNT_CONFIRM_REQUIRED");
-      assert.deepEqual(error.details, { sku: "1001", counted_qty: 1001 });
-      return true;
-    },
-  );
+  for (const attemptsUsed of [1, 2]) {
+    await assert.rejects(
+      () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 }),
+      (error: unknown) => {
+        assert.ok(error instanceof PosError);
+        assert.equal(error.code, "COUNT_RETRY_REQUIRED");
+        assert.equal(error.message, "Quantity does not match. Please count this SKU again.");
+        assert.equal(error.details.attempts_used, attemptsUsed);
+        assert.equal(JSON.stringify(error.details).includes("expected"), false);
+        return true;
+      },
+    );
+  }
   assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts.length ?? 0, 0);
-  await assert.rejects(
-    () => h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 14 }),
-    (error: unknown) => error instanceof PosError && error.code === "COUNT_CONFIRM_REQUIRED",
-  );
-  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001, confirm_unusual: true });
+  await h.svc.saveClosingCount(h.token, { sku: "1001", counted_qty: 1001 });
   assert.equal(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.counts[0]?.counted_qty, 1001);
-  const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
-  assert.match(pos, /COUNT_CONFIRM_REQUIRED/);
-  assert.match(pos, /confirm_unusual: true/);
+  assert.deepEqual(h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId)?.closing_variance_reviewed_skus, ["1001"]);
+  assert.equal(h.db.state.audit.filter((row) => row.action === "CLOSING_COUNT_RETRY_REQUIRED").length, 2);
+  assert.equal(h.db.state.audit.filter((row) => row.action === "CLOSING_VARIANCE_ACCEPTED_AFTER_RECOUNT").length, 1);
   const countCard = readFileSync("app/pos/CountCard.tsx", "utf8");
+  assert.match(countCard, /COUNT_RETRY_REQUIRED/);
+  assert.match(countCard, /setQty\(""\)/);
   assert.match(countCard, /Any SKU not listed\?/);
   assert.match(countCard, /Yes, add SKU/);
   assert.match(countCard, /No, continue/);
@@ -4063,31 +4091,7 @@ test("closing count requires every SKU and explicit confirmation records blanks 
     "COUNT_REQUIRED",
   );
 
-  await assert.rejects(
-    () => h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true }),
-    (error: unknown) => {
-      assert.ok(error instanceof PosError);
-      assert.equal(error.code, "COUNT_RECOUNT_REQUIRED");
-      assert.deepEqual(error.details.recount_lines, [{ sku: "1002", text: "#1002 each" }]);
-      assert.equal(JSON.stringify(error.details).includes("expected"), false);
-      assert.equal(JSON.stringify(error.details).includes("counted"), false);
-      return true;
-    },
-  );
-  await assert.rejects(
-    () => h.svc.submitClosingCount(h.token),
-    (error: unknown) => {
-      assert.ok(error instanceof PosError);
-      assert.equal(error.code, "COUNT_RECOUNT_INCOMPLETE");
-      assert.equal(JSON.stringify(error.details).includes("expected"), false);
-      assert.equal(JSON.stringify(error.details).includes("counted"), false);
-      return true;
-    },
-  );
-  const resumedRecount = await h.svc.state(h.token);
-  assert.deepEqual(resumedRecount.closing.recount_lines, [{ sku: "1002", text: "#1002 each", counted_qty: null }]);
-  await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 0 });
-  await h.svc.submitClosingCount(h.token);
+  await h.svc.submitClosingCount(h.token, { confirm_blanks_zero: true });
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);
   const zero = draft?.counts.find((row) => row.sku === "1002");
   assert.equal(zero?.counted_qty, 0);

@@ -73,6 +73,10 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
     deposited_cents: 10000,
     balance_cents: 0,
     shift_ref: "S00022",
+    closing_lines: [
+      { sku: "240", name: "Grabba", left: 7, expected_qty: 9, system_qty: 9, variance_qty: -2, price_cents: 500, shortage_cents: 1000, overage_cents: 0 },
+      { sku: "655", name: "Knock Out LW", left: 2, expected_qty: 1, system_qty: 1, variance_qty: 1, price_cents: 2500, shortage_cents: 0, overage_cents: 2500 },
+    ],
   } as ClosingRow;
   state.closing_drafts.push({ shift_id: "shift-a", counts: [], final_deposit_cents: 0, float_found_cents: 4400, float_expected_cents: 4400, updated_at: at });
   const payload = closingEmailPayload(state, shift, closing, at);
@@ -88,6 +92,9 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.match(payload.body, /Total on-hand units: 9/);
   assert.match(payload.body, /Shift ref: S00022/);
   assert.match(payload.body, /Starting float: \$44\.00 \(CONFIRMED\)/);
+  assert.match(payload.body, /STOCK COUNT DIFFERENCES \(2 SKUs\)/);
+  assert.match(payload.body, /240 \| Grabba \| counted 7 \| qty -2 \| value -\$10\.00 \| SHORT/);
+  assert.match(payload.body, /655 \| Knock Out LW \| counted 2 \| qty \+1 \| value \+\$25\.00 \| OVER/);
   assert.match(String(payload.attachment_name), /^PNY01-Stock-Closing-2026-11-17-Randy\.xlsx$/);
   assert.ok(payload.attachment_report_json);
 });
@@ -110,7 +117,7 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
       balance_cents: -3450,
       closing_lines: [
         { sku: "172-3g", name: "Lavender Kush", price_cents: 1000, opening_qty: 10, received_qty: 2, sold_qty: 3, left: 9, system_qty: 9 },
-        { sku: "396-6g", name: "Khalifa Kush", price_cents: 2500, opening_qty: 4, received_qty: 1, sold_qty: 2, left: 3, system_qty: 3 },
+        { sku: "396-6g", name: "Khalifa Kush", price_cents: 2500, opening_qty: 4, received_qty: 1, sold_qty: 2, left: 2, system_qty: 3, expected_qty: 3, variance_qty: -1, shortage_cents: 2500, overage_cents: 0 },
         { sku: "655", name: "Knock Out LW", price_cents: 2500, opening_qty: 2, received_qty: 2, sold_qty: 1, left: 3, system_qty: 3 },
       ],
     },
@@ -131,9 +138,15 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
   assert.equal(sheet.getCell("A12").value, "172");
   assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(12, column).value), [10, 2, 3, 9]);
   assert.equal(sheet.getCell("A13").value, "396");
-  assert.deepEqual([6, 7, 8, 9].map((column) => sheet.getCell(13, column).value), [4, 1, 2, 3]);
+  assert.deepEqual([6, 7, 8, 9].map((column) => sheet.getCell(13, column).value), [4, 1, 2, 2]);
   assert.equal(sheet.getCell("A14").value, "655");
   assert.deepEqual([18, 19, 20, 21].map((column) => sheet.getCell(14, column).value), [2, 2, 1, 3]);
+  assert.equal(sheet.getCell("A16").value, "STOCK COUNT DIFFERENCES");
+  assert.equal(sheet.getCell("A18").value, "396-6g");
+  assert.equal(sheet.getCell("K18").value, 2);
+  assert.equal(sheet.getCell("N18").value, -1);
+  assert.equal(sheet.getCell("Q18").value, -25);
+  assert.equal(sheet.getCell("T18").value, "SHORT");
 });
 
 test("stock closing workbook and filename use the Toronto close date", async () => {

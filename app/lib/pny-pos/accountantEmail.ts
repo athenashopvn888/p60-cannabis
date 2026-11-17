@@ -99,6 +99,15 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
   const startingFloatCents = draft?.float_found_cents ?? draft?.float_expected_cents ?? previousFloatCents;
   const startingFloatConfirmed = draft?.float_found_cents != null;
   const staffName = staff?.display_name ?? staff?.pos_id ?? "Staff";
+  const stockDifferences = closing.closing_lines
+    .map((line) => {
+      const qtyDifference = line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty);
+      const valueDifference = (line.overage_cents ?? 0) - (line.shortage_cents ?? 0)
+        || qtyDifference * (line.price_cents ?? 0);
+      return { line, qtyDifference, valueDifference };
+    })
+    .filter((row) => row.qtyDifference !== 0)
+    .sort((a, b) => skuSortKey(a.line.sku) - skuSortKey(b.line.sku) || a.line.sku.localeCompare(b.line.sku));
   const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
   const body = [
     subject,
@@ -115,6 +124,11 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     `Stock shortage: ${formatMoney(closing.shortage_cents ?? 0)}`,
     `Stock overage: ${formatMoney(closing.overage_cents ?? 0)}`,
     `Final till balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+    "",
+    `STOCK COUNT DIFFERENCES (${stockDifferences.length} SKUs)`,
+    ...(stockDifferences.length
+      ? stockDifferences.map(({ line, qtyDifference, valueDifference }) => `${line.sku} | ${line.name || nameOf(state, line.sku)} | counted ${line.left} | qty ${qtyDifference > 0 ? "+" : ""}${qtyDifference} | value ${valueDifference > 0 ? "+" : "-"}${formatMoney(Math.abs(valueDifference))} | ${qtyDifference < 0 ? "SHORT" : "OVER"}`)
+      : ["All stock matched."]),
     "",
     `SOLD THIS SHIFT (${sold.length} SKUs)`,
     ...sold.map(([sku, qty]) => `${sku} | ${nameOf(state, sku)} | ${qty}`),

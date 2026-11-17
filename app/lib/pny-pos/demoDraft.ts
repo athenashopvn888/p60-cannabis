@@ -22,6 +22,8 @@ export type DemoDraft = {
   closing_submitted_at?: string | null;
   closing_recount_skus?: string[];
   closing_recount_started_at?: string | null;
+  closing_count_attempts?: Record<string, number>;
+  closing_variance_reviewed_skus?: string[];
   final_deposit_cents: number | null;
   final_deposit_code?: string | null;
   updated_at: string;

@@ -262,7 +262,76 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     });
   });
 
-  const lastRow = Math.max(12, 11 + rows.length);
+  const stockLastRow = Math.max(12, 11 + rows.length);
+  const differences = input.closing.closing_lines
+    .map((line) => {
+      const qtyDifference = line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty);
+      const valueDifference = (line.overage_cents ?? 0) - (line.shortage_cents ?? 0)
+        || qtyDifference * (line.price_cents ?? 0);
+      return { line, qtyDifference, valueDifference };
+    })
+    .filter((row) => row.qtyDifference !== 0)
+    .sort((a, b) => sortItems(a.line.sku, b.line.sku));
+  const varianceTitleRow = stockLastRow + 2;
+  sheet.mergeCells(varianceTitleRow, 1, varianceTitleRow, 21);
+  const varianceTitle = sheet.getCell(varianceTitleRow, 1);
+  varianceTitle.value = "STOCK COUNT DIFFERENCES";
+  varianceTitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F2937" } };
+  varianceTitle.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+  varianceTitle.alignment = { horizontal: "center", vertical: "middle" };
+  varianceTitle.border = border();
+
+  const varianceHeadRow = varianceTitleRow + 1;
+  const varianceColumns = [
+    [1, 3, "SKU"],
+    [4, 10, "ITEM"],
+    [11, 13, "COUNTED"],
+    [14, 16, "QTY DIFF"],
+    [17, 19, "VALUE DIFF"],
+    [20, 21, "RESULT"],
+  ] as const;
+  for (const [start, end, label] of varianceColumns) {
+    sheet.mergeCells(varianceHeadRow, start, varianceHeadRow, end);
+    const cell = sheet.getCell(varianceHeadRow, start);
+    cell.value = label;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+    cell.font = { name: "Arial", size: 9, bold: true };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = border();
+  }
+
+  if (differences.length === 0) {
+    sheet.mergeCells(varianceHeadRow + 1, 1, varianceHeadRow + 1, 21);
+    const matched = sheet.getCell(varianceHeadRow + 1, 1);
+    matched.value = "All stock matched.";
+    matched.alignment = { horizontal: "center", vertical: "middle" };
+    matched.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF166534" } };
+    matched.border = border();
+  } else {
+    differences.forEach(({ line, qtyDifference, valueDifference }, index) => {
+      const rowNo = varianceHeadRow + 1 + index;
+      const values = [
+        [1, 3, line.sku],
+        [4, 10, line.name || "Unknown item"],
+        [11, 13, line.left],
+        [14, 16, qtyDifference],
+        [17, 19, dollars(valueDifference)],
+        [20, 21, qtyDifference < 0 ? "SHORT" : "OVER"],
+      ] as const;
+      for (const [start, end, value] of values) {
+        sheet.mergeCells(rowNo, start, rowNo, end);
+        const cell = sheet.getCell(rowNo, start);
+        cell.value = value;
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.font = { name: "Arial", size: 10, bold: start >= 14 };
+        cell.border = border();
+        if (start === 17) cell.numFmt = "+$#,##0.00;[Red]-$#,##0.00;-";
+        if (start >= 14) cell.font = { ...cell.font, color: { argb: qtyDifference < 0 ? "FFB91C1C" : "FF15803D" } };
+      }
+    });
+  }
+
+  const lastRow = varianceHeadRow + 1 + Math.max(0, differences.length - 1);
   sheet.pageSetup.printArea = `A1:U${lastRow}`;
   sheet.headerFooter.oddFooter = `&LSystem shift ID: ${input.systemShiftId ?? "UNAVAILABLE"}&CPage &P of &N&R${input.storeCode}`;
   return Buffer.from(await workbook.xlsx.writeBuffer());
