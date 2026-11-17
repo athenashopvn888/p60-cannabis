@@ -240,6 +240,8 @@ export type ClosingRow = {
   created_at: string;
   /** Master plus close date, such as PNY-1104-1105. Missing on closings saved before labels. */
   close_label?: string;
+  /** Six-character sequential reference for daily use. The full shift_id remains the audit key. */
+  shift_ref?: string;
 };
 
 export type ClosingDraftRow = {
@@ -348,6 +350,8 @@ export type State = {
   deposit_seq_pny02?: number;
   /** Last issued refill sequence per store. PNY01-R0001 is 1. */
   refill_seq_by_store?: Record<string, number>;
+  /** Last issued six-character closing reference sequence per store. */
+  shift_ref_seq_by_store?: Record<string, number>;
   /** One master stock id per store. Missing until the first close after labels shipped. */
   stock_labels?: { store: string; master_id: string; start_date: string; created_at: string }[];
   /** Set when the approved opening stock is copied in. Missing means the till is waiting. */

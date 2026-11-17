@@ -37,7 +37,7 @@ function Section({ title, background, lines, floatNote }: { title: string; backg
 
 export function summaryImageHeight(view: ClosingSummaryView) {
   const rows = view.openLines.length + view.refillLines.length + view.closeLines.length;
-  return 820 + view.deposits.length * 30 + rows * 28 + (view.floatFoundCents == null ? 0 : 22);
+  return 880 + view.deposits.length * 30 + rows * 28 + (view.floatFoundCents == null ? 0 : 22);
 }
 
 export function closingSummaryImage(view: ClosingSummaryView) {
@@ -59,9 +59,15 @@ export function closingSummaryImage(view: ClosingSummaryView) {
         <div style={{ display: "flex", flexDirection: "column", borderRadius: 12, background: "#1c1917", color: "#fff", padding: 12, marginTop: 12 }}>
           <div style={{ display: "flex", fontSize: 22, fontWeight: 800 }}>{view.storeLabel}</div>
           <div style={{ display: "flex", marginTop: 3 }}>{view.staffName}</div>
+          {view.shiftRef ? <div style={{ display: "flex", marginTop: 3, fontWeight: 800 }}>Shift {view.shiftRef}</div> : null}
           <div style={{ display: "flex", marginTop: 3 }}>{formatStoreDate(view.endedAt)} · {formatStoreTime(view.startedAt)}–{formatStoreTime(view.endedAt)} Toronto</div>
         </div>
         <div style={{ display: "flex", fontSize: 22, fontWeight: 700, marginTop: 12, marginBottom: 4 }}>Closing summary</div>
+        <Row
+          label="Starting float"
+          value={`${view.floatFoundCents == null && view.floatExpectedCents == null ? "UNAVAILABLE" : formatMoney(view.floatFoundCents ?? view.floatExpectedCents ?? 0)} · ${view.floatFoundCents != null ? "CONFIRMED" : "NOT CONFIRMED"}`}
+          strong
+        />
         {view.weedInStore != null ? <Row label="WEED in store this shift" value={view.weedInStore ? "WEED" : "NO WEED"} /> : null}
         <div style={{ display: "flex", fontSize: 18, fontWeight: 700, marginTop: 6 }}>Deposits</div>
         {view.deposits.length === 0 ? <Row label="No deposit bags" value={formatMoney(0)} /> : view.deposits.map((deposit, index) => (
@@ -81,6 +87,7 @@ export function closingSummaryImage(view: ClosingSummaryView) {
         <Section title="Opening Verify" background="#dbeafe" lines={view.openLines} floatNote={floatNote} />
         <Section title="Refill Issues" background="#fce7f3" lines={view.refillLines} />
         <Section title="Closing Count" background="#fef3c7" lines={view.closeLines} />
+        <div style={{ display: "flex", marginTop: 10, color: "#78716c", fontSize: 11 }}>System shift ID: {view.systemShiftId}</div>
       </div>
     ),
     { width: 390, height: summaryImageHeight(view) },

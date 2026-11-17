@@ -41,6 +41,7 @@ function normalize(parsed: State): State {
   if (typeof parsed.deposit_seq === "number" && Number.isInteger(parsed.deposit_seq)) base.deposit_seq = parsed.deposit_seq;
   if (typeof parsed.deposit_seq_pny02 === "number" && Number.isInteger(parsed.deposit_seq_pny02)) base.deposit_seq_pny02 = parsed.deposit_seq_pny02;
   if (parsed.refill_seq_by_store && typeof parsed.refill_seq_by_store === "object") base.refill_seq_by_store = parsed.refill_seq_by_store;
+  if (parsed.shift_ref_seq_by_store && typeof parsed.shift_ref_seq_by_store === "object") base.shift_ref_seq_by_store = parsed.shift_ref_seq_by_store;
   if (Array.isArray(parsed.stock_labels)) base.stock_labels = parsed.stock_labels;
   return base;
 }

@@ -5,6 +5,8 @@ import type { ClosingLine, State } from "./types.ts";
 export type SummarySku = { text: string; units: number; cents: number };
 
 export type ClosingSummaryView = {
+  shiftRef: string | null;
+  systemShiftId: string;
   weedInStore: boolean | null;
   storeLabel: string;
   staffName: string;
@@ -79,6 +81,8 @@ export function closingSummaryView(state: State, sccxShiftId: string, storeCode:
   const found = draft?.float_found_cents ?? null;
   const expected = draft?.float_expected_cents ?? previousFloat;
   return {
+    shiftRef: closing.shift_ref ?? null,
+    systemShiftId: shift.sccx_shift_id || shift.id,
     weedInStore: shift.weed_in_store ?? null,
     storeLabel: storeCode,
     staffName: state.staff.find((row) => row.staff_uid === shift.staff_uid)?.display_name ?? "Staff",
@@ -96,7 +100,7 @@ export function closingSummaryView(state: State, sccxShiftId: string, storeCode:
     openLines,
     refillLines,
     closeLines,
-    floatExpectedCents: found == null || expected == null ? null : expected,
+    floatExpectedCents: expected,
     floatFoundCents: found,
   };
 }

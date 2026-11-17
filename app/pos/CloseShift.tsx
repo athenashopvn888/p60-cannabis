@@ -50,7 +50,7 @@ export default function CloseShift({
   onSaveCount: (sku: string, counted_qty: number) => Promise<void>;
   onSubmitCount?: (confirmBlanksZero?: boolean) => Promise<void>;
   onSaveDeposit: (cents: number, floatCents: number) => Promise<{ deposit_code?: string | null } | void>;
-  onConfirm: (depositCents: number, floatCents: number, finalDepositCode?: string | null) => Promise<void | string>;
+  onConfirm: (depositCents: number, floatCents: number, finalDepositCode?: string | null) => Promise<void | { closeLabel?: string; shiftRef?: string }>;
   onClose: () => void;
   onDone?: () => void;
   weedInStore?: boolean | null;
@@ -72,7 +72,7 @@ export default function CloseShift({
   deadline?: string | null;
   initialStep?: "count" | "deposit";
   /** When set (after session revoke remount), jump straight to summary with locked cash figures. */
-  resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+  resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string; shiftRef?: string } | null;
 }) {
   const [step, setStep] = useState<"count" | "deposit" | "summary">(
     resumeSummary ? "summary" : (initialStep ?? (lines.length === 0 ? "deposit" : "count")),
@@ -91,6 +91,7 @@ export default function CloseShift({
   const [localError, setLocalError] = useState("");
   const [locking, setLocking] = useState(false);
   const [closeLabel, setCloseLabel] = useState(resumeSummary?.closeLabel ?? "");
+  const [shiftRef, setShiftRef] = useState(resumeSummary?.shiftRef ?? "");
   const verifyOpen = useVerifyOpen(deadline);
   const depositCents = Math.round(Number(deposit || 0) * 100);
   const drop = Number.isFinite(depositCents) ? depositCents : 0;
@@ -155,8 +156,9 @@ export default function CloseShift({
             void onSaveDeposit(depositCents, floatCents).then(async (saved) => {
               const code = saved && typeof saved === "object" ? saved.deposit_code ?? null : null;
               setFinalDepositCode(code);
-              const label = await onConfirm(depositCents, floatCents, code);
-              if (typeof label === "string") setCloseLabel(label);
+              const result = await onConfirm(depositCents, floatCents, code);
+              if (result?.closeLabel) setCloseLabel(result.closeLabel);
+              if (result?.shiftRef) setShiftRef(result.shiftRef);
               setStep("summary");
             }).catch((err: unknown) => {
               setLocking(false);
@@ -186,6 +188,7 @@ export default function CloseShift({
               startedAt={summaryMeta.startedAt}
               endedAt={summaryMeta.endedAt ?? summaryMeta.startedAt}
               closeLabel={closeLabel}
+              shiftRef={shiftRef}
               deposits={summaryDeposits}
               cashSalesCents={totals.cash_sales_cents}
               depositedCents={deposited}

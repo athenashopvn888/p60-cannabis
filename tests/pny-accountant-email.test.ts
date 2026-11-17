@@ -8,8 +8,20 @@ import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
 import type { ClosingRow, IncomingRow, Secrets, ShiftRow } from "../app/lib/pny-pos/types.ts";
+import { issueShiftReference } from "../app/lib/pny-pos/shiftReference.ts";
 
 const at = "2026-11-17T15:00:00.000Z";
+
+test("shift references are six characters, sequential, and continue after historical closings", () => {
+  const state = emptyState(at);
+  state.shifts.push(
+    { id: "old-1", store_code: "PNY01" } as ShiftRow,
+    { id: "old-2", store_code: "PNY01" } as ShiftRow,
+  );
+  state.closings.push({ shift_id: "old-1" } as ClosingRow, { shift_id: "old-2" } as ClosingRow);
+  assert.equal(issueShiftReference(state, "PNY01"), "S00003");
+  assert.equal(issueShiftReference(state, "PNY01"), "S00004");
+});
 
 test("refill IDs are simple, sequential, and shared by every line in a batch", () => {
   const state = emptyState(at);
@@ -60,7 +72,9 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
     sale_count: 2,
     deposited_cents: 10000,
     balance_cents: 0,
+    shift_ref: "S00022",
   } as ClosingRow;
+  state.closing_drafts.push({ shift_id: "shift-a", counts: [], final_deposit_cents: 0, float_found_cents: 4400, float_expected_cents: 4400, updated_at: at });
   const payload = closingEmailPayload(state, shift, closing, at);
   assert.equal(payload.to, ACCOUNTANT_EMAIL);
   assert.equal(payload.cc, ACCOUNTANT_CC);
@@ -72,6 +86,8 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.match(payload.body, /655 \| Knock Out LW \| 2/);
   assert.doesNotMatch(payload.body, /999 \| Zero/);
   assert.match(payload.body, /Total on-hand units: 9/);
+  assert.match(payload.body, /Shift ref: S00022/);
+  assert.match(payload.body, /Starting float: \$44\.00 \(CONFIRMED\)/);
   assert.match(String(payload.attachment_name), /^PNY01-Stock-Closing-2026-11-17-Randy\.xlsx$/);
   assert.ok(payload.attachment_report_json);
 });
@@ -81,6 +97,10 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
     storeCode: "PNY01",
     staffName: "Randy",
     closeDate: at,
+    shiftRef: "S00022",
+    systemShiftId: "sccx-PNY01-73-123",
+    startingFloatCents: 4400,
+    startingFloatConfirmed: true,
     closing: {
       sales_total_cents: 79300,
       debit_sales_cents: 500,
@@ -89,9 +109,9 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
       overage_cents: 10800,
       balance_cents: -3450,
       closing_lines: [
-        { sku: "172-3g", name: "Lavender Kush", opening_qty: 10, received_qty: 2, sold_qty: 3, left: 9, system_qty: 9 },
-        { sku: "396-6g", name: "Khalifa Kush", opening_qty: 4, received_qty: 1, sold_qty: 2, left: 3, system_qty: 3 },
-        { sku: "655", name: "Knock Out LW", opening_qty: 2, received_qty: 2, sold_qty: 1, left: 3, system_qty: 3 },
+        { sku: "172-3g", name: "Lavender Kush", price_cents: 1000, opening_qty: 10, received_qty: 2, sold_qty: 3, left: 9, system_qty: 9 },
+        { sku: "396-6g", name: "Khalifa Kush", price_cents: 2500, opening_qty: 4, received_qty: 1, sold_qty: 2, left: 3, system_qty: 3 },
+        { sku: "655", name: "Knock Out LW", price_cents: 2500, opening_qty: 2, received_qty: 2, sold_qty: 1, left: 3, system_qty: 3 },
       ],
     },
   });
@@ -101,6 +121,12 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
   assert.ok(sheet);
   assert.equal(sheet.getCell("A1").value, "STOCK CLOSING REPORT");
   assert.equal(sheet.getCell("A9").value, "A = Assigned     R = Confirmed refill     S = Sold     OH = Onhand");
+  assert.equal(sheet.getCell("Q4").value, "S00022");
+  assert.match(String(sheet.getCell("A8").value), /STARTING FLOAT: \$44\.00/);
+  assert.match(String(sheet.getCell("H8").value), /CONFIRMED/);
+  assert.match(String(sheet.getCell("O8").value), /REFILL VALUE: \$95\.00/);
+  assert.ok((sheet.getCell("B12").font?.size ?? 0) >= 10);
+  assert.notEqual(sheet.getCell("B12").fill, sheet.getCell("F12").fill);
   assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(11, column).value), ["A", "R", "S", "OH"]);
   assert.equal(sheet.getCell("A12").value, "172");
   assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(12, column).value), [10, 2, 3, 9]);
@@ -128,7 +154,7 @@ test("stock closing workbook and filename use the Toronto close date", async () 
   assert.equal(stockClosingReportFileName(input), "PNY01-Stock-Closing-2026-11-16-Randy.xlsx");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await buildStockClosingReport(input));
-  const closeDate = workbook.getWorksheet("STOCK CLOSING REPORT")?.getCell("O4").value;
+  const closeDate = workbook.getWorksheet("STOCK CLOSING REPORT")?.getCell("K4").value;
   assert.ok(closeDate instanceof Date);
   assert.equal(closeDate.toISOString().slice(0, 10), "2026-11-16");
 });

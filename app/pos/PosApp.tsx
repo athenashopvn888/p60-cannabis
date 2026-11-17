@@ -55,7 +55,7 @@ type CloseSnapshot = {
     deposits: { code: string | null; amountCents: number }[];
     finalDepositCode?: string | null;
   };
-  resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
+  resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string; shiftRef?: string } | null;
 };
 type View = {
   authenticated?: boolean;
@@ -272,7 +272,7 @@ export default function PosApp({
     }
   }
 
-  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; endedAt?: string; finalDepositCode?: string | null }) {
+  function snapshotClose(extra?: { depositCents?: number; floatCents?: number; closeLabel?: string; shiftRef?: string; endedAt?: string; finalDepositCode?: string | null }) {
     if (!view) return;
     const snapshot: CloseSnapshot = {
       lines: view.close_lines ?? [],
@@ -286,7 +286,7 @@ export default function PosApp({
       },
       savedDeposit: view.final_deposit_cents ?? null,
       stockCheck: view.stock_check,
-      floatExpectedCents: view.float_check?.found_cents == null ? null : view.float_check.expected_cents,
+      floatExpectedCents: view.float_check?.expected_cents ?? null,
       floatFoundCents: view.float_check?.found_cents ?? null,
       deadline: view.verify?.deadline_at ?? null,
       initialStep: view.closing?.submitted ? "deposit" : "count",
@@ -301,7 +301,7 @@ export default function PosApp({
       },
       resumeSummary:
         extra && extra.depositCents != null && extra.floatCents != null
-          ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel }
+          ? { depositCents: extra.depositCents, floatCents: extra.floatCents, closeLabel: extra.closeLabel, shiftRef: extra.shiftRef }
           : null,
     };
     setCloseSnap(snapshot);
@@ -488,11 +488,14 @@ export default function PosApp({
       const label = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { close_label?: unknown }).close_label === "string"
         ? (saved.closing as { close_label: string }).close_label
         : typeof saved.close_label === "string" ? saved.close_label : "";
+      const shiftRef = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { shift_ref?: unknown }).shift_ref === "string"
+        ? (saved.closing as { shift_ref: string }).shift_ref
+        : typeof saved.shift_ref === "string" ? saved.shift_ref : "";
       const endedAt = saved.closing && typeof saved.closing === "object" && typeof (saved.closing as { created_at?: unknown }).created_at === "string"
         ? (saved.closing as { created_at: string }).created_at
         : holdEndedAt;
-      snapshotClose({ depositCents, floatCents, closeLabel: label, endedAt, finalDepositCode });
-      return label;
+      snapshotClose({ depositCents, floatCents, closeLabel: label, shiftRef, endedAt, finalDepositCode });
+      return { closeLabel: label, shiftRef };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end the shift");
       throw err;
@@ -619,7 +622,7 @@ export default function PosApp({
           onSaveCount={async () => undefined}
           onSubmitCount={async () => undefined}
           onSaveDeposit={async () => undefined}
-          onConfirm={async () => ""}
+          onConfirm={async () => ({})}
           onClose={() => undefined}
           onDone={finishCloseSummary}
           weedInStore={closeSnap.weedInStore}
@@ -885,7 +888,7 @@ export default function PosApp({
             deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
           }}
           stockCheck={closeSnap?.stockCheck ?? view.stock_check}
-          floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
+          floatExpectedCents={closeSnap?.floatExpectedCents ?? view.float_check?.expected_cents ?? null}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
           deadline={verifyOpen ? (closeSnap?.deadline ?? view.verify?.deadline_at ?? null) : null}
           initialStep={closeSnap?.initialStep ?? (view.closing?.submitted ? "deposit" : "count")}

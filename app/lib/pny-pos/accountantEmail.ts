@@ -74,6 +74,12 @@ export function refillEmailPayload(state: State, rows: IncomingRow[], stage: "SE
 export function closingEmailPayload(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
   const draft = state.closing_drafts.find((row) => row.shift_id === shift.id);
+  const previousShift = state.shifts
+    .filter((row) => row.store_code === shift.store_code && row.id !== shift.id && row.status === "ENDED" && row.ended_at)
+    .sort((a, b) => (b.ended_at ?? "").localeCompare(a.ended_at ?? ""))[0];
+  const previousFloatCents = previousShift
+    ? state.closings.find((row) => row.shift_id === previousShift.id)?.float_cents ?? null
+    : null;
   const onHand = state.balances
     .filter((row) => (row.store_code == null || row.store_code === shift.store_code) && row.qty > 0)
     .sort((a, b) => skuSortKey(a.sku) - skuSortKey(b.sku) || a.sku.localeCompare(b.sku));
@@ -90,9 +96,13 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
   const sold = [...soldBySku]
     .filter(([, qty]) => qty > 0)
     .sort(([a], [b]) => skuSortKey(a) - skuSortKey(b) || a.localeCompare(b));
+  const startingFloatCents = draft?.float_found_cents ?? draft?.float_expected_cents ?? previousFloatCents;
+  const startingFloatConfirmed = draft?.float_found_cents != null;
+  const staffName = staff?.display_name ?? staff?.pos_id ?? "Staff";
   const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
   const body = [
     subject,
+    `Shift ref: ${closing.shift_ref ?? "UNAVAILABLE"}`,
     `Shift: ${storeStamp(shift.started_at)} - ${storeStamp(shift.ended_at ?? at)} Toronto`,
     `Sales: ${formatMoney(closing.sales_total_cents)}`,
     `Orders: ${closing.sale_count}`,
@@ -100,7 +110,7 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     `Debit sales: ${formatMoney(closing.debit_sales_cents ?? 0)}`,
     `Deposited: ${formatMoney(closing.deposited_cents)}`,
     `Final deposit: ${formatMoney(closing.final_deposit_cents ?? 0)}`,
-    `Opening float: ${draft?.float_found_cents == null ? "UNAVAILABLE" : formatMoney(draft.float_found_cents)}`,
+    `Starting float: ${startingFloatCents == null ? "UNAVAILABLE" : formatMoney(startingFloatCents)} (${startingFloatConfirmed ? "CONFIRMED" : "NOT CONFIRMED"})`,
     `Closing float: ${formatMoney(closing.float_cents ?? 0)}`,
     `Stock shortage: ${formatMoney(closing.shortage_cents ?? 0)}`,
     `Stock overage: ${formatMoney(closing.overage_cents ?? 0)}`,
@@ -115,6 +125,8 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     ...onHand.map((row) => `${row.sku} | ${nameOf(state, row.sku)} | ${row.qty}`),
     "",
     `Total on-hand units: ${onHand.reduce((sum, row) => sum + row.qty, 0)}`,
+    "",
+    `System shift ID: ${shift.sccx_shift_id || shift.id}`,
   ].join("\n");
   return {
     row_id: `EMAIL-CLOSE-${shift.id}`,
@@ -124,14 +136,22 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     body,
     attachment_name: stockClosingReportFileName({
       storeCode: shift.store_code,
-      staffName: staff?.display_name ?? staff?.pos_id ?? "Staff",
+      staffName,
       closeDate: shift.ended_at ?? at,
+      shiftRef: closing.shift_ref ?? "UNAVAILABLE",
+      systemShiftId: shift.sccx_shift_id || shift.id,
+      startingFloatCents,
+      startingFloatConfirmed,
       closing,
     }),
     attachment_report_json: JSON.stringify({
       storeCode: shift.store_code,
-      staffName: staff?.display_name ?? staff?.pos_id ?? "Staff",
+      staffName,
       closeDate: shift.ended_at ?? at,
+      shiftRef: closing.shift_ref ?? "UNAVAILABLE",
+      systemShiftId: shift.sccx_shift_id || shift.id,
+      startingFloatCents,
+      startingFloatConfirmed,
       closing: {
         sales_total_cents: closing.sales_total_cents,
         debit_sales_cents: closing.debit_sales_cents ?? 0,

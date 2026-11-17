@@ -6,6 +6,10 @@ export type StockClosingReportInput = {
   storeCode: string;
   staffName: string;
   closeDate: string;
+  shiftRef?: string;
+  systemShiftId?: string;
+  startingFloatCents?: number | null;
+  startingFloatConfirmed?: boolean;
   closing: Pick<ClosingRow,
     | "sales_total_cents"
     | "debit_sales_cents"
@@ -21,6 +25,13 @@ type SizeGroup = "3g" | "5g" | "14g" | "28g" | "EDIBLE";
 type ReportLine = { assigned: number; refill: number; sold: number; onHand: number };
 
 const SIZE_GROUPS: SizeGroup[] = ["3g", "5g", "14g", "28g", "EDIBLE"];
+const GROUP_COLORS = [
+  { header: "FF376A9B", light: "FFEAF3FB", alt: "FFDDECF8" },
+  { header: "FF3F7D58", light: "FFECF7F0", alt: "FFDDF0E4" },
+  { header: "FF9A6A18", light: "FFFFF6E4", alt: "FFF9EBC9" },
+  { header: "FF9B4F57", light: "FFFBECEF", alt: "FFF5DDE1" },
+  { header: "FF694A8A", light: "FFF3ECFA", alt: "FFE8DCF5" },
+] as const;
 
 function itemAndSize(sku: string): { item: string; size: SizeGroup } {
   const match = sku.trim().match(/^(\d+)(?:-(3g|5g|6g|14g|28g))?$/i);
@@ -44,6 +55,10 @@ function sortItems(a: string, b: string) {
 
 function dollars(cents = 0) {
   return Math.round(cents) / 100;
+}
+
+function moneyText(cents = 0) {
+  return dollars(cents).toLocaleString("en-CA", { style: "currency", currency: "CAD" });
 }
 
 function storeDateParts(value: string) {
@@ -75,6 +90,13 @@ function reportRows(input: StockClosingReportInput) {
     rows.set(item, grouped);
   }
   return [...rows].sort(([a], [b]) => sortItems(a, b));
+}
+
+function refillValueCents(input: StockClosingReportInput) {
+  return input.closing.closing_lines.reduce(
+    (sum, line) => sum + (line.received_qty ?? 0) * (line.price_cents ?? 0),
+    0,
+  );
 }
 
 function border(style: ExcelJS.BorderStyle = "thin"): Partial<ExcelJS.Borders> {
@@ -113,9 +135,10 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   sheet.getRow(1).height = 24;
 
   const identity = [
-    ["A3:G3", "LOC", "A4:G4", input.storeCode],
-    ["H3:N3", "STAFF NAME", "H4:N4", input.staffName],
-    ["O3:U3", "CLOSE DATE", "O4:U4", workbookDate(input.closeDate)],
+    ["A3:E3", "LOC", "A4:E4", input.storeCode],
+    ["F3:J3", "STAFF NAME", "F4:J4", input.staffName],
+    ["K3:P3", "CLOSE DATE", "K4:P4", workbookDate(input.closeDate)],
+    ["Q3:U3", "SHIFT REF", "Q4:U4", input.shiftRef ?? "UNAVAILABLE"],
   ] as const;
   for (const [headerRange, header, valueRange, value] of identity) {
     sheet.mergeCells(headerRange);
@@ -157,10 +180,28 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     const cell = sheet.getCell(7, start);
     cell.value = value;
     cell.numFmt = "$#,##0.00;[Red]($#,##0.00);-";
-    cell.font = { name: "Arial", size: 10, bold: true };
+    cell.font = { name: "Arial", size: 12, bold: true };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = border();
   });
+
+  const startingFloat = input.startingFloatCents == null ? "UNAVAILABLE" : moneyText(input.startingFloatCents);
+  const status = input.startingFloatConfirmed ? "CONFIRMED" : "NOT CONFIRMED";
+  const topFacts = [
+    ["A8:G8", "STARTING FLOAT", startingFloat, "FFEAF3FB"],
+    ["H8:N8", "FLOAT STATUS", status, input.startingFloatConfirmed ? "FFDDF0E4" : "FFFFE5CC"],
+    ["O8:U8", "REFILL VALUE", moneyText(refillValueCents(input)), "FFF3ECFA"],
+  ] as const;
+  for (const [range, label, value, fill] of topFacts) {
+    sheet.mergeCells(range);
+    const cell = sheet.getCell(range.split(":")[0]);
+    cell.value = `${label}: ${value}`;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+    cell.font = { name: "Arial", size: 11, bold: true };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = border();
+  }
+  sheet.getRow(8).height = 22;
 
   sheet.mergeCells("A9:U9");
   const legend = sheet.getCell("A9");
@@ -177,20 +218,21 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   itemHeader.border = border();
 
   SIZE_GROUPS.forEach((group, groupIndex) => {
+    const colors = GROUP_COLORS[groupIndex];
     const start = 2 + groupIndex * 4;
     const end = start + 3;
     sheet.mergeCells(10, start, 10, end);
     const groupCell = sheet.getCell(10, start);
     groupCell.value = group;
-    groupCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
+    groupCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.header } };
     groupCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
     groupCell.alignment = { horizontal: "center", vertical: "middle" };
     groupCell.border = border();
     ["A", "R", "S", "OH"].forEach((label, offset) => {
       const cell = sheet.getCell(11, start + offset);
       cell.value = label;
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
-      cell.font = { name: "Arial", size: 8, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: offset % 2 === 0 ? colors.light : colors.alt } };
+      cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF111827" } };
       cell.alignment = { horizontal: "center", vertical: "middle" };
       cell.border = border();
     });
@@ -202,16 +244,18 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     const row = sheet.getRow(rowNo);
     row.getCell(1).value = item;
     row.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
-    row.getCell(1).font = { name: "Arial", size: 8 };
+    row.getCell(1).font = { name: "Arial", size: 10, bold: true };
     row.getCell(1).border = border("thin");
     SIZE_GROUPS.forEach((group, groupIndex) => {
       const start = 2 + groupIndex * 4;
+      const colors = GROUP_COLORS[groupIndex];
       const line = grouped[group];
       [line.assigned, line.refill, line.sold, line.onHand].forEach((value, offset) => {
         const cell = row.getCell(start + offset);
         cell.value = value === 0 ? null : value;
         cell.numFmt = "0;-0;-";
-        cell.font = { name: "Arial", size: 8 };
+        cell.font = { name: "Arial", size: 10, bold: value !== 0 };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: offset % 2 === 0 ? colors.light : colors.alt } };
         cell.alignment = { horizontal: "center", vertical: "middle" };
         cell.border = border("thin");
       });
@@ -220,7 +264,7 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
 
   const lastRow = Math.max(12, 11 + rows.length);
   sheet.pageSetup.printArea = `A1:U${lastRow}`;
-  sheet.headerFooter.oddFooter = "&LPNY POS&CPage &P of &N&R" + input.storeCode;
+  sheet.headerFooter.oddFooter = `&LSystem shift ID: ${input.systemShiftId ?? "UNAVAILABLE"}&CPage &P of &N&R${input.storeCode}`;
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 

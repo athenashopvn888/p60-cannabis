@@ -62,6 +62,7 @@ export default function TillSummary({
   startedAt,
   endedAt,
   closeLabel,
+  shiftRef,
   deposits,
   expenseCents = 0,
   cashSalesCents,
@@ -79,6 +80,7 @@ export default function TillSummary({
   startedAt: string;
   endedAt: string;
   closeLabel?: string;
+  shiftRef?: string;
   deposits: { code: string | null; amountCents: number }[];
   expenseCents?: number;
   cashSalesCents: number;
@@ -108,6 +110,7 @@ export default function TillSummary({
       <div className={styles.summaryIdentity} data-testid="closing-identity">
         <div className={styles.summaryBrand}>P60 CANNABIS PNY&nbsp; · &nbsp;Store {storeLabel}</div>
         <strong className={styles.summaryStaff}>{staffName}</strong>
+        {shiftRef ? <strong className={styles.summaryStaff} data-testid="shift-ref">Shift {shiftRef}</strong> : null}
         <span className={styles.summaryShift}>{closeDate(endedAt)}&nbsp; {closeTime(startedAt)} – {closeTime(endedAt)}</span>
         <div className={styles.summaryMeta}>
           <span>Toronto time</span>
@@ -115,6 +118,14 @@ export default function TillSummary({
           {weedInStore != null ? <span data-testid="weed-shift-answer">{weedInStore ? "WEED" : "NO WEED"}</span> : null}
         </div>
       </div>
+      <section className={styles.summaryCheck} data-testid="starting-float-status">
+        <h3>STARTING FLOAT</h3>
+        <p>
+          <strong>{floatFoundCents == null && floatExpectedCents == null ? "UNAVAILABLE" : formatMoney(floatFoundCents ?? floatExpectedCents ?? 0)}</strong>
+          {" · "}
+          <strong>{floatFoundCents != null ? "CONFIRMED" : "NOT CONFIRMED"}</strong>
+        </p>
+      </section>
       <section className={styles.summaryCheck} data-testid="closing-check">
         <h3>CHECK</h3>
         <p>TOTAL CASH COLLECTED uses recorded deposits, expense paid from store cash, and float left.</p>

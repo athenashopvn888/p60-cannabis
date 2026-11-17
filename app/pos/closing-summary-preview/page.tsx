@@ -19,6 +19,7 @@ export default function ClosingSummaryPreviewPage() {
           startedAt="2026-11-10T15:00:00.000Z"
           endedAt="2026-11-10T23:30:00.000Z"
           closeLabel="PNY-1110-1830"
+          shiftRef="S00022"
           weedInStore={true}
           deposits={[
             { code: `${store.depositPrefix}0041`, amountCents: 50000 },
@@ -28,6 +29,8 @@ export default function ClosingSummaryPreviewPage() {
           cashSalesCents={69000}
           depositedCents={71000}
           floatCents={5000}
+          floatExpectedCents={5000}
+          floatFoundCents={5000}
           openLines={[
             { sku: "1015", text: "1015 pack", units: -2, cents: -500 },
             { sku: "709", text: "709 each", units: 7, cents: 3500 },
