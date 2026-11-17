@@ -3988,11 +3988,16 @@ test("preview closing count can search and add known zero-quantity SKU 240", asy
   const before = await h.svc.state(h.token);
   assert.equal(before.count_lines?.some((line) => line.sku === "240"), true);
   assert.equal(before.close_lines?.some((line) => line.sku === "240"), false);
+  for (const sku of ["373-5g", "509-5g", "593-5g"]) {
+    assert.equal(before.count_lines?.some((line) => line.sku === sku), true, `${sku} remains available to add`);
+  }
 
   const saved = await h.svc.saveClosingCount(h.token, { sku: "240", counted_qty: 0 });
   assert.equal(saved.total, (before.close_lines?.length ?? 0) + 1);
+  await h.svc.saveClosingCount(h.token, { sku: "509-5g", counted_qty: 3 });
   const after = await h.svc.state(h.token);
   assert.equal(after.closing?.lines?.find((line) => line.sku === "240")?.counted_qty, 0);
+  assert.equal(after.closing?.lines?.find((line) => line.sku === "509-5g")?.counted_qty, 3);
   await assert.rejects(() => h.svc.saveClosingCount(h.token, { sku: "not-a-catalog-sku", counted_qty: 0 }), { code: "BAD_SKU" });
 });
 
@@ -4018,6 +4023,10 @@ test("unusual closing counts require an explicit second confirmation", async () 
   const pos = readFileSync("app/pos/PosApp.tsx", "utf8");
   assert.match(pos, /COUNT_CONFIRM_REQUIRED/);
   assert.match(pos, /confirm_unusual: true/);
+  const countCard = readFileSync("app/pos/CountCard.tsx", "utf8");
+  assert.match(countCard, /Any SKU not listed\?/);
+  assert.match(countCard, /Yes, add SKU/);
+  assert.match(countCard, /No, continue/);
 });
 
 test("close start timeout recovers by rereading committed server state", async () => {
@@ -4075,6 +4084,8 @@ test("closing count requires every SKU and explicit confirmation records blanks 
       return true;
     },
   );
+  const resumedRecount = await h.svc.state(h.token);
+  assert.deepEqual(resumedRecount.closing.recount_lines, [{ sku: "1002", text: "#1002 each", counted_qty: null }]);
   await h.svc.saveClosingCount(h.token, { sku: "1002", counted_qty: 0 });
   await h.svc.submitClosingCount(h.token);
   const draft = h.db.state.closing_drafts.find((row) => row.shift_id === h.shiftId);

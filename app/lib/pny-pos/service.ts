@@ -460,7 +460,9 @@ function ticketStats(state: State, shiftId: string) {
 }
 
 function productName(state: State, sku: string) {
-  return state.products.find((product) => product.sku === sku)?.name ?? sku;
+  return state.products.find((product) => product.sku === sku)?.name
+    ?? paperLines().find((line) => line.sku === sku)?.name
+    ?? sku;
 }
 
 function pricedItem(_sku: string, record: ItemRecord) {
@@ -1096,6 +1098,10 @@ function floatCheck(state: State, shift: ShiftRow) {
 function countSkus(state: State, shift?: ShiftRow) {
   const skus = new Set<string>();
   for (const balance of state.balances) skus.add(balance.sku);
+  // The paper refill baseline is part of PNY01's known catalog. Keep those
+  // zero-on-hand SKUs searchable during closing so staff can add stock that
+  // was physically found but absent from the first count plan.
+  if (tillCode() === "PNY01") for (const row of paperLines()) skus.add(row.sku);
   for (const product of state.products) {
     const storeProduct = state.store_products.find((item) => item.store_code === tillCode() && item.sku === product.sku);
     if (product.setb_active && storeProduct?.enabled) skus.add(product.sku);
@@ -2657,6 +2663,11 @@ export class PosService {
           return {
             started: Boolean(draft?.closing_started_at),
             submitted: Boolean(draft?.closing_submitted_at),
+            recount_lines: (draft?.closing_recount_skus ?? []).map((sku) => ({
+              sku,
+              text: staffSkuText(sku, countMeta(tx.state, sku).bag),
+              counted_qty: null,
+            })),
             lines,
           };
         })(),

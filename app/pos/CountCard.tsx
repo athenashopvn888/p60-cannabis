@@ -26,6 +26,7 @@ export default function CountCard({
   submitSignal = 0,
   onExpandedChange,
   initialExpanded = false,
+  initialRecountLines = [],
 }: {
   lines: CountCardLine[];
   busy: boolean;
@@ -40,6 +41,7 @@ export default function CountCard({
   submitSignal?: number;
   onExpandedChange?: (expanded: boolean) => void;
   initialExpanded?: boolean;
+  initialRecountLines?: CountCardLine[];
 }) {
   const [index, setIndex] = useState(() => {
     const open = lines.findIndex((line) => line.counted_qty == null && !line.locked);
@@ -57,8 +59,9 @@ export default function CountCard({
   const [localError, setLocalError] = useState("");
   const [ruleOpen, setRuleOpen] = useState(false);
   const [blankLines, setBlankLines] = useState<CountCardLine[] | null>(null);
-  const [recountLines, setRecountLines] = useState<CountCardLine[] | null>(null);
+  const [recountLines, setRecountLines] = useState<CountCardLine[] | null>(() => initialRecountLines.length ? initialRecountLines : null);
   const [recountDrafts, setRecountDrafts] = useState<Record<string, string>>({});
+  const [missingSkuPrompt, setMissingSkuPrompt] = useState(false);
   const knownSkuListId = useId();
 
   useEffect(() => {
@@ -72,6 +75,14 @@ export default function CountCard({
     // requestSubmit intentionally uses the current count draft at signal time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitSignal]);
+
+  useEffect(() => {
+    if (initialRecountLines.length && !recountLines) {
+      setRecountLines(initialRecountLines);
+      setRecountDrafts({});
+      setLocalError("");
+    }
+  }, [initialRecountLines, recountLines]);
 
   if (!current) return null;
 
@@ -173,7 +184,7 @@ export default function CountCard({
       for (const line of recountLines) await onSave(line.sku, Number(recountDrafts[line.sku]));
       setRecountLines(null);
       setRecountDrafts({});
-      await onSubmit?.(false);
+      setMissingSkuPrompt(true);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Recount was not saved");
     }
@@ -346,6 +357,18 @@ export default function CountCard({
       </div>
     </div>
   ) : null;
+  const missingSkuModal = missingSkuPrompt ? (
+    <div className={styles.ruleScrim} role="dialog" aria-modal="true" aria-labelledby="missing-sku-title" data-testid="missing-sku-modal">
+      <div className={styles.ruleSheet}>
+        <h2 id="missing-sku-title">Any SKU not listed?</h2>
+        <p>Is there any stock you counted that was missing from the first list?</p>
+        <div className={styles.askActions}>
+          <button className={styles.primary} type="button" data-testid="missing-sku-add" onClick={() => { setMissingSkuPrompt(false); openList(); }}>Yes, add SKU</button>
+          <button className={styles.secondary} type="button" disabled={busy} data-testid="missing-sku-none" onClick={() => { setMissingSkuPrompt(false); void onSubmit?.(false); }}>No, continue</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   if (compact) {
     return (
@@ -356,6 +379,7 @@ export default function CountCard({
         {ruleModal}
         {blankModal}
         {recountModal}
+        {missingSkuModal}
         <form className={styles.countCompact} onSubmit={(event) => { event.preventDefault(); void submitOne(); }}>
           <span className={styles.countCompactSku}>{current.text}</span>
           {qtyInput}
@@ -394,6 +418,7 @@ export default function CountCard({
       {ruleModal}
       {blankModal}
       {recountModal}
+      {missingSkuModal}
     </div>
   );
 }

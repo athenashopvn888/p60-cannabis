@@ -80,7 +80,12 @@ type View = {
   totals?: { sales_cents: number; cash_sales_cents?: number; debit_sales_cents?: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
   deposits?: { id: string; deposit_code?: string | null; amount_cents: number; created_at: string }[];
   close_lines?: CloseLine[];
-  closing?: { started?: boolean; submitted?: boolean; lines?: { sku: string; text: string; counted_qty: number | null }[] };
+  closing?: {
+    started?: boolean;
+    submitted?: boolean;
+    lines?: { sku: string; text: string; counted_qty: number | null }[];
+    recount_lines?: { sku: string; text: string; counted_qty: number | null }[];
+  };
   opening_lines?: OpeningLine[];
   final_deposit_cents?: number | null;
   float_cents?: number | null;
@@ -1042,6 +1047,7 @@ export default function PosApp({
                 allowExtra
                 knownLines={(view.count_lines ?? []).map((line) => ({ sku: line.sku, text: `#${line.sku} · ${line.name}`, counted_qty: null }))}
                 lines={(view.closing.lines ?? []).map((line) => ({ sku: line.sku, text: line.text, counted_qty: line.counted_qty }))}
+                initialRecountLines={view.closing.recount_lines ?? []}
                 busy={busy || Boolean(view.master)}
                 scanCatalog={view.scan_products ?? []}
                 onSave={saveCloseCount}
