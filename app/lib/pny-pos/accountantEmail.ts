@@ -1,6 +1,7 @@
 import { STORE_TZ } from "./constants.ts";
 import { skuSortKey } from "./flowerSku.ts";
 import { formatMoney } from "./money.ts";
+import { stockClosingReportFileName } from "./stockClosingReport.ts";
 import type { ClosingRow, IncomingRow, ShiftRow, State } from "./types.ts";
 
 export const ACCOUNTANT_EMAIL = "doli.doli.080496@gmail.com";
@@ -121,7 +122,12 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     cc: ACCOUNTANT_CC,
     subject,
     body,
-    attachment_name: `${shift.store_code}-Stock-Closing-${(shift.ended_at ?? at).slice(0, 10)}-${(staff?.display_name ?? staff?.pos_id ?? "Staff").replace(/[^A-Za-z0-9_-]+/g, "-")}.xlsx`,
+    attachment_name: stockClosingReportFileName({
+      storeCode: shift.store_code,
+      staffName: staff?.display_name ?? staff?.pos_id ?? "Staff",
+      closeDate: shift.ended_at ?? at,
+      closing,
+    }),
     attachment_report_json: JSON.stringify({
       storeCode: shift.store_code,
       staffName: staff?.display_name ?? staff?.pos_id ?? "Staff",

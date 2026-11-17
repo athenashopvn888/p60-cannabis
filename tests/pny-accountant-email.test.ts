@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ACCOUNTANT_CC, ACCOUNTANT_EMAIL, closingEmailPayload, ensureRefillId, refillEmailPayload } from "../app/lib/pny-pos/accountantEmail.ts";
 import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "../app/lib/pny-pos/accountantEmailDelivery.ts";
-import { buildStockClosingReport } from "../app/lib/pny-pos/stockClosingReport.ts";
+import { buildStockClosingReport, stockClosingReportFileName } from "../app/lib/pny-pos/stockClosingReport.ts";
 import ExcelJS from "exceljs";
 import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
@@ -108,6 +108,29 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
   assert.deepEqual([6, 7, 8, 9].map((column) => sheet.getCell(13, column).value), [4, 1, 2, 3]);
   assert.equal(sheet.getCell("A14").value, "655");
   assert.deepEqual([18, 19, 20, 21].map((column) => sheet.getCell(14, column).value), [2, 2, 1, 3]);
+});
+
+test("stock closing workbook and filename use the Toronto close date", async () => {
+  const input = {
+    storeCode: "PNY01",
+    staffName: "Randy",
+    closeDate: "2026-11-17T02:00:00.000Z",
+    closing: {
+      sales_total_cents: 0,
+      debit_sales_cents: 0,
+      deposited_cents: 0,
+      float_cents: 0,
+      overage_cents: 0,
+      balance_cents: 0,
+      closing_lines: [],
+    },
+  };
+  assert.equal(stockClosingReportFileName(input), "PNY01-Stock-Closing-2026-11-16-Randy.xlsx");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildStockClosingReport(input));
+  const closeDate = workbook.getWorksheet("STOCK CLOSING REPORT")?.getCell("O4").value;
+  assert.ok(closeDate instanceof Date);
+  assert.equal(closeDate.toISOString().slice(0, 10), "2026-11-16");
 });
 
 test("direct accountant email sender posts the complete payload", async () => {

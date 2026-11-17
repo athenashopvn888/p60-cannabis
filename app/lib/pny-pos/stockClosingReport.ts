@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { STORE_TZ } from "./constants.ts";
 import type { ClosingRow } from "./types.ts";
 
 export type StockClosingReportInput = {
@@ -43,6 +44,22 @@ function sortItems(a: string, b: string) {
 
 function dollars(cents = 0) {
   return Math.round(cents) / 100;
+}
+
+function storeDateParts(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: STORE_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+function workbookDate(value: string) {
+  const { year, month, day } = storeDateParts(value);
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
 }
 
 function reportRows(input: StockClosingReportInput) {
@@ -98,7 +115,7 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   const identity = [
     ["A3:G3", "LOC", "A4:G4", input.storeCode],
     ["H3:N3", "STAFF NAME", "H4:N4", input.staffName],
-    ["O3:U3", "CLOSE DATE", "O4:U4", new Date(input.closeDate)],
+    ["O3:U3", "CLOSE DATE", "O4:U4", workbookDate(input.closeDate)],
   ] as const;
   for (const [headerRange, header, valueRange, value] of identity) {
     sheet.mergeCells(headerRange);
@@ -208,7 +225,8 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
 }
 
 export function stockClosingReportFileName(input: StockClosingReportInput, version = 1) {
-  const day = input.closeDate.slice(0, 10);
+  const parts = storeDateParts(input.closeDate);
+  const day = `${parts.year}-${parts.month}-${parts.day}`;
   const safeStaff = input.staffName.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "Staff";
   const suffix = version > 1 ? `-v${version}` : "";
   return `${input.storeCode}-Stock-Closing-${day}-${safeStaff}${suffix}.xlsx`;
