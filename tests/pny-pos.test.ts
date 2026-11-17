@@ -1773,6 +1773,7 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
     ["SKU", "Strain", "Tier", "Type", "THC", "Price_3G", "Price_5G", "Price_14G", "Price_28G", "ImageURL"],
     ["392", "RAINBOW KUSH", "AAA+", "IH", "30%", "20", "30", "", "", ""],
     ["392", "RAINBOW KUSH AAA+ SALE!", "BUDGET", "IH SALE", "30%", "20|10", "30|20", "", "", "https://example.com/392.jpg"],
+    ["373", "CANDY KRUSH (S)", "AAA+", "IH", "30%", "20", "30", "", "", ""],
     ["500", "PINK GODFATHER", "EXOTIC", "IH", "36%", "40", "60", "", "", "https://example.com/500.jpg"],
     ["9500", "JACK HERER LTD BAG", "EXOTIC", "IH SALE", "36%", "40|30", "", "", "", "https://example.com/9500.jpg"],
     ["502", "ALIEN SMACK PINK", "EXOTIC", "IH", "36", "40", "60", "", "", "https://example.com/502.jpg"],
@@ -1794,13 +1795,14 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
   h.sheet.grids.Flowers_Raw = grid;
   await h.svc.syncSetb([
     { sku: "502-3g", name: "502-3g", category: "EXOTIC", price_cents: 4000, active: true },
+    { sku: "373-5g", name: "Existing flower label", category: "AAA+", price_cents: 3000, active: true },
     { sku: "1000", name: "BB LIGHTS", category: "Cigarettes", price_cents: 250, active: true },
   ]);
   await h.svc.importRoster({ key: "roster", staff: [{ staff_uid: "staff-a", pos_id: "A1", display_name: "Ada", active: true }] });
   const started = await h.svc.startShift({ key: "flower-start", store: "PNY01", staff_ref: "staff-a", shift_id: "sccx-flower" });
   const login = await h.svc.login(String(started.pin), "10.0.0.77");
   await h.svc.answerWeedInStore(login.token, true);
-  for (const sku of ["502-3g", "1000"]) {
+  for (const sku of ["502-3g", "373-5g", "1000"]) {
     h.db.state.incoming.push({
       kitchen_row_id: crypto.randomUUID(),
       batch_id: "paper",
@@ -1833,8 +1835,11 @@ test("Flowers_Raw names a bare flower and charges the sale price without rewriti
   assert.equal(view.products.find((product) => product.sku === "1000")?.price_cents, 250);
   const menu = await h.svc.menu();
   assert.equal(menu.items?.find((item) => item.sku === "502-3g")?.name, "ALIEN SMACK PINK 3g");
+  assert.equal(menu.items?.find((item) => item.sku === "373-5g")?.price_cents, 2500);
   const sale = await h.svc.cashout(login.token, { key: "alien", lines: [{ sku: "502-3g", qty: 1 }] });
   assert.equal(sale.total_cents, 4000);
+  const salePrice = await h.svc.cashout(login.token, { key: "candy-sale", lines: [{ sku: "373-5g", qty: 1 }] });
+  assert.equal(salePrice.total_cents, 2500);
   assert.equal(h.db.state.products.find((product) => product.sku === "502-3g")?.name, "502-3g");
 });
 

@@ -395,7 +395,12 @@ function presentCatalogItem<T extends { sku: string; name: string; category: str
   if (parseFlowerSku(item.sku)) {
     const shown = overlayFlower(item, flowers);
     const pack = cigarettePackCents(shown.sku, shown.category, shown.name);
-    return pack != null ? { ...shown, price_cents: pack } : shown;
+    const canonical = quoteForSku(shown.sku);
+    return pack != null
+      ? { ...shown, price_cents: pack }
+      : canonical?.cents
+        ? { ...shown, price_cents: canonical.cents }
+        : shown;
   }
   const record = lookupItem(items, item.sku);
   if (!record) return item;
@@ -467,10 +472,11 @@ function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?:
   const record = lookupItem(items, sku);
   const master = !product ? masters?.get(sku) : undefined;
   if (master?.product.setb_active && master.enabled) {
+    const canonical = parseFlowerSku(sku) ? quoteForSku(sku)?.cents ?? null : null;
     const fromFlower = flowerPriceCents(flowers, sku);
     const pack = cigarettePackCents(sku, master.product.category, master.product.name);
-    const cents = fromFlower ?? pack ?? raw?.get(sku) ?? master.override ?? master.product.default_price_cents;
-    if (cents > 0) return { cents, source: fromFlower != null || pack != null || raw?.get(sku) != null ? "RAW_UNIT" as const : "SETB_DEFAULT" as const, product: master.product };
+    const cents = pack ?? canonical ?? fromFlower ?? raw?.get(sku) ?? master.override ?? master.product.default_price_cents;
+    if (cents > 0) return { cents, source: pack != null || canonical != null || fromFlower != null || raw?.get(sku) != null ? "RAW_UNIT" as const : "SETB_DEFAULT" as const, product: master.product };
   }
   if (!product?.setb_active || !storeProduct?.enabled) {
     if (!record) throw new PosError(409, "NOT_SELLABLE", "That item is not for sale.");
@@ -498,6 +504,8 @@ function priceOf(state: State, sku: string, raw?: Map<string, number>, flowers?:
   }
   const packCents = cigarettePackCents(sku, product.category, product.name);
   if (packCents != null) return { cents: packCents, source: "RAW_UNIT" as const, product };
+  const canonical = parseFlowerSku(sku) ? quoteForSku(sku)?.cents ?? null : null;
+  if (canonical != null) return { cents: canonical, source: "RAW_UNIT" as const, product };
   const fromFlower = flowerPriceCents(flowers, sku);
   if (fromFlower != null) return { cents: fromFlower, source: "RAW_UNIT" as const, product };
   const fromSheet = raw?.get(sku);
@@ -516,6 +524,8 @@ function sellingPriceCents(state: State, sku: string, raw?: Map<string, number>,
   if (record && record.price_cents > 0) return pricedItem(sku, record);
   const packCents = cigarettePackCents(sku, product?.category ?? record?.category, product?.name ?? record?.name);
   if (packCents != null) return packCents;
+  const canonical = parseFlowerSku(sku) ? quoteForSku(sku)?.cents ?? null : null;
+  if (canonical != null) return canonical;
   const fromFlower = flowerPriceCents(flowers, sku);
   if (fromFlower != null) return fromFlower;
   const fromSheet = raw?.get(sku);
