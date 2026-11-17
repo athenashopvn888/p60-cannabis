@@ -102,6 +102,21 @@ const nextConfig: NextConfig = {
       { source: "/blog/p60-cannabis-local-visit-guide-adults-19", destination: "/resources/local-guides/weed-dispensary-in-york", permanent: true },
     ];
   },
+  async rewrites() {
+    const posApiOrigin = process.env.POS_API_ORIGIN?.trim().replace(/\/$/, "");
+    if (!posApiOrigin) return [];
+
+    return {
+      beforeFiles: [
+        {
+          source: "/api/pos/:path*",
+          destination: `${posApiOrigin}/api/pos/:path*`,
+        },
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
+  },
 };
 
 export default nextConfig;
