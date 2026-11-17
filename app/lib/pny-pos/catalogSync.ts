@@ -68,6 +68,12 @@ export function syncCommittedCatalog(state: State, storeCode: string, at = new D
       };
       state.store_products.push(storeProduct);
       changed += 1;
+    } else if (isFlowerSource(source) && storeProduct.price_override_cents != null) {
+      // FLOWERS_RAW owns flower pricing. A stale store override must not keep
+      // the regular price visible after the master moves to its sale price.
+      storeProduct.price_override_cents = null;
+      storeProduct.updated_at = at;
+      changed += 1;
     }
   }
   return changed;

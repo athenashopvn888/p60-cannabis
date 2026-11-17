@@ -1278,6 +1278,22 @@ test("the committed master fills missing SKUs, keeps existing POS rows, and uses
     synced_at: "2026-11-01T00:00:00.000Z",
     created_at: "2026-11-01T00:00:00.000Z",
   });
+  state.store_products.push({
+    store_code: "PNY01",
+    sku: "373-5g",
+    enabled: true,
+    price_override_cents: 3000,
+    created_at: "2026-11-01T00:00:00.000Z",
+    updated_at: "2026-11-01T00:00:00.000Z",
+  });
+  state.store_products.push({
+    store_code: "PNY01",
+    sku: "655",
+    enabled: true,
+    price_override_cents: 999,
+    created_at: "2026-11-01T00:00:00.000Z",
+    updated_at: "2026-11-01T00:00:00.000Z",
+  });
   syncCommittedCatalog(state, "PNY01", "2026-11-17T00:00:00.000Z");
   const bySku = new Map(state.products.map((product) => [product.sku, product]));
   assert.equal(bySku.get("373-5g")?.default_price_cents, 2500);
@@ -1289,6 +1305,8 @@ test("the committed master fills missing SKUs, keeps existing POS rows, and uses
   assert.equal(bySku.get("657")?.default_price_cents, 5000);
   assert.equal(bySku.get("655")?.name, "Existing POS gummies");
   assert.equal(bySku.get("655")?.default_price_cents, 1234);
+  assert.equal(state.store_products.find((row) => row.sku === "373-5g")?.price_override_cents, null);
+  assert.equal(state.store_products.find((row) => row.sku === "655")?.price_override_cents, 999);
   assert.equal(state.store_products.find((row) => row.sku === "291-14g")?.enabled, false);
   assert.equal(committedCatalogSearch(state).some((row) => row.sku === "291-14g"), true);
 });
