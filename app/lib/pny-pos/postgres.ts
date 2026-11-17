@@ -83,7 +83,13 @@ async function projectState(client: PoolClient, state: State) {
   await insertRows(client, "shift_closings", state.closings);
   await insertRows(client, "closing_drafts", state.closing_drafts ?? []);
   await insertRows(client, "idempotency_keys", state.idempotency);
-  await insertRows(client, "sheet_outbox", state.outbox);
+  await insertRows(client, "sheet_outbox", state.outbox.map((row) => {
+    const projected = { ...row };
+    delete projected.lease_id;
+    delete projected.lease_expires_at;
+    delete projected.last_attempt_at;
+    return projected;
+  }));
   await insertRows(client, "sheet_import_cursor", state.cursors);
   await insertRows(client, "audit_log", state.audit);
   await insertRows(client, "admin_sessions", state.admin_sessions);
@@ -114,6 +120,17 @@ export class PgDb implements PosDb {
       });
     }
     return this.ready;
+  }
+
+  async peek() {
+    await this.ensureSchema();
+    const client = await this.pool.connect();
+    try {
+      const existing = await client.query("SELECT doc FROM pny_state WHERE id = 'main'");
+      return structuredClone((existing.rows[0]?.doc as State | undefined) ?? emptyState()) as State;
+    } finally {
+      client.release();
+    }
   }
 
   async transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {

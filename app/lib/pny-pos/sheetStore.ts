@@ -6,6 +6,8 @@ import { skuSortKey } from "./flowerSku.ts";
 import { planPaperRefills } from "./paperRefill.ts";
 import { rawPriceRows } from "./sizePrice.ts";
 import { catalogFromFeed, readCommittedPnyCatalog } from "./setbFeed.ts";
+import { defaultThcCatalogFlag } from "./thcSkuFlags.ts";
+import { currentStore } from "./storeContext.ts";
 import type { SheetClient, SheetTabSpec } from "./sheets.ts";
 import type { IncomingRow, SheetRow, State } from "./types.ts";
 
@@ -15,11 +17,12 @@ const CHUNK = 30_000;
 
 export const POS_TAB_SPECS: SheetTabSpec[] = [
   { title: "POS_Staff", headers: ["row_id", "record_type", "staff_uid", "sccx_id", "pos_id", "display_name", "active", "updated_at", "created_at", "doc"] },
-  { title: "POS_Shifts", headers: ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc"] },
+  { title: "POS_Shifts", headers: ["row_id", "shift_id", "staff", "pin_hash", "expires_at", "status", "sccx_shift_id", "store_code", "ticket_letter", "started_at", "ended_at", "end_reason", "opening_confirmed_at", "doc", "weed_in_store", "weed_answered_at", "weed_answered_by"] },
   { title: "POS_Sales", headers: ["row_id", "sale_id", "shift_id", "staff", "payment_method", "status", "total_cents", "ref_no", "created_at", "doc"] },
   { title: "POS_Refills", headers: ["row_id", "kitchen_row_id", "batch_id", "store_code", "sku", "qty", "qty_sent", "qty_received", "kind", "status", "kitchen_status", "variance_reason", "confirmed_at", "created_at", "record_type", "doc"] },
   { title: "POS_Counts", headers: ["row_id", "count_id", "shift_id", "kind", "sku", "system_qty", "counted_qty", "variance_reason", "confirmed_at", "doc"] },
   { title: "POS_Deposits", headers: ["row_id", "shift_id", "staff", "amount_cents", "note", "created_at", "doc"] },
+  { title: "S_EmailOutbox", headers: ["row_id", "to", "cc", "subject", "body", "status", "created_at", "sent_at", "last_error"] },
 ];
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -38,6 +41,8 @@ function normalize(parsed: State): State {
   if (!base.closing_drafts) base.closing_drafts = [];
   if (typeof parsed.deposit_seq === "number" && Number.isInteger(parsed.deposit_seq)) base.deposit_seq = parsed.deposit_seq;
   if (typeof parsed.deposit_seq_pny02 === "number" && Number.isInteger(parsed.deposit_seq_pny02)) base.deposit_seq_pny02 = parsed.deposit_seq_pny02;
+  if (parsed.refill_seq_by_store && typeof parsed.refill_seq_by_store === "object") base.refill_seq_by_store = parsed.refill_seq_by_store;
+  if (parsed.shift_ref_seq_by_store && typeof parsed.shift_ref_seq_by_store === "object") base.shift_ref_seq_by_store = parsed.shift_ref_seq_by_store;
   if (Array.isArray(parsed.stock_labels)) base.stock_labels = parsed.stock_labels;
   return base;
 }
@@ -63,6 +68,7 @@ function mergeCatalog(state: State) {
     added += 1;
     state.products.push({
       sku: product.sku,
+      thc_flag: defaultThcCatalogFlag(product),
       sku_sort: skuSortKey(product.sku),
       name: product.name,
       category: product.category,
@@ -110,6 +116,8 @@ function mergeKitchenRefills(state: State, rows: SheetRow[]) {
     const incoming: IncomingRow = {
       kitchen_row_id: id,
       batch_id: text(row, "batch_id"),
+      refill_id: text(row, "refill_id") || undefined,
+      created_by: text(row, "created_by") || undefined,
       store_code: STORE_CODE,
       sku,
       qty_sent: qty,
@@ -188,6 +196,12 @@ export class SheetDb implements PosDb {
 
   forgetCache() {
     this.cache = null;
+  }
+
+  async peek() {
+    const snapshot = structuredClone(await this.load()) as State;
+    if (currentStore().code === "PNY02") await this.readPny2Stock(snapshot);
+    return snapshot;
   }
 
   private async applyPaperRefills(rows: SheetRow[]) {
@@ -274,6 +288,9 @@ export class SheetDb implements PosDb {
       ended_at: row.ended_at ?? "",
       end_reason: row.end_reason ?? "",
       opening_confirmed_at: row.opening_confirmed_at ?? "",
+      weed_in_store: row.weed_in_store == null ? "" : row.weed_in_store ? "WEED" : "NO WEED",
+      weed_answered_at: row.weed_answered_at ?? "",
+      weed_answered_by: row.weed_answered_by ?? "",
       doc: JSON.stringify(row),
     }));
     const sales = state.sales.map((sale) => ({
@@ -402,6 +419,7 @@ export class SheetDb implements PosDb {
   }
 
   private async save(state: State, previousPny2 = "") {
+    if (process.env.PNY_SHEET_READ_ONLY === "1") return;
     await this.ensure();
     for (const group of this.project(state)) {
       if (group.rows.length) await this.sheet.upsert(group.tab, group.rows);

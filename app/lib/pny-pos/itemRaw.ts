@@ -261,6 +261,8 @@ export function expandSetbItems(grid: string[][]) {
 
 /** Tri's store POS prices. These replace an ambiguous SETB cell. 666 and 667 stay off. */
 const POS_UNIT_PRICES: Record<string, { name: string; cents: number; category: string }> = {
+  "512-3g": { name: "PINK PHOENIX 3g", cents: 4000, category: "EXOTIC" },
+  "512-5g": { name: "PINK PHOENIX 6g", cents: 6000, category: "EXOTIC" },
   "668": { name: "red ROSE Grabba Shaker", cents: 2000, category: "CIGARETTES" },
   "669": { name: "red HERRING Grabba Shaker", cents: 2000, category: "CIGARETTES" },
   "670": { name: "X2 red ROSE Grabba Shaker", cents: 3000, category: "CIGARETTES" },
