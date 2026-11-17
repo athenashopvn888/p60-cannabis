@@ -1257,6 +1257,17 @@ test("SETB feed mapping keeps real SKUs and images and drops on-hand", () => {
 test("the committed master fills missing SKUs, keeps existing POS rows, and uses sale prices", () => {
   const state = emptyState();
   state.products.push({
+    sku: "373-5g",
+    sku_sort: 373,
+    name: "Existing flower label",
+    category: "AAA+",
+    default_price_cents: 3000,
+    image_url: null,
+    setb_active: true,
+    synced_at: "2026-11-01T00:00:00.000Z",
+    created_at: "2026-11-01T00:00:00.000Z",
+  });
+  state.products.push({
     sku: "655",
     sku_sort: 655,
     name: "Existing POS gummies",
@@ -1270,6 +1281,7 @@ test("the committed master fills missing SKUs, keeps existing POS rows, and uses
   syncCommittedCatalog(state, "PNY01", "2026-11-17T00:00:00.000Z");
   const bySku = new Map(state.products.map((product) => [product.sku, product]));
   assert.equal(bySku.get("373-5g")?.default_price_cents, 2500);
+  assert.equal(bySku.get("373-5g")?.name, "Existing flower label");
   assert.equal(bySku.get("291-14g")?.default_price_cents, 4000);
   assert.equal(bySku.get("509-5g")?.default_price_cents, 6000);
   assert.equal(bySku.get("593-5g")?.default_price_cents, 6000);

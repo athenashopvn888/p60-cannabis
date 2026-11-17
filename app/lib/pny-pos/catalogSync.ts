@@ -7,6 +7,12 @@ function balanceForStore(row: { store_code?: string }, storeCode: string) {
   return storeCode === "PNY01" ? !row.store_code || row.store_code === storeCode : row.store_code === storeCode;
 }
 
+const FLOWER_CATEGORIES = new Set(["BUDGET", "AA", "AAA+", "PREMIUM", "EXOTIC"]);
+
+function isFlowerSource(row: { sku: string; category: string }) {
+  return row.sku.includes("-") && FLOWER_CATEGORIES.has(row.category.trim().toUpperCase());
+}
+
 /**
  * Merge the complete tracked PNY catalog without creating stock.
  * New zero-stock SKUs remain disabled on the sell screen, but are available to
@@ -32,11 +38,19 @@ export function syncCommittedCatalog(state: State, storeCode: string, at = new D
       state.products.push(product);
       changed += 1;
     } else {
-      // Existing rows may contain an audited store override or a better display
-      // label. The committed master fills gaps; it never rewrites healthy rows.
+      // Existing ITEM rows may contain audited split-SKU labels and prices, so
+      // the committed master only fills their gaps. Flower prices are the one
+      // exception: FLOWERS_RAW is authoritative, including the final value in
+      // a regular|sale price such as 30|25.
       if (!product.name && source.name) product.name = source.name;
       if (!product.category && source.category) product.category = source.category;
-      if ((!product.default_price_cents || product.default_price_cents <= 0) && source.price_cents > 0) product.default_price_cents = source.price_cents;
+      if (isFlowerSource(source) && source.price_cents > 0 && product.default_price_cents !== source.price_cents) {
+        product.default_price_cents = source.price_cents;
+        product.synced_at = at;
+        changed += 1;
+      } else if ((!product.default_price_cents || product.default_price_cents <= 0) && source.price_cents > 0) {
+        product.default_price_cents = source.price_cents;
+      }
       if (!product.image_url && source.image_url) product.image_url = source.image_url;
       if (product.thc_flag == null) product.thc_flag = defaultThcCatalogFlag(source);
     }
