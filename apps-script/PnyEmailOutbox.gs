@@ -52,3 +52,38 @@ function installPnyEmailTrigger() {
   });
   ScriptApp.newTrigger('processPnyEmailOutbox').timeBased().everyMinutes(1).create();
 }
+
+/**
+ * Direct sender used by the production till. Deploy this project as a web app
+ * that executes as the owner and is accessible to anyone. The shared secret
+ * must be stored in Script Properties as PNY_EMAIL_WEBHOOK_SECRET.
+ */
+function doPost(event) {
+  try {
+    var payload = JSON.parse((event && event.postData && event.postData.contents) || '{}');
+    var expected = PropertiesService.getScriptProperties().getProperty('PNY_EMAIL_WEBHOOK_SECRET');
+    if (!expected || String(payload.secret || '') !== expected) return pnyEmailJson_({ ok: false, error: 'Unauthorized' });
+    ['row_id', 'to', 'subject', 'body'].forEach(function (name) {
+      if (!String(payload[name] || '').trim()) throw new Error('Missing email field: ' + name);
+    });
+    var marker = '[PNY-EMAIL-ID:' + String(payload.row_id) + ']';
+    var subject = String(payload.subject);
+    var alreadySent = GmailApp.search('in:sent subject:"' + subject.replace(/"/g, '') + '" "' + marker + '"', 0, 1).length > 0;
+    if (!alreadySent) {
+      MailApp.sendEmail({
+        to: String(payload.to),
+        cc: String(payload.cc || ''),
+        subject: subject,
+        body: String(payload.body) + '\n\n' + marker,
+        name: 'PNY POS',
+      });
+    }
+    return pnyEmailJson_({ ok: true, duplicate: alreadySent });
+  } catch (error) {
+    return pnyEmailJson_({ ok: false, error: String(error) });
+  }
+}
+
+function pnyEmailJson_(value) {
+  return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
+}

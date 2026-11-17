@@ -49,6 +49,7 @@ import { PNY2_START_NOTE, pny2StartingLines } from "./pny2StartingStock.ts";
 import { paperLines } from "./paperRefill.ts";
 import { defaultThcCatalogFlag, isThcCatalogProduct, isThcSku } from "./thcSkuFlags.ts";
 import { closingEmailPayload, ensureRefillId, refillEmailPayload } from "./accountantEmail.ts";
+import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "./accountantEmailDelivery.ts";
 import type { SheetClient } from "./sheets.ts";
 import { POS_TAB_SPECS, SheetDb } from "./sheetStore.ts";
 import type {
@@ -3672,7 +3673,10 @@ export class PosService {
       && (!emailOnly || row.tab === "S_EmailOutbox"),
     ));
     if (batch.length === 0) return { ok: true, sent: 0 };
-    await this.deps.sheet.ensureTabs(emailOnly ? POS_TAB_SPECS.filter((spec) => spec.title === "S_EmailOutbox") : POS_TAB_SPECS);
+    const directEmail = accountantEmailWebhookConfigured();
+    if (!emailOnly || !directEmail) {
+      await this.deps.sheet.ensureTabs(emailOnly ? POS_TAB_SPECS.filter((spec) => spec.title === "S_EmailOutbox") : POS_TAB_SPECS);
+    }
     const groups = new Map<string, typeof batch>();
     for (const row of batch) {
       const list = groups.get(row.tab) ?? [];
@@ -3683,7 +3687,12 @@ export class PosService {
     try {
       for (const tab of tabs) {
         const rows = groups.get(tab) ?? [];
-        if (rows.length) await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+        if (!rows.length) continue;
+        if (tab === "S_EmailOutbox" && directEmail) {
+          for (const row of rows) await deliverAccountantEmail(row.payload);
+        } else {
+          await this.deps.sheet.upsert(tab, rows.map((row) => row.payload));
+        }
       }
       await this.db.transaction(async (tx) => {
         const at = iso(this.now());

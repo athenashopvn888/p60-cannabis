@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ACCOUNTANT_CC, ACCOUNTANT_EMAIL, closingEmailPayload, ensureRefillId, refillEmailPayload } from "../app/lib/pny-pos/accountantEmail.ts";
+import { accountantEmailWebhookConfigured, deliverAccountantEmail } from "../app/lib/pny-pos/accountantEmailDelivery.ts";
 import { emptyState, MemoryDb } from "../app/lib/pny-pos/memory.ts";
 import { PosService } from "../app/lib/pny-pos/service.ts";
 import { LocalSheet } from "../app/lib/pny-pos/sheets.ts";
@@ -69,6 +70,33 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.match(payload.body, /655 \| Knock Out LW \| 2/);
   assert.doesNotMatch(payload.body, /999 \| Zero/);
   assert.match(payload.body, /Total on-hand units: 9/);
+});
+
+test("direct accountant email sender posts the complete payload", async () => {
+  const oldUrl = process.env.PNY_EMAIL_WEBHOOK_URL;
+  const oldSecret = process.env.PNY_EMAIL_WEBHOOK_SECRET;
+  const oldFetch = global.fetch;
+  process.env.PNY_EMAIL_WEBHOOK_URL = "https://example.invalid/pny-email";
+  process.env.PNY_EMAIL_WEBHOOK_SECRET = "test-secret";
+  let posted = {} as Record<string, string>;
+  global.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    posted = JSON.parse(String(init?.body || "{}")) as Record<string, string>;
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    assert.equal(accountantEmailWebhookConfigured(), true);
+    await deliverAccountantEmail({ row_id: "EMAIL-CLOSE-1", to: ACCOUNTANT_EMAIL, cc: ACCOUNTANT_CC, subject: "Close", body: "ON HAND STOCK" });
+    assert.equal(posted.to, ACCOUNTANT_EMAIL);
+    assert.equal(posted.cc, ACCOUNTANT_CC);
+    assert.equal(posted.body, "ON HAND STOCK");
+    assert.equal(posted.secret, "test-secret");
+  } finally {
+    global.fetch = oldFetch;
+    if (oldUrl == null) delete process.env.PNY_EMAIL_WEBHOOK_URL;
+    else process.env.PNY_EMAIL_WEBHOOK_URL = oldUrl;
+    if (oldSecret == null) delete process.env.PNY_EMAIL_WEBHOOK_SECRET;
+    else process.env.PNY_EMAIL_WEBHOOK_SECRET = oldSecret;
+  }
 });
 
 test("Kitchen import and staff receive queue SENT and RECEIVED emails and return a receipt", async () => {
