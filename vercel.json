@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "node scripts/vercel-ignore-p60-production.mjs",
   "crons": [
     {
       "path": "/api/staff-photo/maintenance/cleanup?window=edt",
