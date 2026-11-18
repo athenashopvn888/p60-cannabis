@@ -71,7 +71,19 @@ export function refillEmailPayload(state: State, rows: IncomingRow[], stage: "SE
   };
 }
 
-export function closingEmailPayload(state: State, shift: ShiftRow, closing: ClosingRow, at: string) {
+export type ClosingEmailOptions = {
+  subject?: string;
+  correctionNote?: string;
+  rowIdSuffix?: string;
+};
+
+export function closingEmailPayload(
+  state: State,
+  shift: ShiftRow,
+  closing: ClosingRow,
+  at: string,
+  options: ClosingEmailOptions = {},
+) {
   const staff = state.staff.find((row) => row.staff_uid === shift.staff_uid);
   const draft = state.closing_drafts.find((row) => row.shift_id === shift.id);
   const previousShift = state.shifts
@@ -117,9 +129,10 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
   const extraQty = stockDifferences.reduce((sum, row) => sum + Math.max(0, row.qtyDifference), 0);
   const netStock = calculatedOverage - calculatedShortage;
   const finalTill = closing.balance_cents ?? 0;
-  const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
+  const subject = options.subject ?? `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
   const body = [
-    subject,
+    ...(options.correctionNote ? [options.correctionNote, ""] : []),
+    `${shift.store_code} CLOSING TILL - ${staffName}`,
     `Shift ref: ${closing.shift_ref ?? "UNAVAILABLE"}`,
     `Shift: ${storeStamp(shift.started_at)} - ${storeStamp(shift.ended_at ?? at)} Toronto`,
     `Sales: ${formatMoney(closing.sales_total_cents)}`,
@@ -130,10 +143,12 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     `Final deposit: ${formatMoney(closing.final_deposit_cents ?? 0)}`,
     `Starting float: ${startingFloatCents == null ? "UNAVAILABLE" : formatMoney(startingFloatCents)} (${startingFloatConfirmed ? "CONFIRMED" : "NOT CONFIRMED"})`,
     `Closing float: ${formatMoney(closing.float_cents ?? 0)}`,
-    `TOTAL SHORT stock: -${shortQty} units | -${formatMoney(calculatedShortage)}`,
-    `TOTAL EXTRA stock: +${extraQty} units | +${formatMoney(calculatedOverage)}`,
-    `NET STOCK: ${netStock >= 0 ? `OVER +${formatMoney(netStock)}` : `SHORT -${formatMoney(Math.abs(netStock))}`}`,
-    `Final till balance: ${finalTill < 0 ? `OVER +${formatMoney(-finalTill)}` : finalTill > 0 ? `SHORT -${formatMoney(finalTill)}` : "EVEN $0.00"}`,
+    `Stock shortage: -${formatMoney(calculatedShortage)}`,
+    `Stock shortage qty: -${shortQty} units`,
+    `Stock extra: +${formatMoney(calculatedOverage)}`,
+    `Stock extra qty: +${extraQty} units`,
+    `Net stock: ${netStock >= 0 ? `OVER +${formatMoney(netStock)}` : `SHORT -${formatMoney(Math.abs(netStock))}`}`,
+    `FINAL: ${finalTill < 0 ? `OVER +${formatMoney(-finalTill)}` : finalTill > 0 ? `SHORT -${formatMoney(finalTill)}` : "EVEN $0.00"}`,
     "",
     `STOCK COUNT DIFFERENCES (${stockDifferences.length} SKUs)`,
     ...(stockDifferences.length
@@ -149,11 +164,9 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     ...onHand.map((row) => `${row.sku} | ${nameOf(state, row.sku)} | ${row.qty}`),
     "",
     `Total on-hand units: ${onHand.reduce((sum, row) => sum + row.qty, 0)}`,
-    "",
-    `System shift ID: ${shift.sccx_shift_id || shift.id}`,
   ].join("\n");
   return {
-    row_id: `EMAIL-CLOSE-${shift.id}`,
+    row_id: `EMAIL-CLOSE-${shift.id}${options.rowIdSuffix ? `-${options.rowIdSuffix}` : ""}`,
     to: ACCOUNTANT_EMAIL,
     cc: ACCOUNTANT_CC,
     subject,
