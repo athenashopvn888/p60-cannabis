@@ -9,6 +9,9 @@ export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
     await service.assertIntegrationOwner("SETB_SYNC");
+    if (new URL(request.url).searchParams.get("dry_run") === "1") {
+      return json({ ok: true, dry_run: true, cron: "setb-sync", owner_checked: true });
+    }
     const url = defaultSetbProductsUrl();
     const headers: Record<string, string> = {};
     if (process.env.SETB_SYNC_SECRET) headers.authorization = `Bearer ${process.env.SETB_SYNC_SECRET}`;

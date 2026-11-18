@@ -3,6 +3,10 @@ import path from "node:path";
 import { PNYS_PROJECT_ID, PNYS_PROJECT_NAME, pnysGateApplies, validatePnysEnvironment } from "./lib/pnys-env-gate.mjs";
 
 function validateLocalLink() {
+  // Vercel may restore a cached .vercel/project.json from an earlier local
+  // checkout. The platform identity below is authoritative during a build;
+  // the link file is only a local CLI safety check.
+  if (process.env.VERCEL === "1") return [];
   const linkPath = path.join(process.cwd(), ".vercel", "project.json");
   if (!fs.existsSync(linkPath)) return [];
   const link = JSON.parse(fs.readFileSync(linkPath, "utf8"));

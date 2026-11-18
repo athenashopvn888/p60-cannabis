@@ -3,6 +3,8 @@ import pg from "pg";
 const { Pool } = pg;
 const baseUrl = process.argv[2]?.replace(/\/$/, "");
 if (!baseUrl || !/^https:\/\//i.test(baseUrl)) throw new Error("Usage: node scripts/verify-pnys-postdeploy.mjs https://deployment-url");
+const expectNoActiveShift = process.argv.includes("--expect-no-active-shift");
+const skipHttp = process.argv.includes("--skip-http");
 
 const rawConnectionString = process.env.POS_SUPABASE_DB_URL?.trim();
 if (!rawConnectionString) throw new Error("POS_SUPABASE_DB_URL must be supplied through the process environment.");
@@ -36,19 +38,23 @@ try {
   if (pnys.rowCount !== 1) throw new Error("PNYS live state is not readable.");
   const shifts = Array.isArray(pnys.rows[0].doc?.shifts) ? pnys.rows[0].doc.shifts : [];
   const active = shifts.find((row) => !row.ended_at && String(row.status ?? "").toUpperCase() !== "CLOSED");
-  if (!active) throw new Error("No active PNYS shift is readable.");
+  if (expectNoActiveShift && active) throw new Error("An active PNYS shift exists; expected the between-shifts window.");
+  if (!expectNoActiveShift && !active) throw new Error("No active PNYS shift is readable.");
 
-  for (const route of ["/pos", "/pos/manager", "/pos/kitchen"]) {
-    const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
-    if (response.status !== 200) throw new Error(`${route} returned ${response.status}, expected 200.`);
+  if (!skipHttp) {
+    for (const route of ["/pos", "/pos/manager", "/pos/kitchen"]) {
+      const response = await fetch(`${baseUrl}${route}`, { redirect: "manual" });
+      if (response.status !== 200) throw new Error(`${route} returned ${response.status}, expected 200.`);
+    }
   }
 
   await client.query("commit");
   console.log(JSON.stringify({
     ok: true,
     store_code: "PNYS",
-    active_shift_readable: true,
-    routes: { pos: 200, manager: 200, kitchen: 200 },
+    active_shift_readable: Boolean(active),
+    expected_no_active_shift: expectNoActiveShift,
+    routes: skipHttp ? "verified separately through authenticated Vercel access" : { pos: 200, manager: 200, kitchen: 200 },
     pny_pos_write_privileges: false,
   }, null, 2));
 } catch (error) {

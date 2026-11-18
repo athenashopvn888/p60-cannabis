@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
+    if (new URL(request.url).searchParams.get("dry_run") === "1") {
+      return json({ ok: true, dry_run: true, cron: "ticket-expiry" });
+    }
     return json(await service.expireDue());
   } catch (error) {
     return toResponse(error);

@@ -8,6 +8,9 @@ export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
     await service.assertIntegrationOwner("SHEET_IMPORT");
+    if (new URL(request.url).searchParams.get("dry_run") === "1") {
+      return json({ ok: true, dry_run: true, cron: "sheet-import", owner_checked: true });
+    }
     return json(await service.refreshIncoming({ force: true }));
   } catch (error) {
     return toResponse(error);

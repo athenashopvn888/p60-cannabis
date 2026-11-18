@@ -6,6 +6,13 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
+    if (new URL(request.url).searchParams.get("dry_run") === "1") {
+      await Promise.all([
+        service.assertIntegrationOwner("SHEET_OUTBOX"),
+        service.assertIntegrationOwner("SIGNAL"),
+      ]);
+      return json({ ok: true, dry_run: true, cron: "sheet-outbox", owners_checked: ["SHEET_OUTBOX", "SIGNAL"] });
+    }
     if (process.env.INTEGRATIONS_ENABLED === "0") {
       return json({ ok: true, disabled: true, ...(await service.outboxStatus()) });
     }

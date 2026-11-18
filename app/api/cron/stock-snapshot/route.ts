@@ -8,6 +8,9 @@ export async function GET(request: Request) {
   try {
     const service = await cronOk(request);
     await service.assertIntegrationOwner("STOCK_SNAPSHOT");
+    if (new URL(request.url).searchParams.get("dry_run") === "1") {
+      return json({ ok: true, dry_run: true, cron: "stock-snapshot", owner_checked: true });
+    }
     return json(await service.snapshotStock());
   } catch (error) {
     return toResponse(error);
