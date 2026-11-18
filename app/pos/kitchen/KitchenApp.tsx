@@ -19,6 +19,7 @@ type ShadowBatch = { id: string; store_code: "PNY01_TEST"; sender: string; sent_
 const SHADOW_KEY = "pnys-pny01-shadow-batches";
 const LANGUAGE_KEY = "pnys-kitchen-language";
 const isTestStore = process.env.NEXT_PUBLIC_TEST_STORE === "1";
+const showTestBadge = process.env.NEXT_PUBLIC_SHOW_TEST_BADGE === "1";
 const deploymentLabel = isTestStore ? "PNYS" : "PNY01";
 
 const copy = {
@@ -334,7 +335,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
   if (!view.authenticated) return <main className={styles.login} data-testid="kitchen-login">
     <section className={styles.loginCard}>
       <div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>
-      {isTestStore ? <div className={styles.test}>{text.testStore}</div> : null}<h1>{deploymentLabel} Kitchen</h1><p>{text.enterPin}</p>
+      {showTestBadge ? <div className={styles.test}>{text.testStore}</div> : null}<h1>{deploymentLabel} Kitchen</h1><p>{text.enterPin}</p>
       <div className={styles.pinDots} aria-label={`${pin.length} digits entered`}>{"●".repeat(pin.length) || "○ ○ ○ ○"}</div>
       <div className={styles.keypad}>{["1","2","3","4","5","6","7","8","9","Clear","0","⌫"].map((key) => <button key={key} type="button" onClick={() => setPin((value) => key === "Clear" ? "" : key === "⌫" ? value.slice(0, -1) : value.length < 6 ? value + key : value)}>{key}</button>)}</div>
       {error ? <p className={styles.error}>{error}</p> : null}
@@ -349,7 +350,7 @@ export default function KitchenApp({ preview }: { preview?: "login" | Screen }) 
     <header className={styles.top}>
       <div><strong>{selectedStore}</strong><span> · Kitchen</span></div>
       <div className={styles.topStats} aria-label={screenTitle(screen, language)}><span><small>{text.totalStock}</small><strong>{money(totalStockValueCents)}</strong><b>{text.qtyShort} {totalStockQty}</b></span><span><small>{text.refillTotal}</small><strong>{money(refillValueCents)}</strong><b>{text.qtyShort} {totalUnits}</b></span></div>
-      <div className={styles.topActions}><div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>{isTestStore ? <strong className={styles.test}>{text.testStore}</strong> : null}<button type="button" onClick={() => void logout()}>{text.logout}</button></div>
+      <div className={styles.topActions}><div className={styles.language}><button type="button" aria-pressed={language === "vi"} onClick={() => chooseLanguage("vi")}>VN</button><button type="button" aria-pressed={language === "en"} onClick={() => chooseLanguage("en")}>ENG</button></div>{showTestBadge ? <strong className={styles.test}>{text.testStore}</strong> : null}<button type="button" onClick={() => void logout()}>{text.logout}</button></div>
     </header>
     <div className={styles.middle}>
       {screen === "refill" ? <section data-testid="kitchen-refill">

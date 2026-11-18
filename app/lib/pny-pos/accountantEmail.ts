@@ -108,6 +108,15 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     })
     .filter((row) => row.qtyDifference !== 0)
     .sort((a, b) => skuSortKey(a.line.sku) - skuSortKey(b.line.sku) || a.line.sku.localeCompare(b.line.sku));
+  const calculatedShortage = stockDifferences.reduce((sum, row) => sum + Math.max(0, -row.valueDifference), 0);
+  const calculatedOverage = stockDifferences.reduce((sum, row) => sum + Math.max(0, row.valueDifference), 0);
+  if (calculatedShortage !== (closing.shortage_cents ?? 0) || calculatedOverage !== (closing.overage_cents ?? 0)) {
+    throw new Error(`CLOSING_EMAIL_VARIANCE_MISMATCH:${shift.id}`);
+  }
+  const shortQty = stockDifferences.reduce((sum, row) => sum + Math.max(0, -row.qtyDifference), 0);
+  const extraQty = stockDifferences.reduce((sum, row) => sum + Math.max(0, row.qtyDifference), 0);
+  const netStock = calculatedOverage - calculatedShortage;
+  const finalTill = closing.balance_cents ?? 0;
   const subject = `${shift.store_code} CLOSING TILL - ${staff?.display_name ?? staff?.pos_id ?? "Staff"}`;
   const body = [
     subject,
@@ -121,13 +130,14 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
     `Final deposit: ${formatMoney(closing.final_deposit_cents ?? 0)}`,
     `Starting float: ${startingFloatCents == null ? "UNAVAILABLE" : formatMoney(startingFloatCents)} (${startingFloatConfirmed ? "CONFIRMED" : "NOT CONFIRMED"})`,
     `Closing float: ${formatMoney(closing.float_cents ?? 0)}`,
-    `Stock shortage: ${formatMoney(closing.shortage_cents ?? 0)}`,
-    `Stock overage: ${formatMoney(closing.overage_cents ?? 0)}`,
-    `Final till balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+    `TOTAL SHORT stock: -${shortQty} units | -${formatMoney(calculatedShortage)}`,
+    `TOTAL EXTRA stock: +${extraQty} units | +${formatMoney(calculatedOverage)}`,
+    `NET STOCK: ${netStock >= 0 ? `OVER +${formatMoney(netStock)}` : `SHORT -${formatMoney(Math.abs(netStock))}`}`,
+    `Final till balance: ${finalTill < 0 ? `OVER +${formatMoney(-finalTill)}` : finalTill > 0 ? `SHORT -${formatMoney(finalTill)}` : "EVEN $0.00"}`,
     "",
     `STOCK COUNT DIFFERENCES (${stockDifferences.length} SKUs)`,
     ...(stockDifferences.length
-      ? stockDifferences.map(({ line, qtyDifference, valueDifference }) => `${line.sku} | ${line.name || nameOf(state, line.sku)} | counted ${line.left} | qty ${qtyDifference > 0 ? "+" : ""}${qtyDifference} | value ${valueDifference > 0 ? "+" : "-"}${formatMoney(Math.abs(valueDifference))} | ${qtyDifference < 0 ? "SHORT" : "OVER"}`)
+      ? stockDifferences.map(({ line, qtyDifference, valueDifference }) => `${line.sku} | ${line.name || nameOf(state, line.sku)} | expected ${line.expected_qty ?? line.system_qty} | counted ${line.left} | qty ${qtyDifference > 0 ? "+" : ""}${qtyDifference} | value ${valueDifference > 0 ? "+" : "-"}${formatMoney(Math.abs(valueDifference))} | ${qtyDifference < 0 ? "SHORT" : "OVER"}`)
       : ["All stock matched."]),
     "",
     `SOLD THIS SHIFT (${sold.length} SKUs)`,
@@ -171,6 +181,7 @@ export function closingEmailPayload(state: State, shift: ShiftRow, closing: Clos
         debit_sales_cents: closing.debit_sales_cents ?? 0,
         deposited_cents: closing.deposited_cents,
         float_cents: closing.float_cents ?? 0,
+        shortage_cents: closing.shortage_cents ?? 0,
         overage_cents: closing.overage_cents ?? 0,
         balance_cents: closing.balance_cents ?? 0,
         closing_lines: closing.closing_lines,

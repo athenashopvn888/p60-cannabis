@@ -15,6 +15,7 @@ export type StockClosingReportInput = {
     | "debit_sales_cents"
     | "deposited_cents"
     | "float_cents"
+    | "shortage_cents"
     | "overage_cents"
     | "balance_cents"
     | "closing_lines"
@@ -162,7 +163,7 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     ["SAFEBOX", dollars(input.closing.deposited_cents)],
     ["DEBIT", dollars(input.closing.debit_sales_cents ?? 0)],
     ["PAYROLL", 0],
-    ["CREDIT", dollars(input.closing.overage_cents ?? 0)],
+    ["SHORT", -dollars(input.closing.shortage_cents ?? 0)],
     ["END FLOAT", dollars(input.closing.float_cents ?? 0)],
     ["NET TOTAL", dollars(input.closing.balance_cents ?? 0)],
   ] as const;
@@ -283,8 +284,9 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
 
   const varianceHeadRow = varianceTitleRow + 1;
   const varianceColumns = [
-    [1, 3, "SKU"],
-    [4, 10, "ITEM"],
+    [1, 2, "SKU"],
+    [3, 7, "ITEM"],
+    [8, 10, "EXPECTED"],
     [11, 13, "COUNTED"],
     [14, 16, "QTY DIFF"],
     [17, 19, "VALUE DIFF"],
@@ -311,8 +313,9 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     differences.forEach(({ line, qtyDifference, valueDifference }, index) => {
       const rowNo = varianceHeadRow + 1 + index;
       const values = [
-        [1, 3, line.sku],
-        [4, 10, line.name || "Unknown item"],
+        [1, 2, line.sku],
+        [3, 7, line.name || "Unknown item"],
+        [8, 10, line.expected_qty ?? line.system_qty],
         [11, 13, line.left],
         [14, 16, qtyDifference],
         [17, 19, dollars(valueDifference)],
@@ -331,7 +334,33 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     });
   }
 
-  const lastRow = varianceHeadRow + 1 + Math.max(0, differences.length - 1);
+  const varianceDataLastRow = varianceHeadRow + 1 + Math.max(0, differences.length - 1);
+  const shortQty = differences.reduce((sum, row) => sum + Math.max(0, -row.qtyDifference), 0);
+  const extraQty = differences.reduce((sum, row) => sum + Math.max(0, row.qtyDifference), 0);
+  const shortCents = differences.reduce((sum, row) => sum + Math.max(0, -row.valueDifference), 0);
+  const extraCents = differences.reduce((sum, row) => sum + Math.max(0, row.valueDifference), 0);
+  const netStockCents = extraCents - shortCents;
+  const totalsRow = varianceDataLastRow + 2;
+  const varianceTotals = [
+    [1, 7, `TOTAL SHORT: -${shortQty} units | -${moneyText(shortCents)}`, "FFFEE2E2", "FFB91C1C"],
+    [8, 14, `TOTAL EXTRA: +${extraQty} units | +${moneyText(extraCents)}`, "FFDCFCE7", "FF15803D"],
+    [15, 21, netStockCents >= 0
+      ? `NET STOCK: OVER +${moneyText(netStockCents)}`
+      : `NET STOCK: SHORT -${moneyText(Math.abs(netStockCents))}`,
+      netStockCents >= 0 ? "FFDCFCE7" : "FFFEE2E2",
+      netStockCents >= 0 ? "FF15803D" : "FFB91C1C"],
+  ] as const;
+  for (const [start, end, value, fill, color] of varianceTotals) {
+    sheet.mergeCells(totalsRow, start, totalsRow, end);
+    const cell = sheet.getCell(totalsRow, start);
+    cell.value = value;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+    cell.font = { name: "Arial", size: 10, bold: true, color: { argb: color } };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = border();
+  }
+
+  const lastRow = totalsRow;
   sheet.pageSetup.printArea = `A1:U${lastRow}`;
   sheet.headerFooter.oddFooter = `&LSystem shift ID: ${input.systemShiftId ?? "UNAVAILABLE"}&CPage &P of &N&R${input.storeCode}`;
   return Buffer.from(await workbook.xlsx.writeBuffer());

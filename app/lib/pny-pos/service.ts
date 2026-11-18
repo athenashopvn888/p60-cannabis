@@ -938,9 +938,15 @@ function shelfCents(state: State, sku: string, raw?: Map<string, number>) {
   return quoteForSku(sku)?.cents ?? 0;
 }
 
-function pricedOff(state: State, sku: string, off: number, raw?: Map<string, number>) {
+function pricedOff(state: State, sku: string, off: number, raw?: Map<string, number>, expected?: number, counted?: number) {
   const price = shelfCents(state, sku, raw);
-  return { ...staffOffLine(state, sku, off), cents: off * price };
+  return {
+    ...staffOffLine(state, sku, off),
+    cents: off * price,
+    expected_qty: expected,
+    counted_qty: counted,
+    price_cents: price,
+  };
 }
 
 function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, raw: Map<string, number> | undefined, demo: boolean, lock = true) {
@@ -984,22 +990,22 @@ function collectVerify(state: State, shift: ShiftRow, actor: string, now: Date, 
   });
   const openingLines = arrangeOff(opening, skus).filter((line) => line.off !== 0);
   const closePlan = [...shiftClosePlan(state, shift.id, raw)].sort((a, b) => compareCount(countMeta(state, a.sku), countMeta(state, b.sku)));
-  const closing = closePlan.flatMap((line) => {
-    const counted = draft?.counts.find((row) => row.sku === line.sku)?.counted_qty;
-    if (counted == null) return [];
-    return [pricedOff(state, line.sku, counted - line.expected_qty, raw)];
-  });
   const closingUsesEdit = Boolean(draft?.counts.some((row) => row.edited_at || row.accepted_as_is));
   const closingSubmitted = Boolean(draft?.closing_submitted_at);
   const closingCompared = closePlan.flatMap((line) => {
     const row = draft?.counts.find((entry) => entry.sku === line.sku);
-    if (!row || row.accepted_as_is) return [];
-    const expected = row.edited_at ? (row.expected_qty ?? line.expected_qty) : line.expected_qty;
-    return [pricedOff(state, line.sku, row.counted_qty - expected, raw)];
+    const editedAt = row && !row.accepted_as_is && row.edited_at ? Date.parse(row.edited_at) : NaN;
+    if (!row || row.accepted_as_is || !Number.isFinite(editedAt)) return [];
+    // This is intentionally identical to endShiftFromPos. Sales entered after
+    // a physical count reduce both expected and counted so the preview and the
+    // persisted close cannot drift.
+    const after = salesAfter(state, shift.id, line.sku, editedAt);
+    const expected = (row.expected_qty ?? expectedAtSubmit(state, shift, line.sku, editedAt)) - after;
+    const counted = row.counted_qty - after;
+    return [pricedOff(state, line.sku, counted - expected, raw, expected, counted)];
   });
-  const closingSource = closingUsesEdit ? closingCompared : closing;
-  const closingAll = arrangeOff(closingSource, closePlan.map((line) => line.sku));
-  const closingReady = closingSubmitted || (!closingUsesEdit && closePlan.length > 0 && closing.length === closePlan.length);
+  const closingAll = arrangeOff(closingCompared, closePlan.map((line) => line.sku));
+  const closingReady = closingSubmitted && closingUsesEdit && closingCompared.length === closePlan.length;
   const closingLines = closingReady ? closingAll.filter((line) => line.off !== 0) : [];
   const offCount = (lines: { off: number }[]) => lines.filter((line) => line.off !== 0).length;
   const refills = refillIssues(state, shift.id, raw);
@@ -1131,11 +1137,17 @@ function summaryText(shift: ShiftRow, staffPos: string, closing: Omit<ClosingRow
   const left = [...closing.closing_lines].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
   const shown = left.slice(0, 15).map((line) => `${line.sku} ${line.name} ${line.left}`).join(" · ");
   const more = left.length > 15 ? " · (top 15, full list in sheet)" : "";
+  const shortUnits = closing.closing_lines.reduce((sum, line) => sum + Math.max(0, -(line.variance_qty ?? 0)), 0);
+  const extraUnits = closing.closing_lines.reduce((sum, line) => sum + Math.max(0, line.variance_qty ?? 0), 0);
+  const netStock = (closing.overage_cents ?? 0) - (closing.shortage_cents ?? 0);
+  const final = closing.balance_cents ?? 0;
   return [
     `${currentStore().label} shift closed – ${staffPos} ${formatStoreTime(shift.started_at)}–${formatStoreTime(shift.ended_at ?? closing.created_at)} (America/Toronto)`,
     shift.weed_in_store == null ? "" : `WEED in store this shift: ${shift.weed_in_store ? "WEED" : "NO WEED"}`,
     `Sales: ${formatMoney(closing.sales_total_cents)} (${closing.sale_count} sales, ${closing.void_count} void) · COH: ${formatMoney(closing.cash_on_hand_cents)} · Deposited: ${formatMoney(closing.deposited_cents)}`,
-    `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)} · Shortage: ${formatMoney(closing.shortage_cents ?? 0)} · Overage: ${formatMoney(closing.overage_cents ?? 0)} · Balance: ${formatMoney(closing.balance_cents ?? 0)}`,
+    `Cash: ${formatMoney(closing.cash_sales_cents ?? closing.sales_total_cents)} · Debit: ${formatMoney(closing.debit_sales_cents ?? 0)}`,
+    `TOTAL SHORT stock: -${shortUnits} · -${formatMoney(closing.shortage_cents ?? 0)} · TOTAL EXTRA stock: +${extraUnits} · +${formatMoney(closing.overage_cents ?? 0)} · NET STOCK: ${netStock >= 0 ? `OVER +${formatMoney(netStock)}` : `SHORT -${formatMoney(-netStock)}`}`,
+    `FINAL: ${final < 0 ? `OVER +${formatMoney(-final)}` : final > 0 ? `SHORT -${formatMoney(final)}` : "EVEN $0.00"}`,
     `Tickets: ${closing.tickets_total} (${closing.tickets_cashed_out} cashed, ${closing.tickets_expired} expired)`,
     closing.opening_float_counted_cents != null
       ? `Opening cash: ${formatMoney(closing.opening_float_counted_cents)} · Previous close: ${formatMoney(closing.opening_float_expected_cents ?? 0)} · Adjustment: ${formatMoney(closing.opening_float_difference_cents ?? 0)}${closing.opening_float_adjusted_by ? ` by ${closing.opening_float_adjusted_by}` : ""}`
@@ -1273,8 +1285,14 @@ function queueClosingSheets(state: State, shift: ShiftRow, closing: ClosingRow, 
       .map((line) => `${line.sku} ${line.name} expected ${line.expected_qty ?? ""} counted ${line.left} short ${centsToSheet(line.shortage_cents ?? 0)} over ${centsToSheet(line.overage_cents ?? 0)}`)
       .join(" | "),
   }, at);
-  const email = closingEmailPayload(state, shift, closing, at);
-  enqueue(state, "S_EmailOutbox", email.row_id, email, at);
+  try {
+    const email = closingEmailPayload(state, shift, closing, at);
+    enqueue(state, "S_EmailOutbox", email.row_id, email, at);
+  } catch (error) {
+    audit(state, "CLOSING_EMAIL_BLOCKED_VARIANCE_MISMATCH", "shift", shift.id, "system", {
+      error: error instanceof Error ? error.message : "CLOSING_EMAIL_VARIANCE_MISMATCH",
+    }, at);
+  }
   queueSnapshot(state, at);
 }
 
@@ -3016,6 +3034,8 @@ export class PosService {
           final_deposit_cents: closing.final_deposit_cents ?? 0,
           shortage_cents: closing.shortage_cents ?? 0,
           overage_cents: closing.overage_cents ?? 0,
+          shortage_qty: closing.closing_lines.reduce((sum, line) => sum + Math.max(0, -(line.variance_qty ?? 0)), 0),
+          overage_qty: closing.closing_lines.reduce((sum, line) => sum + Math.max(0, line.variance_qty ?? 0), 0),
           balance_cents: closing.balance_cents ?? closingBalance({
             cash_sales_cents: closing.cash_sales_cents ?? closing.sales_total_cents - (closing.debit_sales_cents ?? 0),
             shortage_cents: closing.shortage_cents ?? 0,

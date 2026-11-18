@@ -1850,6 +1850,25 @@
   font-size: clamp(24px, 3.4vw, 32px);
 }
 
+.stockDifferenceHead,
+.stockDifferenceRow {
+  display: grid;
+  grid-template-columns: minmax(78px, 1.5fr) repeat(4, minmax(48px, .7fr));
+  gap: 6px;
+  align-items: center;
+  padding: 8px 4px;
+  font-size: 13px;
+}
+
+.stockDifferenceHead {
+  font-weight: 800;
+  border-bottom: 2px solid #172033;
+}
+
+.stockDifferenceRow {
+  border-bottom: 1px solid #d7dde7;
+}
+
 .adjGrid {
   display: flex;
   flex-direction: column;

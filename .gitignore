@@ -51,3 +51,5 @@ next-env.d.ts
 .vercel
 .env*.local
 .env.acd-audit
+
+.env*
