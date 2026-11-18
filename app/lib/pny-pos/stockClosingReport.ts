@@ -100,6 +100,18 @@ function refillValueCents(input: StockClosingReportInput) {
   );
 }
 
+function stockDifferences(input: StockClosingReportInput) {
+  return input.closing.closing_lines
+    .map((line) => {
+      const qtyDifference = line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty);
+      const valueDifference = (line.overage_cents ?? 0) - (line.shortage_cents ?? 0)
+        || qtyDifference * (line.price_cents ?? 0);
+      return { line, qtyDifference, valueDifference };
+    })
+    .filter((row) => row.qtyDifference !== 0)
+    .sort((a, b) => sortItems(a.line.sku, b.line.sku));
+}
+
 function border(style: ExcelJS.BorderStyle = "thin"): Partial<ExcelJS.Borders> {
   return {
     top: { style, color: { argb: "FF000000" } },
@@ -110,6 +122,12 @@ function border(style: ExcelJS.BorderStyle = "thin"): Partial<ExcelJS.Borders> {
 }
 
 export async function buildStockClosingReport(input: StockClosingReportInput) {
+  const differences = stockDifferences(input);
+  const stockShortCents = differences.reduce((sum, row) => sum + Math.max(0, -row.valueDifference), 0);
+  const stockExtraCents = differences.reduce((sum, row) => sum + Math.max(0, row.valueDifference), 0);
+  if (stockShortCents !== (input.closing.shortage_cents ?? 0) || stockExtraCents !== (input.closing.overage_cents ?? 0)) {
+    throw new Error("STOCK_CLOSING_REPORT_VARIANCE_MISMATCH");
+  }
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "PNY POS";
   workbook.created = new Date(input.closeDate);
@@ -158,16 +176,23 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     sheet.getCell(valueRange.split(":")[0]).border = border();
   }
 
+  const stockNetCents = stockExtraCents - stockShortCents;
+  const finalTillCents = input.closing.balance_cents ?? 0;
+  const finalLabel = finalTillCents < 0
+    ? `OVER +${moneyText(-finalTillCents)}`
+    : finalTillCents > 0
+      ? `SHORT -${moneyText(finalTillCents)}`
+      : "EVEN $0.00";
   const summary = [
-    ["TOTAL SALE", dollars(input.closing.sales_total_cents)],
-    ["SAFEBOX", dollars(input.closing.deposited_cents)],
-    ["DEBIT", dollars(input.closing.debit_sales_cents ?? 0)],
-    ["PAYROLL", 0],
-    ["SHORT", -dollars(input.closing.shortage_cents ?? 0)],
-    ["END FLOAT", dollars(input.closing.float_cents ?? 0)],
-    ["NET TOTAL", dollars(input.closing.balance_cents ?? 0)],
+    { label: "TOTAL SALE", value: dollars(input.closing.sales_total_cents) },
+    { label: "SAFEBOX", value: dollars(input.closing.deposited_cents) },
+    { label: "DEBIT", value: dollars(input.closing.debit_sales_cents ?? 0) },
+    { label: "STOCK SHORT", value: `-${moneyText(stockShortCents)}`, color: "FFB91C1C" },
+    { label: "STOCK EXTRA", value: `+${moneyText(stockExtraCents)}`, color: "FF15803D" },
+    { label: "END FLOAT", value: dollars(input.closing.float_cents ?? 0) },
+    { label: "FINAL", value: finalLabel, color: finalTillCents <= 0 ? "FF15803D" : "FFB91C1C" },
   ] as const;
-  summary.forEach(([label, value], index) => {
+  summary.forEach(({ label, value, ...style }, index) => {
     const start = index * 3 + 1;
     const end = start + 2;
     sheet.mergeCells(6, start, 6, end);
@@ -180,8 +205,8 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
     head.border = border();
     const cell = sheet.getCell(7, start);
     cell.value = value;
-    cell.numFmt = "$#,##0.00;[Red]($#,##0.00);-";
-    cell.font = { name: "Arial", size: 12, bold: true };
+    if (typeof value === "number") cell.numFmt = "$#,##0.00;[Red]-$#,##0.00;-";
+    cell.font = { name: "Arial", size: 12, bold: true, ...(style.color ? { color: { argb: style.color } } : {}) };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = border();
   });
@@ -189,16 +214,17 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   const startingFloat = input.startingFloatCents == null ? "UNAVAILABLE" : moneyText(input.startingFloatCents);
   const status = input.startingFloatConfirmed ? "YES" : "NO";
   const topFacts = [
-    ["A8:G8", "STARTING FLOAT", startingFloat, "FFEAF3FB"],
-    ["H8:N8", "FLOAT CONFIRMED", status, input.startingFloatConfirmed ? "FFDDF0E4" : "FFFFE5CC"],
-    ["O8:U8", "REFILL VALUE", moneyText(refillValueCents(input)), "FFF3ECFA"],
+    ["A8:E8", "STARTING FLOAT", startingFloat, "FFEAF3FB", "FF111827"],
+    ["F8:J8", "FLOAT CONFIRMED", status, input.startingFloatConfirmed ? "FFDDF0E4" : "FFFFE5CC", "FF111827"],
+    ["K8:O8", "REFILL VALUE", moneyText(refillValueCents(input)), "FFF3ECFA", "FF111827"],
+    ["P8:U8", "NET STOCK", stockNetCents >= 0 ? `OVER +${moneyText(stockNetCents)}` : `SHORT -${moneyText(Math.abs(stockNetCents))}`, stockNetCents >= 0 ? "FFDCFCE7" : "FFFEE2E2", stockNetCents >= 0 ? "FF15803D" : "FFB91C1C"],
   ] as const;
-  for (const [range, label, value, fill] of topFacts) {
+  for (const [range, label, value, fill, color] of topFacts) {
     sheet.mergeCells(range);
     const cell = sheet.getCell(range.split(":")[0]);
     cell.value = `${label}: ${value}`;
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
-    cell.font = { name: "Arial", size: 11, bold: true };
+    cell.font = { name: "Arial", size: 10, bold: true, color: { argb: color } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = border();
   }
@@ -264,15 +290,6 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
   });
 
   const stockLastRow = Math.max(12, 11 + rows.length);
-  const differences = input.closing.closing_lines
-    .map((line) => {
-      const qtyDifference = line.variance_qty ?? line.left - (line.expected_qty ?? line.system_qty);
-      const valueDifference = (line.overage_cents ?? 0) - (line.shortage_cents ?? 0)
-        || qtyDifference * (line.price_cents ?? 0);
-      return { line, qtyDifference, valueDifference };
-    })
-    .filter((row) => row.qtyDifference !== 0)
-    .sort((a, b) => sortItems(a.line.sku, b.line.sku));
   const varianceTitleRow = stockLastRow + 2;
   sheet.mergeCells(varianceTitleRow, 1, varianceTitleRow, 21);
   const varianceTitle = sheet.getCell(varianceTitleRow, 1);
@@ -362,7 +379,7 @@ export async function buildStockClosingReport(input: StockClosingReportInput) {
 
   const lastRow = totalsRow;
   sheet.pageSetup.printArea = `A1:U${lastRow}`;
-  sheet.headerFooter.oddFooter = `&LSystem shift ID: ${input.systemShiftId ?? "UNAVAILABLE"}&CPage &P of &N&R${input.storeCode}`;
+  sheet.headerFooter.oddFooter = `&CPage &P of &N&R${input.storeCode}`;
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
