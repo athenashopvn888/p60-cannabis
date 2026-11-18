@@ -13,6 +13,7 @@ import styles from "./till.module.css";
 export type CloseLine = { sku: string; text?: string; name: string; price_cents: number; counted_qty: number | null };
 type Totals = { sales_cents: number; cash_sales_cents: number; debit_sales_cents: number; cash_on_hand_cents: number; deposited_cents: number; sale_count?: number; cigarette_packs?: number };
 type CloseStep = "count" | "cash" | "review" | "confirm" | "posted";
+type CloseDifferenceLine = OffLine & { expected_qty?: number; counted_qty?: number; price_cents?: number };
 
 const STEP_META = {
   count: { number: 1, title: "Closing stock count" },
@@ -36,7 +37,7 @@ export default function CloseShift({ lines, knownLines, totals, savedDeposit, bu
   onDone?: () => void;
   weedInStore?: boolean | null;
   summaryMeta: { storeLabel: string; staffName: string; startedAt: string; endedAt: string | null; deposits: { code: string | null; amountCents: number }[]; finalDepositCode?: string | null };
-  stockCheck?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: OffLine[] }; refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] } };
+  stockCheck?: { opening: { offCount: number; ready?: boolean; lines: OffLine[] }; closing: { offCount: number; ready?: boolean; lines: CloseDifferenceLine[] }; refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] } };
   floatExpectedCents?: number | null;
   floatFoundCents?: number | null;
   floatAdjustment?: { expectedCents: number; countedCents: number; differenceCents: number; staff: string; time: string } | null;
@@ -102,7 +103,7 @@ export default function CloseShift({ lines, knownLines, totals, savedDeposit, bu
     <header className={styles.closeTop} data-testid="close-fixed-top">
       <div><strong>{summaryMeta.storeLabel}</strong><span> · {summaryMeta.staffName}</span></div>
       <div><strong>{visibleMeta.title}</strong><small>Step {visibleMeta.number} of 4</small></div>
-      <strong className={styles.closeTest}>TEST STORE</strong>
+      {process.env.NEXT_PUBLIC_SHOW_TEST_BADGE === "1" ? <strong className={styles.closeTest}>TEST STORE</strong> : null}
     </header>
     <div className={styles.closeBody} data-testid="close-scroll-middle">
       {step === "count" ? <>{verifyOpen && deadline ? <VerifyBanner deadline={deadline} /> : null}<CountCard
@@ -117,8 +118,17 @@ export default function CloseShift({ lines, knownLines, totals, savedDeposit, bu
         <label className={styles.fieldLabel} htmlFor="float-left">End float left in till</label><input id="float-left" className={styles.qtyInput} inputMode="decimal" aria-label="Float left in the till" data-testid="float-left-input" value={floatLeft} onChange={(event) => setFloatLeft(event.target.value)} />
         <p>The deposit is saved with the existing 2b deposit path when you tap Next.</p>
       </form> : null}
-      {step === "review" ? <div data-testid="close-review"><h2>Shorts &amp; refill summary</h2>
-        <section className={styles.stockAmber}><h3>Closing shorts / extra</h3><p><strong>{closeLines.length}</strong> SKU differences</p><p>Shorts {formatMoney(stockShortsCents)} · Extra {formatMoney(stockExtraCents)}</p></section>
+      {step === "review" ? <div data-testid="close-review"><h2>Stock differences</h2>
+        <section className={styles.stockAmber}><h3>Review every difference before posting</h3><p><strong>{closeLines.length}</strong> SKU differences</p>
+          <div className={styles.stockDifferenceHead}><span>SKU</span><span>Expected</span><span>Counted</span><span>Qty</span><span>$</span></div>
+          {(stockCheck?.closing.lines ?? []).filter((line) => line.off !== 0).map((line) => {
+            const tone = line.off < 0 ? styles.offShort : styles.offOver;
+            return <div className={styles.stockDifferenceRow} key={line.sku} data-testid="stock-difference-row"><span>{line.text}</span><span>{line.expected_qty ?? "—"}</span><span>{line.counted_qty ?? "—"}</span><strong className={tone}>{line.off > 0 ? `+${line.off}` : line.off}</strong><strong className={tone}>{line.cents && line.cents > 0 ? "+" : ""}{formatMoney(line.cents ?? 0)}</strong></div>;
+          })}
+          <p className={styles.offShort}>TOTAL SHORT: -{closeLines.filter((line) => line.units < 0).reduce((sum, line) => sum + Math.abs(line.units), 0)} units · -{formatMoney(stockShortsCents)}</p>
+          <p className={styles.offOver}>TOTAL EXTRA: +{closeLines.filter((line) => line.units > 0).reduce((sum, line) => sum + line.units, 0)} units · +{formatMoney(stockExtraCents)}</p>
+          <p className={stockExtraCents >= stockShortsCents ? styles.offOver : styles.offShort}>NET STOCK: {stockExtraCents >= stockShortsCents ? `OVER +${formatMoney(stockExtraCents - stockShortsCents)}` : `SHORT -${formatMoney(stockShortsCents - stockExtraCents)}`}</p>
+        </section>
         <section className={styles.stockRose}><h3>Refill issues</h3><p><strong>{refills.length}</strong> discrepancies</p>{refills.length === 0 ? <p>No refill discrepancy recorded</p> : refills.map((line) => <p key={line.sku}>{line.text}: {line.units > 0 ? "+" : ""}{line.units}</p>)}</section>
       </div> : null}
       {step === "confirm" ? <div data-testid="close-confirm"><div className={styles.accountantBanner} role="status">CONFIRM CLOSING</div><TillSummary weedInStore={weedInStore} storeLabel={summaryMeta.storeLabel} staffName={summaryMeta.staffName} startedAt={summaryMeta.startedAt} endedAt={summaryMeta.endedAt ?? new Date().toISOString()} closeLabel={closeLabel} deposits={summaryDeposits} totalOrders={totals.sale_count} cigarettePacks={totals.cigarette_packs} cashSalesCents={totals.cash_sales_cents} depositedCents={deposited} floatCents={floatCents} openLines={adjust(stockCheck?.opening.lines ?? [])} refillLines={refills} closeLines={closeLines} floatExpectedCents={floatExpectedCents} floatFoundCents={floatFoundCents} floatAdjustment={floatAdjustment} /></div> : null}

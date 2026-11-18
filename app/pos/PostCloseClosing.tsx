@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 import styles from "./PostCloseClosing.module.css";
 
-type CloseLine = { sku: string; name: string; left: number; shortage_cents?: number; overage_cents?: number };
+type CloseLine = { sku: string; name: string; left: number; variance_qty?: number; shortage_cents?: number; overage_cents?: number };
 export type PostCloseView = {
   shift: { staff_name: string; pos_id: string; sccx_shift_id?: string; started_at: string; ended_at?: string | null };
   post_close: {
@@ -25,13 +25,17 @@ const stamp = (value?: string | null) => value ? new Intl.DateTimeFormat("en-CA"
 
 function Totals({ view }: { view: PostCloseView }) {
   const row = view.post_close.closing;
+  const netStock = (row.overage_cents ?? 0) - (row.shortage_cents ?? 0);
+  const shortQty = row.closing_lines.reduce((sum, line) => sum + Math.max(0, -(line.variance_qty ?? 0)), 0);
+  const extraQty = row.closing_lines.reduce((sum, line) => sum + Math.max(0, line.variance_qty ?? 0), 0);
   return <div className={styles.money} data-testid="post-close-totals">
     <div><span>Sales</span><strong>{money(row.sales_total_cents)}</strong></div>
     <div><span>Cash sales</span><strong>{money(row.cash_sales_cents ?? row.sales_total_cents)}</strong></div>
     <div><span>Deposits</span><strong>{money(row.deposited_cents)}</strong></div>
     <div><span>Till cash</span><strong>{money(row.float_cents ?? row.cash_on_hand_cents)}</strong></div>
-    <div className={styles.short}><span>Short</span><strong>{money(row.shortage_cents)}</strong></div>
-    <div><span>Over</span><strong>{money(row.overage_cents)}</strong></div>
+    <div className={styles.short}><span>SHORT stock</span><strong>-{shortQty} · -{money(row.shortage_cents)}</strong></div>
+    <div><span>EXTRA stock</span><strong>+{extraQty} · +{money(row.overage_cents)}</strong></div>
+    <div className={netStock < 0 ? styles.short : ""}><span>NET STOCK</span><strong>{netStock >= 0 ? `OVER +${money(netStock)}` : `SHORT -${money(-netStock)}`}</strong></div>
   </div>;
 }
 
@@ -87,7 +91,7 @@ export default function PostCloseClosing({ view: initial, apiBase = "/api/pos", 
   async function logout() { await fetch(`${apiBase}/logout`, { method: "POST", credentials: "same-origin" }).catch(() => undefined); window.location.reload(); }
   const closing = view.post_close.closing;
   return <main className={styles.shell} data-testid="post-close-shell" data-screen={screen}>
-    <header className={styles.top}><div><strong>PNYS · {view.shift.staff_name}</strong><small>{screen === "edit" ? "Redo closing" : "Your closing"}</small></div><strong className={styles.test}>TEST STORE</strong></header>
+    <header className={styles.top}><div><strong>PNYS · {view.shift.staff_name}</strong><small>{screen === "edit" ? "Redo closing" : "Your closing"}</small></div>{process.env.NEXT_PUBLIC_SHOW_TEST_BADGE === "1" ? <strong className={styles.test}>TEST STORE</strong> : null}</header>
     <div className={styles.middle}>
       {screen === "summary" ? <><section className={styles.card} data-testid="post-close-summary"><h1>Closing summary</h1><p className={styles.privacy}>{view.shift.sccx_shift_id} · closed {stamp(view.shift.ended_at)} · access ends {stamp(view.post_close.expires_at)}</p><Totals view={view}/></section><section className={styles.card}><h2>Closing count</h2><CountTable lines={closing.closing_lines}/></section><p className={styles.privacy}>This login can only see your own closing. Sales, refills, Kitchen and Manager are locked.</p></> : null}
       {screen === "warning" ? <section className={styles.warning} role="alertdialog" aria-modal="true" data-testid="redo-warning"><div className={styles.warningMark}>⚠️</div><h1>Redo this close?</h1><p>Your submitted count and cash will reopen. Saving replaces the current closing with a new version. The old version stays in Manager audit.</p><p><strong>No sales or refills are available during redo.</strong></p>{error ? <p className={styles.error}>{error}</p> : null}</section> : null}

@@ -41,9 +41,13 @@ export function summaryImageHeight(view: ClosingSummaryView) {
 }
 
 export function closingSummaryImage(view: ClosingSummaryView) {
-  const differences = [...view.openLines, ...view.refillLines, ...view.closeLines];
+  // Only the persisted final close variances affect cash reconciliation.
+  const differences = view.closeLines;
   const stockShortsCents = differences.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
   const stockExtraCents = differences.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
+  const stockShortUnits = differences.reduce((sum, line) => sum + Math.max(0, -line.units), 0);
+  const stockExtraUnits = differences.reduce((sum, line) => sum + Math.max(0, line.units), 0);
+  const stockNetCents = stockExtraCents - stockShortsCents;
   const openingCashCents = view.floatFoundCents ?? 0;
   const expectedCashCents = openingCashCents + view.cashSalesCents + stockShortsCents - stockExtraCents;
   const cashAccountedCents = view.depositedCents + view.expenseCents + view.floatCents;
@@ -76,8 +80,9 @@ export function closingSummaryImage(view: ClosingSummaryView) {
         ))}
         <Row label="Opening cash" value={floatKnown ? formatMoney(openingCashCents) : "UNAVAILABLE"} />
         <Row label="Cash sales" value={formatMoney(view.cashSalesCents)} />
-        <Row label="Stock short" value={formatMoney(stockShortsCents)} color="#dc2626" />
-        <Row label="Less stock credit" value={`−${formatMoney(stockExtraCents)}`} color="#16a34a" />
+        <Row label="TOTAL SHORT stock" value={`-${stockShortUnits} · -${formatMoney(stockShortsCents)}`} color="#dc2626" />
+        <Row label="TOTAL EXTRA stock" value={`+${stockExtraUnits} · +${formatMoney(stockExtraCents)}`} color="#16a34a" />
+        <Row label="NET STOCK" value={stockNetCents >= 0 ? `OVER +${formatMoney(stockNetCents)}` : `SHORT -${formatMoney(Math.abs(stockNetCents))}`} color={stockNetCents >= 0 ? "#16a34a" : "#dc2626"} />
         <Row label="EXPECTED CASH" value={floatKnown ? formatMoney(expectedCashCents) : "UNAVAILABLE"} strong />
         <Row label="Safebox" value={formatMoney(view.depositedCents)} />
         {view.expenseCents !== 0 ? <Row label="Cash expense" value={formatMoney(view.expenseCents)} /> : null}
@@ -85,7 +90,7 @@ export function closingSummaryImage(view: ClosingSummaryView) {
         <Row label="CASH ACCOUNTED" value={formatMoney(cashAccountedCents)} strong />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontWeight: 800 }}>
           <div style={{ display: "flex" }}>FINAL</div>
-          <div style={{ display: "flex", color: final.tone === "short" ? "#dc2626" : "#16a34a", fontSize: 20 }}>{floatKnown ? `${final.word} ${formatMoney(final.cents)}` : "UNAVAILABLE"}</div>
+          <div style={{ display: "flex", color: final.tone === "short" ? "#dc2626" : "#16a34a", fontSize: 20 }}>{floatKnown ? `${final.word} ${final.word === "OVER" ? "+" : final.word === "SHORT" ? "-" : ""}${formatMoney(final.cents)}` : "UNAVAILABLE"}</div>
         </div>
         <Section title="Opening Verify" background="#dbeafe" lines={view.openLines} floatNote={floatNote} />
         <Section title="Refill Issues" background="#fce7f3" lines={view.refillLines} />

@@ -56,6 +56,9 @@ export default function TillSummary({
 }) {
   const stockShortsCents = closeLines.reduce((sum, line) => sum + Math.max(0, -line.cents), 0);
   const stockCreditCents = closeLines.reduce((sum, line) => sum + Math.max(0, line.cents), 0);
+  const stockShortUnits = closeLines.reduce((sum, line) => sum + Math.max(0, -line.units), 0);
+  const stockExtraUnits = closeLines.reduce((sum, line) => sum + Math.max(0, line.units), 0);
+  const stockNetCents = stockCreditCents - stockShortsCents;
   const openingCashCents = floatFoundCents ?? 0;
   const expectedCashCents = openingCashCents + cashSalesCents + stockShortsCents - stockCreditCents;
   const accountedCashCents = depositedCents + expenseCents + floatCents;
@@ -75,8 +78,9 @@ export default function TillSummary({
 
     <h2 className={styles.summaryHeading}>Stock adjustment</h2>
     <Grid lines={closeLines} testId="closing-sku-list" />
-    <div className={styles.summaryRow}><span>Stock short</span><strong>{formatMoney(stockShortsCents)}</strong></div>
-    <div className={styles.summaryRow}><span>Stock credit</span><strong>{formatMoney(stockCreditCents)}</strong></div>
+    <div className={styles.summaryRow}><span>TOTAL SHORT stock</span><strong className={styles.offShort}>-{stockShortUnits} units · -{formatMoney(stockShortsCents)}</strong></div>
+    <div className={styles.summaryRow}><span>TOTAL EXTRA stock</span><strong className={styles.offOver}>+{stockExtraUnits} units · +{formatMoney(stockCreditCents)}</strong></div>
+    <div className={styles.summaryRow}><span>NET STOCK</span><strong className={stockNetCents >= 0 ? styles.offOver : styles.offShort}>{stockNetCents >= 0 ? `OVER +${formatMoney(stockNetCents)}` : `SHORT -${formatMoney(Math.abs(stockNetCents))}`}</strong></div>
 
     <h2 className={styles.summaryHeading}>Safebox deposits</h2>
     <section className={styles.depositSummary} data-testid="closing-deposits">
@@ -95,14 +99,14 @@ export default function TillSummary({
     <h2 className={styles.summaryHeading}>Reconciliation</h2>
     <div className={styles.summaryRow}><span>Opening cash</span><strong>{floatFoundCents == null ? "UNAVAILABLE" : formatMoney(openingCashCents)}</strong></div>
     <div className={styles.summaryRow}><span>Cash sales</span><strong>{formatMoney(cashSalesCents)}</strong></div>
-    <div className={styles.summaryRow}><span>Stock short</span><strong>{formatMoney(stockShortsCents)}</strong></div>
-    <div className={styles.summaryRow}><span>Less stock credit</span><strong>−{formatMoney(stockCreditCents)}</strong></div>
+    <div className={styles.summaryRow}><span>Stock short</span><strong className={styles.offShort}>-{formatMoney(stockShortsCents)}</strong></div>
+    <div className={styles.summaryRow}><span>Less stock extra</span><strong className={styles.offOver}>+{formatMoney(stockCreditCents)}</strong></div>
     <div className={`${styles.summaryRow} ${styles.summaryTotal}`}><span>EXPECTED CASH</span><strong>{floatFoundCents == null ? "UNAVAILABLE" : formatMoney(expectedCashCents)}</strong></div>
     <div className={styles.summaryRow}><span>Safebox</span><strong>{formatMoney(depositedCents)}</strong></div>
     {expenseCents !== 0 ? <div className={styles.summaryRow}><span>Cash expense</span><strong>{formatMoney(expenseCents)}</strong></div> : null}
     <div className={styles.summaryRow} data-testid="float-left"><span>Closing float</span><strong>{formatMoney(floatCents)}</strong></div>
     <div className={`${styles.summaryRow} ${styles.summaryTotal}`} data-testid="total-cash-collected"><span>CASH ACCOUNTED</span><strong>{formatMoney(accountedCashCents)}</strong></div>
-    <div className={`${styles.summaryRow} ${styles.finalRow}`} data-testid="till-balance"><span>FINAL</span><strong className={finalClass}>{floatFoundCents == null ? "UNAVAILABLE" : `${final.word} ${formatMoney(final.cents)}`}</strong></div>
+    <div className={`${styles.summaryRow} ${styles.finalRow}`} data-testid="till-balance"><span>FINAL</span><strong className={finalClass}>{floatFoundCents == null ? "UNAVAILABLE" : `${final.word} ${final.word === "OVER" ? "+" : final.word === "SHORT" ? "-" : ""}${formatMoney(final.cents)}`}</strong></div>
 
     {floatAdjustment ? <section className={styles.stockBlue} data-testid="opening-stock-check">
       <h3>Opening cash adjustment</h3>

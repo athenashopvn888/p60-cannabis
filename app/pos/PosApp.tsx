@@ -32,6 +32,7 @@ import { DurableCommandKeys } from "../lib/pny-pos/durableCommand";
 import styles from "./till.module.css";
 
 const isTestStore = process.env.NEXT_PUBLIC_TEST_STORE === "1";
+const showTestBadge = process.env.NEXT_PUBLIC_SHOW_TEST_BADGE === "1";
 
 function rowsOf<T>(items: T[], size: number) {
   const rows: T[][] = [];
@@ -65,6 +66,7 @@ type CloseSnapshot = {
   };
   resumeSummary?: { depositCents: number; floatCents: number; closeLabel?: string } | null;
 };
+type CloseDifferenceLine = OffLine & { expected_qty?: number; counted_qty?: number; price_cents?: number };
 type View = {
   authenticated?: boolean;
   demo?: boolean;
@@ -111,7 +113,7 @@ type View = {
   };
   stock_check?: {
     opening: { offCount: number; ready?: boolean; lines: OffLine[] };
-    closing: { offCount: number; ready?: boolean; lines: OffLine[] };
+    closing: { offCount: number; ready?: boolean; lines: CloseDifferenceLine[] };
     refills?: { count: number; lines: { sku: string; text: string; sent: number; received: number; diff: number; cents?: number }[] };
   };
   error?: string;
@@ -840,7 +842,7 @@ export default function PosApp({
   return (
     <main className={styles.shell} data-testid="pos-shell" data-pnys-shell={storeCode === "PNYS" ? "" : undefined}>
       {view.demo ? <div className={styles.demo}>{view.demo_label}</div> : null}
-      {storeCode === "PNYS" && isTestStore ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
+      {storeCode === "PNYS" && showTestBadge ? <div className={styles.demo} data-testid="staff-test-store">TEST STORE</div> : null}
       <header className={`${styles.header} ${styles.posHeader}`}>
         <div className={styles.headerTop}>
           <div className={styles.brand}>{storeLabel} · {view.shift?.staff_name}{view.master ? " · Master view" : ""}</div>
@@ -1105,7 +1107,9 @@ export default function PosApp({
             endedAt: null,
             deposits: (view.deposits ?? []).map((row) => ({ code: row.deposit_code ?? null, amountCents: row.amount_cents })),
           }}
-          stockCheck={closeSnap?.stockCheck ?? view.stock_check}
+          // Never freeze pre-count stock differences. The live server view is
+          // the canonical preview until the shift has actually been posted.
+          stockCheck={closeHold ? (closeSnap?.stockCheck ?? view.stock_check) : view.stock_check}
           floatExpectedCents={closeSnap?.floatExpectedCents ?? (view.float_check?.found_cents == null ? null : view.float_check.expected_cents)}
           floatFoundCents={closeSnap?.floatFoundCents ?? view.float_check?.found_cents ?? null}
           floatAdjustment={closeSnap?.floatAdjustment ?? (view.float_check?.found_cents != null && view.float_check.difference_cents && view.float_check.adjusted_by && view.float_check.adjusted_at ? {

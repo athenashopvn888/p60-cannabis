@@ -72,6 +72,8 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
     sale_count: 2,
     deposited_cents: 10000,
     balance_cents: 0,
+    shortage_cents: 1000,
+    overage_cents: 2500,
     shift_ref: "S00022",
     closing_lines: [
       { sku: "240", name: "Grabba", left: 7, expected_qty: 9, system_qty: 9, variance_qty: -2, price_cents: 500, shortage_cents: 1000, overage_cents: 0 },
@@ -93,10 +95,27 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.match(payload.body, /Shift ref: S00022/);
   assert.match(payload.body, /Starting float: \$44\.00 \(CONFIRMED\)/);
   assert.match(payload.body, /STOCK COUNT DIFFERENCES \(2 SKUs\)/);
-  assert.match(payload.body, /240 \| Grabba \| counted 7 \| qty -2 \| value -\$10\.00 \| SHORT/);
-  assert.match(payload.body, /655 \| Knock Out LW \| counted 2 \| qty \+1 \| value \+\$25\.00 \| OVER/);
+  assert.match(payload.body, /240 \| Grabba \| expected 9 \| counted 7 \| qty -2 \| value -\$10\.00 \| SHORT/);
+  assert.match(payload.body, /655 \| Knock Out LW \| expected 1 \| counted 2 \| qty \+1 \| value \+\$25\.00 \| OVER/);
   assert.match(String(payload.attachment_name), /^PNY01-Stock-Closing-2026-11-17-Randy\.xlsx$/);
   assert.ok(payload.attachment_report_json);
+});
+
+test("closing email is blocked when stored stock totals disagree with stored closing lines", () => {
+  const state = emptyState(at);
+  state.staff.push({ staff_uid: "staff-a", pos_id: "A1", display_name: "Randy" } as never);
+  const shift = { id: "shift-a", staff_uid: "staff-a", store_code: "PNY01", started_at: at, ended_at: at } as ShiftRow;
+  const closing = {
+    sales_total_cents: 0,
+    sale_count: 0,
+    deposited_cents: 0,
+    shortage_cents: 0,
+    overage_cents: 0,
+    closing_lines: [
+      { sku: "240", name: "Grabba", left: 7, expected_qty: 9, system_qty: 9, variance_qty: -2, price_cents: 500, shortage_cents: 1000, overage_cents: 0 },
+    ],
+  } as ClosingRow;
+  assert.throws(() => closingEmailPayload(state, shift, closing, at), /CLOSING_EMAIL_VARIANCE_MISMATCH:shift-a/);
 });
 
 test("stock closing workbook preserves the accountant layout and adds R after A", async () => {
@@ -147,6 +166,9 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
   assert.equal(sheet.getCell("N18").value, -1);
   assert.equal(sheet.getCell("Q18").value, -25);
   assert.equal(sheet.getCell("T18").value, "SHORT");
+  assert.equal(sheet.getCell("A20").value, "TOTAL SHORT: -1 units | -$25.00");
+  assert.equal(sheet.getCell("H20").value, "TOTAL EXTRA: +0 units | +$0.00");
+  assert.equal(sheet.getCell("O20").value, "NET STOCK: SHORT -$25.00");
 });
 
 test("stock closing workbook and filename use the Toronto close date", async () => {

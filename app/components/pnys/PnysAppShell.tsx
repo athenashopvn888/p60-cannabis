@@ -7,7 +7,7 @@ export default function PnysAppShell({ children }: { children: React.ReactNode }
       <header className={styles.top}>
         <div><strong>PNYS</strong><span> · Staff</span></div>
         <div className={styles.title}>POS foundation</div>
-        <strong className={styles.test}>TEST STORE</strong>
+        {process.env.NEXT_PUBLIC_SHOW_TEST_BADGE === "1" ? <strong className={styles.test}>TEST STORE</strong> : null}
       </header>
       <div className={styles.middle}>{children}</div>
       <nav className={styles.bottom} aria-label="PNYS actions">
