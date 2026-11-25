@@ -1,5 +1,6 @@
 import CigaretteSeasonalNotice from "../../components/CigaretteSeasonalNotice";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getCigaretteSnapshot } from "../../lib/cigaretteFeed";
 import type { Metadata } from "next";
 import fs from "fs";
 import path from "path";
@@ -33,6 +34,7 @@ export async function generateMetadata({
   params: Promise<{ category: string }>;
 }): Promise<Metadata> {
   const { category: catSlug } = await params;
+  if (catSlug === "cigarettes" && !(await getCigaretteSnapshot()).web.show) redirect("/items/vapes");
   const catInfo = getCategoryFromSlug(catSlug);
   if (!catInfo) return {};
   const { items: menuItems } = await getWebMenuData();
@@ -53,6 +55,7 @@ export default async function ItemsCategoryPage({
   params: Promise<{ category: string }>;
 }) {
   const { category: catSlug } = await params;
+  if (catSlug === "cigarettes" && !(await getCigaretteSnapshot()).web.show) redirect("/items/vapes");
   const catInfo = getCategoryFromSlug(catSlug);
   if (!catInfo) notFound();
 
