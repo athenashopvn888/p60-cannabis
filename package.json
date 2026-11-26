@@ -23,6 +23,7 @@
     "test:pnys-release3": "npx tsx scripts/pnys-release3-dry-run.ts && node --experimental-strip-types --test tests/pnys-release3.test.ts",
     "test:pnys-release4-prep": "node --experimental-strip-types --experimental-specifier-resolution=node --test tests/pnys-release4-prep.test.ts",
     "test:pnys-env-gate": "node --test tests/pnys-env-gate.test.mjs",
+    "test:p60-deploy-gate": "node --test tests/p60-deploy-gate.test.mjs",
     "verify:pnys-predeploy": "node scripts/verify-pnys-predeploy.mjs --force",
     "verify:pnys-postdeploy": "node scripts/verify-pnys-postdeploy.mjs"
   },
