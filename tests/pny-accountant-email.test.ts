@@ -93,12 +93,64 @@ test("closing email includes sold items, every positive on-hand SKU, and total u
   assert.doesNotMatch(payload.body, /999 \| Zero/);
   assert.match(payload.body, /Total on-hand units: 9/);
   assert.match(payload.body, /Shift ref: S00022/);
+  assert.match(payload.body, /Stock shortage: -\$10\.00/);
+  assert.match(payload.body, /Stock shortage qty: -2 units/);
+  assert.match(payload.body, /Stock extra: \+\$25\.00/);
+  assert.match(payload.body, /Stock extra qty: \+1 units/);
+  assert.match(payload.body, /Net stock: OVER \+\$15\.00/);
+  assert.match(payload.body, /FINAL: EVEN \$0\.00/);
   assert.match(payload.body, /Starting float: \$44\.00 \(CONFIRMED\)/);
   assert.match(payload.body, /STOCK COUNT DIFFERENCES \(2 SKUs\)/);
   assert.match(payload.body, /240 \| Grabba \| expected 9 \| counted 7 \| qty -2 \| value -\$10\.00 \| SHORT/);
   assert.match(payload.body, /655 \| Knock Out LW \| expected 1 \| counted 2 \| qty \+1 \| value \+\$25\.00 \| OVER/);
   assert.match(String(payload.attachment_name), /^PNY01-Stock-Closing-2026-11-17-Randy\.xlsx$/);
   assert.ok(payload.attachment_report_json);
+  assert.doesNotMatch(payload.body, /System shift ID|shift-a/);
+});
+
+test("corrected closing email uses the accountant subject and public short reference only", () => {
+  const state = emptyState(at);
+  state.staff.push({ staff_uid: "staff-a", pos_id: "A1", display_name: "Randy" } as never);
+  const shift = {
+    id: "6e72d6a9-private",
+    sccx_shift_id: "sccx-private-long-id",
+    staff_uid: "staff-a",
+    store_code: "PNYS",
+    started_at: at,
+    ended_at: at,
+  } as ShiftRow;
+  const closing = {
+    sales_total_cents: 138150,
+    sale_count: 43,
+    deposited_cents: 143500,
+    final_deposit_cents: 143500,
+    float_cents: 5200,
+    balance_cents: -11100,
+    shortage_cents: 30800,
+    overage_cents: 34250,
+    shift_ref: "S00004",
+    closing_lines: [
+      { sku: "188", name: "Pink Animal", left: 54, expected_qty: 58, system_qty: 58, variance_qty: -4, price_cents: 500, shortage_cents: 2000, overage_cents: 0 },
+      { sku: "373-5g", name: "Candy Krush", left: 17, expected_qty: 0, system_qty: 0, variance_qty: 17, price_cents: 2014.705882, shortage_cents: 0, overage_cents: 34250 },
+      { sku: "350-3g", name: "Purple Haze", left: 0, expected_qty: 24, system_qty: 24, variance_qty: -24, price_cents: 1200, shortage_cents: 28800, overage_cents: 0 },
+    ],
+  } as ClosingRow;
+  const payload = closingEmailPayload(state, shift, closing, at, {
+    subject: "CORRECTED – PNYS Randy closing Nov 17 (replaces earlier email)",
+    correctionNote: "Corrected resend. Till data not changed.",
+    rowIdSuffix: "CORRECTED-1",
+  });
+  assert.equal(payload.subject, "CORRECTED – PNYS Randy closing Nov 17 (replaces earlier email)");
+  assert.ok(payload.body.startsWith("Corrected resend. Till data not changed.\n\n"));
+  assert.match(payload.body, /Shift ref: S00004/);
+  assert.match(payload.body, /Stock shortage: -\$308\.00/);
+  assert.match(payload.body, /Stock shortage qty: -28 units/);
+  assert.match(payload.body, /Stock extra: \+\$342\.50/);
+  assert.match(payload.body, /Stock extra qty: \+17 units/);
+  assert.match(payload.body, /Net stock: OVER \+\$34\.50/);
+  assert.match(payload.body, /FINAL: OVER \+\$111\.00/);
+  assert.doesNotMatch(payload.body, /6e72d6a9|sccx-private|original email|message id/i);
+  assert.match(payload.row_id, /CORRECTED-1$/);
 });
 
 test("closing email is blocked when stored stock totals disagree with stored closing lines", () => {
@@ -132,7 +184,8 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
       debit_sales_cents: 500,
       deposited_cents: 92000,
       float_cents: 4400,
-      overage_cents: 10800,
+      shortage_cents: 2500,
+      overage_cents: 0,
       balance_cents: -3450,
       closing_lines: [
         { sku: "172-3g", name: "Lavender Kush", price_cents: 1000, opening_qty: 10, received_qty: 2, sold_qty: 3, left: 9, system_qty: 9 },
@@ -149,8 +202,17 @@ test("stock closing workbook preserves the accountant layout and adds R after A"
   assert.equal(sheet.getCell("A9").value, "A = Assigned     R = Confirmed refill     S = Sold     OH = Onhand");
   assert.equal(sheet.getCell("Q4").value, "S00022");
   assert.match(String(sheet.getCell("A8").value), /STARTING FLOAT: \$44\.00/);
-  assert.match(String(sheet.getCell("H8").value), /CONFIRMED/);
-  assert.match(String(sheet.getCell("O8").value), /REFILL VALUE: \$95\.00/);
+  assert.match(String(sheet.getCell("F8").value), /CONFIRMED/);
+  assert.match(String(sheet.getCell("K8").value), /REFILL VALUE: \$95\.00/);
+  assert.match(String(sheet.getCell("P8").value), /NET STOCK: SHORT -\$25\.00/);
+  assert.equal(sheet.getCell("J6").value, "STOCK SHORT");
+  assert.equal(sheet.getCell("J7").value, "-$25.00");
+  assert.equal(sheet.getCell("M6").value, "STOCK EXTRA");
+  assert.equal(sheet.getCell("M7").value, "+$0.00");
+  assert.equal(sheet.getCell("S6").value, "FINAL");
+  assert.equal(sheet.getCell("S7").value, "OVER +$34.50");
+  assert.equal(sheet.getCell("S7").font?.color?.argb, "FF15803D");
+  assert.doesNotMatch(String(sheet.headerFooter.oddFooter), /System shift ID|sccx-PNY01/);
   assert.ok((sheet.getCell("B12").font?.size ?? 0) >= 10);
   assert.notEqual(sheet.getCell("B12").fill, sheet.getCell("F12").fill);
   assert.deepEqual([2, 3, 4, 5].map((column) => sheet.getCell(11, column).value), ["A", "R", "S", "OH"]);
